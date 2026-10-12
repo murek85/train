@@ -12,6 +12,8 @@
 	const prepared = {}; // trasy przygotowane dla danego składu: klucz „trasa|pociąg|liczba wagonów”
 	const timetables = {};
 	const renderer = new window.Train3D.Renderer3D($('view'), $('mini'));
+	// kliknięcie w pojazd – komunikat o środku orbity kamery
+	renderer.onFocusCar = () => { if (sim) hud.toast('Kamera: ' + renderer.focusLabel(sim)); };
 	const hud = new window.TrainHud();
 	const audio = new window.TrainAudio();
 
@@ -122,6 +124,17 @@
 		if (selected === id) { selected = defs[0] ? defs[0].id : null; save('route', selected); if (mode === 'menu') startDemo(); }
 	}
 
+	/* trasa rzeczywista z podejrzanym profilem: pochylenie ponad 30‰ łącznie na ponad 300 m (błędne wysokości z NMT –
+	   trasy wygenerowane przed poprawką pobierania): pierwsze takie miejsce albo null */
+	function suspectGrades(d) {
+		if (!d.real || !Array.isArray(d.grades)) return null;
+		let len = 0, first = null, gmax = 0;
+		for (let i = 0; i < d.grades.length; i++) {
+			const [pos, g] = d.grades[i], next = i + 1 < d.grades.length ? d.grades[i + 1][0] : pos + 50;
+			if (Math.abs(g) > 30) { len += next - pos; if (!first) first = pos; gmax = Math.max(gmax, Math.abs(g)); }
+		}
+		return len > 300 ? { km: (first / 1000).toFixed(1).replace('.', ','), len: Math.round(len), g: Math.round(gmax) } : null;
+	}
 	function defById(id) { return defs.find((d) => d.id === id) || defs[0]; }
 	// skład dopasowany do trasy (znane serie, długość wg peronów / limitu składu towarowego)
 	function cfgFor(def) {
@@ -191,8 +204,10 @@
 			const b = document.createElement('button');
 			b.className = 'route' + (d.id === selected ? ' sel' : '');
 			const badge = d.custom ? '<span class="badge custom">wygenerowana</span>' : d.real ? '<span class="badge">rzeczywista</span>' : '';
+			const sus = suspectGrades(d);
+			const warn = sus ? `<span class="badge warn" title="Pochylenie ${sus.g}‰ na ${sus.len} m od km ${sus.km} – na liniach kolejowych ponad 30‰ prawie nie występuje. Trasa wygenerowana przy błędzie usługi wysokości (NMT): tor w fikcyjnym jarze lub na garbie. Wygeneruj ją ponownie.">⚠ wysokości</span>` : '';
 			const el = d.electrified === false ? ' · bez sieci trakcyjnej' : '';
-			b.innerHTML = `<h3><span>${esc(d.title)}${badge}</span><small>poziom: ${esc(d.difficulty)}</small></h3>
+			b.innerHTML = `<h3><span>${esc(d.title)}${badge}${warn}</span><small>poziom: ${esc(d.difficulty)}</small></h3>
 				<div class="t">${esc(d.name)}</div>
 				<p>${esc(d.desc)}</p>
 				<div class="meta">${((d.stations[d.stations.length - 1].pos + 35) / 1000).toFixed(1)} km · ${d.stations.length} stacji (${stops} postojów) · perony ${d.platformLength} m · odjazd ${fmtClock(depClock(d)).slice(0, 5)}${el}</div>
@@ -489,6 +504,7 @@
 		box.appendChild(el);
 		box.scrollTop = box.scrollHeight;
 	}
+	const exportSel = new Set(); // trasy zaznaczone do eksportu (id)
 	function buildGenScreen() {
 		const ex = $('gen-examples');
 		ex.innerHTML = '';
@@ -502,20 +518,118 @@
 		list.innerHTML = '';
 		const mine = defs.filter((d) => d.custom);
 		if (!mine.length) list.innerHTML = '<div class="hint">Brak – wygenerowane trasy pojawią się tutaj i na liście map.</div>';
+		// zaznaczenie tras do eksportu (zostaje między odświeżeniami listy; usunięte trasy wypadają)
+		for (const id of [...exportSel]) if (!mine.some((d) => d.id === id)) exportSel.delete(id);
 		for (const d of mine) {
 			const row = document.createElement('div');
-			row.className = 'gen-item';
-			row.innerHTML = `<b>${esc(d.title)}</b><span>${((d.stations[d.stations.length - 1].pos - d.stations[0].pos) / 1000).toFixed(1)} km · ${d.stations.length} st.</span>`;
+			row.className = 'gen-item' + (exportSel.has(d.id) ? ' sel' : '');
+			const cb = document.createElement('input');
+			cb.type = 'checkbox';
+			cb.className = 'gen-sel';
+			cb.title = 'Zaznacz do eksportu';
+			cb.checked = exportSel.has(d.id);
+			cb.addEventListener('change', () => { if (cb.checked) exportSel.add(d.id); else exportSel.delete(d.id); row.classList.toggle('sel', cb.checked); updateExportUI(); });
+			const info = document.createElement('div');
+			info.style.cssText = 'display:contents';
+			info.innerHTML = `<b>${esc(d.title)}</b><span>${((d.stations[d.stations.length - 1].pos - d.stations[0].pos) / 1000).toFixed(1)} km · ${d.stations.length} st.</span>`;
 			const play = document.createElement('button');
 			play.textContent = 'Wybierz';
 			play.addEventListener('click', () => pickRoute(d.id));
 			const del = document.createElement('button');
 			del.textContent = 'Usuń';
 			del.addEventListener('click', () => { forgetRoute(d.id); buildGenScreen(); buildMenu(); });
-			row.append(play, del);
+			row.append(cb, info, play, del);
 			list.appendChild(row);
 		}
+		updateExportUI();
 	}
+	function updateExportUI() {
+		const mine = defs.filter((d) => d.custom), n = mine.filter((d) => exportSel.has(d.id)).length;
+		$('gen-export').disabled = n === 0;
+		$('gen-export').textContent = n ? `Eksportuj zaznaczone (${n})` : 'Eksportuj zaznaczone';
+		const all = $('gen-sel-all');
+		all.disabled = !mine.length;
+		all.checked = mine.length > 0 && n === mine.length;
+		all.indeterminate = n > 0 && n < mine.length;
+	}
+	/* ---------- import i eksport tras ----------
+	   Plik .trasa: JSON { format: 'maszynista-trasa', v: 1, app, exported, routes: [def, …] } skompresowany gzip
+	   (CompressionStream; bez niego – zwykły JSON). Import przyjmuje .trasa (gzip albo JSON), .json (ten format albo
+	   sam opis trasy) i pliki tras z narzędzia (routes/*.js: opis trasy w wywołaniu funkcji). */
+	const TRASA = 'maszynista-trasa';
+	function ioMsg(html) { $('gen-io-msg').innerHTML = html; }
+	const fileSafe = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ł/g, 'l').replace(/Ł/g, 'L').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+	async function gzip(text) {
+		if (typeof CompressionStream === 'undefined') return null;
+		const s = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
+		return new Blob([await new Response(s).arrayBuffer()], { type: 'application/gzip' });
+	}
+	async function exportRoutes(list) {
+		if (!list.length) { ioMsg('<span class="err">Brak wygenerowanych tras do eksportu.</span>'); return; }
+		const pack = { format: TRASA, v: 1, app: $('version') ? $('version').textContent.trim() : '', exported: new Date().toISOString(), routes: list.map(plain) };
+		const json = JSON.stringify(pack);
+		const blob = (await gzip(json)) || new Blob([json], { type: 'application/json' });
+		const name = (list.length === 1 ? fileSafe(list[0].title || list[0].id) : `trasy-${list.length}`) + '.trasa';
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = name;
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+		ioMsg(`<span class="ok">Zapisano ${esc(name)} (${(blob.size / 1024 / 1024).toFixed(2)} MB${list.length > 1 ? `, ${list.length} tras` : ''}).</span>`);
+	}
+	// opisy tras z zawartości pliku (bajty)
+	async function routesFromFile(name, bytes) {
+		let text;
+		if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+			if (typeof DecompressionStream === 'undefined') throw new Error('ta przeglądarka nie rozpakowuje plików .trasa');
+			const s = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+			text = await new Response(s).text();
+		} else text = new TextDecoder().decode(bytes);
+		text = text.replace(/^﻿/, '').trim();
+		let obj;
+		if (text.startsWith('{') || text.startsWith('[')) obj = JSON.parse(text);
+		else {
+			// plik trasy z narzędzia: (function (def) {…})({…});
+			const a = text.indexOf('})({'), b = text.lastIndexOf('});');
+			if (a < 0 || b < a) throw new Error('nie rozpoznano formatu pliku');
+			obj = JSON.parse(text.slice(a + 3, b + 1));
+		}
+		const list = obj && obj.format === TRASA ? obj.routes : Array.isArray(obj) ? obj : [obj];
+		if (!Array.isArray(list) || !list.length) throw new Error('plik nie zawiera tras');
+		return list;
+	}
+	async function importFiles(files) {
+		const done = [], errs = [];
+		for (const f of files) {
+			let list;
+			try { list = await routesFromFile(f.name, new Uint8Array(await f.arrayBuffer())); } catch (e) { errs.push(`${f.name}: ${e.message}`); continue; }
+			for (const raw of list) {
+				const def = Object.assign({}, raw);
+				try {
+					if (!def || !def.id || !Array.isArray(def.stations) || def.stations.length < 2) throw new Error('brak opisu trasy (stacje)');
+					R.prepare(def, { train: 'ezt', cars: 1 }); // trasa, której silnik nie przyjmie, nie trafia na listę
+				} catch (e) { errs.push(`${f.name}${def && def.title ? ' – ' + def.title : ''}: ${e.message}`); continue; }
+				// kopia trasy dołączonej do gry – osobna pozycja na liście
+				if (BUILTIN.has(def.id)) { def.id += '-imp'; def.title = (def.title || def.name || def.id) + ' (import)'; }
+				const old = defs.findIndex((d) => d.id === def.id);
+				if (old >= 0 && !confirm(`Trasa „${def.title || def.id}” już jest na liście. Zastąpić ją importowaną?`)) continue;
+				def.custom = true;
+				if (old >= 0) defs[old] = def; else defs.push(def);
+				for (const k of Object.keys(prepared)) if (k.startsWith(def.id + '|')) delete prepared[k];
+				for (const k of Object.keys(timetables)) if (k.startsWith(def.id + '|')) delete timetables[k];
+				try { await routeDB.put(plain(def)); } catch (e) { errs.push(`${def.title}: zapis tylko do końca sesji (brak miejsca w pamięci)`); }
+				done.push(def);
+			}
+		}
+		if (!$('scr-gen').classList.contains('hidden')) buildGenScreen();
+		buildMenu();
+		ioMsg((done.length ? `<span class="ok">Zaimportowano: ${done.map((d) => esc(d.title || d.id)).join(', ')}.</span>` : '') + errs.map((m) => `<div class="err">${esc(m)}</div>`).join(''));
+		if (done.length === 1 && $('scr-gen').classList.contains('hidden')) pickRoute(done[0].id);
+		return done;
+	}
+
 	function pickRoute(id) {
 		selected = id;
 		save('route', selected);
@@ -530,7 +644,6 @@
 		if (!from || !to) { genLog('Wpisz stację początkową i końcową.', 'err'); return; }
 		genBusy = true;
 		$('gen-run').disabled = true;
-		$('gen-result').innerHTML = '';
 		$('gen-log').innerHTML = '';
 		const t0 = performance.now();
 		try {
@@ -549,21 +662,9 @@
 			for (const k of Object.keys(timetables)) if (k.startsWith(def.id + '|')) delete timetables[k];
 			let stored = true;
 			try { await routeDB.put(plain(def)); } catch (e) { stored = false; }
-			genLog(`Zapisano trasę (${((performance.now() - t0) / 1000).toFixed(0)} s)${stored ? '' : ' – tylko do końca sesji (brak miejsca w pamięci przeglądarki)'}.`, 'ok');
-			const km = ((def.stations[def.stations.length - 1].pos - def.stations[0].pos) / 1000).toFixed(1);
-			$('gen-result').innerHTML = `<div class="route"><h3><span>${esc(def.title)}<span class="badge custom">wygenerowana</span></span><small>${km} km</small></h3>
-				<p>${def.stations.map((s) => esc(s.name)).join(' · ')}</p>
-				<div class="meta">${def.signals.length} semaforów · ${def.bridges.length} mostów i wiaduktów · ${def.tunnels.length} tuneli · ${def.crossings.length} przejazdów · prędkość do ${Math.max(...def.limits.map((l) => l[1]))} km/h</div>
-				<div class="meta">Uwagi generatora: ${(def.issues || []).length}${(def.issues || []).some((x) => x.lvl === 'warn') ? ` (do sprawdzenia: ${def.issues.filter((x) => x.lvl === 'warn').length})` : ''} – lista z podglądem miejsca w grze: swobodna kamera (F), zakładka „Uwagi generatora”.</div></div>`;
+			genLog(`Zapisano trasę „${def.title}” (${((performance.now() - t0) / 1000).toFixed(0)} s)${stored ? '' : ' – tylko do końca sesji (brak miejsca w pamięci przeglądarki)'} – jest na liście „Wygenerowane trasy”.`, 'ok');
+			// trasa trafia na listę „Wygenerowane trasy” (tam „Wybierz”); w przebiegu – tylko ostrzeżenia do sprawdzenia
 			for (const x of (def.issues || []).filter((q) => q.lvl === 'warn')) genLog(`⚠ km ${(x.pos / 1000).toFixed(2)}: ${x.m}`, 'err');
-			const act = document.createElement('div');
-			act.className = 'gen-result-actions';
-			const go = document.createElement('button');
-			go.className = 'primary';
-			go.textContent = 'Wybierz tę trasę';
-			go.addEventListener('click', () => pickRoute(def.id));
-			act.appendChild(go);
-			$('gen-result').appendChild(act);
 			buildGenScreen();
 			buildMenu();
 		} catch (e) {
@@ -744,6 +845,7 @@
 			showOverlay('pause');
 		} else if (mode === 'pause') {
 			mode = pauseFromFree ? 'free' : 'play';
+			if (mode === 'free' && !$('free-run').checked) audio.silence();
 			$('free').classList.toggle('hidden', mode !== 'free');
 			if (mode === 'free') $('prompt').classList.add('hidden');
 			showOverlay(null);
@@ -953,8 +1055,19 @@
 			renderer.draw(demo, dt, 0);
 		} else if (sim) {
 			$('fps').classList.remove('menu-off');
-			if (mode === 'play' || mode === 'over') {
-				step(sim, mode === 'play' ? dt * timeScale : dt);
+			// swobodna kamera z „Pociąg jedzie dalej” – symulacja biegnie, prowadzi automat (klawisze sterują kamerą)
+			const freeRun = mode === 'free' && $('free-run').checked && sim.status === 'running';
+			if (mode === 'play' || mode === 'over' || freeRun) {
+				if (freeRun) autopilot(sim);
+				const f0 = freeRun && $('free-follow').checked ? R.trackPoint(sim.route, sim.st.pos) : null;
+				step(sim, mode === 'play' || freeRun ? dt * timeScale : dt);
+				// „Leć z pociągiem”: kamera przesuwa się o tyle, o ile przesunęło się czoło składu
+				if (f0 && renderer.free) {
+					const f1 = R.trackPoint(sim.route, sim.st.pos);
+					renderer.free.x += f1.x - f0.x;
+					renderer.free.z += f1.z - f0.z;
+					renderer.free.y += f1.y - f0.y;
+				}
 				for (const e of sim.events) {
 					if (e.type === 'msg') hud.toast(e.text, e.kind, e.key);
 					else if (e.type === 'dismiss') hud.dismiss(e.key);
@@ -1013,6 +1126,9 @@
 		KeyZ: () => hud.toast('Widok: ' + renderer.cycleZoom()),
 		KeyC: () => { renderer.resetView(); hud.toast('Kamera: widok domyślny'); },
 		KeyV: () => hud.toast('Kamera: ' + renderer.cycleCamMode()),
+		// środek orbity kamery na poprzednim / następnym pojeździe składu
+		BracketLeft: () => { const t = renderer.cycleFocusCar(-1, sim); if (t) hud.toast('Kamera: ' + t); },
+		BracketRight: () => { const t = renderer.cycleFocusCar(1, sim); if (t) hud.toast('Kamera: ' + t); },
 		KeyK: () => hud.toast(renderer.toggleCab() ? 'Kabina maszynisty – rozglądaj się myszą, K wraca do poprzedniego widoku' : 'Widok z zewnątrz'),
 		KeyM: () => {
 			muted = !muted;
@@ -1064,6 +1180,9 @@
 			e.preventDefault();
 			return;
 		}
+		// kamera z klawiatury: PageUp / PageDown – pochylenie, + / − – przybliżenie (w każdym widoku)
+		if (e.code === 'PageUp' || e.code === 'PageDown') { renderer.pitchKey = e.code === 'PageUp' ? -1 : 1; e.preventDefault(); return; }
+		if (/^(Equal|Minus|NumpadAdd|NumpadSubtract)$/.test(e.code)) { renderer.zoomKey = /Equal|Add/.test(e.code) ? -1 : 1; e.preventDefault(); return; }
 		const fn = KEYS[e.code];
 		if (!fn) return;
 		e.preventDefault();
@@ -1075,6 +1194,8 @@
 		delete freeKeysDown[e.code];
 		if (e.code === 'KeyH' && sim) sim.horn = false;
 		if ((e.code === 'ArrowLeft' && renderer.rotKey < 0) || (e.code === 'ArrowRight' && renderer.rotKey > 0)) renderer.rotKey = 0;
+		if (e.code === 'PageUp' || e.code === 'PageDown') renderer.pitchKey = 0;
+		if (/^(Equal|Minus|NumpadAdd|NumpadSubtract)$/.test(e.code)) renderer.zoomKey = 0;
 	});
 
 	const ACTIONS = {
@@ -1107,6 +1228,12 @@
 	$('btn-resume').addEventListener('click', togglePause);
 	$('btn-free').addEventListener('click', () => { if (pauseFromFree) togglePause(); else enterFree(); });
 	$('free-close').addEventListener('click', exitFree);
+	$('free-run').addEventListener('change', () => {
+		if ($('free-run').checked) { audio.ensure(); hud.toast('Pociąg jedzie dalej – prowadzi automat', 'info'); }
+		else audio.silence();
+		$('free-run').blur();
+	});
+	$('free-follow').addEventListener('change', () => $('free-follow').blur());
 	$('free-speed').addEventListener('change', () => { if (renderer.free) renderer.free.speed = Number($('free-speed').value) || 1; });
 	$('free-km').addEventListener('input', () => { freeKmDrag = true; freeGo('km', Number($('free-km').value)); });
 	$('free-km').addEventListener('change', () => { freeKmDrag = false; });
@@ -1162,6 +1289,34 @@
 	$('btn-single').addEventListener('click', () => menuScreen('single'));
 	$('single-back').addEventListener('click', () => menuScreen('main'));
 	$('btn-gen').addEventListener('click', () => { buildGenScreen(); menuScreen('gen'); });
+	// import i eksport tras: przyciski w generatorze, przeciąganie plików na okno menu
+	$('gen-import').addEventListener('click', () => $('gen-file').click());
+	$('gen-file').addEventListener('change', async (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) await importFiles(fs); });
+	$('gen-export').addEventListener('click', () => exportRoutes(defs.filter((d) => d.custom && exportSel.has(d.id))));
+	$('gen-sel-all').addEventListener('change', (e) => {
+		for (const d of defs.filter((q) => q.custom)) { if (e.target.checked) exportSel.add(d.id); else exportSel.delete(d.id); }
+		buildGenScreen();
+	});
+	{
+		let depth = 0;
+		const hasFiles = (e) => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+		window.addEventListener('dragenter', (e) => { if (mode !== 'menu' || !hasFiles(e)) return; depth++; document.body.classList.add('drop-routes'); });
+		window.addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; document.body.classList.remove('drop-routes'); } });
+		// upuszczony plik nigdy nie otwiera się zamiast gry (w aplikacji – przejście okna na plik); w menu – import
+		window.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+		window.addEventListener('drop', async (e) => {
+			depth = 0;
+			document.body.classList.remove('drop-routes');
+			if (!hasFiles(e)) return;
+			e.preventDefault();
+			if (mode !== 'menu') return;
+			const fs = [...e.dataTransfer.files].filter((f) => /\.(trasa|json|js|gz)$/i.test(f.name));
+			if (!fs.length) return;
+			buildGenScreen();
+			menuScreen('gen');
+			await importFiles(fs);
+		});
+	}
 	$('gen-back').addEventListener('click', () => menuScreen('main'));
 	$('gen-run').addEventListener('click', runGenerator);
 	for (const id of ['gen-from', 'gen-to', 'gen-line']) $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') runGenerator(); e.stopPropagation(); });

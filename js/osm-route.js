@@ -187,7 +187,12 @@
 	async function nmtHeights(points, log, cache) {
 		const got = cache || new Map();
 		const keys = points.map((p) => { const [x, y] = to1992(p.lat, p.lon); return x.toFixed(1) + ' ' + y.toFixed(1); });
-		const need = [...new Set(keys.filter((k) => !Number.isFinite(got.get(k))))];
+		/* wysokość dokładnie 0 m to błąd usługi (przeciążony serwer odpowiada zerami – w Polsce teren na poziomie
+		   0,0 m praktycznie nie występuje); taki punkt, także zapisany wcześniej w pamięci, pobieramy ponownie, a
+		   paczkę z przewagą zer traktujemy jak nieudaną odpowiedź. Bez tego niweleta miała urwiska i pochylenia
+		   −40‰ (automat budujący rozkład nie wyhamowywał przed semaforem). */
+		const bad = (h) => !Number.isFinite(h) || h === 0;
+		const need = [...new Set(keys.filter((k) => bad(got.get(k))))];
 		const parts = [];
 		for (let i = 0; i < need.length; i += 1000) parts.push(need.slice(i, i + 1000));
 		let done = 0, next = 0;
@@ -199,7 +204,10 @@
 					const res = await fetchTimed(NMT, { method: 'POST', body: 'list=' + part.join(','), headers }, 60000);
 					const vals = (await res.text()).trim().split(',');
 					if (res.ok && vals.length === part.length) {
-						vals.forEach((v, j) => { const h = Number(v.trim().split(/\s+/)[2]); got.set(part[j], Number.isFinite(h) && h > -100 ? h : NaN); });
+						const hs = vals.map((v) => Number(v.trim().split(/\s+/)[2]));
+						const zeros = hs.filter((h) => h === 0).length;
+						if (zeros > part.length * 0.5 && attempt < 4) throw new Error('zera w odpowiedzi');
+						hs.forEach((h, j) => got.set(part[j], Number.isFinite(h) && h > -100 && h !== 0 ? h : NaN));
 						return;
 					}
 				} catch (e) { /* ponów */ }
@@ -215,7 +223,7 @@
 			}
 		};
 		await Promise.all([worker(), worker(), worker(), worker()]);
-		return keys.map((k) => got.get(k));
+		return keys.map((k) => (bad(got.get(k)) ? NaN : got.get(k)));
 	}
 
 	/* NMPT GUGiK: numeryczny model pokrycia terenu (powierzchnia z budynkami, drzewami, mostami) – usługa WCS, siatka
@@ -365,7 +373,7 @@
 		}
 		const sel = (f) => boxes.map((b) => `${f}(${b});`).join('');
 		const hw = 'way["highway"]["highway"!~"^(footway|path|steps|cycleway|track|bridleway|corridor|platform|proposed|construction|elevator|raceway|bus_stop|services|rest_area)$"]';
-		const q = `[out:json][timeout:240];(${sel('way["building"]')}${sel(hw)}${sel('way["landuse"]')}${sel('way["natural"]')}${sel('way["leisure"]')}${sel('way["waterway"]')}${sel('way["amenity"="grave_yard"]')}${sel('way["railway"="rail"]')}${sel('way["railway"="disused"]')}${sel('way["disused:railway"="rail"]')}${sel('way["railway"="platform"]')}${sel('way["public_transport"="platform"]["train"="yes"]')}${sel('way["amenity"="parking"]')}${sel('way["place"="square"]')})->.w;.w out tags geom;(${sel('node["railway"="switch"]')}${sel('node["railway"="railway_crossing"]')}${sel('node["power"="catenary_mast"]')}${sel('node["highway"="crossing"]')})->.n;.n out;(${sel('relation["landuse"]')}${sel('relation["natural"]')}${sel('relation["leisure"]')}${sel('relation["railway"="platform"]')})->.m;.m out geom;`;
+		const q = `[out:json][timeout:240];(${sel('way["building"]')}${sel(hw)}${sel('way["landuse"]')}${sel('way["natural"]')}${sel('way["leisure"]')}${sel('way["waterway"]')}${sel('way["amenity"="grave_yard"]')}${sel('way["railway"="rail"]')}${sel('way["railway"="disused"]')}${sel('way["disused:railway"="rail"]')}${sel('way["railway"="platform"]')}${sel('way["public_transport"="platform"]["train"="yes"]')}${sel('way["amenity"="parking"]')}${sel('way["place"="square"]')})->.w;.w out tags geom;(${sel('node["railway"="switch"]')}${sel('node["railway"="railway_crossing"]')}${sel('node["power"="catenary_mast"]')}${sel('node["highway"="crossing"]')}${sel('node["amenity"~"^(police|fire_station|post_office|school|kindergarten|childcare|hospital|clinic|doctors|dentist|veterinary|pharmacy|bank|townhall|courthouse|library|theatre|cinema|place_of_worship|restaurant|fast_food|cafe|pub|bar|community_centre|arts_centre|social_facility|nursing_home|bus_station|fuel|car_wash|car_repair|university|college)$"]')}${sel('node["shop"]')}${sel('node["office"]')}${sel('node["healthcare"]')}${sel('node["tourism"~"^(hotel|hostel|guest_house|museum)$"]')})->.n;.n out;(${sel('relation["landuse"]')}${sel('relation["natural"]')}${sel('relation["leisure"]')}${sel('relation["railway"="platform"]')})->.m;.m out geom;`;
 		if (log) log(`Pobieram otoczenie: budynki, drogi, lasy, wody (${boxes.length} odcinków; zwykle 1–2 minuty)…`);
 		return overpass(q, log, 280000);
 	}
@@ -381,6 +389,21 @@
 		}
 		if (log) log('Pobieram maszty sieci trakcyjnej…');
 		const j = await overpass(`[out:json][timeout:120];(${boxes.map((b) => `node["power"="catenary_mast"](${b});`).join('')});out;`, log, 150000);
+		return j.elements || [];
+	}
+
+	// punkty usług (urzędy, służby, sklepy, szkoły…) w pasie trasy – do rodzaju budynków (dane zapisane przed ich dodaniem)
+	async function fetchPois(poly, log) {
+		const boxes = [];
+		for (let i = 0; i < poly.length - 1; i += 6) {
+			const seg = poly.slice(i, i + 7);
+			const la = seg.map((p) => p.lat), lo = seg.map((p) => p.lon);
+			const mlo = 0.0052 / Math.cos((la[0] * Math.PI) / 180);
+			boxes.push([Math.min(...la) - 0.0052, Math.min(...lo) - mlo, Math.max(...la) + 0.0052, Math.max(...lo) + mlo].map((v) => v.toFixed(4)).join(','));
+		}
+		if (log) log('Pobieram punkty usług (urzędy, służby, sklepy, szkoły)…');
+		const sel = (f) => boxes.map((b) => `${f}(${b});`).join('');
+		const j = await overpass(`[out:json][timeout:120];(${sel('node["amenity"~"^(police|fire_station|post_office|school|kindergarten|childcare|hospital|clinic|doctors|dentist|veterinary|pharmacy|bank|townhall|courthouse|library|theatre|cinema|place_of_worship|restaurant|fast_food|cafe|pub|bar|community_centre|arts_centre|social_facility|nursing_home|bus_station|fuel|car_wash|car_repair|university|college)$"]')}${sel('node["shop"]')}${sel('node["office"]')}${sel('node["healthcare"]')}${sel('node["tourism"~"^(hotel|hostel|guest_house|museum)$"]')});out;`, log, 150000);
 		return j.elements || [];
 	}
 
@@ -498,6 +521,49 @@
 		return area < 30 ? 5 : area < 170 ? 0 : area > 1800 ? 2 : 1;
 	};
 	const num = (v) => { const x = parseFloat(String(v || '').replace(',', '.')); return Number.isFinite(x) ? x : null; };
+	/* Rodzaj (przeznaczenie) budynku – env.bu, równolegle do env.b; w grze szyldy, kolory, wieże, bramy remiz…
+	   Kolejność: funkcje wyróżniające się (urzędy, służby, usługi) przed ogólnymi (blok, dom), więc blok z apteką
+	   na parterze dostaje szyld apteki (bryła i okna zostają z rodzaju bryły env.b[0]). Tekst: funkcje BDOT10k
+	   (szczegółowe i przeważająca) i znaczniki OSM (klucz=wartość) budynku i punktów usług w jego obrysie. */
+	const USE_RULES = [
+		[25, /dworzec kolejowy|=train_station/],
+		[30, /kontroli ruchu kolejowego|=signal_box/],
+		[13, /policj|komenda|komisariat|=police/],
+		[14, /straż pożarn|=fire_station/],
+		[12, /operatora pocztowego|=post_office/],
+		[18, /szpital|=hospital|hospicjum|ratownictwa medycznego/],
+		[11, /apteka|=pharmacy/],
+		[19, /ochrony zdrowia|przychodni|=clinic|=doctors|=dentist|weterynaryjn|=veterinary/],
+		[16, /przedszkol|żłobek|=kindergarten|=childcare/],
+		[17, /szkoła wyższa|=university|=college|placówka badawcza/],
+		[33, /dom studencki|internat|bursa|=dormitory/],
+		[15, /szkoła|=school/],
+		[20, /urząd|starostwo|(^|[\s;,=])sąd([\s;,]|$)|prokuratura|administracji|=townhall|=courthouse|=government|placówka dyplomatyczna|archiwum/],
+		[21, /kościół|kaplica|kultu religijnego|dzwonnica|klasztor|dom zakonny|=place_of_worship|=church|=chapel|=cathedral/],
+		[24, /bibliotek|=library|dom kultury|muzeum|=museum|teatr|=theatre|(^|[\s;,=])kino|=cinema|galeria sztuki|=arts_centre|hala widowiskowa|=community_centre|centrum konferencyjne/],
+		[23, /hala sportowa|sala gimnastyczna|basen|pływalnia|klub sportowy|lodowisko|korty|=sports_hall|=sports_centre|=swimming/],
+		[22, /hotel|zajazd|=guest_house|=hostel/],
+		[28, /dom opieki|dom dziecka|pomocy społecznej|opiekuńczo|=social_facility|=nursing_home/],
+		[10, /(^|[\s;,=])bank([\s;,]|$)/],
+		[26, /stacja paliw|=fuel/],
+		[27, /warsztat|stacja obsługi pojazdów|myjnia|=car_repair|=car_wash/],
+		[8, /hipermarket|supermarket|centrum handlowe|dom towarowy|=mall|=department_store|hala targowa/],
+		[9, /restauracja|=restaurant|=fast_food|=cafe|=pub|=bar([\s;,]|$)|dyskoteka|=nightclub/],
+		[32, /areszt|więzienie|=prison|koszary|=barracks/],
+		[31, /dworzec autobusowy|zajezdnia|=bus_station/],
+		[34, /parking wielopoziomowy|=parking/],
+		[29, /transformator|stacja pomp|stacja gazowa|kotłownia|elektrociepłownia|spalarnia|=transformer_tower/],
+		[7, /handlowo-usługow|shop=|=retail|=commercial|=kiosk/],
+		[6, /siedziba firmy|biurow|=office|office=/],
+		[5, /magazyn|=warehouse|spedycji|elewator|hangar/],
+		[4, /produkcyjn|=industrial|=factory|=manufacture/],
+		[2, /wielorodzinn|=apartments|zbiorowego zamieszkania/],
+		[1, /jednorodzinn|letniskow|=house|=detached|=semidetached_house|=terrace/],
+		[3, /garaż|gospodarcz|=garage|=shed/],
+	];
+	const USE_KEYS = ['building', 'amenity', 'shop', 'office', 'healthcare', 'tourism', 'leisure', 'railway', 'public_transport'];
+	const useText = (t) => USE_KEYS.filter((k) => t[k]).map((k) => (k === 'shop' || k === 'office' ? `${k}=${t[k]}` : `=${t[k]}`)).join(' ') + ' ' + (t['bdot:use'] || '');
+	const useOf = (text) => { for (const [u, re] of USE_RULES) if (re.test(text)) return u; return 0; };
 	const polyArea = (xy) => {
 		let a = 0;
 		for (let i = 0; i < xy.length; i++) { const p = xy[i], q = xy[(i + 1) % xy.length]; a += p[0] * q[1] - q[0] * p[1]; }
@@ -711,9 +777,28 @@
 		}
 		for (const { id } of bestByName.values()) stationBld.add(id);
 		const dropB = { far: 0, station: 0, small: 0, ring: 0 };
+		// punkty usług z mapy (węzły amenity/shop/office…, także środki obrysów OSM zastąpionych przez BDOT10k) w siatce 50 m
+		const poiGrid = new Map();
+		for (const e of els) {
+			const t = e.tags;
+			if (e.type !== 'node' || !t || e.lat === undefined || !(t.amenity || t.shop || t.office || t.healthcare || t.tourism)) continue;
+			const p = P.xy(e.lat, e.lon), key = Math.floor(p[0] / 50) + ',' + Math.floor(p[1] / 50);
+			if (!poiGrid.has(key)) poiGrid.set(key, []);
+			poiGrid.get(key).push({ x: p[0], y: p[1], t });
+		}
+		const poisIn = (xy) => {
+			let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+			for (const [x, y] of xy) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+			const out = [];
+			for (let gx = Math.floor(x0 / 50); gx <= Math.floor(x1 / 50); gx++) for (let gy = Math.floor(y0 / 50); gy <= Math.floor(y1 / 50); gy++) {
+				for (const q of poiGrid.get(gx + ',' + gy) || []) if (pointInPoly(q.x, q.y, xy)) out.push(q.t);
+			}
+			return out;
+		};
+		const bu = [], bn = [];
 		// ---- budynki ----
 		for (const e of els) {
-			if (e.type !== 'way' || !e.tags || !e.tags.building || !e.geometry) continue;
+			if (e.type !== 'way' || !e.tags || !e.tags.building || !e.geometry || e.tags._roofOnly) continue;
 			const g = e.geometry.filter(Boolean);
 			if (g.length < 4) continue;
 			const xy = g.slice(0, -1).map((q) => P.xy(q.lat, q.lon));
@@ -746,6 +831,13 @@
 			if (ring.length < 3) { dropB.ring++; continue; }
 			const row = [kind, Math.round(h * 10), roofS];
 			for (const [s2, d2] of ring) row.push(R2(s2), R2(d2));
+			// rodzaj budynku i nazwa (budynek, punkty usług w obrysie)
+			const pois = poisIn(xy);
+			let use = isSt ? 25 : useOf([useText(e.tags)].concat(pois.map(useText)).join(' '));
+			let name = e.tags.name || '';
+			for (const q of pois) if (q.name && useOf(useText(q)) === use) { name = q.name; break; }
+			if (use > 3 && use !== 4 && use !== 5 && use !== 29 && name) bn.push(b.length, String(name).slice(0, 64));
+			bu.push(use);
 			b.push(row);
 			bTags.push([num(e.tags.height) !== null || (lv !== null && !e.tags['source:bdot']), !!rs]);
 		}
@@ -764,11 +856,12 @@
 			const sd = [];
 			for (const q0 of g.slice(0, -1)) {
 				const p = P.xy(q0.lat, q0.lon), q = project(p[0], p[1], hint);
-				if (!q || Math.abs(q.d) > 35 || !sOk(q.s)) { ok = false; break; }
+				if (!q || Math.abs(q.d) > 150 || !sOk(q.s)) { ok = false; break; }
 				hint = q.k;
 				sd.push([q.s + shift, q.d]);
 			}
-			if (!ok) continue;
+			// dach peronów kilku torów bywa szeroki – wystarczy, że sięga do 35 m od osi
+			if (!ok || !sd.some((p) => Math.abs(p[1]) < 35)) continue;
 			const cs = sd.reduce((a2, p) => a2 + p[0], 0) / sd.length;
 			if (!stationsS.some(([ps]) => cs > ps + 15 - platformLength - 80 && cs < ps + 15 + 80)) continue;
 			if (polyArea(g.slice(0, -1).map((q) => P.xy(q.lat, q.lon))) < 8) continue;
@@ -1410,7 +1503,7 @@
 			}
 		}
 		if (log) log(`Ulice: ${r.length} odcinków, z chodnikami ${ra.filter((q) => q[3] > 0).length}; przejścia dla pieszych ${rx.length}, parkingi i place ${pk.length}.`);
-		return { v: 8, b, _bTags: bTags, cm: cm.flat(), rf, r, ra, rx, pk, w, t: tr, _tz: envTz, p: pf, o: ov, ob, ro, sw, k: bufs, g: { step: ENV_STEP, s0: shift, d0: -ENV_A, cols, rows: rowsOut } };
+		return { v: 8, b, bu, bn, _bTags: bTags, cm: cm.flat(), rf, r, ra, rx, pk, w, t: tr, _tz: envTz, p: pf, o: ov, ob, ro, sw, k: bufs, g: { step: ENV_STEP, s0: shift, d0: -ENV_A, cols, rows: rowsOut } };
 	}
 
 	/* Peron przy torze pociągu na stacji (pos – miejsce zatrzymania, kilometraż z przesunięciem): spośród peronów
@@ -1969,7 +2062,23 @@
 						const LU = /^(forest|residential|commercial|retail|industrial|grass|meadow|farmland|allotments|orchard|plant_nursery|brownfield|landfill|quarry|reservoir|basin|greenfield|vineyard|farmyard)$/;
 						const NAT = /^(wood|water|scrub|grassland|heath|wetland)$/;
 						const replaced = (t) => !t.railway && !t.public_transport && (t.building || (t.highway && t.area !== 'yes') || t.waterway || t.water || LU.test(t.landuse || '') || NAT.test(t.natural || ''));
-						const keep = envData.elements.filter((e) => !(e.type === 'way' && e.tags && replaced(e.tags))); // węzły (przejścia, rozjazdy) zostają
+						// zadaszenia (dachy peronów, wiaty) zostają z OSM – BDOT ich nie ma; tylko do warstwy zadaszeń (rf), nie jako budynki
+						const roofOnly = (t) => t.building === 'roof' || t.man_made === 'canopy' || (t.building && t.amenity === 'shelter');
+						// budynki OSM z usługą lub nazwą zastępowane przez BDOT – zostają jako punkt (środek obrysu) do rodzaju i nazwy
+						const pois = [];
+						for (const e of envData.elements) {
+							const t = e.tags;
+							if (e.type !== 'way' || !t || !t.building || !e.geometry || !(t.amenity || t.shop || t.office || t.healthcare || t.tourism || t.name)) continue;
+							const g = e.geometry.filter(Boolean);
+							if (!g.length) continue;
+							const tg = Object.assign({}, t);
+							if (!(tg.amenity || tg.shop || tg.office || tg.healthcare || tg.tourism)) tg.amenity = 'named';
+							pois.push({ type: 'node', id: -e.id, lat: g.reduce((a, q) => a + q.lat, 0) / g.length, lon: g.reduce((a, q) => a + q.lon, 0) / g.length, tags: tg });
+						}
+						const keep = envData.elements
+							.filter((e) => !(e.type === 'way' && e.tags && replaced(e.tags) && !roofOnly(e.tags))) // węzły (przejścia, rozjazdy) zostają
+							.map((e) => (e.type === 'way' && e.tags && roofOnly(e.tags) ? Object.assign({}, e, { tags: Object.assign({}, e.tags, { _roofOnly: '1' }) }) : e))
+							.concat(pois);
 						log(`Otoczenie: BDOT10k (${bd.elements.length} obiektów) zamiast ${envData.elements.length - keep.length} obiektów OSM tych samych rodzajów.`);
 						envData = Object.assign({}, envData, { elements: keep.concat(bd.elements) });
 					} else if (bd) log('BDOT10k niepełny dla trasy – otoczenie z OSM.');
@@ -2271,6 +2380,33 @@
 				const gc = closeDips(g, g.map((_, i) => i * STEP), 25);
 				const med = gc.map((_, i) => { const w = gc.slice(Math.max(0, i - 2), i + 3).sort((x, y) => x - y); return w[w.length >> 1]; });
 				const hs = smooth(med, 3).map((v) => v + 0.3);
+				/* krótkie garby i dołki ponad 15‰ (np. przy wiaduktach i przepustach nierozpoznanych jako most – NMT ma
+				   tam skarpy albo teren pod obiektem; w danych tor bez mostu): fragment zastąpiony prostą między punktami
+				   przed nim i za nim, gdy jej pochylenie mieści się w 15‰ (obszar poszerzany do 1,5 km); długie prawdziwe
+				   wzniesienia (prosta też stroma) zostają */
+				{
+					const LIM = 0.015, w = Math.max(1, Math.round(50 / STEP)), MAXW = Math.round(1500 / STEP);
+					const steep = (i) => i + w < n && Math.abs(hs[i + w] - hs[i]) / (w * STEP) > LIM + 1e-4;
+					let fixedN = 0;
+					for (let i = 0; i + w < n; i++) {
+						if (!steep(i)) continue;
+						let k1 = i;
+						while (k1 + w < n && steep(k1)) k1++;
+						let a = i, b = Math.min(n - 1, k1 + w), ok = false;
+						for (let m = Math.round(100 / STEP); b - a <= MAXW; m += Math.round(50 / STEP)) {
+							a = Math.max(0, i - m);
+							b = Math.min(n - 1, k1 + w + m);
+							if (Math.abs(hs[b] - hs[a]) / ((b - a) * STEP) <= LIM * 0.9) { ok = true; break; }
+							if (a === 0 && b === n - 1) break;
+						}
+						if (ok) {
+							for (let q = a + 1; q < b; q++) hs[q] = hs[a] + ((hs[b] - hs[a]) * (q - a)) / (b - a);
+							fixedN++;
+							i = b;
+						} else i = k1;
+					}
+					if (fixedN) log(`Niweleta: wygładzone krótkie garby i dołki ponad 15‰: ${fixedN}.`);
+				}
 				// pochylenia co 50 m (0,1‰) z korektą narastającą – wysokość w grze zgodna z pomiarem
 				grades.length = 0;
 				if (shift > 0) grades.push([0, 0]);
@@ -3445,5 +3581,5 @@
 	}
 
 	const nmtCache = new Map();
-	return { generate, buildRoute, buildEnvironment, findStations, fetchCorridor, fetchEnvironment, fetchMasts, fetchStreetExtras, elevations, nmtHeights, nmptSampler, to1992, SOURCE, ROAD_TYPES };
+	return { generate, buildRoute, buildEnvironment, findStations, fetchCorridor, fetchEnvironment, fetchMasts, fetchStreetExtras, fetchPois, elevations, nmtHeights, nmptSampler, to1992, SOURCE, ROAD_TYPES };
 });

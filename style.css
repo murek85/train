@@ -511,14 +511,27 @@ button.back { padding: 6px 12px; }
 .gen-log .err { color: #ff6b5e; }
 .gen-log .ok { color: #6be08a; }
 #gen-result .route { cursor: default; margin-bottom: 8px; }
-.gen-result-actions { display: flex; gap: 8px; margin: 6px 0 4px; }
 .gen-list { display: flex; flex-direction: column; gap: 6px; }
+/* import i eksport tras */
+.gen-io { display: flex; gap: 8px; margin: 0 0 8px; }
+.gen-io { align-items: center; }
+.gen-io button { padding: 5px 12px; font-size: 12px; }
+.gen-io button:disabled { opacity: 0.4; cursor: default; }
+.gen-io .gen-all { margin: 0 0 0 auto; font-size: 12px; }
+.gen-item .gen-sel { accent-color: var(--amber); width: 15px; height: 15px; margin: 0; cursor: pointer; }
+.gen-item.sel { border-color: rgba(245, 166, 35, 0.6); }
+.gen-io-msg { font-size: 12px; margin: 0 0 8px; color: #c3cad5; }
+.gen-io-msg:empty { display: none; }
+.gen-io-msg .ok { color: #6be08a; }
+.gen-io-msg .err { color: #ff6b5e; }
+body.drop-routes::after { content: 'Upuść pliki tras (.trasa, .json, .js), aby je zaimportować'; position: fixed; inset: 12px; z-index: 9999; display: flex; align-items: center; justify-content: center; border: 3px dashed var(--amber); border-radius: 16px; background: rgba(10, 14, 20, 0.82); color: #fff; font-size: 20px; font-weight: 600; pointer-events: none; }
 .gen-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; background: #141a24; border: 1px solid #222b38; font-size: 13px; }
 .gen-item b { flex: 1; font-weight: 600; }
 .gen-item span { color: var(--muted); font-size: 12px; }
 .gen-item button { padding: 3px 9px; font-size: 12px; }
 .badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 9px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.03em; vertical-align: middle; background: #1d3a2a; color: #7fe0a0; }
 .badge.custom { background: #2a2f45; color: #a9b6ff; }
+.badge.warn { background: #4a2a1a; color: #ffb27a; cursor: help; }
 .route .src { color: #6f7a89; font-size: 11px; margin-top: 3px; }
 .route .del { float: right; margin-left: 8px; color: #ff8a7a; font-size: 12px; cursor: pointer; }
 .hint.source { margin-top: 12px; font-size: 11.5px; }
@@ -614,6 +627,9 @@ button.back { padding: 6px 12px; }
 .free-panel input[type=range] { width: 100%; }
 .free-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .free-row button { padding: 5px 2px; font-size: 11px; }
+.free-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #c3cad5; cursor: pointer; }
+.free-check input { accent-color: var(--amber); margin: 0; }
+.free-check small { color: var(--muted); font-size: 10.5px; }
 .free-stations { display: flex; flex-direction: column; gap: 3px; overflow-y: auto; min-height: 60px; flex: 1 1 auto; }
 .free-stations button { text-align: left; padding: 5px 8px; font-size: 12px; display: flex; justify-content: space-between; gap: 6px; }
 .free-stations button small { color: var(--muted); }

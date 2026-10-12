@@ -65,6 +65,12 @@ function args(argv) {
 			d._streets = 1;
 			fs.writeFileSync(a['env-data'], JSON.stringify(d));
 		}
+		// punkty usług (rodzaj budynków) – dopobranie do starszych danych
+		if (!d._pois) {
+			d.elements.push(...(await OSM.fetchPois(poly, l)));
+			d._pois = 1;
+			fs.writeFileSync(a['env-data'], JSON.stringify(d));
+		}
 		return d;
 	};
 	else opts.environment = async (poly, l) => {

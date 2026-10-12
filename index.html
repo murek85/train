@@ -105,6 +105,8 @@
 			<button data-free="bird" title="Widok z wysokości 35 m">Z lotu ptaka</button>
 			<button data-free="walk" title="Na wysokości oczu (1,7 m)">Pieszo</button>
 		</div>
+		<label class="free-check"><input type="checkbox" id="free-run"> Pociąg jedzie dalej <small>(prowadzi automat)</small></label>
+		<label class="free-check"><input type="checkbox" id="free-follow"> Leć z pociągiem <small>(kamera przesuwa się razem ze składem)</small></label>
 		<label class="free-label">Prędkość
 			<select id="free-speed"><option value="0.25">wolno</option><option value="1" selected>normalnie</option><option value="3">szybko</option></select>
 		</label>
@@ -153,8 +155,14 @@
 				<section class="pick">
 					<h3>Przebieg</h3>
 					<div id="gen-log" class="gen-log"><div class="muted">Wpisz stacje i kliknij „Generuj trasę”.</div></div>
-					<div id="gen-result"></div>
 					<h3>Wygenerowane trasy</h3>
+					<div class="gen-io">
+						<button id="gen-import" title="Wczytaj trasę z pliku .trasa, .json albo routes/*.js – można też przeciągnąć pliki na okno">Importuj trasę…</button>
+						<label class="gen-check gen-all"><input type="checkbox" id="gen-sel-all"> zaznacz wszystkie</label>
+						<button id="gen-export" title="Zapisz zaznaczone trasy w jednym pliku .trasa" disabled>Eksportuj zaznaczone</button>
+						<input type="file" id="gen-file" accept=".trasa,.json,.js,.gz" multiple hidden>
+					</div>
+					<div id="gen-io-msg" class="gen-io-msg"></div>
 					<div id="gen-list" class="gen-list"></div>
 				</section>
 			</div>
@@ -238,9 +246,11 @@
 					<div><kbd>Spacja</kbd> potwierdzenie czuwaka</div>
 					<div><kbd>T</kbd> przyspieszenie czasu ×1/×2/×4</div>
 					<div><kbd>Z</kbd> widok normalny / daleki / bliski</div>
-					<div><kbd>←</kbd>/<kbd>→</kbd> lub przeciąganie myszą – obrót kamery</div>
-					<div>kółko myszy – oddalenie, <kbd>C</kbd> – kamera za pociągiem</div>
-					<div><kbd>V</kbd> tryb kamery: za pociągiem / z kabiny / z boku / kinowa</div>
+					<div><kbd>←</kbd>/<kbd>→</kbd> lub przeciąganie myszą – obrót kamery, <kbd>PgUp</kbd>/<kbd>PgDn</kbd> – pochylenie, <kbd>+</kbd>/<kbd>−</kbd> – przybliżenie</div>
+					<div>kółko myszy – przybliżenie i oddalenie (od kilku metrów do widoku z daleka), <kbd>C</kbd> lub dwuklik – widok domyślny</div>
+					<div>przeciąganie prawym przyciskiem (albo <kbd>Shift</kbd> + lewym) – przesuwanie widoku</div>
+					<div>kliknięcie w pojazd albo <kbd>[</kbd>/<kbd>]</kbd> – kamera krąży wokół wybranego wagonu</div>
+					<div><kbd>V</kbd> widok: za pociągiem / z kabiny / z boku / przy torze / z dachu / przy wózku / z końca składu / kinowa</div>
 					<div><kbd>K</kbd> fotel maszynisty (kabina) i z powrotem</div>
 					<div><kbd>M</kbd> dźwięk, <kbd>Esc</kbd> pauza</div>
 				</div>
@@ -327,6 +337,9 @@
 	<script src="js/physics.js"></script>
 	<script src="js/routes.js"></script>
 	<script src="routes/gliwice-zabrze.js"></script>
+	<script src="routes/torun-chelmza.js"></script>
+	<script src="routes/gliwice-katowice.js"></script>
+	<script src="routes/rybnik-katowice.js"></script>
 	<script src="js/gen/sources.js"></script>
 	<script src="js/osm-route.js"></script>
 	<script src="js/sim.js"></script>

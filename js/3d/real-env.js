@@ -32,6 +32,73 @@
 		['#76797d', '#7f6656', '#6a6e72'],
 		['#8e3b2e', '#5a5f66', '#7a3326'],
 	];
+	/* rodzaje (przeznaczenie) budynków – env.bu (zob. USE_RULES w osm-route.js): 1 dom, 2 blok, 3 garaż, 4 przemysł,
+	   5 magazyn, 6 biurowiec, 7 sklep/usługi, 8 market/centrum handlowe, 9 restauracja, 10 bank, 11 apteka, 12 poczta,
+	   13 policja, 14 straż pożarna, 15 szkoła, 16 przedszkole/żłobek, 17 uczelnia, 18 szpital, 19 przychodnia,
+	   20 urząd/sąd, 21 kościół/kaplica, 22 hotel, 23 hala sportowa/basen, 24 kultura (biblioteka, dom kultury, muzeum,
+	   teatr, kino), 25 dworzec, 26 stacja paliw, 27 warsztat/myjnia, 28 opieka społeczna, 29 technika (transformator,
+	   kotłownia), 30 nastawnia, 31 dworzec autobusowy/zajezdnia, 32 areszt/koszary, 33 dom studencki, 34 parking.
+	   USE_SIGN: napis szyldu (gdy brak nazwy z mapy), tło, kolor napisu, znak (krzyż), szyld wysoko (market, hotel);
+	   USE_WALL: kolor elewacji (budynki niemieszkalne). */
+	const USE_SIGN = {
+		6: [null, '#2b3a4a', '#ffffff'],
+		7: ['SKLEP', '#1f5f8b', '#ffffff'],
+		8: ['MARKET', '#d7262e', '#ffffff', null, true],
+		9: ['RESTAURACJA', '#5a2e1e', '#f5deb3'],
+		10: ['BANK', '#0b3d6b', '#ffffff'],
+		11: ['APTEKA', '#1e8f3e', '#ffffff', 'cross'],
+		12: ['POCZTA', '#f6c800', '#c4161c'],
+		13: ['POLICJA', '#1d3f8f', '#ffffff'],
+		14: ['STRAŻ POŻARNA', '#c4161c', '#ffffff'],
+		15: ['SZKOŁA', '#1c3d6e', '#ffffff'],
+		16: ['PRZEDSZKOLE', '#f39c12', '#ffffff'],
+		17: ['UCZELNIA', '#2c2c54', '#ffffff'],
+		18: ['SZPITAL', '#ffffff', '#c4161c', 'cross'],
+		19: ['PRZYCHODNIA', '#ffffff', '#1e8f3e', 'cross'],
+		20: ['URZĄD', '#f2f2f2', '#7a1f1f'],
+		22: ['HOTEL', '#1b1b1b', '#e8c46a', null, true],
+		23: ['HALA SPORTOWA', '#0e6b8c', '#ffffff'],
+		24: ['DOM KULTURY', '#5b2c6f', '#ffffff'],
+		26: ['STACJA PALIW', '#1e8f3e', '#ffffff'],
+		27: ['SERWIS', '#33363a', '#f2c230'],
+		28: ['DOM POMOCY', '#3d6b5a', '#ffffff'],
+		30: [null, '#1c3d6e', '#ffffff'],
+		31: ['DWORZEC AUTOBUSOWY', '#1c3d6e', '#ffffff'],
+		33: ['DOM STUDENCKI', '#2c2c54', '#ffffff'],
+	};
+	const SHOPS = ['SPOŻYWCZY', 'PIEKARNIA', 'KWIATY', 'ODZIEŻ', 'MIĘSO WĘDLINY', 'DROGERIA', 'OPTYK', 'FRYZJER', 'KSIĘGARNIA', 'ELEKTRONIKA', 'OBUWIE', 'ZOOLOGICZNY'];
+	const MARKET_C = ['#d7262e', '#0a5ca8', '#f2b705', '#1e8f3e', '#e4572e'];
+	const USE_WALL = {
+		12: ['#efe3c0', '#e8dcc4'], 13: ['#dfe3e6', '#cfd6dc'], 14: ['#a8432f', '#b5543c', '#d9d6cf'], 15: ['#e9d49a', '#f0e2b6', '#e3cfa6'],
+		16: ['#f2c2c2', '#bfe3c4', '#c9d9f2', '#f5e3a1'], 17: ['#d9cdb5', '#c9a98a'], 18: ['#f1f1ee', '#e6ebee'], 19: ['#e9eef0', '#eef0e6'],
+		20: ['#e3d6bb', '#efe6cf', '#d8c8a8'], 22: ['#e6dccb', '#d9d6cf'], 23: ['#c9d3d9', '#d6dde2'], 24: ['#dccfb5', '#e3d6bb'],
+		8: ['#d9dcdf', '#e1e3e5'], 10: ['#d8d4cc', '#c9c4ba'], 30: ['#c98f72', '#b5765c'], 32: ['#b9b3a8'],
+	};
+	// szyld: napis (zmniejszany do szerokości), opcjonalnie krzyż (apteka, szpital, przychodnia)
+	const signTexture = (text, bg, fg, icon) => canvasTexture(`sign|${text}|${bg}|${fg}|${icon || ''}`, 512, 96, (g, w, h) => {
+		g.fillStyle = bg;
+		g.fillRect(0, 0, w, h);
+		g.strokeStyle = fg;
+		g.globalAlpha = 0.35;
+		g.lineWidth = 4;
+		g.strokeRect(4, 4, w - 8, h - 8);
+		g.globalAlpha = 1;
+		let x0 = 24;
+		if (icon === 'cross') {
+			const c = h / 2, a = h * 0.36, t = h * 0.13;
+			g.fillStyle = fg;
+			g.fillRect(24 + a - t, c - a, t * 2, a * 2);
+			g.fillRect(24, c - t, a * 2, t * 2);
+			x0 = 24 + a * 2 + 16;
+		}
+		g.fillStyle = fg;
+		g.textAlign = 'center';
+		g.textBaseline = 'middle';
+		let size = 58;
+		g.font = `700 ${size}px system-ui, sans-serif`;
+		while (g.measureText(text).width > w - x0 - 24 && size > 20) { size -= 3; g.font = `700 ${size}px system-ui, sans-serif`; }
+		g.fillText(text, (x0 + w - 24) / 2, h / 2 + 2);
+	});
 	// drogi wg ROAD_TYPES z osm-route.js: szerokość, kolor, linia środkowa
 	const ROAD_W = [12, 10, 9, 8, 7, 5.5, 5.5, 4.5, 3.6, 4.5, 5];
 	const ROAD_C = ['#3a3d41', '#3c3f43', '#3d4044', '#3f4246', '#414447', '#46494c', '#45484b', '#55575a', '#4c4e51', '#8e8a83', '#46494c'];
@@ -179,6 +246,9 @@
 		if (!env) return;
 		const bByChunk = new Map(), rByChunk = new Map(), wByChunk = new Map();
 		const push = (map, c, v) => { if (!map.has(c)) map.set(c, []); map.get(c).push(v); };
+		// rodzaj budynku i nazwa z mapy (env.bu, env.bn: indeks, nazwa, …)
+		const bUse = env.bu || [], bName = new Map();
+		for (let k = 0; k + 1 < (env.bn || []).length; k += 2) bName.set(env.bn[k], env.bn[k + 1]);
 		env.b.forEach((row, i) => {
 			let cs = 0, s0 = Infinity, s1 = -Infinity, d0 = Infinity, d1 = -Infinity;
 			const n = (row.length - 3) / 2;
@@ -326,7 +396,7 @@
 		// profil jezdni z pomiaru w każdym punkcie łamanej (dm ponad dem.base)
 		const deckP = new Map();
 		for (const [rows2, hs] of [[env.o, env.oh], [env.ro, env.roh], [env.ob, env.obh]]) (rows2 || []).forEach((row, i) => { if (hs && hs[i]) deckP.set(row, hs[i]); });
-		this.env = { bByChunk, rByChunk, wByChunk, tByChunk, pByChunk, oByChunk, obByChunk, roByChunk, kByChunk, tSpan, tAt: new Map(), usedPlatforms, swByChunk, stationReal, reserved, grid, g, rows, masks: new Map(), cvGrid, deckZ, deckP, roadZ, rmasks: new Map(), rInfo, rxByChunk, pkByChunk, rfByChunk, rfAll };
+		this.env = { bByChunk, rByChunk, wByChunk, tByChunk, pByChunk, oByChunk, obByChunk, roByChunk, kByChunk, tSpan, tAt: new Map(), usedPlatforms, swByChunk, stationReal, reserved, grid, g, rows, masks: new Map(), cvGrid, deckZ, deckP, roadZ, rmasks: new Map(), rInfo, rxByChunk, pkByChunk, rfByChunk, rfAll, bUse, bName };
 		// strefy rozjazdów: od ostrza do ukresu (tory 3,6 m od siebie), skrzyżowania – całe pole skrzyżowania
 		const swZones = new Map();
 		for (const x of env.sw || []) {
@@ -684,7 +754,6 @@
 	   Słupy, wysięgniki, oprawy, klosze i plamy światła jako instancje; klosze trafiają do puli świateł nocą. */
 	World.prototype.buildEnvLamps = function (group, segs, dyn) {
 		if (!segs.length) return;
-		const r = this.route, M = World.materials();
 		const spots = [];
 		const done = new Set();
 		for (const { i, row } of segs) {
@@ -711,6 +780,13 @@
 			}
 		}
 		if (!spots.length) return;
+		dyn.push({ type: 'lamps', lamps: this.envLampMeshes(group, spots) });
+	};
+	/* Latarnie (słup 8 m z wysięgnikiem nad jezdnię) jako instancje: spots – { s, d, ds, dd: kierunek wysięgnika w (s, d),
+	   y: poziom podstawy (domyślnie teren), pool: promień plamy światła, poolAt: jej środek od słupa wzdłuż wysięgnika }.
+	   Wynik – punkty świateł do puli nocą. */
+	World.prototype.envLampMeshes = function (group, spots) {
+		const r = this.route, M = World.materials();
 		const mk = (geo, mat2) => { const m = new T.InstancedMesh(geo, mat2, spots.length); m.count = spots.length; return m; };
 		const pole = mk(NS.util.GEO.cyl, M.lampHousing), arm = mk(NS.util.GEO.box, M.lampHousing), head = mk(NS.util.GEO.box, M.lampHousing);
 		const lens = mk(NS.util.GEO.box, M.lampLens), pools = mk(M.poolGeo, M.lampPool);
@@ -718,17 +794,20 @@
 		const lamps = [];
 		spots.forEach((sp, k) => {
 			R.sidePoint(r, sp.s, sp.d, tp);
-			const y0 = this.terrainY(sp.s, sp.d);
-			const bx = tp.x, bz = tp.z, heading = tp.heading;
-			// kierunek wysięgnika (nad jezdnię) w świecie
-			const ax = Math.cos(heading) * sp.dd - Math.sin(heading) * sp.ds, az = Math.sin(heading) * sp.dd + Math.cos(heading) * sp.ds;
+			const y0 = sp.y !== undefined ? sp.y : this.terrainY(sp.s, sp.d), pr = sp.pool || 7;
+			const bx = tp.x, bz = tp.z;
+			// kierunek wysięgnika (nad jezdnię) w świecie – z punktu o metr dalej w (s, d) (obrót wg kursu toru dawał
+			// wysięgnik wzdłuż drogi zamiast w poprzek)
+			R.sidePoint(r, sp.s + sp.ds, sp.d + sp.dd, tp);
+			const aL = Math.hypot(tp.x - bx, tp.z - bz) || 1, ax = (tp.x - bx) / aL, az = (tp.z - bz) / aL;
 			const ang = Math.atan2(ax, az);
 			q.setFromAxisAngle(up, ang);
 			pole.setMatrixAt(k, m4.compose(p3.set(bx, y0 + 4, bz), q, sc.set(0.16, 8, 0.16)));
 			arm.setMatrixAt(k, m4.compose(p3.set(bx + ax * 0.8, y0 + 7.9, bz + az * 0.8), q, sc.set(0.08, 0.08, 1.6)));
 			head.setMatrixAt(k, m4.compose(p3.set(bx + ax * 1.6, y0 + 7.85, bz + az * 1.6), q, sc.set(0.32, 0.12, 0.7)));
 			lens.setMatrixAt(k, m4.compose(p3.set(bx + ax * 1.6, y0 + 7.78, bz + az * 1.6), q, sc.set(0.26, 0.03, 0.6)));
-			pools.setMatrixAt(k, m4.compose(p3.set(bx + ax * 1.6, y0 + 0.12, bz + az * 1.6), Q_ID, sc.set(7, 1, 7)));
+			const pc = sp.poolAt || 1.6;
+			pools.setMatrixAt(k, m4.compose(p3.set(bx + ax * pc, y0 + 0.12, bz + az * pc), Q_ID, sc.set(pr, 1, pr)));
 			const o = new T.Object3D();
 			o.position.set(bx + ax * 1.6, y0 + 7.8, bz + az * 1.6);
 			o.userData.power = 0.8;
@@ -740,7 +819,7 @@
 		pools.renderOrder = 5;
 		pools.frustumCulled = false;
 		group.add(pole, arm, head, lens, pools);
-		dyn.push({ type: 'lamps', lamps });
+		return lamps;
 	};
 	const Q_ID = new T.Quaternion();
 
@@ -1057,6 +1136,7 @@
 		for (const row of rows) {
 			const { w, P, Y, G, ems, piers: pr2, dirN } = this.overpassPlan(row, rail);
 			piers.push(...pr2);
+			if (!rail && this.envDeckSink) this.deckDress(this.envDeckSink, row, row[0], P, Y, w, true);
 			const edge = (k, sideSign, off) => {
 				const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)];
 				const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ns = -(b[1] - a[1]) / L, nd = (b[0] - a[0]) / L;
@@ -1152,6 +1232,225 @@
 			pm.position.set(tp.x, y0 + h / 2, tp.z);
 			pm.castShadow = this.shadows;
 			group.add(pm);
+		}
+	};
+
+	/* Wyposażenie pomostów drogowych (wiadukty nad torem, mosty obok toru): oznakowanie poziome, chodniki z krawężnikiem,
+	   latarnie przy balustradzie, znaki B-18 przy wjazdach na wiadukt. Zbierane dla całego kawałka (env deck sink)
+	   i rysowane razem w deckDressFlush: oznakowanie – jedna siatka (roadMark), chodniki – jedna siatka, latarnie
+	   i znaki – instancje. */
+	// atrybuty drogi na obiekcie (pasy, chodniki, jednokierunkowa): z ulicy z mapy tej samej klasy, która styka się
+	// z końcem obiektu (obiekt w danych to osobny odcinek bez atrybutów); bez takiej – wg szerokości
+	World.prototype.deckRoadInfo = function (row, ti, P) {
+		const e = this.env;
+		if (!e.deckInf) e.deckInf = new Map();
+		if (e.deckInf.has(row)) return e.deckInf.get(row);
+		const ends = [P[0], P[P.length - 1]], seen = new Set();
+		let best = null, bd = 6;
+		for (const p of ends) for (let cc = Math.floor(p[0] / C) - 1; cc <= Math.floor(p[0] / C) + 1; cc++) for (const { i, row: rr } of e.rByChunk.get(cc) || []) {
+			if (seen.has(i) || rr[0] !== ti) continue;
+			seen.add(i);
+			for (const q of ends) for (const [s, d] of [[rr[1], rr[2]], [rr[rr.length - 2], rr[rr.length - 1]]]) {
+				const dist = Math.hypot(s - q[0], d - q[1]);
+				if (dist < bd) { bd = dist; best = e.rInfo[i]; }
+			}
+		}
+		const w0 = ROAD_W[ti] || 6;
+		let inf = best || { w: w0, lanes: w0 >= 12 ? 4 : w0 >= 5.2 ? 2 : 1, surf: 0, sw: 0, one: 0 };
+		/* jezdnie rozdzielone (autostrada, dwujezdniowa): obok drugi wiadukt tej samej klasy – każdy pomost to jedna
+		   jezdnia jednokierunkowa z połową pasów (atrybuty dochodzącej drogi bywają wspólne dla obu jezdni) */
+		const oc = (pp) => pp.reduce((a, p) => (Math.abs(p[1]) < Math.abs(a[1]) ? p : a));
+		const me = oc(P), twin = (e.oByChunk.get(Math.floor(me[0] / C)) || []).concat(e.oByChunk.get(Math.floor(me[0] / C) - 1) || [], e.oByChunk.get(Math.floor(me[0] / C) + 1) || []).some((o) => {
+			if (o === row || o[0] !== ti) return false;
+			const pts = [];
+			for (let i = 1; i + 1 < o.length; i += 2) pts.push([o[i], o[i + 1]]);
+			const x = oc(pts);
+			return Math.hypot(x[0] - me[0], x[1] - me[1]) < 40;
+		});
+		if (twin && !inf.one && inf.lanes >= 2) inf = Object.assign({}, inf, { one: 1, lanes: Math.max(1, Math.round(inf.lanes / 2)) });
+		e.deckInf.set(row, inf);
+		return inf;
+	};
+
+	World.prototype.deckDress = function (sink, row, ti, P, Y, w, entry) {
+		if (ti > 6 || P.length < 2) return; // drogi serwisowe, polne, ścieżki – bez wyposażenia
+		const r = this.route, inf = this.deckRoadInfo(row, ti, P);
+		const cum = [0];
+		for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + Math.hypot(P[k][0] - P[k - 1][0], P[k][1] - P[k - 1][1]));
+		const total = cum[cum.length - 1];
+		if (total < 8) return;
+		// normalna w wierzchołku – jak krawędzie pomostu (edge w buildEnvOverpasses), linie biegną równo z balustradą
+		const nrm = (k) => {
+			const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+			return [-(b[1] - a[1]) / L, (b[0] - a[0]) / L];
+		};
+		const N = P.map((_, k) => nrm(k));
+		const seg = (t) => { let k = 0; while (k < P.length - 2 && cum[k + 1] < t) k++; return k; };
+		// punkt na odległości t wzdłuż osi, odsunięty o o (w stronę normalnej), dy nad jezdnią – w świecie i w (s, d)
+		const sdAt = (t, o) => {
+			const k = seg(t), f = Math.max(0, Math.min(1, (t - cum[k]) / Math.max(1e-6, cum[k + 1] - cum[k])));
+			const a = [P[k][0] + N[k][0] * o, P[k][1] + N[k][1] * o], b = [P[k + 1][0] + N[k + 1][0] * o, P[k + 1][1] + N[k + 1][1] * o];
+			return { s: a[0] + (b[0] - a[0]) * f, d: a[1] + (b[1] - a[1]) * f, y: Y[k] + (Y[k + 1] - Y[k]) * f, k };
+		};
+		const at = (t, o, dy) => { const q = sdAt(t, o); R.sidePoint(r, q.s, q.d, tp); return [tp.x, q.y + dy, tp.z]; };
+		// trójkąt przodem do góry (roadMark jest jednostronny; kierunek łamanej bywa dowolny)
+		const tri = (dst, a, b, c, rgb) => {
+			if ((b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]) > 0) dst.p.push(...a, ...b, ...c);
+			else dst.p.push(...a, ...c, ...b);
+			for (let i = 0; i < 3; i++) dst.c.push(rgb.r, rgb.g, rgb.b);
+		};
+		// pas od o0 do o1 na odcinku osi [t0, t1], z podziałem na wierzchołkach łamanej (zjazdy – wysokość wg Y)
+		const band = (dst, t0, t1, o0, o1, dy, rgb) => {
+			const ts = [t0];
+			for (let k = 1; k < P.length - 1; k++) if (cum[k] > t0 && cum[k] < t1) ts.push(cum[k]);
+			ts.push(t1);
+			for (let q = 0; q + 1 < ts.length; q++) {
+				const a = at(ts[q], o0, dy), b = at(ts[q], o1, dy), c = at(ts[q + 1], o1, dy), d = at(ts[q + 1], o0, dy);
+				tri(dst, a, b, c, rgb);
+				tri(dst, a, c, d, rgb);
+			}
+		};
+		// pionowa ściana (krawężnik) na odsunięciu o, od dy0 do dy1
+		const face = (dst, t0, t1, o, dy0, dy1, rgb) => {
+			const ts = [t0];
+			for (let k = 1; k < P.length - 1; k++) if (cum[k] > t0 && cum[k] < t1) ts.push(cum[k]);
+			ts.push(t1);
+			for (let q = 0; q + 1 < ts.length; q++) {
+				const a = at(ts[q], o, dy0), b = at(ts[q + 1], o, dy0), c = at(ts[q + 1], o, dy1), d = at(ts[q], o, dy1);
+				dst.p.push(...a, ...b, ...c, ...a, ...c, ...d);
+				for (let i = 0; i < 6; i++) dst.c.push(rgb.r, rgb.g, rgb.b);
+			}
+		};
+		/* chodniki: z atrybutów ulicy (1 lewy, 2 prawy, 3 oba), jeśli obok jezdni o potrzebnej liczbie pasów zostaje
+		   miejsce na 1,5–2 m – inaczej jeden albo żaden (pomost ma szerokość wg klasy drogi) */
+		// minimum: jednokierunkowa – wszystkie pasy po 3 m, dwukierunkowa – dwa pasy po 2,75 m (więcej, jeśli się zmieszczą)
+		const lanes0 = Math.max(1, inf.lanes), minCw = inf.one ? lanes0 * 3 : 5.5;
+		const swW = Math.min(2, Math.max(1.5, (w - minCw) / 2));
+		let sw = [];
+		if (inf.sw && !inf.surf) {
+			const want = inf.sw === 3 ? [1, -1] : [inf.sw === 2 ? 1 : -1];
+			if (want.length === 2 && w - 2 * swW < minCw) want.length = 1;
+			if (w - swW * want.length >= minCw) sw = want;
+		}
+		const swOn = (sg) => sw.includes(sg);
+		const T0 = 1.5, T1 = total - 1.5; // od końców obiektu – tam oznakowanie i chodniki ulicy
+		// kolory jak na ulicach (shader dróg rozpoznaje po nich kostkę chodnika, krawężnik i linie)
+		const SWC = col.set('#a7a49d').clone(), CURB = col.set('#c9c6be').clone(), WHITE = col.set('#e9e7e0').clone();
+		for (const sg of sw) {
+			const oIn = sg * (w / 2 - swW), oOut = sg * (w / 2);
+			band(sink.deck, 0, total, sg * (w / 2 - swW + 0.16), oOut, 0.15, SWC);
+			band(sink.deck, 0, total, oIn, sg * (w / 2 - swW + 0.16), 0.17, CURB);
+			face(sink.deck, 0, total, oIn, 0, 0.17, CURB);
+		}
+		// jezdnia między krawężnikami (albo 0,3 m od balustrad): oś, pasy, linie krawędziowe
+		const ea = -w / 2 + (swOn(-1) ? swW : 0.3), eb = w / 2 - (swOn(1) ? swW : 0.3), cw = eb - ea, cMid = (ea + eb) / 2;
+		const lanes = Math.max(1, Math.min(lanes0, Math.floor(cw / 2.6)));
+		if (!inf.surf && cw >= 4.5) {
+			const MK = 0.02;
+			const line = (o, ta, tb) => band(sink.mk, ta, tb, o - 0.06, o + 0.06, MK, WHITE);
+			const solid = (o) => line(o, T0, T1);
+			// przerywana 3 m / 3 m
+			const dash = (o) => { for (let x = T0; x < T1; x += 6) line(o, x, Math.min(T1, x + 3)); };
+			if (!inf.one) {
+				// na obiekcie linia ciągła (zakaz wyprzedzania), na szerokich – podwójna ciągła i przerywane między pasami
+				if (lanes >= 4) { solid(cMid - 0.12); solid(cMid + 0.12); dash(cMid - cw / 4); dash(cMid + cw / 4); }
+				else if (lanes >= 2) solid(cMid);
+			} else for (let l = 1; l < lanes; l++) dash(ea + (cw * l) / lanes);
+			// krawędziowe przy balustradach (bez chodnika)
+			if (!swOn(-1)) line(ea + 0.25, T0, T1);
+			if (!swOn(1)) line(eb - 0.25, T0, T1);
+		}
+		/* latarnie co ok. 33 m przy balustradzie (na chodniku, jeśli jest): na szerokich obiektach po obu stronach,
+		   na węższych na zmianę; wysięgnik nad jezdnię, plama światła na osi pomostu i w jego szerokości (poza nim
+		   wisiałaby w powietrzu nad torami) */
+		const both = w >= 12 || lanes >= 4;
+		let side = hash(cum.length * 1.37 + P[0][0] * 0.011) < 0.5 ? 1 : -1;
+		for (let t = 8 + hash(P[0][0] * 0.013 + P[0][1]) * 10; t < total - 6; t += 33) {
+			for (const sg of both ? [1, -1] : [side]) {
+				const q = sdAt(t, sg * (w / 2 - 0.35)), n = N[q.k];
+				sink.lamps.push({ s: q.s, d: q.d, y: q.y + (swOn(sg) ? 0.15 : 0), ds: -n[0] * sg, dd: -n[1] * sg, pool: both ? w / 4 + 0.3 : Math.min(7, w / 2), poolAt: both ? w / 4 : w / 2 - 0.35 });
+			}
+			side = -side;
+		}
+		// znaki B-18 (dopuszczalna masa) przy wjazdach na wiadukt nad torem – po prawej stronie jadącego (dwukierunkowe)
+		if (entry && !inf.one && ti >= 2 && total > 30) {
+			const ton = [15, 20, 30][Math.floor(hash(P[0][0] * 0.07 + P[0][1] * 0.3) * 3)];
+			for (const [tS, dir] of [[2.5, 1], [total - 2.5, -1]]) {
+				const a = at(tS, 0, 0), b = at(tS + dir * 2, 0, 0), fx = b[0] - a[0], fz = b[2] - a[2];
+				const p1 = at(tS, 1, 0), rgt = (p1[0] - a[0]) * -fz + (p1[2] - a[2]) * fx > 0 ? 1 : -1; // prawa: (−fz, fx)
+				const o = rgt * (w / 2 - 0.45), q = sdAt(tS, o);
+				R.sidePoint(r, q.s, q.d, tp);
+				sink.signs.push({ x: tp.x, y: q.y + (swOn(rgt) ? 0.15 : 0), z: tp.z, ang: Math.atan2(-fx, -fz), ton });
+			}
+		}
+	};
+
+	// tarcza znaku B-18 (biała, czerwony pierścień, masa w tonach) i tył tarczy (szary)
+	const signB18 = (ton) => canvasTexture(`b18|${ton}`, 128, 128, (g, w) => {
+		g.beginPath();
+		g.arc(w / 2, w / 2, w / 2 - 2, 0, Math.PI * 2);
+		g.fillStyle = '#c62828';
+		g.fill();
+		g.beginPath();
+		g.arc(w / 2, w / 2, w / 2 - 16, 0, Math.PI * 2);
+		g.fillStyle = '#f4f4f2';
+		g.fill();
+		g.fillStyle = '#111';
+		g.font = '800 44px system-ui, sans-serif';
+		g.textAlign = 'center';
+		g.textBaseline = 'middle';
+		g.fillText(`${ton}t`, w / 2, w / 2 + 3);
+	});
+	const signBack = () => canvasTexture('sign-back-round', 64, 64, (g, w) => {
+		g.beginPath();
+		g.arc(w / 2, w / 2, w / 2 - 1, 0, Math.PI * 2);
+		g.fillStyle = '#7d8287';
+		g.fill();
+	});
+
+	World.prototype.deckDressFlush = function (group, sink) {
+		const M = envMaterials();
+		for (const [buf, material] of [[sink.deck, M.roadDouble], [sink.mk, M.roadMark]]) {
+			if (!buf.p.length) continue;
+			const geo = new T.BufferGeometry();
+			geo.setAttribute('position', new T.Float32BufferAttribute(buf.p, 3));
+			geo.setAttribute('color', new T.Float32BufferAttribute(buf.c, 3));
+			geo.computeVertexNormals();
+			const m = new T.Mesh(geo, material);
+			m.receiveShadow = true;
+			group.add(m);
+		}
+		if (sink.lamps.length) {
+			const lamps = this.envLampMeshes(group, sink.lamps);
+			if (this.envLampSink) this.envLampSink.push(...lamps);
+		}
+		if (sink.signs.length) {
+			if (!World.signPlane) { World.signPlane = new T.PlaneGeometry(0.75, 0.75); World.signPlane.userData.shared = true; }
+			const byTon = new Map();
+			for (const sg of sink.signs) { if (!byTon.has(sg.ton)) byTon.set(sg.ton, []); byTon.get(sg.ton).push(sg); }
+			const m4 = new T.Matrix4(), q = new T.Quaternion(), q2 = new T.Quaternion(), up = new T.Vector3(0, 1, 0), p3 = new T.Vector3(), sc = new T.Vector3(), one = new T.Vector3(1, 1, 1);
+			const shared = (mm) => { mm.userData.shared = true; return mm; };
+			const back = World.signBackM || (World.signBackM = shared(patch(new T.MeshStandardMaterial({ map: signBack(), alphaTest: 0.5, roughness: 0.6, metalness: 0.3 }), 'lit')));
+			const pole = new T.InstancedMesh(GEO.cyl, M.catSteel, sink.signs.length), backs = new T.InstancedMesh(World.signPlane, back, sink.signs.length);
+			let n = 0;
+			for (const [ton, list] of byTon) {
+				const key = `signB18M${ton}`;
+				const face = World[key] || (World[key] = shared(patch(new T.MeshStandardMaterial({ map: signB18(ton), alphaTest: 0.5, roughness: 0.5 }), 'lit')));
+				const fr = new T.InstancedMesh(World.signPlane, face, list.length);
+				list.forEach((sg, k) => {
+					q.setFromAxisAngle(up, sg.ang);
+					// tarcza na 2,2 m, przodem do nadjeżdżających; tył 1 cm za nią, obrócony
+					const fx = Math.sin(sg.ang), fz = Math.cos(sg.ang);
+					fr.setMatrixAt(k, m4.compose(p3.set(sg.x + fx * 0.06, sg.y + 2.2, sg.z + fz * 0.06), q, one));
+					q2.setFromAxisAngle(up, sg.ang + Math.PI);
+					backs.setMatrixAt(n, m4.compose(p3.set(sg.x + fx * 0.05, sg.y + 2.2, sg.z + fz * 0.05), q2, one));
+					pole.setMatrixAt(n, m4.compose(p3.set(sg.x, sg.y + 1.3, sg.z), Q_ID, sc.set(0.07, 2.6, 0.07)));
+					n++;
+				});
+				group.add(fr);
+			}
+			pole.castShadow = this.shadows;
+			group.add(pole, backs);
 		}
 	};
 
@@ -2283,6 +2582,9 @@
 		const e = this.env;
 		if (!e) return;
 		const M = envMaterials();
+		// pula świateł kawałka (latarnie na pomostach, peronach) i wyposażenie pomostów drogowych – rysowane razem
+		this.envLampSink = [];
+		this.envDeckSink = { mk: { p: [], c: [] }, deck: { p: [], c: [] }, lamps: [], signs: [] };
 		this.buildEnvOverpasses(group, e.oByChunk.get(c) || []);
 		this.buildEnvOverpasses(group, e.roByChunk.get(c) || [], true);
 		const rs = e.rByChunk.get(c) || [];
@@ -2294,7 +2596,8 @@
 		this.buildEnvRoads(group, rsegs, M);
 		this.buildEnvWater(group, c, e.wByChunk.get(c) || []);
 		this.buildEnvBridges(group, e.obByChunk.get(c) || []);
-		this.envLampSink = [];
+		this.deckDressFlush(group, this.envDeckSink);
+		this.envDeckSink = null;
 		this.buildEnvTracks(group, e.tByChunk.get(c) || []);
 		this.buildEnvWagons(group, e.wagons.get(c));
 		this.buildEnvBuffers(group, e.kByChunk.get(c));
@@ -2374,6 +2677,7 @@
 			if (!pl) continue;
 			const { w, P, Y } = pl;
 			piers.push(...pl.piers);
+			if (this.envDeckSink) this.deckDress(this.envDeckSink, row, row[0], P, Y, w, false);
 			const edge = (k, sg) => {
 				const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)];
 				const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ns = -(b[1] - a[1]) / L, nd = (b[0] - a[0]) / L;
@@ -2563,8 +2867,18 @@
 		const top = [], under = [], edge = [], glassT = [];
 		const cols = [], beams = [];
 		const onTrack = (s, d, m) => Math.abs(d) < m || this.envTracksAt(s).some((t) => Math.abs(t.d - d) < m);
+		// przycięcie wielokąta (s, d) do półpłaszczyzny f(p) ≥ 0
+		const clip = (poly, f) => {
+			const out = [];
+			for (let k = 0; k < poly.length; k++) {
+				const a = poly[k], b = poly[(k + 1) % poly.length], fa = f(a), fb = f(b);
+				if (fa >= 0) out.push(a);
+				if (fa >= 0 !== fb >= 0) { const t = fa / (fa - fb); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+			}
+			return out;
+		};
 		for (const o of list) {
-			const pts = o.pts;
+			let pts = o.pts;
 			// dach nad torem (obrys przykrywa tor w kilku przekrojach) – hala nad siecią trakcyjną
 			let overTrack = false;
 			for (let s = o.s0 + 1; s < o.s1 && !overTrack; s += 2) {
@@ -2572,22 +2886,78 @@
 				if (tr.some((td) => inPoly(pts, s, td))) overTrack = true;
 			}
 			o.overTrack = overTrack;
+			// niski dach nad peronem nie wchodzi w skrajnię toru pociągu (krawędź co najmniej 1,8 m od osi)
+			if (!overTrack) {
+				const sg = Math.sign(pts.reduce((a, p) => a + p[1], 0)) || 1;
+				pts = clip(pts, (p) => sg * p[1] - 1.8);
+				if (pts.length < 3) continue;
+			}
 			const hRail = overTrack ? Math.max(8.5, o.h || 0) : o.h > 2.5 ? Math.min(7, o.h + 0.77) : 4.4;
 			const yTop = (s) => R.heightAt(r, s) + hRail;
-			const W3 = pts.map(([s, d]) => { R.sidePoint(r, s, d, tp); return [tp.x, yTop(s), tp.z]; });
-			const ids = T.ShapeUtils.triangulateShape(W3.map((p) => new T.Vector2(p[0], p[2])), []);
-			const dstTop = o.glass ? glassT : top;
-			for (const [a, b, c2] of ids) {
-				const A = W3[a], B = W3[b], Cc = W3[c2];
-				const up = ((Cc[2] - A[2]) * (B[0] - A[0]) - (Cc[0] - A[0]) * (B[2] - A[2])) < 0;
-				const [P1, P2, P3] = up ? [A, B, Cc] : [A, Cc, B];
-				dstTop.push(...P1, ...P2, ...P3);
-				// spód 0,25 m niżej, odwrócony
-				under.push(P1[0], P1[1] - 0.25, P1[2], P3[0], P3[1] - 0.25, P3[2], P2[0], P2[1] - 0.25, P2[2]);
+			const xsAt = (s) => {
+				const xs = [];
+				for (let i = 0; i < pts.length; i++) {
+					const a = pts[i], b = pts[(i + 1) % pts.length];
+					if ((a[0] - s) * (b[0] - s) > 0 || a[0] === b[0]) continue;
+					xs.push(a[1] + ((b[1] - a[1]) * (s - a[0])) / (b[0] - a[0]));
+				}
+				return xs.sort((a, b) => a - b);
+			};
+			/* hala nad torami: dach wielospadowy – kalenice nad peronami (środki wolnych pasów w przekroju środkowym),
+			   kosze nad torami, przy kalenicach pasy świetlików; dach nad peronem – płaski. prof(d) – wysokość nad yTop */
+			let brk = null, ridges = [];
+			if (overTrack) {
+				const sm = (o.s0 + o.s1) / 2, xs = xsAt(sm), D1 = xs[0], D2 = xs[xs.length - 1];
+				let run0 = null;
+				for (let d = D1 + 0.5; d <= D2 - 0.5; d += 0.5) {
+					const free = !onTrack(sm, d, 2.3);
+					if (free && run0 === null) run0 = d;
+					if ((!free || d + 0.5 > D2 - 0.5) && run0 !== null) { if (d - run0 >= 3) ridges.push((run0 + d) / 2); run0 = null; }
+				}
+				if (!ridges.length) ridges = [(D1 + D2) / 2];
+				const pk = [[D1 - 1, 0]];
+				ridges.forEach((rd, i) => {
+					const lo = i ? (ridges[i - 1] + rd) / 2 : D1, hi = i + 1 < ridges.length ? (rd + ridges[i + 1]) / 2 : D2;
+					const hgt = Math.min(2.2, 0.16 * Math.min(rd - lo, hi - rd));
+					pk.push([lo, 0], [rd - 1.5, hgt * (1 - 1.5 / Math.max(1.6, rd - lo))], [rd, hgt], [rd + 1.5, hgt * (1 - 1.5 / Math.max(1.6, hi - rd))]);
+					if (i + 1 === ridges.length) pk.push([hi, 0]);
+				});
+				pk.push([D2 + 1, 0]);
+				brk = pk.sort((a, b) => a[0] - b[0]);
 			}
-			for (let k = 0; k < W3.length; k++) {
-				const p = W3[k], q = W3[(k + 1) % W3.length];
-				edge.push(p[0], p[1] + 0.05, p[2], q[0], q[1] - 0.3, q[2], q[0], q[1] + 0.05, q[2], p[0], p[1] + 0.05, p[2], p[0], p[1] - 0.3, p[2], q[0], q[1] - 0.3, q[2]);
+			const prof = (d) => {
+				if (!brk) return 0;
+				for (let i = 0; i + 1 < brk.length; i++) if (d <= brk[i + 1][0]) { const [a, ya] = brk[i], [b, yb2] = brk[i + 1]; return ya + ((yb2 - ya) * (d - a)) / Math.max(1e-6, b - a); }
+				return 0;
+			};
+			const V = (s, d, dy) => { R.sidePoint(r, s, d, tp); return [tp.x, yTop(s) + prof(d) + dy, tp.z]; };
+			// pasy między punktami załamania profilu (płaskie trójkąty – widać spadki); przy kalenicach – szkło
+			const strips = brk ? brk.slice(0, -1).map((b0, i) => [b0[0], brk[i + 1][0]]) : [[-Infinity, Infinity]];
+			for (const [a, b] of strips) {
+				const poly = brk ? clip(clip(pts, (p) => p[1] - a), (p) => b - p[1]) : pts;
+				if (poly.length < 3) continue;
+				const mid2 = (a + b) / 2, isGlass = o.glass || (brk && ridges.some((rd) => Math.abs(rd - mid2) < 1.5));
+				const W3 = poly.map(([s, d]) => V(s, d, 0));
+				const ids = T.ShapeUtils.triangulateShape(W3.map((p) => new T.Vector2(p[0], p[2])), []);
+				for (const [i0, i1, i2] of ids) {
+					const A = W3[i0], B = W3[i1], Cc = W3[i2];
+					const up = ((Cc[2] - A[2]) * (B[0] - A[0]) - (Cc[0] - A[0]) * (B[2] - A[2])) < 0;
+					const [P1, P2, P3] = up ? [A, B, Cc] : [A, Cc, B];
+					(isGlass ? glassT : top).push(...P1, ...P2, ...P3);
+					// spód 0,25 m niżej, odwrócony (pod świetlikiem – bez spodu, widać niebo)
+					if (!isGlass) under.push(P1[0], P1[1] - 0.25, P1[2], P3[0], P3[1] - 0.25, P3[2], P2[0], P2[1] - 0.25, P2[2]);
+				}
+			}
+			// obrzeże (blenda) wzdłuż obrysu – boki dzielone co 2 m, żeby szły po profilu
+			const fas = overTrack ? 0.6 : 0.3;
+			for (let k = 0; k < pts.length; k++) {
+				const pa = pts[k], pb = pts[(k + 1) % pts.length], m = Math.max(1, Math.ceil(Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) / 2));
+				for (let j = 0; j < m; j++) {
+					const u0 = j / m, u1 = (j + 1) / m;
+					const s0 = pa[0] + (pb[0] - pa[0]) * u0, d0 = pa[1] + (pb[1] - pa[1]) * u0, s1 = pa[0] + (pb[0] - pa[0]) * u1, d1 = pa[1] + (pb[1] - pa[1]) * u1;
+					const p = V(s0, d0, 0), q = V(s1, d1, 0);
+					edge.push(p[0], p[1] + 0.05, p[2], q[0], q[1] - fas, q[2], q[0], q[1] + 0.05, q[2], p[0], p[1] + 0.05, p[2], p[0], p[1] - fas, p[2], q[0], q[1] - fas, q[2]);
+				}
 			}
 			// słupy i podciągi w przekrojach co ok. 7,5 m
 			const L = o.s1 - o.s0, n = Math.max(1, Math.round(L / 7.5));
@@ -2604,19 +2974,29 @@
 					const d1 = xs[i], d2 = xs[i + 1], w = d2 - d1;
 					if (w < 1.2) continue;
 					const yb = yTop(s) - 0.25;
-					let posts = w < 7 ? [(d1 + d2) / 2] : [d1 + 1.6, d2 - 1.6];
-					// słup nie na torze: przesunięcie w bok (do 2,5 m), inaczej pominięty
-					posts = posts.map((d) => {
-						for (const dd of [0, 0.8, -0.8, 1.6, -1.6, 2.5, -2.5]) if (!onTrack(s, d + dd, 2.3) && d + dd > d1 + 0.3 && d + dd < d2 - 0.3) return d + dd;
-						return null;
-					}).filter((d) => d !== null);
+					// słupy w wolnych pasach przekroju (peron, międzytorze – nie na torze): pas do 12 m – słup w środku,
+					// szerszy – co ok. 10 m (hala nad kilkoma peronami: słupy na każdym peronie)
+					const posts = [];
+					let run0 = null;
+					for (let d = d1 + 0.4; d <= d2 - 0.4 + 1e-6; d += 0.5) {
+						const free = !onTrack(s, d, 2.3);
+						if (free && run0 === null) run0 = d;
+						if ((!free || d + 0.5 > d2 - 0.4) && run0 !== null) {
+							const e = free ? d : d - 0.5, rw = e - run0;
+							if (rw >= 0.4) {
+								const m = Math.max(1, Math.round(rw / 10));
+								for (let j = 0; j < m; j++) posts.push(m === 1 ? (run0 + e) / 2 : run0 + 1 + ((rw - 2) * j) / (m - 1));
+							}
+							run0 = null;
+						}
+					}
 					if (!posts.length) continue;
 					R.trackPoint(r, s, tp);
 					const hd = tp.heading;
 					for (const d of posts) {
-						const y0 = this.terrainY(s, d) - 0.2;
+						const y0 = this.terrainY(s, d) - 0.2, y1 = yb + prof(d);
 						R.sidePoint(r, s, d, tp);
-						cols.push([tp.x, (y0 + yb) / 2, tp.z, yb - y0, hd]);
+						cols.push([tp.x, (y0 + y1) / 2, tp.z, y1 - y0, hd]);
 					}
 					// podciąg poprzeczny pod dachem
 					R.sidePoint(r, s, (d1 + d2) / 2, tp);
@@ -2626,7 +3006,7 @@
 		}
 		const M = World.materials();
 		const roofM = World.roofMetal || (World.roofMetal = NS.util.matS('#4d555e', { roughness: 0.55, metalness: 0.45, side: T.DoubleSide }));
-		const underM = World.roofUnder || (World.roofUnder = NS.util.mat('#dfe2e6', { roughness: 0.7 }));
+		const underM = World.roofUnder || (World.roofUnder = NS.util.mat('#dfe2e6', { roughness: 0.7, emissive: '#4a4d52' }));
 		const edgeM = World.roofEdge || (World.roofEdge = NS.util.matS('#1c3d6e', { roughness: 0.4, metalness: 0.3, side: T.DoubleSide }));
 		for (const [arr, material, shadow] of [[top, roofM, true], [under, underM, false], [edge, edgeM, true], [glassT, M.glass, false]]) {
 			if (!arr.length) continue;
@@ -2889,7 +3269,10 @@
 			if (reserved.some((q) => b.s1 > q.s0 && b.s0 < q.s1 && b.d1 > q.d0 && b.d0 < q.d1)) continue;
 			const row = b.row, n = b.n, kind = row[0], h = row[1] / 10, roofS = row[2];
 			const seed = b.i * 1.37 + b.cs * 0.013;
-			const wall = col.set(WALLS[kind][Math.floor(hash(seed) * WALLS[kind].length)]).clone();
+			const use = (this.env.bUse && this.env.bUse[b.i]) || 0;
+			// elewacja wg rodzaju (urzędy, służby, szkoły…; bloki i domy z usługą na parterze – bez zmian)
+			const UW = USE_WALL[use] && kind !== 0 && kind !== 1 ? USE_WALL[use] : null;
+			const wall = col.set(UW ? UW[Math.floor(hash(seed) * UW.length)] : WALLS[kind][Math.floor(hash(seed) * WALLS[kind].length)]).clone();
 			const roofC = col.set(ROOFS[kind][Math.floor(hash(seed + 0.5) * ROOFS[kind].length)]).clone();
 			// wierzchołki obrysu w świecie, podstawa – najniższy punkt terenu pod budynkiem
 			const P = [];
@@ -3014,6 +3397,7 @@
 				bandW(Oi, top, yA, wall.clone().multiplyScalar(0.85), true);
 				ringH(Oi, O0, yA, light);
 			}
+			if (use) this.envBuildingDecor(group, pl, tri, b, use, P, NE, ccw, base, top, h, seed, flatRoof, cx, cz);
 			// dworzec z mapy: tablica z nazwą stacji na ścianie najbliższej torów
 			if (kind === 6) this.envStationSign(group, b, top);
 			// dachy
@@ -3064,6 +3448,144 @@
 		};
 		mesh(fa, M.facade);
 		mesh(pl, M.plain);
+	};
+
+	/* Wyposażenie budynku wg rodzaju na ścianie od strony toru (najbliższej osi, co najmniej 4 m): szyld z napisem
+	   (nazwa z mapy albo rodzaj), bramy garażowe i wieża remizy, wieża z krzyżem kościoła, maszty z flagami urzędu i
+	   szkoły, pas w kolorze sieci marketu. Bryły dopisywane do siatki zwykłych ścian (pl), szyldy – osobne płaszczyzny. */
+	World.prototype.envBuildingDecor = function (group, pl, tri, b, use, P, NE, ccw, base, top, h, seed, flatRoof, cx, cz) {
+		const row = b.row, n = b.n, y0 = base + 0.3;
+		// ściana frontowa
+		let k0 = -1, bd = Infinity;
+		for (let k = 0; k < n; k++) {
+			const d0 = row[4 + k * 2], d1 = row[4 + ((k + 1) % n) * 2];
+			const L = Math.hypot(P[(k + 1) % n][0] - P[k][0], P[(k + 1) % n][2] - P[k][2]);
+			if (L >= 4 && Math.abs(d0 + d1) / 2 < bd) { bd = Math.abs(d0 + d1) / 2; k0 = k; }
+		}
+		if (k0 < 0) return;
+		const A = P[k0], B = P[(k0 + 1) % n], L = Math.hypot(B[0] - A[0], B[2] - A[2]);
+		const ux = (B[0] - A[0]) / L, uz = (B[2] - A[2]) / L, [nx, nz] = NE[k0];
+		const mx = (A[0] + B[0]) / 2, mz = (A[2] + B[2]) / 2;
+		const Z = [0, 0];
+		// prostopadłościan (środek, wymiary wzdłuż ściany / w górę / w głąb, obrót jak ściana) – ściany na zewnątrz
+		const cuboid = (x, y, z, w, hh, dp, rgb, rx, rz) => {
+			const ax = rx === undefined ? ux : rx, az = rz === undefined ? uz : rz, bx = -az, bz = ax;
+			const V = [];
+			for (const sy of [-1, 1]) for (const sa of [-1, 1]) for (const sb of [-1, 1]) V.push([x + ax * sa * w / 2 + bx * sb * dp / 2, y + sy * hh / 2, z + az * sa * w / 2 + bz * sb * dp / 2]);
+			const F = [[0, 1, 3, 2], [4, 6, 7, 5], [0, 4, 5, 1], [2, 3, 7, 6], [0, 2, 6, 4], [1, 5, 7, 3]];
+			for (const f of F) {
+				const a = V[f[0]], b2 = V[f[1]], c2 = V[f[2]], d2 = V[f[3]];
+				const fc = [(a[0] + c2[0]) / 2 - x, (a[1] + c2[1]) / 2 - y, (a[2] + c2[2]) / 2 - z];
+				const e1 = [b2[0] - a[0], b2[1] - a[1], b2[2] - a[2]], e2 = [c2[0] - a[0], c2[1] - a[1], c2[2] - a[2]];
+				const nn = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+				if (nn[0] * fc[0] + nn[1] * fc[1] + nn[2] * fc[2] >= 0) { tri(pl, a, b2, c2, Z, Z, Z, rgb); tri(pl, a, c2, d2, Z, Z, Z, rgb); }
+				else { tri(pl, a, c2, b2, Z, Z, Z, rgb); tri(pl, a, d2, c2, Z, Z, Z, rgb); }
+			}
+		};
+		const C3 = (c) => new T.Color(c);
+		// szyld
+		const S = USE_SIGN[use];
+		const name = this.env.bName && this.env.bName.get(b.i);
+		let text = S ? (name && use !== 13 && use !== 14 && use !== 12 ? name : S[0]) : null;
+		if (use === 7 && !name) text = SHOPS[Math.floor(hash(seed + 4.1) * SHOPS.length)];
+		if (use === 6 && !name) text = null; // biurowiec bez nazwy – bez szyldu
+		if (text && S) {
+			const high = !!S[4];
+			let bg = S[1];
+			if (use === 8) bg = MARKET_C[Math.floor(hash(seed + 3.3) * MARKET_C.length)];
+			const sh = high ? Math.min(2.2, 0.9 + h * 0.06) : 0.85, sw = Math.min(L * 0.8, Math.max(2.6, Math.min(14, text.length * sh * 0.5 + 1.4)));
+			const ys = high ? top - sh / 2 - 0.5 : Math.min(top - sh / 2 - 0.3, y0 + (use === 14 ? 4.5 : 3.4)); // remiza – nad bramami
+			if (ys - sh / 2 > y0 + 1.8) {
+				const key = `${text}|${bg}|${S[2]}|${S[3] || ''}`;
+				World.signMats = World.signMats || new Map();
+				let m = World.signMats.get(key);
+				if (!m) {
+					const tex = signTexture(text, bg, S[2], S[3]);
+					m = new T.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: '#ffffff', emissiveIntensity: 0.22, roughness: 0.5 });
+					m.userData.shared = true;
+					World.signMats.set(key, m);
+				}
+				if (!World.signGeo) { World.signGeo = new T.PlaneGeometry(1, 1); World.signGeo.userData.shared = true; }
+				const sm = new T.Mesh(World.signGeo, m);
+				sm.scale.set(sw, sh, 1);
+				sm.position.set(mx + nx * 0.09, ys, mz + nz * 0.09);
+				sm.rotation.y = Math.atan2(nx, nz);
+				group.add(sm);
+				// skrzynka szyldu (rama)
+				cuboid(mx + nx * 0.04, ys, mz + nz * 0.04, sw + 0.12, sh + 0.12, 0.08, C3('#2a2d31'));
+			}
+		}
+		// pas w kolorze sieci (market) pod attyką
+		if (use === 8 && h > 3.5) {
+			const c = C3(MARKET_C[Math.floor(hash(seed + 3.3) * MARKET_C.length)]);
+			for (let k = 0; k < n; k++) {
+				const p = P[k], q = P[(k + 1) % n], [ex, ez] = NE[k];
+				const a = [p[0] + ex * 0.03, top - 0.9, p[2] + ez * 0.03], b2 = [q[0] + ex * 0.03, top - 0.9, q[2] + ez * 0.03], c2 = [q[0] + ex * 0.03, top - 0.45, q[2] + ez * 0.03], d2 = [p[0] + ex * 0.03, top - 0.45, p[2] + ez * 0.03];
+				if (ccw) { tri(pl, a, c2, b2, Z, Z, Z, c); tri(pl, a, d2, c2, Z, Z, Z, c); } else { tri(pl, a, b2, c2, Z, Z, Z, c); tri(pl, a, c2, d2, Z, Z, Z, c); }
+			}
+		}
+		// straż pożarna: czerwone bramy garażowe (z białymi pasami) i wieża do suszenia węży w narożniku
+		if (use === 14) {
+			const nd = Math.max(1, Math.min(4, Math.floor((L - 2) / 4.6)));
+			for (let i = 0; i < nd; i++) {
+				const t = (i + 0.5) / nd - 0.5, x = mx + ux * t * Math.min(L - 2, nd * 4.6), z = mz + uz * t * Math.min(L - 2, nd * 4.6);
+				cuboid(x + nx * 0.05, y0 + 1.85, z + nz * 0.05, 3.4, 3.7, 0.1, C3('#b3201b'));
+				for (const yy of [1.1, 2.3]) cuboid(x + nx * 0.11, y0 + yy, z + nz * 0.11, 3.4, 0.12, 0.02, C3('#f2f2f2'));
+			}
+			if (h < 14) {
+				const tx = A[0] + ux * 1.6 - nx * 1.6, tz = A[2] + uz * 1.6 - nz * 1.6, th = Math.max(top - base, 6) + 6;
+				cuboid(tx, base + th / 2, tz, 3.2, th, 3.2, C3('#a8432f'));
+				cuboid(tx, base + th + 0.15, tz, 3.6, 0.3, 3.6, C3('#5a5f66'));
+			}
+		}
+		// kościół: wieża z dachem hełmowym i krzyżem na końcu dłuższej osi (kaplica – sam krzyż na dachu)
+		if (use === 21) {
+			let ex = 0, ez = 0, lmax = 0;
+			for (let k = 0; k < n; k++) for (let j = k + 1; j < n; j++) { const dx = P[j][0] - P[k][0], dz = P[j][2] - P[k][2], l = Math.hypot(dx, dz); if (l > lmax) { lmax = l; ex = dx / l; ez = dz / l; } }
+			const big = lmax > 18;
+			// koniec osi bliżej toru
+			let end = 1;
+			{ const sa = ex * (A[0] - cx) + ez * (A[2] - cz); end = sa > 0 ? 1 : -1; }
+			const tw = big ? Math.min(7, lmax * 0.22) : 0, along = lmax / 2 - tw / 2;
+			const tx = cx + ex * end * along, tz = cz + ez * end * along;
+			const wallC = C3('#e3d6bb'), roofC = C3('#4f6a5a');
+			let yTop = top + (flatRoof ? 0.5 : 3);
+			if (big) {
+				const th = Math.max(top - base + 10, 22);
+				cuboid(tx, base + th / 2, tz, tw, th, tw, wallC, ex, ez);
+				// hełm: ostrosłup
+				const ap = [tx, base + th + tw * 1.4, tz];
+				const c4 = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, bq]) => [tx + (ex * a - ez * bq) * tw / 2, base + th, tz + (ez * a + ex * bq) * tw / 2]);
+				for (let k = 0; k < 4; k++) {
+					const a = c4[k], b2 = c4[(k + 1) % 4];
+					const nrm = ((b2[2] - a[2]) * (ap[0] - a[0]) - (b2[0] - a[0]) * (ap[2] - a[2]));
+					if (nrm > 0) tri(pl, a, b2, ap, Z, Z, Z, roofC); else tri(pl, a, ap, b2, Z, Z, Z, roofC);
+					tri(pl, a, ap, b2, Z, Z, Z, roofC);
+				}
+				yTop = ap[1];
+			}
+			const kx = big ? tx : cx, kz = big ? tz : cz, gold = C3('#c9a227');
+			cuboid(kx, yTop + 1.1, kz, 0.18, 2.2, 0.18, gold, ex, ez);
+			cuboid(kx, yTop + 1.5, kz, 1.2, 0.18, 0.18, gold, -ez, ex);
+		}
+		// urząd, szkoła, policja: maszt z flagą (urząd – dwa: Polska i Unia) przed ścianą frontową
+		if (use === 20 || use === 15 || use === 13) {
+			const flags = use === 20 ? [['#ffffff', '#dc143c'], ['#003399', '#003399']] : [['#ffffff', '#dc143c']];
+			flags.forEach(([c1, c2], i) => {
+				const off = (i - (flags.length - 1) / 2) * 2.2 + Math.min(L / 2 - 1, 3.5);
+				const fx = mx + ux * off + nx * 1.6, fz = mz + uz * off + nz * 1.6, gy = this.terrainY ? y0 - 0.3 : y0;
+				const ph = Math.min(9, Math.max(6, top - base + 1.5));
+				cuboid(fx, gy + ph / 2, fz, 0.09, ph, 0.09, C3('#d8dde2'));
+				cuboid(fx + ux * 0.65, gy + ph - 0.45, fz + uz * 0.65, 1.2, 0.36, 0.03, C3(c1));
+				cuboid(fx + ux * 0.65, gy + ph - 0.81, fz + uz * 0.65, 1.2, 0.36, 0.03, C3(c2));
+			});
+		}
+		// szpital: czerwony krzyż na dachu płaskim
+		if (use === 18 && flatRoof && h > 6) {
+			const c = C3('#c4161c');
+			cuboid(cx, top + 0.05, cz, 6, 0.04, 1.8, c);
+			cuboid(cx, top + 0.05, cz, 1.8, 0.04, 6, c);
+		}
 	};
 
 	World.prototype.envStationSign = function (group, b, top) {

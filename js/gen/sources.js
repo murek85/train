@@ -167,6 +167,10 @@
 			else if (/transportu/.test(og)) b = 'transportation';
 			else if (/mieszkalne/.test(og)) b = 'residential';
 			t.building = b;
+			// funkcje szczegółowe i przeważająca (rodzaj budynku w grze: policja, poczta, szkoła…) oraz nazwa
+			t['bdot:use'] = (pf + '; ' + all).toLowerCase();
+			const nm = field(f, 'nazwa');
+			if (nm) t.name = nm;
 			const lv = field(f, 'liczbaKondygnacji');
 			if (lv && Number(lv) > 0) t['building:levels'] = lv;
 			return t;

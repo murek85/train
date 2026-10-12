@@ -416,7 +416,10 @@
 		if (sim.status !== 'running') return;
 		const route = sim.route, s = sim.st, L = sim.L;
 		const front = s.pos, v = s.v;
-		const b = sim.train.serviceDecel * 0.55;
+		// zakładane opóźnienie hamowania; na spadku mniejsze (składowa ciężaru – najbardziej stromy spadek w zasięgu 1,5 km)
+		let down = 0;
+		for (let x = front - L; x < front + 1500; x += 50) down = Math.max(down, -R.gradeAt(route, x) / 1000);
+		const b = Math.max(0.12, sim.train.serviceDecel * 0.55 - 9.81 * down);
 		const k = 0.96;
 		let target = (R.limitOver(route, front - L, front) / 3.6) * k;
 		for (const lim of route.limits) {
@@ -467,7 +470,10 @@
 			autopilot(sim);
 			sim.update(dt);
 		}
-		if (sim.status !== 'ended') throw new Error('Automat nie ukończył trasy ' + route.id + ': ' + sim.failReason);
+		if (sim.status !== 'ended') {
+			const why = sim.failReason || `pociąg utknął na km ${(sim.st.pos / 1000).toFixed(2)} (za słaby skład na wzniesienie albo błędne pochylenia trasy)`;
+			throw new Error('Automat nie ukończył trasy ' + route.id + ': ' + why);
+		}
 		const arrivals = {};
 		sim.records.forEach((r) => { arrivals[r.index] = r.actual; });
 		const depart = sim.ss.map((x) => x.departAt);

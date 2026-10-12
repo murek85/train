@@ -50,6 +50,10 @@
 	const PITCH = (36 * Math.PI) / 180; // domyślne pochylenie osi kamery w dół
 	const PITCH_MIN = (10 * Math.PI) / 180;
 	const PITCH_MAX = (82 * Math.PI) / 180;
+	// orbita w widokach zewnętrznych: od lekko z dołu (kamera nisko przy torze) do pionu
+	const ORBIT_MIN = (-7 * Math.PI) / 180;
+	const ORBIT_MAX = (88 * Math.PI) / 180;
+	const ZOOM_MIN = 0.06, ZOOM_MAX = 8;
 
 	// Słońce według godziny (lato: wschód ok. 5:30, zachód ok. 20:15): e – sinus wysokości nad horyzontem, az – azymut.
 	function sunModel(clockSec) {
@@ -60,8 +64,12 @@
 		return { e, az: (Math.PI * (h - 12.9)) / 12 };
 	}
 	const clamp01 = (x) => Math.max(0, Math.min(1, x));
-	const CAM_MODES = ['follow', 'cab', 'side', 'cinema'];
-	const CAM_NAMES = { follow: 'za pociągiem', cab: 'z kabiny', side: 'z boku', cinema: 'kinowa (ujęcia przy stacjach i przejazdach)' };
+	const CAM_MODES = ['follow', 'cab', 'side', 'trackside', 'roof', 'bogie', 'rear', 'cinema'];
+	const CAM_NAMES = {
+		follow: 'za pociągiem', cab: 'z kabiny', side: 'z boku', trackside: 'przy torze (pociąg przejeżdża obok)', roof: 'z dachu',
+		bogie: 'przy wózku i kołach', rear: 'z końca składu do tyłu', cinema: 'kinowa (ujęcia przy stacjach i przejazdach)',
+	};
+	const TRANS_T = 0.7; // płynne przejście między widokami (s)
 	const tmpC = new T.Color();
 	function angleLerp(a, b, t) {
 		let d = b - a;
@@ -159,6 +167,13 @@
 			this.pitch = PITCH;
 			this.userZoom = 1;
 			this.rotKey = 0;
+			this.focusCar = -1; // środek orbity: −1 – przed czołem pociągu, 0… – pojazd składu
+			this.pan = { x: 0, z: 0 }; // przesunięcie środka orbity (m): w bok i wzdłuż kierunku patrzenia
+			this.orbitDist = 60;
+			this.pitchKey = 0; // klawiatura: pochylenie (PageUp / PageDown) i przybliżenie (+ / −) w każdym widoku
+			this.zoomKey = 0;
+			this.trans = null; // przejście między widokami: { p, q, t }
+			this.trackside = null; // stała kamera przy torze: { s, d }
 			this.inputEnabled = false;
 			this.bindInput();
 		}
@@ -345,18 +360,23 @@
 		bindInput() {
 			const c = this.canvas;
 			let drag = null;
+			// lewy przycisk – obrót, prawy (albo Shift + lewy) – przesuwanie widoku, kliknięcie w pojazd – środek orbity
 			c.addEventListener('pointerdown', (e) => {
 				if (!this.inputEnabled) return;
-				drag = { x: e.clientX, y: e.clientY, id: e.pointerId };
+				drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, id: e.pointerId, pan: e.button === 2 || (e.button === 0 && e.shiftKey), button: e.button };
 				c.setPointerCapture(e.pointerId);
 				c.classList.add('dragging');
 			});
 			c.addEventListener('pointermove', (e) => {
 				if (!drag || e.pointerId !== drag.id) return;
 				if (this.free) this.freeLook(e.clientX - drag.x, e.clientY - drag.y);
+				else if (drag.pan && this.camMode !== 'cab') this.panBy(e.clientX - drag.x, e.clientY - drag.y);
 				else this.rotate((e.clientX - drag.x) * 0.006, (e.clientY - drag.y) * 0.005);
 				drag.x = e.clientX;
 				drag.y = e.clientY;
+			});
+			c.addEventListener('pointerup', (e) => {
+				if (drag && drag.button === 0 && !drag.pan && !this.free && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) this.pickCar(e.clientX, e.clientY);
 			});
 			const end = () => { drag = null; c.classList.remove('dragging'); };
 			c.addEventListener('pointerup', end);
@@ -375,21 +395,74 @@
 			this.yaw -= dYaw;
 			while (this.yaw > Math.PI) this.yaw -= Math.PI * 2;
 			while (this.yaw < -Math.PI) this.yaw += Math.PI * 2;
-			this.pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, this.pitch + dPitch));
+			const cab = this.camMode === 'cab';
+			this.pitch = Math.max(cab ? PITCH_MIN : ORBIT_MIN, Math.min(cab ? PITCH_MAX : ORBIT_MAX, this.pitch + dPitch));
 		}
 
 		zoomBy(f) {
-			this.userZoom = Math.max(0.35, Math.min(3.5, this.userZoom * f));
+			this.userZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, this.userZoom * f));
+		}
+
+		// przesunięcie środka orbity myszą (piksele → metry wg odległości kamery)
+		panBy(dx, dy) {
+			const k = Math.max(0.01, this.orbitDist * 0.0016);
+			this.pan.x -= dx * k;
+			this.pan.z += dy * k * (this.pitch > 1.2 ? 1 : 1.6);
 		}
 
 		resetView() {
 			this.yaw = 0;
 			this.pitch = PITCH;
 			this.userZoom = 1;
+			this.pan.x = this.pan.z = 0;
+			this.focusCar = -1;
+		}
+
+		// środek orbity na kolejnym pojeździe składu (dir ±1); −1 – przed czołem; zwraca opis do komunikatu
+		cycleFocusCar(dir, sim) {
+			const n = this.trainModel ? this.trainModel.cars.length : 0;
+			if (!n || this.camMode === 'cab') return null;
+			let f = this.focusCar + dir;
+			if (f < -1) f = n - 1;
+			if (f >= n) f = -1;
+			this.focusCar = f;
+			this.pan.x = this.pan.z = 0;
+			return this.focusLabel(sim);
+		}
+		focusLabel(sim) {
+			const n = this.trainModel ? this.trainModel.cars.length : 0;
+			if (this.focusCar < 0) return 'przed czołem pociągu';
+			const sp = sim && sim.train.specs && sim.train.specs[this.focusCar];
+			const S = sp && window.TrainRoutes.STOCK[sp.id];
+			return `pojazd ${this.focusCar + 1} z ${n}${S ? ' – ' + S.name : ''}`;
+		}
+		// kliknięcie w pojazd: środek orbity na nim (ponowne kliknięcie w ten sam – z powrotem przed czoło)
+		pickCar(x, y) {
+			if (!this.trainModel || this.camMode === 'cab') return;
+			const r = this.canvas.getBoundingClientRect();
+			const ndc = new T.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+			const rc = this.pickRay || (this.pickRay = new T.Raycaster());
+			rc.setFromCamera(ndc, this.camera);
+			const groups = this.trainModel.cars.map((c) => c.group);
+			const hit = rc.intersectObjects(groups, true)[0];
+			if (!hit) return;
+			let o = hit.object;
+			while (o && !groups.includes(o)) o = o.parent;
+			const i = groups.indexOf(o);
+			if (i < 0) return;
+			this.focusCar = this.focusCar === i ? -1 : i;
+			this.pan.x = this.pan.z = 0;
+			if (this.onFocusCar) this.onFocusCar();
 		}
 
 		// fotel maszynisty: K przełącza między kabiną a poprzednim widokiem
+		// zapamiętanie bieżącego ujęcia – kolejne klatki przechodzą z niego płynnie do nowego widoku
+		startTransition() {
+			this.trans = { p: this.camera.position.clone(), q: this.camera.quaternion.clone(), t: 0 };
+		}
+
 		toggleCab() {
+			this.startTransition();
 			if (this.camMode === 'cab') this.camMode = this.prevMode || 'follow';
 			else {
 				this.prevMode = this.camMode;
@@ -401,6 +474,8 @@
 		}
 
 		cycleCamMode() {
+			this.startTransition();
+			this.trackside = null;
 			this.camMode = CAM_MODES[(CAM_MODES.indexOf(this.camMode) + 1) % CAM_MODES.length];
 			this.resetView();
 			this.camState.snap = true;
@@ -449,7 +524,11 @@
 			const route = sim.route, front = sim.st.pos, v = sim.st.v;
 			const tp = this.tp;
 			this.zoom += (this.zoomLevels[this.zoomIdx] - this.zoom) * Math.min(1, dt * 2.5);
-			if (this.rotKey) this.rotate(this.rotKey * dt * 1.6, 0);
+			// klawiatura (także w pauzie – krok z zegara renderera)
+			const kdt = dt > 0 ? dt : 1 / 60;
+			if (this.rotKey) this.rotate(this.rotKey * kdt * 1.6, 0);
+			if (this.pitchKey) this.rotate(0, this.pitchKey * kdt * 0.9);
+			if (this.zoomKey) this.zoomBy(Math.exp(this.zoomKey * kdt * 1.4));
 			const target = R.trackPoint(route, front + 20 + v * 0.8, this.tq).heading;
 			this.camHeading = this.camState.snap ? target : angleLerp(this.camHeading, target, Math.min(1, dt * 1.6));
 			// Kadr bazowy: czoło pociągu w dolnej części ekranu, tor daleko przed nim.
@@ -461,25 +540,48 @@
 			const span = 1 / Math.tan(pitch) - 1 / Math.tan(Math.min(1.55, pitch + half));
 			const spanDefault = 1 / Math.tan(PITCH) - 1 / Math.tan(PITCH + half);
 			// przy płaskiej kamerze nie zjeżdżaj niżej niż ok. 7 m
-			const height = Math.max(7, ((ahead + below) / Math.max(span, spanDefault * 0.55)) * this.userZoom);
+			void span;
+			/* orbita: odległość od środka – kadr domyślny jak dawniej (wysokość z zasięgu widoku przy pochyleniu
+			   domyślnym) razy przybliżenie gracza; pochylenie od lekko z dołu do pionu, kamera nie niżej niż 1,5 m
+			   nad terenem. Środek: punkt przed czołem (po obróceniu w bok – środek składu) albo wybrany pojazd,
+			   przesunięty przez gracza (pan). */
+			const heightDef = Math.max(7, (ahead + below) / spanDefault);
+			const dist = (heightDef / Math.sin(PITCH)) * this.userZoom;
+			this.orbitDist = dist;
+			const height = dist * Math.sin(pitch);
 			const want = this.camState;
 			R.trackPoint(route, front, tp);
 			const fx = Math.sin(this.camHeading), fz = -Math.cos(this.camHeading);
-			// za pociągiem: środek obrotu przed czołem; po obróceniu kamery w bok – środek składu
 			const facing = Math.max(0, Math.cos(this.yaw));
-			const along = ahead * facing - sim.L * 0.4 * (1 - facing);
-			const px = tp.x + fx * along, pz = tp.z + fz * along;
-			const k = want.snap ? 1 : Math.min(1, dt * 5);
-			if (want.snap) { want.x = px; want.z = pz; want.h = tp.y; }
+			let along = ahead * facing - sim.L * 0.4 * (1 - facing);
+			let px = tp.x + fx * along, pz = tp.z + fz * along, py = tp.y;
+			const car = this.focusCar >= 0 && this.trainModel && this.trainModel.cars[this.focusCar];
+			if (car) {
+				// środek wybranego pojazdu (s – do terenu pod kamerą)
+				const cars = sim.train.cars, gap = sim.train.gap || 1;
+				let off = 0;
+				for (let i = 0; i < this.focusCar; i++) off += cars[i] + gap;
+				along = -(off + cars[this.focusCar] / 2);
+				const gp = car.group.position;
+				px = gp.x; pz = gp.z; py = R.heightAt(route, front + along);
+			}
+			const dir = this.camHeading + this.yaw;
+			// przesunięcie środka: w bok (prostopadle do patrzenia) i wzdłuż kierunku patrzenia w poziomie
+			const rx = Math.cos(dir), rz = Math.sin(dir), vx = Math.sin(dir), vz = -Math.cos(dir);
+			px += rx * this.pan.x + vx * this.pan.z;
+			pz += rz * this.pan.x + vz * this.pan.z;
+			// w pauzie (dt = 0) bez wygładzania – kamerę można obracać i przesuwać także wtedy
+			const k = want.snap || dt <= 0 ? 1 : Math.min(1, dt * (car ? 8 : 5));
+			if (want.snap) { want.x = px; want.z = pz; want.h = py; }
 			want.x += (px - want.x) * k;
 			want.z += (pz - want.z) * k;
-			want.h += (tp.y - want.h) * k;
+			want.h += (py - want.h) * k;
 			want.snap = false;
-			const dir = this.camHeading + this.yaw;
-			const horiz = height / Math.tan(pitch);
-			// nie wchodź pod teren (pagórki obok toru przy płaskiej kamerze)
-			const camS = front + along - horiz * Math.cos(this.yaw), camD = -horiz * Math.sin(this.yaw);
-			const camY = Math.max(want.h + height, this.world.terrainY(camS, camD) + 3);
+			const horiz = dist * Math.cos(pitch);
+			// nie wchodź pod teren: kamera co najmniej 1,5 m nad nim (wzdłuż toru: s, w bok: d – w przybliżeniu)
+			const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+			const camS = front + along + this.pan.z * cy - this.pan.x * sy - horiz * cy, camD = this.pan.x * cy + this.pan.z * sy - horiz * sy;
+			const camY = Math.max(want.h + 1.8 + height, this.world.terrainY(camS, camD) + 1.5);
 			this.focus.set(want.x, want.h, want.z);
 			const mode = this.camMode === 'cinema' ? (this.cinemaShot(sim) ? 'cinema' : 'follow') : this.camMode;
 			this.setNear(mode === 'cab' ? 0.15 : 0.5);
@@ -495,7 +597,7 @@
 			if (this.cab) this.cab.setVisible(mode === 'cab');
 			if (mode === 'follow') {
 				this.camera.position.set(want.x - Math.sin(dir) * horiz, camY, want.z + Math.cos(dir) * horiz);
-				this.camera.lookAt(want.x, want.h + Math.min(2, 14 / height), want.z);
+				this.camera.lookAt(want.x, want.h + 1.8, want.z);
 			} else if (mode === 'cab') {
 				// z kabiny: oczy maszynisty siedzącego w fotelu, rozglądanie myszą
 				const eye = this.cab.eyeWorld(this.cabEye || (this.cabEye = new T.Vector3()), sim, this.time);
@@ -517,8 +619,97 @@
 				this.camera.position.set(tp.x + ox, Math.max(tp.y + 1.5, tp.y + lift), tp.z + oz);
 				this.camera.lookAt(tp.x, tp.y + 2.2, tp.z);
 				this.focus.set(tp.x, tp.y, tp.z);
+			} else if (mode === 'trackside' || mode === 'roof' || mode === 'bogie' || mode === 'rear') {
+				this.specialView(mode, sim, tp);
+			}
+			// płynne przejście z poprzedniego ujęcia (wygładzone, ok. 0,7 s)
+			if (this.trans) {
+				this.trans.t += dt > 0 ? dt : 1 / 60;
+				const u = Math.min(1, this.trans.t / TRANS_T), e = u * u * (3 - 2 * u);
+				if (u >= 1) this.trans = null;
+				else {
+					this.camera.position.lerpVectors(this.trans.p, this.camera.position, e);
+					this.camera.quaternion.slerpQuaternions(this.trans.q, this.camera.quaternion, e);
+				}
 			}
 			this.aimSun(tp.y, height);
+		}
+
+		/* Widoki dodatkowe (V):
+		   – przy torze: kamera stoi 1,7 m nad terenem kilkaset metrów przed pociągiem, obok toru (wolne miejsce, na
+		     przemian po obu stronach); patrzy na skład, gdy przejedzie – przenosi się dalej; kółko – przybliżenie (kąt
+		     widzenia), mysz – rozglądanie;
+		   – z dachu: nad czołem pierwszego pojazdu, patrzy przed siebie (mysz – rozglądanie);
+		   – przy wózku: nisko obok pierwszego wózka, krąży wokół niego (mysz), kółko – odległość;
+		   – z końca składu: za ostatnim pojazdem na wysokości okna kabiny, patrzy do tyłu. */
+		specialView(mode, sim, tp) {
+			const route = sim.route, front = sim.st.pos, cam = this.camera;
+			const cars = this.trainModel ? this.trainModel.cars : [];
+			const v3 = this.sv || (this.sv = [new T.Vector3(), new T.Vector3()]);
+			const aimLocal = (car, ex, ey, ez, back) => {
+				// oko w układzie pojazdu (z: −przód), patrzenie do przodu (back – do tyłu) z obrotem i pochyleniem gracza
+				const g = car.group;
+				g.updateMatrixWorld();
+				const yaw = this.yaw + (back ? Math.PI : 0), dn = (this.pitch - PITCH) * 0.9;
+				const eye = g.localToWorld(v3[0].set(ex, ey, ez));
+				const tgt = g.localToWorld(v3[1].set(ex - Math.sin(yaw) * Math.cos(dn) * 10, ey - Math.sin(dn) * 10, ez - Math.cos(yaw) * Math.cos(dn) * 10));
+				cam.position.copy(eye);
+				cam.lookAt(tgt);
+				this.focus.copy(eye);
+			};
+			if (mode === 'roof' && cars[0]) {
+				const c = cars[0], H = c.H || 4.2;
+				aimLocal(c, 0, H + 0.9, -c.len / 2 + 2.2, false);
+				R.trackPoint(route, front + 40, tp);
+				this.focus.set(tp.x, tp.y, tp.z);
+			} else if (mode === 'rear' && cars.length) {
+				const c = cars[cars.length - 1];
+				aimLocal(c, 0, 2.7, c.len / 2 + 0.8, true);
+				R.trackPoint(route, front - sim.L - 40, tp);
+				this.focus.set(tp.x, tp.y, tp.z);
+			} else if (mode === 'bogie' && cars[0]) {
+				// orbita wokół pierwszego wózka (ok. 3 m od czoła ostojnicy), blisko toru
+				const c = cars[0], g = c.group;
+				g.updateMatrixWorld();
+				const bz = -c.len / 2 + Math.min(3.6, c.len * 0.2);
+				const center = g.localToWorld(v3[0].set(0, 0.7, bz));
+				const a = Math.PI / 2 + this.yaw, el = Math.max(-0.05, Math.min(1.2, 0.12 + (this.pitch - PITCH) * 0.7)), r = Math.max(1.6, 3.4 * this.userZoom);
+				const off = v3[1].set(Math.sin(a) * Math.cos(el) * r, Math.sin(el) * r, Math.cos(a) * Math.cos(el) * r);
+				off.applyQuaternion(g.getWorldQuaternion(this.svq || (this.svq = new T.Quaternion())));
+				cam.position.copy(center).add(off);
+				const s0 = front - (c.len / 2 + bz);
+				R.trackPoint(route, s0, tp);
+				cam.position.y = Math.max(cam.position.y, this.world.terrainY(s0, 0) + 0.25);
+				cam.lookAt(center);
+				this.focus.copy(center);
+			} else if (mode === 'trackside') {
+				// miejsce kamery: przed pociągiem; gdy skład je minie (albo za daleko) – następne
+				let ts = this.trackside;
+				const tail = front - sim.L;
+				if (!ts || tail > ts.s + 25 || ts.s - front > 900) {
+					const s = Math.min(route.length - 30, front + 260 + sim.st.v * 9);
+					const side = ts ? -ts.side : 1;
+					let d = side * 6;
+					if (this.world.envFree) { const f = this.world.envFree(s, side * 4.5, side, 2.4, 14); if (f !== null && f !== undefined) d = f; }
+					ts = this.trackside = { s, d, side };
+					this.startTransition();
+				}
+				R.trackPoint(route, ts.s, tp);
+				R.sidePoint(route, ts.s, ts.d, tp);
+				const ey = this.world.terrainY(ts.s, ts.d) + 1.7;
+				cam.position.set(tp.x, ey, tp.z);
+				// patrzy na czoło (gdy daleko) i na środek składu, gdy przejeżdża obok; mysz dokłada obrót
+				const aimS = Math.max(tail + sim.L * 0.3, Math.min(front, ts.s + 10));
+				R.trackPoint(route, aimS, tp);
+				cam.lookAt(tp.x, tp.y + 2, tp.z);
+				cam.rotateY(-this.yaw);
+				cam.rotateX(-(this.pitch - PITCH) * 0.6);
+				// przybliżenie: węższy kąt widzenia, gdy pociąg daleko (kółko – zmiana)
+				const dist = Math.max(10, Math.hypot(cam.position.x - tp.x, cam.position.z - tp.z));
+				const fov = Math.max(8, Math.min(60, (2 * Math.atan(28 / dist) * 180) / Math.PI / this.userZoom));
+				if (Math.abs(cam.fov - fov) > 0.05) { cam.fov = fov; cam.updateProjectionMatrix(); }
+				this.focus.set(tp.x, tp.y, tp.z);
+			}
 		}
 
 		// kaskady jak słońce: ten sam kolor i natężenie; bez cieni (shader liczy wtedy każde światło) – tylko pierwsza
