@@ -1,0 +1,3127 @@
+/* Świat wzdłuż toru budowany kawałkami: teren, tor, sieć trakcyjna, drzewa, stacje, semafory,
+   przejazdy, mosty i tunele. Kawałki przed pociągiem powstają, za pociągiem są usuwane. */
+(function () {
+	'use strict';
+	const T = window.THREE;
+	const R = window.TrainRoutes;
+	const NS = window.Train3D;
+	const { hash, smoothstep, vnoise, mat, matS, patch, GEO, box, roof, sprite, glowTexture, labelTexture, boardTexture, disposeTree, canvasTexture } = NS.util;
+
+	const C = 200; // długość kawałka, m
+	const AHEAD = 1300;
+	const BEHIND = 450;
+	// kolumny terenu (odsunięcia od osi toru): gęsto przy torze (nasyp, rów), rzadziej w oddali
+	const TERRAIN_D = (() => {
+		const side = [3.4, 4.6, 5.6, 6.4, 7.2, 8.4, 10, 12.5, 15.5, 19, 23, 28, 34, 41, 49, 58, 68, 80, 94, 110, 130, 155, 185, 220, 260, 310, 370, 440, 520, 600];
+		return [...side.map((d) => -d).reverse(), 0, ...side];
+	})();
+	const ASPECT_COLOR = { green: 0x34d058, yellow: 0xffb020, red: 0xff3b30 };
+	const SKIN = ['#f1c9a5', '#e2b48f', '#c58c66', '#8d5a3b', '#f5d5b8'];
+	const PEOPLE = [0xc0392b, 0x2e86c1, 0x27ae60, 0x8e44ad, 0xd35400, 0x34495e, 0xe67e22, 0x16a085, 0xf1c40f];
+	const HOUSE_WALLS = ['#e8dcc4', '#d9b99b', '#c9d3d9', '#efe6b8', '#f2f0ea', '#cfb7a3'];
+	const HOUSE_ROOFS = ['#8e3b2e', '#6d4c3d', '#59626b', '#a0522d'];
+	const tmpColor = new T.Color();
+	const tp = {};
+	const M4 = new T.Matrix4(), M4B = new T.Matrix4(), V3 = new T.Vector3(), V3B = new T.Vector3(), S3 = new T.Vector3(), Q0 = new T.Quaternion(), Q1 = new T.Quaternion();
+	const SECOND = -4.6; // oś drugiego toru
+
+	class World {
+		constructor(scene) {
+			this.scene = scene;
+			this.chunks = new Map();
+			this.route = null;
+			this.time = 0;
+			this.density = 1; // gęstość roślinności (ustawienia jakości)
+			this.shadows = true;
+			this.zones = []; // pastwiska – drzewa ich omijają
+			this.viewPos = new T.Vector3(); // pozycja kamery (ustawia scena) – do wyboru najbliższych latarń
+			// kilka prawdziwych świateł punktowych przypisywanych co klatkę do latarń najbliższych kamerze
+			// (stała liczba świateł – bez przekompilowywania shaderów)
+			this.lightPool = Array.from({ length: 8 }, () => {
+				const l = new T.PointLight(0xffc27a, 0, 22, 1.6);
+				scene.add(l);
+				return l;
+			});
+			this.trainDoors = null; // drzwi pociągu gracza w świecie (ustawia scena)
+		}
+
+		static lampMaterials() {
+			const shared = (m) => { m.userData.shared = true; return m; };
+			const poolTex = canvasTexture('lamp-pool', 128, 128, (g, w) => {
+				const r = g.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
+				// wygaszone przed krawędzią koła – bez widocznego obrysu
+				r.addColorStop(0, 'rgba(255,255,255,1)');
+				r.addColorStop(0.3, 'rgba(255,255,255,0.6)');
+				r.addColorStop(0.6, 'rgba(255,255,255,0.18)');
+				r.addColorStop(0.85, 'rgba(255,255,255,0)');
+				r.addColorStop(1, 'rgba(255,255,255,0)');
+				g.fillStyle = r;
+				g.fillRect(0, 0, w, w);
+			});
+			const haloTex = canvasTexture('lamp-halo', 64, 64, (g, w) => {
+				const r = g.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
+				r.addColorStop(0, 'rgba(255,255,255,1)');
+				r.addColorStop(0.15, 'rgba(255,255,255,0.6)');
+				r.addColorStop(0.5, 'rgba(255,255,255,0.12)');
+				r.addColorStop(1, 'rgba(255,255,255,0)');
+				g.fillStyle = r;
+				g.fillRect(0, 0, w, w);
+			});
+			return {
+				lampLens: shared(new T.MeshBasicMaterial({ color: '#d8d4c8' })),
+				lampHousing: mat('#3a3f45'),
+				lampHalo: shared(new T.SpriteMaterial({ map: haloTex, color: 0xffc98a, transparent: true, depthWrite: false, blending: T.AdditiveBlending, opacity: 0, fog: false })),
+				lampPool: shared(new T.MeshBasicMaterial({ map: poolTex, color: 0xffc27a, transparent: true, depthWrite: false, blending: T.AdditiveBlending, opacity: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, fog: false })),
+				poolGeo: (() => { const g = new T.CircleGeometry(1, 32).rotateX(-Math.PI / 2); g.userData.shared = true; return g; })(),
+			};
+		}
+
+		// Latarnia: obudowa, świecący klosz od spodu, poświata (większa w mgle i opadach), plama światła na ziemi.
+		// (hx, hy, hz) – położenie klosza w układzie grupy g, groundY – wysokość podłoża pod nią. Zwraca klosz.
+		lampHead(g, hx, hy, hz, groundY, along, size) {
+			const M = World.materials();
+			const k = size || 1;
+			const w = (along ? 0.38 : 0.8) * k, d = (along ? 0.8 : 0.38) * k;
+			// obudowa: spłaszczona kopuła z okapem, pod nią klosz
+			const dome = new T.Mesh(GEO.sphere, M.lampHousing);
+			dome.scale.set(w, 0.3 * k, d);
+			dome.position.set(hx, hy + 0.04, hz);
+			g.add(dome);
+			const skirt = new T.Mesh(GEO.cyl, M.lampHousing);
+			skirt.scale.set(w * 0.98, 0.06, d * 0.98);
+			skirt.position.set(hx, hy - 0.02, hz);
+			g.add(skirt);
+			const lens = new T.Mesh(GEO.sphere, M.lampLens);
+			lens.scale.set(w * 0.82, 0.1, d * 0.82);
+			lens.position.set(hx, hy - 0.05, hz);
+			g.add(lens);
+			const halo = new T.Sprite(M.lampHalo);
+			halo.scale.set(1.5 * k, 1.5 * k, 1);
+			halo.userData.lampHalo = true;
+			halo.position.set(hx, hy - 0.12, hz);
+			g.add(halo);
+			const h = hy - groundY;
+			const pool = new T.Mesh(M.poolGeo, M.lampPool);
+			pool.scale.setScalar(Math.max(3.5, h * 1.05));
+			pool.position.set(hx, groundY + 0.03, hz);
+			pool.renderOrder = 5;
+			g.add(pool);
+			return lens;
+		}
+
+		/* Ludzie: części oznaczone aKeep nie biorą koloru instancji (ubranie/skóra) – spodnie i włosy z palet wg
+		   numeru osoby (gl_InstanceID), buty i pasek stałe. */
+		static personMat(m) {
+			NS.util.patch(m, 'lit');
+			const prev = m.onBeforeCompile;
+			m.onBeforeCompile = (sh, r) => {
+				prev(sh, r);
+				sh.vertexShader = sh.vertexShader
+					.replace('#include <common>', `#include <common>
+					attribute float aKeep; attribute float aLimb; attribute vec3 aAnim;
+					vec3 animP;
+					// obrót wokół osi x (pochylenie w przód/tył) względem punktu c; y – wokół osi pionowej
+					vec3 rX(vec3 p, vec3 c, float a) { p -= c; float s = sin(a), k = cos(a); return c + vec3(p.x, p.y * k - p.z * s, p.y * s + p.z * k); }
+					vec3 rY(vec3 p, vec3 c, float a) { p -= c; float s = sin(a), k = cos(a); return c + vec3(p.x * k + p.z * s, p.y, -p.x * s + p.z * k); }`)
+					.replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+					/* animacja (aAnim: x – faza, y – chód 0…1, z – cykle kroku na s): chód – wymach ud, zgięcie kolan
+					   w fazie przenoszenia, ręce przeciwnie do nóg z ugiętymi łokciami, podskok; stanie – oddech,
+					   przenoszenie ciężaru, kołysanie rąk, rozglądanie się */
+					animP = position;
+					{
+						// aAnim.y = −1 – siedzi (uda poziomo, łydki w dół, przedramiona na udach, ciało niżej o 0,35 m)
+						float sit = step(aAnim.y, -0.5);
+						float ph = uTime * aAnim.z * 6.2832 + aAnim.x, w = max(aAnim.y, 0.0), id = 1.0 - w, sw = sin(ph);
+						float t2 = uTime + aAnim.x * 7.0;
+						int L = int(aLimb + 0.5);
+						float a1 = 0.0, a2 = 0.0, turn = 0.0;
+						vec3 c1 = vec3(0.0), c2 = vec3(0.0);
+						float shift = id * (1.0 - sit) * sin(t2 * 0.23) * 0.035;
+						if (L == 1 || L == 3) { a1 = sw * 0.46 * w + shift; c1 = vec3(0.0, 0.92, 0.0); c2 = vec3(0.0, 0.5, 0.0); if (L == 3) a2 = -max(0.0, sin(ph + 2.0)) * 0.8 * w - max(0.0, shift) * 1.5; }
+						if (L == 2 || L == 4) { a1 = -sw * 0.46 * w - shift; c1 = vec3(0.0, 0.92, 0.0); c2 = vec3(0.0, 0.5, 0.0); if (L == 4) a2 = -max(0.0, sin(ph + 5.14)) * 0.8 * w - max(0.0, -shift) * 1.5; }
+						if (L == 5 || L == 7) { a1 = -sw * 0.4 * w + id * 0.05 * sin(t2 * 0.7); c1 = vec3(0.0, 1.44, 0.0); c2 = vec3(0.0, 1.16, 0.0); if (L == 7) a2 = 0.12 + 0.12 * id * (0.5 + 0.5 * sin(t2 * 0.4)) + w * (0.3 + 0.25 * max(0.0, -sw)); }
+						if (L == 6 || L == 8) { a1 = sw * 0.4 * w + id * 0.05 * sin(t2 * 0.7 + 1.3); c1 = vec3(0.0, 1.44, 0.0); c2 = vec3(0.0, 1.16, 0.0); if (L == 8) a2 = 0.12 + 0.12 * id * (0.5 + 0.5 * sin(t2 * 0.37 + 2.0)) + w * (0.3 + 0.25 * max(0.0, sw)); }
+						if (L == 9) turn = id * 0.5 * sin(t2 * 0.31) * sin(t2 * 0.13 + 1.0) + w * 0.06 * sin(ph);
+						if (sit > 0.5) {
+							if (L >= 1 && L <= 4) { a1 = 1.52 + (L == 2 || L == 4 ? 0.05 : -0.03); a2 = L >= 3 ? -1.42 - 0.08 * sin(t2 * 0.21 + float(L)) : 0.0; }
+							if (L >= 5 && L <= 8) { a1 = 0.32 + 0.03 * sin(t2 * 0.5 + float(L)); a2 = L >= 7 ? 0.8 : 0.0; }
+						}
+						if (a2 != 0.0) { animP = rX(animP, c2, a2); objectNormal = rX(objectNormal, vec3(0.0), a2); }
+						if (a1 != 0.0) { animP = rX(animP, c1, a1); objectNormal = rX(objectNormal, vec3(0.0), a1); }
+						if (turn != 0.0) { animP = rY(animP, vec3(0.0, 1.56, 0.0), turn); objectNormal = rY(objectNormal, vec3(0.0), turn); }
+						// podskok przy chodzie, oddech (unosi tułów i głowę), przechył ciała przy przenoszeniu ciężaru
+						animP.y += (abs(sin(ph)) - 0.5) * 0.04 * w - 0.35 * sit;
+						if (L == 0 || L >= 5) animP.y += id * (0.5 + 0.5 * sin(t2 * 1.6)) * 0.006 * smoothstep(0.95, 1.2, position.y);
+						animP.x += shift * 0.25 * smoothstep(0.3, 1.0, position.y);
+					}`)
+					.replace('#include <begin_vertex>', 'vec3 transformed = animP;')
+					.replace('#include <color_vertex>', `#include <color_vertex>
+					if (aKeep > 0.5) {
+						float ph = fract(sin(float(gl_InstanceID) * 12.9898 + aKeep * 3.1) * 43758.5453);
+						vec3 pal = aKeep < 1.5
+							? (ph < 0.4 ? vec3(0.12, 0.16, 0.3) : ph < 0.6 ? vec3(0.07) : ph < 0.8 ? vec3(0.24, 0.24, 0.23) : vec3(0.42, 0.36, 0.26))
+							: aKeep > 2.5
+								? (ph < 0.35 ? vec3(0.1, 0.08, 0.06) : ph < 0.65 ? vec3(0.3, 0.2, 0.12) : ph < 0.85 ? vec3(0.62, 0.5, 0.3) : vec3(0.55))
+								: color.rgb;
+						vColor.rgb = pal;
+					}`);
+			};
+			m.customProgramCacheKey = () => 'train2-person';
+			m.userData.shared = true;
+			return m;
+		}
+
+		/* Ludzie jako instancje (ciała i głowy): geometria-nakładka na wspólne atrybuty modelu + własny atrybut
+		   instancji aAnim (faza, chód, tempo – zob. personMat), wspólny dla ciał i głów. setAnim(k, …). */
+		static peopleMeshes(cap) {
+			const PG = World.G.people, M = World.materials();
+			const anim = new T.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
+			anim.setUsage(T.DynamicDrawUsage);
+			const wrap = (geo) => {
+				const g = new T.BufferGeometry();
+				for (const [k, v] of Object.entries(geo.attributes)) g.setAttribute(k, v);
+				g.setAttribute('aAnim', anim);
+				return g;
+			};
+			const bodies = new T.InstancedMesh(wrap(PG.body), M.personBody, cap);
+			const heads = new T.InstancedMesh(wrap(PG.head), M.personHead, cap);
+			const setAnim = (k, phase, walk, freq) => { anim.setXYZ(k, phase, walk, freq); anim.needsUpdate = true; };
+			return { bodies, heads, anim, setAnim };
+		}
+
+		// materiały współdzielone przez wszystkie kawałki (tworzone raz)
+		static materials() {
+			if (World.M) return World.M;
+			const veg = (color) => patch(new T.MeshStandardMaterial({ color, roughness: 0.82, vertexColors: true }), 'wind'); // faktura liści w shaderze (LEAF_GLSL)
+			World.G = { trees: NS.props.buildTrees(), grass: NS.props.buildGrass(), people: NS.props.buildPeople() };
+			// woda: mapa normalnych z sumy fal, przesuwana w czasie; odbija niebo (mapa otoczenia sceny)
+			const normals = canvasTexture('water-normals', 256, 256, (g, w) => {
+				const hgt = new Float32Array(w * w);
+				for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) {
+					let v = 0, a = 1, f = 4;
+					for (let o = 0; o < 4; o++) {
+						v += a * Math.sin((x / w) * Math.PI * 2 * f + Math.sin((y / w) * Math.PI * 2 * (f - 1) + o * 1.7) * 1.3 + o) * Math.cos((y / w) * Math.PI * 2 * f + o * 2.1);
+						a *= 0.5;
+						f *= 2;
+					}
+					hgt[y * w + x] = v;
+				}
+				const img = g.createImageData(w, w);
+				for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) {
+					const hx = hgt[y * w + ((x + 1) % w)] - hgt[y * w + ((x + w - 1) % w)];
+					const hy = hgt[((y + 1) % w) * w + x] - hgt[((y + w - 1) % w) * w + x];
+					const nx = -hx * 1.2, ny = -hy * 1.2, l = Math.hypot(nx, ny, 1);
+					const i = (y * w + x) * 4;
+					img.data[i] = ((nx / l) * 0.5 + 0.5) * 255;
+					img.data[i + 1] = ((ny / l) * 0.5 + 0.5) * 255;
+					img.data[i + 2] = ((1 / l) * 0.5 + 0.5) * 255;
+					img.data[i + 3] = 255;
+				}
+				g.putImageData(img, 0, 0);
+			});
+			normals.colorSpace = T.NoColorSpace;
+			normals.wrapS = normals.wrapT = T.RepeatWrapping;
+			normals.repeat.set(30, 2);
+			World.M = {
+				terrain: patch(new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }), 'ground'),
+				ballast: patch(new T.MeshStandardMaterial({ color: '#948b7e', roughness: 0.95 }), 'gravel'),
+				rail: matS('#c3c9cf', { metalness: 0.85, roughness: 0.28 }),
+				sleeper: matS('#9b988f', { roughness: 0.9, surf: 'concrete' }),
+				clip: matS('#2b2d30', { roughness: 0.6, metalness: 0.5 }),
+				railSide: matS('#6e4b35', { roughness: 0.8, metalness: 0.35 }),
+				grass: patch(new T.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, vertexColors: true, side: T.DoubleSide }), 'grass'),
+				flower: mat('#ffffff'),
+				personBody: World.personMat(new T.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: 0.9, metalness: 0, envMapIntensity: 0.35 })),
+				personHead: World.personMat(new T.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: 0.7, metalness: 0, envMapIntensity: 0.35 })),
+				trunkMat: mat('#5a3f2a', { roughness: 0.95 }),
+				birchMat: mat('#e9e6df', { roughness: 0.9 }),
+				trunk: mat('#5a3f2a'),
+				birch: mat('#e9e6df'),
+				spruce: veg('#ffffff'),
+				leaf: veg('#ffffff'),
+				bush: veg('#ffffff'),
+				reed: veg('#8a9442'),
+				forest: patch(new T.MeshLambertMaterial({ color: '#ffffff', flatShading: true }), 'lit'),
+				water: patch(new T.MeshStandardMaterial({ color: '#2c6a8f', roughness: 0.07, metalness: 0.1, normalMap: normals, normalScale: new T.Vector2(0.6, 0.6), envMapIntensity: 1.3 }), 'clean'),
+				normals,
+				// latarnie: klosz, poświata, plama światła na ziemi (wspólne dla wszystkich)
+				...World.lampMaterials(),
+				// okna budynków – nocą świecą
+				glass: patch(new T.MeshStandardMaterial({ color: '#a9c4d6', transparent: true, opacity: 0.28, roughness: 0.05, metalness: 0.2, depthWrite: false }), 'clean'),
+				litWin: patch(new T.MeshLambertMaterial({ color: '#3d4a57', emissive: 0xffc070, emissiveIntensity: 0 }), 'lit'),
+			};
+			return World.M;
+		}
+
+		setRoute(route) {
+			this.clear();
+			this.route = route;
+			if (this.envIndex) this.envIndex(route); // trasa rzeczywista: budynki, drogi, wody, zagospodarowanie (real-env.js)
+			this.warm = true;
+		}
+
+		clear() {
+			for (const ch of this.chunks.values()) this.dropChunk(ch);
+			this.chunks.clear();
+			this.zones = [];
+		}
+
+		dropChunk(ch) {
+			this.scene.remove(ch.group);
+			ch.group.traverse((o) => { if (o.isInstancedMesh) o.dispose(); });
+			disposeTree(ch.group);
+			for (const d of ch.dyn) {
+				if (d.ownMat) d.ownMat.dispose();
+				if (d.model) d.model.dispose();
+				if (d.zone) this.zones = this.zones.filter((z) => z !== d.zone);
+			}
+		}
+
+		// ---------- funkcje terenu ----------
+		/* Obniżenie terenu przy mostach.
+		   Trasa z gry: dolina rzeki (10 m) albo obniżenie pod wiaduktem (6,5 m) wzdłuż toru.
+		   Trasa rzeczywista: wiadukt nad drogą lub torami – wykop wzdłuż obiektu pod mostem (kierunek i szerokość
+		   z mapy, bridgeCorridor): pod przęsłem pełna głębokość, skarpy 1:1,5, wzdłuż drogi/toru powrót do poziomu
+		   terenu na ok. 90 m; obok (stacje, bocznice, zabudowa) teren na swoim poziomie. Most nad rzeką – dolina
+		   w pasie przy torze. Poza przęsłem tor na koronie nasypu (do skrajnego toru głównego), chyba że full
+		   (tory i drogi przechodzące pod torem schodzą razem z terenem). */
+		dip(s, dd, full) {
+			let d = 0;
+			for (const b of this.route.bridges) {
+				const via = b.kind === 'viaduct', D0 = via ? 6.5 : 10;
+				// głębokość: z pomiaru terenu (NMT) albo typowa (wiadukt 6,5 m, dolina rzeki 10 m)
+				const D = this.env && this.bridgeDepth ? this.bridgeDepth(b, D0) : D0;
+				if (!this.env) {
+					const ext = via ? 22 : 30;
+					const t = Math.min(s - (b.from - ext), b.to + ext - s);
+					if (t > 0) d = Math.max(d, D * smoothstep(0, via ? Math.min(30, (b.to - b.from) / 2 + ext) : 45, t));
+					continue;
+				}
+				const sp = this.bridgeSpan(b), out = Math.max(sp[0] - s, s - sp[1], 0);
+				let v = 0;
+				if (via) {
+					const c = this.bridgeCorridor ? this.bridgeCorridor(b) : null;
+					if (!c) continue;
+					const ds = s - c.s, dl = dd === undefined ? 0 : dd;
+					if (c.paths) {
+						// wykop wzdłuż torów przechodzących pod mostem (punkty co 1,5 m z głębokością)
+						const W = c.paths.hw;
+						for (let k = Math.floor((s - 14) / 8); k <= Math.floor((s + 14) / 8); k++) {
+							for (const p of c.paths.buckets.get(k) || []) {
+								const e = Math.hypot(s - p[0], dl - p[1]), sl = W + 1.5 * p[2] + 0.3;
+								if (e < sl) v = Math.max(v, p[2] * (1 - smoothstep(W, sl, e)));
+							}
+						}
+						// drogi pod tym samym przęsłem: prosty wykop na pełną głębokość pod mostem, dalej powrót do terenu
+						for (const rc of c.roads || []) {
+							const rs = s - rc.s, t = rs * rc.ca + dl * rc.sa, q = Math.abs(rs * rc.sa - dl * rc.ca);
+							if (q > rc.hw + 1.5 * D + 0.3 || Math.abs(t) > 104) continue;
+							const depth = D * (1 - smoothstep(0, 90, Math.max(0, Math.abs(t) - 14)));
+							v = Math.max(v, depth * (1 - smoothstep(rc.hw, rc.hw + 1.5 * depth + 0.3, q)));
+						}
+					} else {
+						const t = ds * c.ca + dl * c.sa, q = Math.abs(ds * c.sa - dl * c.ca); // wzdłuż i w poprzek wykopu
+						if (t > (c.t1 || 14) + 100 || t < (c.t0 || -14) - 100 || q > c.hw + 12) continue;
+						// pełna głębokość wzdłuż całego przejścia pod mostami (naszym i torów obok), dalej powrót do terenu
+						const outT = Math.max(0, t - (c.t1 !== undefined ? c.t1 : 14), (c.t0 !== undefined ? c.t0 : -14) - t);
+						const depth = D * (1 - smoothstep(0, 90, outT));
+						v = depth * (1 - smoothstep(c.hw, c.hw + 1.5 * depth + 0.3, q));
+					}
+				} else {
+					if (out > 50) continue;
+					v = D * (1 - smoothstep(0, 50, out)) * (dd === undefined ? 1 : 1 - smoothstep(30, 70, Math.abs(dd)));
+				}
+				// poza przęsłem tor pociągu na koronie nasypu
+				if (v > 0 && out > 0 && !full && dd !== undefined && !(this.envUnderBridge && this.envUnderBridge(s, dd))) {
+					const sh = this.bridgeShoulder(b, dd);
+					v *= smoothstep(sh, sh + 1.5 * v + 0.3, Math.abs(dd));
+				}
+				d = Math.max(d, v);
+			}
+			return d;
+		}
+
+		// tor równoległy na koronie nasypu na odcinku przęsła – też na moście (w danych bywa bez oznaczenia mostu)
+		onBridgeSpan(s, d) {
+			for (const b of this.route.bridges) { const sp = this.bridgeSpan(b); if (s >= sp[0] - 1 && s <= sp[1] + 1 && Math.abs(d) <= this.bridgeShoulder(b, d)) return true; }
+			return false;
+		}
+
+		// przęsło mostu w grze: z danych, rozszerzone tak, by obejmowało miejsce, w którym obiekt pod spodem (wykop)
+		// przecina oś toru (przy ukośnym przecięciu dane bywają przesunięte o kilka metrów)
+		bridgeSpan(b) {
+			if (!this.spans) this.spans = new Map();
+			let sp = this.spans.get(b);
+			if (!sp) {
+				sp = [b.from, b.to];
+				const c = this.env && b.kind === 'viaduct' && this.bridgeCorridor ? this.bridgeCorridor(b) : null;
+				if (c) { sp[0] = Math.min(sp[0], c.s - 8); sp[1] = Math.max(sp[1], c.s + 8); }
+				this.spans.set(b, sp);
+			}
+			return sp;
+		}
+
+		// korona nasypu przy moście po stronie d: 4,2 m albo za skrajnym torem głównym z mapy (do 12 m od osi)
+		bridgeShoulder(b, dd) {
+			if (!this.shoulders) this.shoulders = new Map();
+			let sh = this.shoulders.get(b);
+			if (!sh) {
+				sh = { l: 4.2, r: 4.2 };
+				for (const t of this.envTracksAt ? this.envTracksAt((b.from + b.to) / 2) : []) {
+					if (t.side & 5) continue;
+					if (t.d > 0 && t.d < 12) sh.r = Math.max(sh.r, t.d + 2.6);
+					if (t.d < 0 && t.d > -12) sh.l = Math.max(sh.l, -t.d + 2.6);
+				}
+				this.shoulders.set(b, sh);
+			}
+			return dd < 0 ? sh.l : sh.r;
+		}
+
+		// odległość od skraju torowiska (przy dwóch torach lewa strona liczy się od drugiego toru)
+		eff(d) {
+			return this.route.double && d < 0 ? Math.max(0, -d + SECOND) : Math.abs(d);
+		}
+
+		flat(s, d) {
+			let f = 0;
+			for (const st of this.route.stations) {
+				const big = st.type !== 'halt';
+				const ext = big ? 170 : 100;
+				if (s < st.platformStart - ext || s > st.platformEnd + ext) continue;
+				const ws = smoothstep(st.platformStart - ext, st.platformStart - ext + 55, s) * (1 - smoothstep(st.platformEnd + ext - 55, st.platformEnd + ext, s));
+				const wd = this.env
+					? (d >= 0 ? 1 - smoothstep(24, 44, d) : 1 - smoothstep(18, 34, -d))
+					: d >= 0 ? 1 - smoothstep(big ? 200 : 125, big ? 240 : 155, d) : 1 - smoothstep(big ? 28 : 16, big ? 48 : 32, -d);
+				f = Math.max(f, ws * wd);
+			}
+			for (const c of this.route.crossings) {
+				const a = Math.abs(s - c.pos);
+				if (a < 45) f = Math.max(f, 1 - smoothstep(12, 45, a));
+			}
+			return f;
+		}
+
+		terrainY(s, d) {
+			if (this.env && this.env.dem) return this.demTerrainY(s, d); // trasa rzeczywista z ukształtowaniem terenu
+			const h = R.heightAt(this.route, s);
+			const ad = this.eff(d);
+			const k = smoothstep(6, 75, ad) * (1 - this.flat(s, d));
+			let rough = (vnoise(s * 0.006 + 11, d * 0.008 + 3) - 0.5) * 26 + (vnoise(s * 0.03, d * 0.03 + 7) - 0.5) * 3;
+			// trasa rzeczywista: teren prawie płaski (miasto, budynki z mapy); pod wodą obniżony
+			if (this.env) rough = rough * 0.12 - (this.areaAt(s, d) === 9 && ad > 10 ? 1.1 : 0);
+			const fl = this.flat(s, d), dp = this.dip(s, d);
+			// rów odwadniający wzdłuż nasypu
+			const ditch = ad > 4.6 && ad < 9 && dp < 0.5 ? 0.75 * Math.exp(-Math.pow((ad - 6.4) / 1.1, 2)) * (1 - fl) : 0;
+			return h - 0.95 + rough * k - dp - ditch;
+		}
+
+		// pola uprawne: prostokąty w układzie (kilometraż, odsunięcie)
+		field(s, d) {
+			if (this.env) return null; // trasa rzeczywista: pola z mapy (raster zagospodarowania)
+			const ad = Math.abs(d);
+			if (ad < 30 || this.flat(s, d) > 0.2) return null;
+			const fs = Math.floor(s / 110), fd = Math.floor(d / 80);
+			if (hash(fs * 7.13 + fd * 3.71) <= 0.55) return null;
+			const es = s - fs * 110, ed = d - fd * 80;
+			return { kind: hash(fs * 1.9 + fd * 5.3), rowsX: hash(fs * 3.3 + fd * 1.1) < 0.5, border: Math.min(es, 110 - es, ed, 80 - ed) < 3.5 };
+		}
+
+		// piasek: brzegi rzek pod mostami i piaszczyste płaty na wzgórzach (z dala od toru)
+		sandK(s, d) {
+			const dp = this.dip(s);
+			let k = dp > 1.5 ? smoothstep(1.5, 4, dp) : 0;
+			const ad = this.eff(d);
+			// (na trasach z mapy zagospodarowanie terenu zna mapa – bez losowych płatów piasku na łąkach i placach)
+			if (!this.env && ad > 40 && this.flat(s, d) < 0.2) k = Math.max(k, smoothstep(0.7, 0.8, vnoise(s * 0.004 + 21, d * 0.006 + 4)));
+			return k;
+		}
+
+		// materiał terenu dla shadera: [trawa, piasek, ziemia uprawna]
+		terrainMat(s, d) {
+			if (this.env) return this.eff(d) < 6 ? [1, 0, 0] : this.envTerrainMat(s, d);
+			const f = this.field(s, d);
+			if (f && !f.border) return [0, 0, 1];
+			const k = this.sandK(s, d);
+			return [1 - k, k, 0];
+		}
+
+		rowWeights(s, d) {
+			const f = this.field(s, d);
+			if (!f || f.border) return [0, 0];
+			return f.rowsX ? [1, 0] : [0, 1];
+		}
+
+		terrainColor(s, d, y) {
+			const ad = this.eff(d);
+			const n = vnoise(s * 0.02, d * 0.02);
+			let r = 0.34 + 0.1 * n, g = 0.46 + 0.08 * n, b = 0.22 + 0.04 * n;
+			const f = this.field(s, d);
+			if (this.env && ad >= 6) [r, g, b] = this.envTerrainColor(s, d);
+			if (f && f.border) { r = 0.33; g = 0.5; b = 0.22; } // miedza
+			else if (f) {
+				if (f.kind < 0.3) { r = 0.84; g = 0.73; b = 0.38; } // zboże
+				else if (f.kind < 0.5) { r = 0.55; g = 0.42; b = 0.29; } // zaorane
+				else if (f.kind < 0.62) { r = 0.86; g = 0.8; b = 0.3; } // rzepak
+				else { r = 0.5; g = 0.66; b = 0.27; } // uprawa
+			}
+			const sk = f && !f.border ? 0 : this.sandK(s, d);
+			if (sk > 0) { r += (0.8 - r) * sk; g += (0.7 - g) * sk; b += (0.5 - b) * sk; }
+			if (ad < 4.7) { r = 0.5; g = 0.46; b = 0.4; }
+			else if (ad < 9 && this.dip(s, d) < 0.5) {
+				const w = Math.exp(-Math.pow((ad - 6.4) / 1.2, 2));
+				r -= 0.06 * w; g -= 0.02 * w; b -= 0.04 * w;
+			}
+			const h = R.heightAt(this.route, s);
+			if (this.dip(s, d) > 3 && y < h - 7.5) { r = 0.42; g = 0.4; b = 0.3; }
+			tmpColor.setRGB(r, g, b, T.SRGBColorSpace);
+			return tmpColor;
+		}
+
+		// wstęga wzdłuż toru: kolumny d (odsunięcia), wiersze co ds metrów
+		// shiftFn(s) – przesunięcie całej wstęgi w bok (rozjazdy, bocznice); yfn dostaje też odsunięcie względne
+		ribbon(s0, s1, ds, cols, yfn, colorFn, rowFn, shiftFn, matFn) {
+			const rows = Math.max(2, Math.ceil((s1 - s0) / ds) + 1);
+			const pos = new Float32Array(rows * cols.length * 3);
+			const col = colorFn ? new Float32Array(rows * cols.length * 3) : null;
+			const rowA = rowFn ? new Float32Array(rows * cols.length * 2) : null;
+			const matA = matFn ? new Float32Array(rows * cols.length * 3) : null;
+			let k = 0;
+			for (let i = 0; i < rows; i++) {
+				const s = Math.min(s1, s0 + i * ds);
+				R.trackPoint(this.route, s, tp);
+				const cx = Math.cos(tp.heading), cz = Math.sin(tp.heading);
+				const sh = shiftFn ? shiftFn(s) : 0;
+				for (const rel of cols) {
+					const d = rel + sh;
+					const y = yfn(s, d, tp.y, rel);
+					pos[k] = tp.x + cx * d;
+					pos[k + 1] = y;
+					pos[k + 2] = tp.z + cz * d;
+					if (col) {
+						const c = colorFn(s, d, y);
+						col[k] = c.r; col[k + 1] = c.g; col[k + 2] = c.b;
+					}
+					if (matA) {
+						const m = matFn(s, d);
+						matA[k] = m[0]; matA[k + 1] = m[1]; matA[k + 2] = m[2];
+					}
+					if (rowA) {
+						const w = rowFn(s, d);
+						rowA[(k / 3) * 2] = w[0];
+						rowA[(k / 3) * 2 + 1] = w[1];
+					}
+					k += 3;
+				}
+			}
+			const idx = [];
+			const n = cols.length;
+			for (let i = 0; i < rows - 1; i++) {
+				for (let j = 0; j < n - 1; j++) {
+					const a = i * n + j, b = a + 1, c = a + n, d = c + 1;
+					idx.push(a, b, c, b, d, c);
+				}
+			}
+			const geo = new T.BufferGeometry();
+			geo.setAttribute('position', new T.BufferAttribute(pos, 3));
+			if (col) geo.setAttribute('color', new T.BufferAttribute(col, 3));
+			if (rowA) geo.setAttribute('aRow', new T.BufferAttribute(rowA, 2));
+			if (matA) geo.setAttribute('aMat', new T.BufferAttribute(matA, 3));
+			geo.setIndex(idx);
+			geo.computeVertexNormals();
+			return geo;
+		}
+
+		// ustawia obiekt na torze: s – kilometraż, d – odsunięcie w prawo, lokalne −z = kierunek jazdy
+		place(obj, s, d, dy) {
+			R.sidePoint(this.route, s, d, tp);
+			obj.position.set(tp.x, tp.y + (dy || 0), tp.z);
+			obj.rotation.y = -tp.heading;
+			return obj;
+		}
+
+		// rzut punktu świata (x, z) na oś toru: kilometraż s i odsunięcie d (w prawo); hint – przybliżone s
+		toTrack(x, z, hint) {
+			const r = this.route;
+			let s = hint;
+			for (let k = 0; k < 6; k++) {
+				R.trackPoint(r, s, tp);
+				const ds = (x - tp.x) * Math.sin(tp.heading) - (z - tp.z) * Math.cos(tp.heading);
+				s += ds;
+				if (Math.abs(ds) < 0.02) break;
+			}
+			R.trackPoint(r, s, tp);
+			return { s, d: (x - tp.x) * Math.cos(tp.heading) + (z - tp.z) * Math.sin(tp.heading) };
+		}
+
+		/* Obiekt zbudowany w układzie lokalnym toru (x – w prawo, y – nad główką szyny, z – wstecz; środek w s = mid)
+		   wygięty wzdłuż osi toru: długie bryły (perony, krawędzie, przęsła) wierzchołek po wierzchołku, krótkie
+		   elementy w całości – w miejscu łuku odpowiadającym ich środkowi, z wysokością toru w tym miejscu
+		   (userData.rigid – zawsze w całości). keep – obiekty zostawione bez zmian (np. pasażerowie, liczeni co klatkę). */
+		bendGroup(g, mid, keep) {
+			const r = this.route;
+			g.position.set(0, 0, 0);
+			g.rotation.set(0, 0, 0);
+			g.scale.set(1, 1, 1);
+			g.updateMatrixWorld(true);
+			const F = new T.Matrix4(), Tz = new T.Matrix4(), M = new T.Matrix4(), Mi = new T.Matrix4(), bb = new T.Box3();
+			const frame = (s) => {
+				R.trackPoint(r, s, tp);
+				F.makeRotationY(-tp.heading);
+				F.setPosition(tp.x, tp.y, tp.z);
+				return F;
+			};
+			const reparent = (obj, m) => {
+				if (obj.parent) obj.parent.remove(obj);
+				m.decompose(obj.position, obj.quaternion, obj.scale);
+				obj.matrixAutoUpdate = true;
+				g.add(obj);
+			};
+			const rigid = (obj, cz) => {
+				M.multiplyMatrices(frame(mid - cz), Tz.makeTranslation(0, 0, -cz)).multiply(obj.matrixWorld);
+				reparent(obj, M.clone());
+			};
+			const v = new T.Vector3(), nrm = new T.Vector3();
+			const bendMesh = (mesh, ext) => {
+				let geo = mesh.geometry;
+				if (geo.type === 'BoxGeometry') {
+					const p = geo.parameters;
+					geo = new T.BoxGeometry(p.width, p.height, p.depth, 1, 1, Math.max(1, Math.ceil(ext / 3)));
+				} else geo = geo.clone();
+				geo.applyMatrix4(mesh.matrixWorld);
+				const pos = geo.attributes.position, nor = geo.attributes.normal;
+				for (let i = 0; i < pos.count; i++) {
+					v.fromBufferAttribute(pos, i);
+					R.sidePoint(r, mid - v.z, v.x, tp);
+					pos.setXYZ(i, tp.x, tp.y + v.y, tp.z);
+					if (nor) {
+						nrm.fromBufferAttribute(nor, i);
+						const c = Math.cos(-tp.heading), sn = Math.sin(-tp.heading);
+						nor.setXYZ(i, nrm.x * c + nrm.z * sn, nrm.y, -nrm.x * sn + nrm.z * c);
+					}
+				}
+				pos.needsUpdate = true;
+				geo.computeBoundingBox();
+				geo.computeBoundingSphere();
+				geo.userData.shared = false;
+				mesh.geometry = geo;
+				reparent(mesh, new T.Matrix4());
+			};
+			const process = (obj) => {
+				if (keep && keep.has(obj)) return;
+				bb.makeEmpty();
+				bb.setFromObject(obj);
+				const ext = bb.isEmpty() ? 0 : bb.max.z - bb.min.z;
+				const cz = bb.isEmpty() ? obj.matrixWorld.elements[14] : (bb.min.z + bb.max.z) / 2;
+				if (ext <= 40 || obj.userData.rigid || obj.isSprite) return rigid(obj, cz);
+				if (obj.isInstancedMesh) {
+					for (let i = 0; i < obj.count; i++) {
+						obj.getMatrixAt(i, Mi);
+						Mi.premultiply(obj.matrixWorld);
+						const z = Mi.elements[14];
+						M.multiplyMatrices(frame(mid - z), Tz.makeTranslation(0, 0, -z)).multiply(Mi);
+						obj.setMatrixAt(i, M);
+					}
+					obj.instanceMatrix.needsUpdate = true;
+					obj.computeBoundingSphere();
+					return reparent(obj, new T.Matrix4());
+				}
+				if (obj.isMesh) return bendMesh(obj, ext);
+				if (obj.children.length) {
+					for (const ch of [...obj.children]) process(ch);
+					if (obj.parent) obj.parent.remove(obj);
+					return;
+				}
+				rigid(obj, cz);
+			};
+			for (const ch of [...g.children]) process(ch);
+			g.updateMatrixWorld(true);
+		}
+
+		excluded(s, d) {
+			const r = this.route, ad = this.eff(d);
+			if (ad < 11) return true;
+			for (const st of r.stations) {
+				const big = st.type !== 'halt';
+				const e = big ? 160 : 100;
+				if (this.env ? s > st.platformStart - 40 && s < st.platformEnd + 50 && d > -18 && d < 14 : s > st.platformStart - e && s < st.platformEnd + e && d > (big ? -32 : -24) && d < (big ? 215 : 135)) return true;
+			}
+			for (const z of this.zones) if (s > z.sA - 4 && s < z.sB + 4 && d > z.dA - 4 && d < z.dB + 4) return true;
+			for (const c of r.crossings) if (Math.abs(s - c.pos) < 9 || (Math.abs(s - c.pos) < 16 && ad < 16)) return true;
+			for (const b of r.bridges) if (s > b.from - 38 && s < b.to + 38) return true;
+			for (const t of r.tunnels) if (s > t.from - 35 && s < t.to + 35 && ad < 110) return true;
+			return false;
+		}
+
+		// ---------- budowa kawałka ----------
+		buildChunk(c) {
+			const r = this.route;
+			const s0 = c * C, s1 = s0 + C;
+			const group = new T.Group();
+			const dyn = [];
+			const inRange = (s) => s >= s0 && s < s1;
+
+			const M = World.materials();
+			const terrain = new T.Mesh(
+				this.ribbon(s0, s1, 4, TERRAIN_D, (s, d) => this.terrainY(s, d), (s, d, y) => this.terrainColor(s, d, y), (s, d) => this.rowWeights(s, d), null, (s, d) => this.terrainMat(s, d)),
+				M.terrain,
+			);
+			terrain.receiveShadow = true;
+			group.add(terrain);
+
+			// podsypka: korona, ramiona i skarpy (ziarno kamieni w shaderze)
+			const bal = (d) => {
+				const a = Math.abs(d);
+				return a < 1.75 ? -0.29 : a < 2.15 ? -0.31 : -0.31 - (a - 2.15) * 0.48;
+			};
+			const ballast = new T.Mesh(
+				r.double && !this.env
+					? this.ribbon(s0, s1, 4, [-8.2, -7.6, -7.0, -6.35, -2.3, 1.75, 2.15, 2.8, 3.6], (s, d, h) => h + (d < -2.3 ? bal(d - SECOND) : bal(d)))
+					: this.ribbon(s0, s1, 4, [-3.6, -2.8, -2.15, -1.75, 1.75, 2.15, 2.8, 3.6], (s, d, h) => h + bal(d)),
+				M.ballast,
+			);
+			ballast.receiveShadow = true;
+			group.add(ballast);
+			// szyny: profil (stopka, szyjka, główka) – rdzawe boki, błyszcząca wytarta główka
+			const PROF = [[-0.075, -0.2], [-0.0749, -0.185], [-0.012, -0.17], [-0.0119, -0.05], [-0.036, -0.04], [-0.0359, -0.004]];
+			const prof = PROF.concat(PROF.slice().reverse().map(([d, y]) => [-d, y]));
+			for (const rd of r.double && !this.env ? [-0.75, 0.75, SECOND - 0.75, SECOND + 0.75] : [-0.75, 0.75]) {
+				const ys = new Map(prof.map(([d, y]) => [rd + d, y]));
+				const body = new T.Mesh(this.ribbon(s0, s1, 4, prof.map(([d]) => rd + d), (s, d, h, rel) => h + (ys.get(rel) || 0)), M.railSide);
+				body.receiveShadow = true;
+				group.add(body);
+				group.add(new T.Mesh(this.ribbon(s0, s1, 4, [rd - 0.036, rd + 0.036], (s, d, h) => h), M.rail));
+			}
+			// podkłady betonowe z przytwierdzeniami szyn
+			const sleeperStep = 0.6;
+			const nSl = Math.floor(C / sleeperStep);
+			const tracks = r.double && !this.env ? [0, SECOND] : [0];
+			const sleepers = new T.InstancedMesh(GEO.sleeper, M.sleeper, nSl * tracks.length);
+			const clips = new T.InstancedMesh(GEO.box, M.clip, nSl * tracks.length * 4);
+			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
+			let nc = 0;
+			tracks.forEach((td, ti) => {
+				for (let i = 0; i < nSl; i++) {
+					const s = s0 + (i + 0.5) * sleeperStep;
+					R.sidePoint(r, s, td, tp);
+					q.setFromAxisAngle(up, -tp.heading);
+					m4.compose(p3.set(tp.x, tp.y - 0.27, tp.z), q, sc.set(2.6, 0.2, 0.26));
+					sleepers.setMatrixAt(ti * nSl + i, m4);
+					const cx = Math.cos(tp.heading), cz = Math.sin(tp.heading);
+					for (const off of [-0.75 - 0.11, -0.75 + 0.11, 0.75 - 0.11, 0.75 + 0.11]) {
+						m4.compose(p3.set(tp.x + cx * off, tp.y - 0.155, tp.z + cz * off), q, sc.set(0.1, 0.07, 0.16));
+						clips.setMatrixAt(nc++, m4);
+					}
+				}
+			});
+			sleepers.receiveShadow = clips.receiveShadow = true;
+			group.add(sleepers, clips);
+
+			if (r.electrified) this.buildCatenary(group, s0, s1); // linia zelektryfikowana – niezależnie od pociągu
+			if (!this.env) this.buildPastures(group, dyn, c, s0);
+			this.buildTrees(group, c, s0, s1);
+			this.buildGrass(group, c, s0, s1);
+			this.buildPosts(group, s0, s1);
+			if (this.env) this.buildEnvChunk(group, c, dyn);
+			else this.buildHouses(group, c, s0, s1);
+
+			r.stations.forEach((st, i) => { if (inRange((st.platformStart + st.platformEnd) / 2)) this.buildStation(group, dyn, st, i); });
+			r.signals.forEach((sig, i) => { if (inRange(sig.pos)) this.buildSignal(group, dyn, sig, i); });
+			for (let i = 1; i < r.limits.length; i++) {
+				const l = r.limits[i], down = l.speed < r.limits[i - 1].speed;
+				if (inRange(l.pos)) this.buildBoard(group, l.pos, boardTexture(String(l.speed), down ? '#ffd23f' : '#ffffff', 'sq'));
+				if (down && inRange(l.pos - 700)) this.buildBoard(group, l.pos - 700, boardTexture(String(l.speed), '#ff9f1c', 'tri'), 'tri');
+			}
+			r.crossings.forEach((cr) => {
+				if (inRange(cr.pos)) this.buildCrossing(group, dyn, cr);
+				if (inRange(cr.hornFrom)) this.buildBoard(group, cr.hornFrom, boardTexture('W6', '#ffffff', 'sq'));
+			});
+			r.bridges.forEach((b) => { if (inRange((b.from + b.to) / 2)) (b.kind === 'viaduct' ? this.buildViaduct(group, b) : this.buildBridge(group, b)); });
+			r.tunnels.forEach((t) => { if (inRange((t.from + t.to) / 2)) this.buildTunnel(group, dyn, t); });
+
+			if (this.haloSize) group.traverse((o) => { if (o.userData.lampHalo) o.scale.set(this.haloSize, this.haloSize, 1); });
+			this.scene.add(group);
+			return { group, dyn };
+		}
+
+		buildCatenary(group, s0, s1) {
+			if (this.env) return this.buildEnvCatenary(group, s0, s1);
+			const r = this.route;
+			const pts = [];
+			let wd = 0;
+			const add = (sa, ya, sb, yb) => {
+				R.sidePoint(r, sa, wd, tp);
+				pts.push(tp.x, tp.y + ya, tp.z);
+				R.sidePoint(r, sb, wd, tp);
+				pts.push(tp.x, tp.y + yb, tp.z);
+			};
+			const mess = (s) => 6.8 - 0.9 * Math.sin((Math.PI * (((s % 60) + 60) % 60)) / 60);
+			for (const d of r.double ? [0, SECOND] : [0]) {
+				wd = d;
+				for (let s = s0; s < s1; s += 5) {
+					add(s, 5.6, s + 5, 5.6);
+					add(s, mess(s), s + 5, mess(s + 5));
+					if (s % 10 === 0) add(s, 5.6, s, mess(s));
+				}
+			}
+			const geo = new T.BufferGeometry();
+			geo.setAttribute('position', new T.Float32BufferAttribute(pts, 3));
+			if (!World.wireMat) {
+				World.wireMat = new T.LineBasicMaterial({ color: 0x2a2a2a });
+				World.wireMat.userData.shared = true;
+			}
+			group.add(new T.LineSegments(geo, World.wireMat));
+			const poleMat = mat('#7b8288');
+			for (let sm = Math.ceil(s0 / 60) * 60; sm < s1; sm += 60) {
+				let s = sm;
+				// słup nie może stać na drodze przejazdu – przesunięty poza jezdnię
+				const cr = r.crossings.find((c) => Math.abs(s - c.pos) < 10);
+				if (cr) s = cr.pos + (s < cr.pos ? -10 : 10);
+				// ani przy semaforze (ta sama strona toru) – przesunięcie o kilka metrów
+				const sg = r.signals.find((x) => Math.abs(s - x.pos) < 4);
+				if (sg) s = sg.pos + (s < sg.pos ? -5 : 5);
+				if (r.tunnels.some((t) => s > t.from - 5 && s < t.to + 5)) continue;
+				const g = new T.Group();
+				g.add(box(0.32, 8.2, 0.32, poleMat, 0, 3.2, 0));
+				g.add(box(3.9, 0.16, 0.16, poleMat, -1.95, 6.8, 0));
+				g.add(box(3.6, 0.1, 0.1, poleMat, -1.8, 5.75, 0));
+				this.place(g, s, 3.7);
+				g.traverse((o) => { o.castShadow = true; });
+				group.add(g);
+				if (r.double) {
+					// słup po lewej z wysięgnikiem nad drugim torem
+					const gl = new T.Group();
+					gl.add(box(0.32, 8.2, 0.32, poleMat, 0, 3.2, 0));
+					gl.add(box(7.0, 0.16, 0.16, poleMat, 3.5, 6.8, 0));
+					gl.add(box(6.7, 0.1, 0.1, poleMat, 3.35, 5.75, 0));
+					this.place(gl, s, SECOND - 6.6);
+					gl.traverse((o) => { o.castShadow = true; });
+					group.add(gl);
+				}
+			}
+		}
+
+		// słupki hektometrowe co 100 m i tablice kilometrowe
+		buildPosts(group, s0, s1) {
+			const white = mat('#f2f2f2'), black = mat('#1b1b1b');
+			for (let s = Math.ceil(s0 / 100) * 100; s < s1; s += 100) {
+				if (s < 0 || s > this.route.bufferPos) continue;
+				if (this.route.stations.some((st) => s > st.platformStart - 10 && s < st.platformEnd + 10)) continue;
+				let pd = this.route.double ? SECOND - 4.4 : -3.9;
+				if (this.env) {
+					pd = this.envFree(s, -3.9, -1, 2.2, 9);
+					if (pd === null) pd = this.envFree(s, 3.9, 1, 2.2, 9);
+					if (pd === null) continue;
+				}
+				const g = new T.Group();
+				this.place(g, s, pd);
+				g.position.y = this.terrainY(s, pd) + 0.2;
+				g.add(box(0.16, 1.0, 0.16, white, 0, 0.5, 0));
+				g.add(box(0.17, 0.18, 0.17, black, 0, 0.95, 0));
+				if (s % 1000 === 0) {
+					this.fixedBoard(g, boardTexture(String(s / 1000), '#ffffff', 'sq'), 'sq', 0.55, 0, 1.5, 0);
+					g.add(box(0.12, 0.6, 0.08, mat('#f2f2f2'), 0, 1.2, 0.05));
+				}
+				group.add(g);
+			}
+		}
+
+		// Drzewa kilku gatunków (świerk, sosna, dąb, brzoza, topola), krzewy i dalekie masy lasu.
+		// Korony z kilku brył z cieniowaniem w kolorach wierzchołków; każde drzewo ma własny odcień (instancja).
+		buildTrees(group, c, s0, s1) {
+			const M = World.materials(), G = World.G.trees;
+			const dens = this.density;
+			const N = Math.round(230 * dens * (this.env ? 2.4 : 1));
+			const inst = (geo, material, n) => {
+				const m = new T.InstancedMesh(geo, material, Math.max(1, n));
+				m.count = 0;
+				return m;
+			};
+			const trunks = inst(G.trunk, M.trunkMat, N + 120);
+			const birchTrunks = inst(G.trunk, M.birchMat, N);
+			const spruces = inst(G.spruce, M.spruce, N);
+			const oaks = inst(G.oak, M.leaf, N);
+			const birches = inst(G.birch, M.leaf, N);
+			const poplars = inst(G.poplar, M.leaf, N);
+			const pines = inst(G.pine, M.leaf, N);
+			const bushes = inst(G.bush, M.bush, Math.round(110 * dens));
+			const blobs = inst(G.oak, M.leaf, Math.round((this.env ? 160 : 70) * dens));
+			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
+			const put = (m, x, y, z, sx, sy, sz, color) => {
+				if (m.count >= m.instanceMatrix.count) return;
+				m4.compose(p3.set(x, y, z), q, sc.set(sx, sy, sz));
+				m.setMatrixAt(m.count, m4);
+				if (color) m.setColorAt(m.count, tmpColor.setRGB(color[0], color[1], color[2], T.SRGBColorSpace));
+				m.count++;
+			};
+			for (let i = 0; i < N; i++) {
+				const seed = c * 1000 + i;
+				const s = s0 + hash(seed) * C;
+				const side = hash(seed + 0.31) < 0.5 ? -1 : 1;
+				const d = side * (11 + Math.pow(hash(seed + 0.57), 0.8) * 160);
+				let ch = -1;
+				if (this.env) {
+					// trasa rzeczywista: z pomiaru koron (NMPT) – drzewa tam, gdzie rosną (korony od 3 m), wysokość z pomiaru;
+					// bez pomiaru – wg zagospodarowania: w lasach gęsto, w parkach i na osiedlach rzadziej; nie w budynkach
+					ch = this.canopyAt ? this.canopyAt(s, d) : -1;
+					if (ch >= 0 ? ch < 3 || hash(seed + 0.77) > 0.85 : hash(seed + 0.77) > this.envTreeP(s, d)) continue;
+					if (this.inBuilding(s, d) || this.onRoad(s, d) || this.areaAt(s, d) === 9 || this.envNoPlant(s, d)) continue;
+				} else {
+					const forest = vnoise(s * 0.006 + 2, d * 0.012);
+					if (forest < 0.45 && hash(seed + 0.77) > 0.16) continue;
+				}
+				if (this.excluded(s, d) || this.field(s, d)) continue;
+				R.sidePoint(this.route, s, d, tp);
+				const y = this.terrainY(s, d);
+				// skala: z pomiaru (typowe drzewo ok. 11 m), z rozrzutem; bez pomiaru – losowa
+				let k = ch >= 0 ? Math.max(0.4, Math.min(2.4, ch / 11)) * (0.85 + hash(seed + 0.13) * 0.25) : 0.75 + hash(seed + 0.13) * 0.7;
+				q.setFromAxisAngle(up, hash(seed + 0.9) * 6.28);
+				let sp = vnoise(s * 0.01 + 5, d * 0.01) + (hash(seed + 0.66) - 0.5) * 0.25;
+				// trasa rzeczywista: w lasach sosny, świerki, dęby i brzozy (bez topoli)
+				if (this.env && sp <= 0.22) sp = 0.25 + hash(seed + 0.71) * 0.5;
+				// las liściasty (11): dęby, lipy, brzozy; iglasty (12): sosny i świerki
+				if (this.env) {
+					const ar = this.areaAt(s, d);
+					if (ar === 11) sp = 0.23 + hash(seed + 0.72) * 0.26;
+					else if (ar === 12) sp = 0.51 + hash(seed + 0.72) * 0.45;
+				}
+				const sh = 0.8 + hash(seed + 0.4) * 0.35;
+				const autumn = hash(seed + 0.27) < 0.12 ? [1.25, 1.0, 0.55] : [1, 1, 1];
+				// trasa rzeczywista: korona (promień wg gatunku) nie wchodzi w budynki ani nad jezdnię – drzewo mniejsze albo żadne
+				if (this.env && this.envFit) {
+					const f = this.envFit(s, d, (sp > 0.6 ? 3.1 : sp > 0.5 ? 3 : sp > 0.33 ? 4.25 : sp > 0.22 ? 2.2 : 1.8) * k);
+					if (!f || k * f < 0.35) continue;
+					k *= f;
+				}
+				if (sp > 0.6) { // świerk
+					put(trunks, tp.x, y + 1 * k, tp.z, 0.45 * k, 2 * k, 0.45 * k);
+					put(spruces, tp.x, y + 6.2 * k, tp.z, 6.2 * k, 11 * k, 6.2 * k, [0.17 * sh, 0.34 * sh, 0.2 * sh]);
+				} else if (sp > 0.5) { // sosna: wysoki pień, płaska korona
+					put(trunks, tp.x, y + 4.5 * k, tp.z, 0.45 * k, 9 * k, 0.45 * k);
+					put(pines, tp.x, y + 9.6 * k, tp.z, 6 * k, 6 * k, 6 * k, [0.2 * sh, 0.36 * sh, 0.18 * sh]);
+				} else if (sp > 0.33) { // dąb, lipa: szeroka korona
+					put(trunks, tp.x, y + 2.2 * k, tp.z, 0.75 * k, 4.4 * k, 0.75 * k);
+					put(oaks, tp.x, y + 6.6 * k, tp.z, 8.5 * k, 7 * k, 8.5 * k, [0.29 * sh * autumn[0], 0.5 * sh * autumn[1], 0.2 * sh * autumn[2]]);
+				} else if (sp > 0.22) { // brzoza: biały pień, jasna wąska korona
+					put(birchTrunks, tp.x, y + 3 * k, tp.z, 0.3 * k, 6 * k, 0.3 * k);
+					put(birches, tp.x, y + 7.4 * k, tp.z, 4.4 * k, 6.5 * k, 4.4 * k, [0.45 * sh * autumn[0], 0.62 * sh * autumn[1], 0.27 * sh]);
+				} else { // topola: wysoka i smukła
+					put(trunks, tp.x, y + 1.5 * k, tp.z, 0.5 * k, 3 * k, 0.5 * k);
+					put(poplars, tp.x, y + 9 * k, tp.z, 3.6 * k, 15 * k, 3.6 * k, [0.3 * sh, 0.48 * sh, 0.21 * sh]);
+				}
+			}
+			// krzewy: przy torze, na skraju pól i lasów
+			const nb = bushes.instanceMatrix.count;
+			for (let i = 0; i < nb; i++) {
+				const seed = c * 777 + i * 1.37;
+				const s = s0 + hash(seed) * C;
+				const d = (hash(seed + 0.2) < 0.5 ? -1 : 1) * (11 + hash(seed + 0.4) * 70);
+				if (hash(seed + 0.6) > 0.7 || this.excluded(s, d) || this.field(s, d)) continue;
+				// krzaki: w zieleni, a rzadko także na terenach kolejowych (zarośla przy torach), nie na drogach
+				const chB = this.env && this.canopyAt ? this.canopyAt(s, d) : -1;
+				if (this.env && (chB >= 0 ? chB < 1 && hash(seed + 0.41) > 0.25 : this.envTreeP(s, d) < 0.1 && !(this.areaAt(s, d) === 6 && hash(seed + 0.41) < 0.35))) continue;
+				if (this.env && (this.inBuilding(s, d) || this.onRoad(s, d) || this.areaAt(s, d) === 9 || this.envNoPlant(s, d))) continue;
+				R.sidePoint(this.route, s, d, tp);
+				const y = this.terrainY(s, d);
+				let k = 0.6 + hash(seed + 0.8) * 0.9;
+				if (this.env && this.envFit) {
+					const f = this.envFit(s, d, 1.5 * k);
+					if (!f) continue;
+					k *= f;
+				}
+				q.setFromAxisAngle(up, hash(seed + 0.1) * 6.28);
+				const sh = 0.8 + hash(seed + 0.3) * 0.3;
+				put(bushes, tp.x, y + 0.8 * k, tp.z, 3 * k, 2.2 * k, 3 * k, [0.27 * sh, 0.45 * sh, 0.2 * sh]);
+			}
+			// daleko od toru: zwarte masy lasu (duże bryły)
+			const nf = blobs.instanceMatrix.count;
+			for (let i = 0; i < nf; i++) {
+				const seed = c * 555 + i * 2.1;
+				const s = s0 + hash(seed) * C;
+				// trasa rzeczywista: do 520 m (widoczność ±500 m)
+				const d = (hash(seed + 0.2) < 0.5 ? -1 : 1) * (150 + hash(seed + 0.4) * (this.env ? 370 : 160));
+				const chF = this.env && this.canopyAt ? this.canopyAt(s, d) : -1;
+				const arF = this.env ? this.areaAt(s, d) : 0;
+				if ((this.env ? (chF >= 0 ? chF < 6 : arF !== 1 && arF !== 11 && arF !== 12) : vnoise(s * 0.006 + 2, d * 0.012) < 0.5) || this.excluded(s, d) || this.field(s, d)) continue;
+				if (this.env && (this.inBuilding(s, d) || this.envNoPlant(s, d))) continue;
+				R.sidePoint(this.route, s, d, tp);
+				const y = this.terrainY(s, d);
+				// bryła 15k wysokości ze środkiem na 7k: z pomiaru koron
+				let k = chF >= 0 ? Math.max(0.5, Math.min(2, chF / 14)) : 0.8 + hash(seed + 0.7) * 0.6;
+				if (this.env && this.envFit) {
+					const f = this.envFit(s, d, 10 * k);
+					if (!f || k * f < 0.4) continue;
+					k *= f;
+				}
+				q.setFromAxisAngle(up, hash(seed + 0.1) * 6.28);
+				const sh = 0.7 + hash(seed + 0.3) * 0.3;
+				put(blobs, tp.x, y + 7 * k, tp.z, 20 * k, 15 * k, 20 * k, [0.17 * sh, 0.33 * sh, 0.17 * sh]);
+			}
+			for (const m of [trunks, birchTrunks, spruces, oaks, birches, poplars, pines, bushes, blobs]) {
+				if (!m.count) {
+					m.dispose();
+					continue;
+				}
+				m.castShadow = this.shadows && m !== blobs;
+				m.receiveShadow = true;
+				if (m.instanceColor) m.instanceColor.needsUpdate = true;
+				group.add(m);
+			}
+		}
+
+		// Kępy trawy i kwiaty na łąkach przy torze (gęsto blisko, rzadziej dalej); nie na polach, piasku i drogach.
+		buildGrass(group, c, s0, s1) {
+			const M = World.materials(), G = World.G.grass;
+			const N = Math.round(11000 * this.density);
+			const tufts = new T.InstancedMesh(G.geo, M.grass, N);
+			const flowers = new T.InstancedMesh(G.flower, M.flower, Math.round(N * 0.08));
+			tufts.count = flowers.count = 0;
+			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
+			const FL = [[1, 1, 1], [1, 0.85, 0.2], [0.75, 0.45, 0.95], [0.95, 0.3, 0.3], [0.45, 0.6, 1]];
+			for (let i = 0; i < N; i++) {
+				const seed = c * 9173 + i * 0.731;
+				const s = s0 + hash(seed) * C;
+				const side = hash(seed + 0.3) < 0.5 ? -1 : 1;
+				const d = side * (4.2 + Math.pow(hash(seed + 0.6), 2.0) * 50);
+				if (this.eff(d) < 4.4) continue;
+				// bez trawy na peronach, ulicach i podwórkach miasteczek, drogach przy przystankach i na pastwiskach
+				const st = this.route.stations.some((x) => {
+					const big = x.type !== 'halt';
+					const e = big ? 160 : 100;
+					if (s > x.platformStart - 30 && s < x.platformEnd + 30 && d > -16 && d < 16) return true;
+					return !this.env && s > x.platformStart - e && s < x.platformEnd + e && d > (big ? 28 : 22) && d < (big ? 215 : 135);
+				}) || this.zones.some((z) => s > z.sA - 2 && s < z.sB + 2 && d > z.dA - 2 && d < z.dB + 2);
+				if (st || this.dip(s, d) > 1.2 || this.sandK(s, d) > 0.3) continue;
+				if (this.env) {
+					// trasa rzeczywista: trawa na terenach zielonych, rzadko na osiedlach, wcale na placach i w budynkach
+					const ak = this.areaAt(s, d);
+					// tereny kolejowe: rzadkie chwasty; place handlowe i woda – bez trawy
+					if ((ak === 6 && hash(seed + 0.53) > 0.2) || ak === 7 || ak === 9 || (ak === 5 && hash(seed + 0.47) > 0.35) || this.inBuilding(s, d) || this.onRoad(s, d)) continue;
+				}
+				const f = this.field(s, d);
+				if (f && !f.border) continue;
+				if (this.route.crossings.some((x) => Math.abs(s - x.pos) < 5)) continue;
+				// kępy rosną skupiskami
+				if (vnoise(s * 0.15 + 3, d * 0.15) < 0.25) continue;
+				R.sidePoint(this.route, s, d, tp);
+				const y = this.terrainY(s, d);
+				const k = 0.55 + hash(seed + 0.9) * 0.6;
+				q.setFromAxisAngle(up, hash(seed + 0.1) * 6.28);
+				m4.compose(p3.set(tp.x, y + 0.5 * k * 0.8, tp.z), q, sc.set(k * 1.6, k * 0.8, k * 1.6));
+				tufts.setMatrixAt(tufts.count, m4);
+				const dry = vnoise(s * 0.02 + 7, d * 0.02);
+				const sh = 0.85 + hash(seed + 0.5) * 0.3;
+				tufts.setColorAt(tufts.count++, tmpColor.setRGB((0.3 + dry * 0.22) * sh, (0.5 + dry * 0.06) * sh, 0.18 * sh, T.SRGBColorSpace));
+				if (hash(seed + 0.71) < 0.08 && flowers.count < flowers.instanceMatrix.count) {
+					m4.compose(p3.set(tp.x + 0.05, y + 0.85 * k, tp.z), q, sc.set(1, 0.7, 1));
+					flowers.setMatrixAt(flowers.count, m4);
+					const fc = FL[Math.floor(hash(seed + 0.33) * FL.length)];
+					flowers.setColorAt(flowers.count++, tmpColor.setRGB(fc[0], fc[1], fc[2], T.SRGBColorSpace));
+				}
+			}
+			for (const m of [tufts, flowers]) {
+				if (!m.count) { m.dispose(); continue; }
+				m.receiveShadow = true;
+				if (m.instanceColor) m.instanceColor.needsUpdate = true;
+				group.add(m);
+			}
+		}
+
+		// Dom: cokół, ściany (parterowy lub piętrowy), dach z okapem, komin, okna z ramami i parapetami, drzwi ze schodkiem, rynny.
+		house(group, s, d, seed, size, aligned) {
+			const g = new T.Group();
+			const k = size || 1;
+			const w = (7 + hash(seed) * 4) * k, l = (9 + hash(seed + 0.2) * 5) * k;
+			const floors = hash(seed + 0.45) < 0.35 ? 2 : 1;
+			const fh = 2.9, h = floors * fh + 0.4;
+			const wallC = HOUSE_WALLS[Math.floor(hash(seed + 0.6) * HOUSE_WALLS.length)];
+			const walls = mat(wallC, { roughness: 0.92 });
+			const roofM = mat(HOUSE_ROOFS[Math.floor(hash(seed + 0.7) * HOUSE_ROOFS.length)], { roughness: 0.7 });
+			const plinth = mat('#6f6a63', { roughness: 0.95 }), frame = mat('#f4f2ec'), sill = mat('#9a948a'), door = mat(['#5b3a25', '#2f4a5e', '#6b2a24'][Math.floor(hash(seed + 0.12) * 3)]);
+			g.add(box(w + 0.2, 0.5, l + 0.2, plinth, 0, 0.25, 0));
+			g.add(box(w, h - 0.4, l, walls, 0, 0.4 + (h - 0.4) / 2, 0));
+			const rh = 2.6 + hash(seed + 0.8) * 1.6;
+			g.add(roof(w + 1.1, rh, l + 1.0, roofM, 0, h, 0));
+			// rynny wzdłuż okapów
+			for (const sx of [-1, 1]) g.add(box(0.14, 0.12, l + 1.0, sill, sx * (w / 2 + 0.5), h - 0.05, 0));
+			// komin
+			g.add(box(0.7, rh * 0.9 + 0.6, 0.7, mat('#8c4a3a', { roughness: 0.9 }), w * 0.18, h + rh * 0.45, l * 0.22));
+			const win = World.materials().litWin;
+			const winRow = (x, sgn, zs, y) => {
+				for (const z of zs) {
+					g.add(box(0.12, 1.2, 1.25, frame, x + sgn * 0.01, y, z));
+					g.add(box(0.13, 1.0, 1.05, win, x + sgn * 0.02, y, z));
+					g.add(box(0.14, 0.04, 1.05, frame, x + sgn * 0.03, y, z));
+					g.add(box(0.3, 0.08, 1.35, sill, x + sgn * 0.12, y - 0.66, z));
+				}
+			};
+			for (let f = 0; f < floors; f++) {
+				const y = 0.4 + f * fh + 1.55;
+				winRow(w / 2, 1, [-l * 0.28, l * 0.28], y);
+				winRow(-w / 2, -1, [-l * 0.28, 0, l * 0.28], y);
+			}
+			// drzwi na szczycie (krótszej ścianie) ze schodkiem i daszkiem
+			g.add(box(1.1, 2.1, 0.1, door, -w * 0.2, 0.4 + 1.05, l / 2 + 0.03));
+			g.add(box(1.5, 0.2, 0.7, plinth, -w * 0.2, 0.3, l / 2 + 0.35));
+			g.add(box(1.6, 0.08, 0.8, roofM, -w * 0.2, 2.75, l / 2 + 0.4));
+			for (let f = 0; f < floors; f++) {
+				const y = 0.4 + f * fh + 1.55;
+				g.add(box(1.05, 1.0, 0.13, win, w * 0.22, y, l / 2 + 0.02));
+				g.add(box(1.25, 1.2, 0.12, frame, w * 0.22, y, l / 2 + 0.01));
+			}
+			this.place(g, s, d);
+			g.position.y = this.terrainY(s, d) - 0.25;
+			g.rotation.y += aligned ? (hash(seed + 0.3) < 0.5 ? 0 : Math.PI / 2) : (hash(seed + 0.95) - 0.5) * 0.5 + (hash(seed + 0.3) < 0.5 ? 0 : Math.PI / 2);
+			g.traverse((o) => { o.castShadow = this.shadows; o.receiveShadow = true; });
+			group.add(g);
+		}
+
+		buildHouses(group, c, s0, s1) {
+			const r = this.route;
+			for (let k = 0; k < 3; k++) {
+				const seed = c * 31 + k * 7.7;
+				const s = s0 + hash(seed) * C;
+				const nearStation = r.stations.some((st) => s > st.platformStart - 250 && s < st.platformEnd + 250);
+				if (hash(seed + 0.5) > (nearStation ? 0.95 : 0.3)) continue;
+				const n = nearStation ? 3 : 1 + Math.floor(hash(seed + 0.2) * 2);
+				for (let j = 0; j < n; j++) {
+					const ss = s + (j - n / 2) * 22;
+					const side = hash(seed + j + 0.1) < 0.5 ? -1 : 1;
+					const d = side * (nearStation ? 35 + hash(seed + j) * 50 : 45 + hash(seed + j) * 110);
+					if (!this.excluded(ss, d) && !this.excluded(ss + 8, d) && !this.excluded(ss - 8, d)) this.house(group, ss, d, seed + j * 3.3);
+				}
+			}
+		}
+
+		// ---------- stacje i przystanki ----------
+		// 'station': dworzec, wiata, drugi peron, rozjazdy, bocznica z wagonami, miasteczko;
+		// 'halt': przystanek – perony z wiatami, ławki, gospodarstwa w pobliżu.
+		buildStation(group, dyn, st, i) {
+			const M = World.materials();
+			const big = st.type !== 'halt';
+			const dbl = this.route.double;
+			const mid = (st.platformStart + st.platformEnd) / 2;
+			const len = st.platformEnd - st.platformStart;
+			const g = new T.Group(); // układ lokalny toru – na końcu wygięty po łuku (bendGroup)
+			const shadows = this.shadows;
+			const add = (o) => { o.castShadow = shadows; o.receiveShadow = true; g.add(o); return o; };
+			const steel = mat('#5d6670');
+			const concrete = matS('#b8b2a6', { roughness: 0.9, surf: 'concrete' });
+			const glows = [];
+			const lamps = [];
+
+			// perony: prawy (tor gracza) i lewy (drugi tor)
+			// trasa rzeczywista: jeden peron przy torze pociągu – strona, odległość krawędzi i szerokość z mapy
+			// (albo wywnioskowane z torów); peron wyspowy ma wyposażenie pośrodku („tył” = oś peronu)
+			const PL = st.platform;
+			let sides;
+			if (PL) {
+				const sg = PL.side, c = sg * (PL.edge + PL.width / 2);
+				sides = [{ c, edge: sg * PL.edge, line: sg * (PL.edge + 0.45), back: PL.island ? c : sg * (PL.edge + PL.width), sgn: sg, width: PL.width, island: !!PL.island }];
+			} else {
+				sides = [{ c: 4.15, edge: 2.15, line: 2.6, back: 6.1, sgn: 1, width: 4.4 }];
+				if (dbl && !this.env) sides.push({ c: -8.75, edge: -6.75, line: -7.2, back: -10.7, sgn: -1, width: 4.4 });
+			}
+			const P0 = sides[0];
+			for (const P of sides) {
+				// trasa rzeczywista: płyta głębsza (peron na nasypie, przy moście lub obniżeniu terenu)
+				if (this.env) add(box(P.width, 3.0, len, concrete, P.c, -0.74, 0));
+				else add(box(P.width, 1.0, len, concrete, P.c, 0.26, 0));
+				// pochylnie na końcach (z = +len/2 – początek peronu, s = platformStart); nie tam, gdzie peron z mapy
+				// biegnie dalej (dorysowana reszta obrysu)
+				const ext = this.env && this.envPlatformExt ? this.envPlatformExt(st) : { start: false, end: false };
+				// przystanek (bez wyspy) ma od strony z = +len/2 własną pochylnię przy tylnej krawędzi (haltPlatformExtras)
+				if (!ext.start && (big || P.island)) this.platformRamp(g, P, len / 2, 1, concrete, this.env ? 2.2 : 0.25);
+				if (!ext.end) this.platformRamp(g, P, -len / 2, -1, concrete, this.env ? 2.2 : 0.25);
+				g.add(box(0.35, 0.03, len, mat('#f2f2f2'), P.edge, 0.77, 0));
+				g.add(box(0.14, 0.03, len, mat('#e8c430'), P.line, 0.77, 0));
+				// latarnie: stożkowy słup, wygięty wysięgnik nad peron, oprawa; na co drugiej – numer peronu,
+				// na środkowej – zegar, na niektórych – głośnik
+				// odcinek pod wiatą: bez latarń (oświetla go wiata), zegar i tablice podwieszone pod jej dachem
+				const shL = big && P.sgn > 0 ? 30 : 14, shZ = big && P.sgn > 0 ? 0 : -len * 0.15;
+				// pod dachem z mapy albo pod wiatą z gry (gdy peron nie ma zadaszenia z mapy)
+				const hasReal = this.env && this.envRoofOver ? this.envRoofOver(st) : false;
+				const underRoof = (z) => (hasReal ? this.envRoofAt(mid - z, P.island ? P.c : P.back) : Math.abs(z - shZ) < shL / 2 + 1);
+				const zs = [];
+				for (let z = -len / 2 + 12; z < len / 2; z += 30) zs.push(z);
+				// oś peronu w miejscu z: środek prawdziwej szerokości (obrys z mapy – peron bywa szerszy od modelu i zwęża się),
+				// inaczej środek modelu; wyposażenie (tablice, ławki, kosze, gabloty) i latarnie peronu wyspowego stoją w tej osi
+				const xm = (z) => { const m = this.env && this.envPlatformMid ? this.envPlatformMid(st, mid - z) : null; return m === null ? P.c : P.sgn * Math.max(P.edge + 1.6, Math.abs(m)); };
+				const lampX = (z) => (P.island ? xm(z) : P.back);
+				const sxAt = (z) => lampX(z) - P.sgn * 0.55; // pod wysięgnikiem latarni
+				zs.forEach((z, k) => {
+					if (underRoof(z)) return;
+					lamps.push(this.platformLamp(g, lampX(z), z, P.sgn));
+					if (k % 2 === 1) this.hangSign(g, this.platformTexture(P.sgn > 0 ? 1 : 2), 0.6, 0.42, sxAt(z), 3.05, z, 4.35);
+					if (k % 3 === 0) this.speaker(g, lampX(z), 3.7, z, P.sgn);
+				});
+				if (big) {
+					dyn.push(this.platformClock(g, sxAt(shZ), 3.05, shZ, 3.7));
+					this.hangSign(g, this.platformTexture(P.sgn > 0 ? 1 : 2), 0.6, 0.42, sxAt(shZ + shL * 0.3), 3.15, shZ + shL * 0.3, 3.7);
+				}
+				// tablice z nazwą
+				const nz = [-len * 0.38, len * 0.38], tz = [];
+				for (let z = -len / 2 + 40; z < len / 2; z += 70) tz.push(z);
+				for (const z of nz) {
+					// tablica wzdłuż peronu, dwustronna (czytelna z pociągu i od strony poczekalni), na dwóch słupkach
+					const bx = xm(z);
+					this.nameBoard(g, st.name, 4.2, 0.8, bx, 3.0, z, false);
+					for (const dz of [-1.7, 1.7]) g.add(box(0.08, 2.75, 0.08, steel, bx, 1.6, z + dz));
+				}
+				// wiata: słupy przy tylnej krawędzi peronu z wysięgnikami i zastrzałami, dach nachylony ku tyłowi
+				// (rynna z tyłu, blenda z przodu, jasny spód), świetlówki pod dachem, tylna i boczne ściany szklane
+				const sl = big && P.sgn > 0 ? 30 : big ? 14 : 7;
+				const sz = big && P.sgn > 0 ? 0 : -len * 0.15;
+				// prawdziwe zadaszenie z mapy (trasa rzeczywista) zastępuje wiatę z gry (dach rysuje buildEnvRoofs)
+				const realRoof = hasReal;
+				if (!realRoof && big && P.island) {
+					// peron wyspowy: dwie połowy wiaty plecami do siebie (słupy i szklana ściana w osi peronu, dach nad oboma
+					// krawędziami – pochylony ku osi, z rynną pośrodku)
+					const xc = xm(sz);
+					lamps.push(...this.shelter(g, { sgn: P.sgn, edge: P.edge, back: xc }, sl, sz));
+					lamps.push(...this.shelter(g, { sgn: -P.sgn, edge: 2 * xc - P.edge, back: xc }, sl, sz));
+				} else if (!realRoof && big) lamps.push(...this.shelter(g, P, sl, sz));
+				else if (!realRoof) lamps.push(...this.haltShelter(g, P, sz, st.name));
+				// ławki (pod wiatą dwie; na przystanku rzadziej), kosze przy ławkach
+				// peron wyspowy: ławki parami plecami do siebie (przodem do obu torów); przy jednym torze – oparciem od toru
+				const bz = [];
+				for (let z = -len / 2 + 18; z < len / 2 - 10; z += big ? 26 : 40) if (Math.abs(z - sz) > sl / 2 + 2) bz.push(z);
+				if (big) bz.push(sz - sl * 0.18, sz + sl * 0.18);
+				const clear = (z) => nz.every((q) => Math.abs(q - z) > 3.2) && tz.every((q) => Math.abs(q - z) > 2.2);
+				for (const z of bz) {
+					if (!clear(z) || !clear(z + 1.5)) continue;
+					const x0 = xm(z), bs = P.island ? [[x0 - P.sgn * 0.6, P.sgn], [x0 + P.sgn * 0.6, -P.sgn]] : [[x0, P.sgn]];
+					for (const [x, sgn] of bs) {
+						this.bench(g, x, z, sgn);
+						(g.userData.seats = g.userData.seats || []).push({ x, z, sgn });
+					}
+					this.bin(g, xm(z + 1.5), z + 1.5);
+				}
+				if (!big && !P.island) this.haltPlatformExtras(g, P, len, mid, st);
+				// gabloty z rozkładem jazdy (na peronie wyspowym – dwustronne)
+				for (const z of tz) {
+					const bx = xm(z);
+					g.add(box(0.08, 1.9, 0.08, steel, bx, 1.7, z - 0.65));
+					g.add(box(0.08, 1.9, 0.08, steel, bx, 1.7, z + 0.65));
+					g.add(box(0.1, 1.0, 1.4, mat('#f2d23a'), bx, 2.2, z));
+					for (const e of P.island ? [-1, 1] : [-1]) g.add(box(0.12, 0.8, 1.2, mat('#fffbe8'), bx + e * P.sgn * 0.02, 2.2, z));
+				}
+			}
+
+			// budynek dworca (tylko stacje)
+			const bz = -(len / 2 - 22);
+			const realB = this.env && big ? this.envStationBuilding(i) : null;
+			// dworzec z gry po stronie peronu (przy peronie wyspowym – brak, przy lewym – obrócony)
+			const genB = big && !realB && !(PL && PL.island);
+			if (genB) {
+				const sub = new T.Group();
+				sub.userData.rigid = true; // budynek w całości (bez wyginania)
+				dyn.push(this.stationBuilding(sub, st.name, bz, lamps));
+				if (P0.sgn < 0) sub.rotation.y = Math.PI;
+				g.add(sub);
+			} else if (!big) {
+				// biletomat przy wejściu na peron, tablica elektroniczna przy wiacie, przejście w poziomie szyn
+				this.ticketMachine(g, P0.back - P0.sgn * 0.55, len / 2 - 7, P0.sgn);
+				const last = this.route.stations[this.route.stations.length - 1].name;
+				this.infoDisplay(g, P0.back - P0.sgn * 1.0, -len * 0.15 + 9, last === st.name ? this.route.stations[0].name : last);
+				if (!this.env) this.pedCrossing(g, sides, len, mid);
+			}
+
+			// wskaźnik W4
+			if (st.stop) {
+				const z = mid - st.pos;
+				g.add(box(0.08, 2.3, 0.08, steel, 2.45, 1.85, z));
+				this.fixedBoard(g, boardTexture('', '#ffffff', 'w4'), 'sq', 0.8, 2.45, 2.95, z);
+			}
+			// kozioł oporowy na stacji końcowej
+			if (st.terminus) {
+				const z = mid - this.route.bufferPos;
+				const red = mat('#c62f2f');
+				add(box(3.2, 0.5, 0.5, red, 0, 1.15, z));
+				for (let k = -1; k <= 1; k += 2) g.add(box(0.5, 0.18, 0.52, mat('#f2f2f2'), k * 0.8, 1.15, z));
+				add(box(0.3, 1.1, 2.4, mat('#4a3a2a'), -0.8, 0.5, z - 1));
+				add(box(0.3, 1.1, 2.4, mat('#4a3a2a'), 0.8, 0.5, z - 1));
+			}
+
+			// pasażerowie: czekający (podchodzą do drzwi) i wysiadający (idą do wyjścia)
+			const people = (cap) => {
+				const { bodies, heads, setAnim } = World.peopleMeshes(cap);
+				for (let k = 0; k < cap; k++) {
+					bodies.setColorAt(k, tmpColor.setHex(PEOPLE[Math.floor(hash(st.pos + k * 3.7) * PEOPLE.length)]));
+					heads.setColorAt(k, tmpColor.setHex(SKIN[Math.floor(hash(st.pos + k * 5.1) * SKIN.length)]));
+				}
+				bodies.castShadow = heads.castShadow = shadows;
+				// pozycje zmieniają się w czasie – sfera ograniczająca z pierwszej klatki byłaby błędna
+				bodies.frustumCulled = heads.frustumCulled = false;
+				bodies.count = heads.count = 0;
+				g.add(bodies, heads);
+				return { bodies, heads, setAnim, cap, list: [] };
+			};
+			const W = people(24), A = people(8), I = people(8), S = people(16), Sp = people(6);
+			/* siedzący na ławkach (co druga ławka zajęta, jedna albo dwie osoby, przodem do toru) i spacerujący
+			   wzdłuż peronu (chodzą tam i z powrotem, czasem przystają) */
+			for (const [k, seat] of (g.userData.seats || []).entries()) {
+				const seed = st.pos + k * 3.3;
+				if (hash(seed) < 0.45) continue;
+				const two = hash(seed + 0.2) < 0.4;
+				for (const dz of two ? [-0.45, 0.45] : [(hash(seed + 0.6) - 0.5) * 0.9]) {
+					if (S.list.length >= S.cap) break;
+					S.list.push({ x: seat.x + seat.sgn * 0.06, z: seat.z + dz, state: 'sit', yaw: seat.sgn * Math.PI / 2, spd: 0, seed: seed + dz });
+				}
+			}
+			{
+				// pas między krawędzią a wyposażeniem w osi peronu (ławki, tablice – na środku szerokości)
+				const half = P0.width / 2, nM = 2 + Math.floor(hash(st.pos * 2.1) * (Sp.cap - 1));
+				for (let k = 0; k < Sp.cap; k++) {
+					const seed = st.pos + k * 17.3;
+					const x = P0.edge + P0.sgn * (1.3 + hash(seed) * Math.max(0.15, half - 2.1));
+					Sp.list.push({ x, z: (hash(seed + 0.5) - 0.5) * (len - 30), tx: x, tz: (hash(seed + 0.9) - 0.5) * (len - 30), state: k < nM ? 'stroll' : 'off', spd: 0.9 + hash(seed + 0.7) * 0.5, wait: 0, seed, zr: (len - 30) / 2 });
+				}
+			}
+			for (let k = 0; k < W.cap; k++) {
+				const seed = st.pos + k * 13.1;
+				const effW = P0.width / 2; // do wyposażenia w osi peronu
+				W.list.push({ x: P0.edge + P0.sgn * (0.85 + hash(seed) * Math.max(0.3, effW - 1.5)), z: (hash(seed + 0.5) - 0.5) * (len - 20), state: 'off', spd: 1.2 + hash(seed + 0.7) * 0.6, seed });
+			}
+			for (let k = 0; k < A.cap; k++) A.list.push({ x: 0, z: 0, state: 'off', spd: 1.1 + hash(st.pos + k) * 0.5, seed: st.pos + k * 5.3 });
+			// czekający na drugim peronie – stoją
+			if (sides.length > 1) {
+				const n = Math.floor(hash(st.pos * 1.3) * 7);
+				for (let k = 0; k < I.cap; k++) {
+					const seed = st.pos + k * 7.9;
+					I.list.push({ x: -8.0 - hash(seed) * 2.4, z: (hash(seed + 0.4) - 0.5) * (len - 20), state: k < n ? 'wait' : 'off', spd: 0, seed });
+				}
+			}
+			// wyjście: drzwi dworca z gry, przy dworcu z mapy – w jego stronę (koniec peronu najbliżej budynku)
+			// przystanek: wyjście pochylnią na początku peronu
+			const xBack = P0.back - P0.sgn * 0.5;
+			const exit = realB || (big && !genB) ? { x: xBack, z: realB ? Math.max(-len / 2 + 8, Math.min(len / 2 - 8, mid - realB.cs)) : len / 2 - 4 }
+				: big ? (P0.sgn > 0 ? { x: 11.5, z: bz + 2.5 } : { x: -11.5, z: -(bz + 2.5) })
+				: P0.island ? { x: P0.c, z: len / 2 - 3 } : { x: P0.back - P0.sgn * 1.3, z: len / 2 + 4 };
+			// tablica „Wyjście” ze strzałką – na peronie przy wyjściu, podwieszona w poprzek peronu
+			{
+				const ez = Math.max(-len / 2 + 4, Math.min(len / 2 - 4, exit.z + (genB ? 6 * P0.sgn : -6)));
+				const ex = P0.edge + P0.sgn * 2.05;
+				for (const dx of [-0.5, 0.5]) g.add(box(0.06, 2.45, 0.06, steel, ex + dx, 2.0, ez));
+				g.add(box(1.1, 0.05, 0.06, steel, ex, 3.22, ez));
+				this.hangSign(g, this.exitTexture(), 0.9, 0.3, ex, 2.98, ez);
+			}
+			this.bendGroup(g, mid, new Set([W, A, I, S, Sp].flatMap((P) => [P.bodies, P.heads])));
+			// peron z pomiaru: inna wysokość niż 0,76 m – cała stacja (peron, wyposażenie, pasażerowie) o różnicę
+			if (PL && typeof PL.h === 'number' && Math.abs(PL.h - 0.76) > 0.01) g.position.y = PL.h - 0.76;
+			dyn.push({ type: 'station', index: i, st, g, glows, lamps, W, A, I, S, Sp, exit, len, sgn: P0.sgn, edgeX: P0.edge, bend: mid, init: false, lastT: null, boarding: false });
+			group.add(g);
+
+			if (big && !this.env) this.buildStationTracks(group, dyn, st); // trasa rzeczywista: tory stacyjne z mapy
+			if (!this.env) this.buildTown(group, dyn, st, big); // trasa rzeczywista: zabudowa z mapy
+		}
+
+		// rozjazdy między torami i bocznica z wagonami towarowymi (tylko wygląd)
+		buildStationTracks(group, dyn, st) {
+			if (!this.route.double) return;
+			const ps = st.platformStart, pe = st.platformEnd;
+			const ramp = (a, b, d0, d1) => (s) => d0 + (d1 - d0) * smoothstep(a, b, s);
+			this.trackPath(group, ps - 230, ps - 170, ramp(ps - 230, ps - 170, 0, -4.6));
+			if (!st.terminus) this.trackPath(group, pe + 100, pe + 160, ramp(pe + 100, pe + 160, -4.6, 0));
+			const sEnd = st.terminus ? pe - 10 : pe + 70;
+			this.trackPath(group, ps - 140, sEnd, ramp(ps - 140, ps - 70, -4.6, -15));
+			// kozioł na końcu bocznicy
+			const kb = new T.Group();
+			this.place(kb, sEnd, -15);
+			kb.add(box(3.2, 0.5, 0.5, mat('#c62f2f'), 0, 1.15, 0));
+			kb.add(box(0.3, 1.1, 2.4, mat('#4a3a2a'), 0, 0.5, 1.2));
+			group.add(kb);
+			// wagony na bocznicy
+			const wagons = new NS.TrainModel(this.scene, NS.TrainModel.OTHER.wagons, { player: false, shadows: this.shadows, seed: st.pos });
+			wagons.place(this.route, sEnd - 6, 1, -15);
+			dyn.push({ type: 'model', model: wagons });
+		}
+
+		// kawałek toru po dowolnej linii d(s): podsypka, podkłady, szyny
+		trackPath(group, s0, s1, dAt) {
+			const M = World.materials();
+			const yb = (s, d, h, rel) => h + (Math.abs(rel) > 1.6 ? -0.95 : -0.33);
+			group.add(new T.Mesh(this.ribbon(s0, s1, 3, [-2.2, -1.6, 1.6, 2.2], yb, null, null, dAt), M.ballast));
+			for (const rd of [-0.75, 0.75]) {
+				group.add(new T.Mesh(this.ribbon(s0, s1, 3, [rd - 0.06, rd - 0.036, rd + 0.036, rd + 0.06], (s, d, h, rel) => h + (Math.abs(rel - rd) > 0.04 ? -0.22 : 0), null, null, dAt), M.rail));
+			}
+			const n = Math.floor((s1 - s0) / 0.65);
+			const sleepers = new T.InstancedMesh(GEO.sleeper, M.sleeper, n);
+			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(2.6, 0.2, 0.3), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
+			for (let k = 0; k < n; k++) {
+				const s = s0 + (k + 0.5) * 0.65;
+				const slope = (dAt(s + 1) - dAt(s - 1)) / 2;
+				R.sidePoint(this.route, s, dAt(s), tp);
+				q.setFromAxisAngle(up, -tp.heading - Math.atan(slope));
+				m4.compose(p3.set(tp.x, tp.y - 0.25, tp.z), q, sc);
+				sleepers.setMatrixAt(k, m4);
+			}
+			sleepers.receiveShadow = true;
+			group.add(sleepers);
+		}
+
+		// ---------- zabudowa ----------
+		fence(group, sA, sB, dA, dB, color) {
+			const wood = mat(color || '#8b6a45');
+			const sides = [[sA, dA, sB, dA], [sB, dA, sB, dB], [sB, dB, sA, dB], [sA, dB, sA, dA]];
+			for (const [s1, d1, s2, d2] of sides) {
+				const L = Math.hypot(s2 - s1, d2 - d1);
+				const n = Math.max(1, Math.round(L / 3));
+				for (let k = 0; k <= n; k++) {
+					const s = s1 + ((s2 - s1) * k) / n, d = d1 + ((d2 - d1) * k) / n;
+					const p = new T.Mesh(GEO.box, wood);
+					this.place(p, s, d);
+					p.position.y = this.terrainY(s, d) + 0.55;
+					p.scale.set(0.14, 1.1, 0.14);
+					group.add(p);
+				}
+				const sm = (s1 + s2) / 2, dm = (d1 + d2) / 2;
+				for (const hgt of [0.45, 0.9]) {
+					const r = new T.Mesh(GEO.box, wood);
+					this.place(r, sm, dm);
+					r.position.y = this.terrainY(sm, dm) + hgt;
+					r.scale.set(Math.abs(d2 - d1) + 0.1, 0.08, Math.abs(s2 - s1) + 0.1);
+					group.add(r);
+				}
+			}
+		}
+
+		church(group, s, d) {
+			const g = new T.Group();
+			this.place(g, s, d);
+			g.position.y = this.terrainY(s, d) - 0.2;
+			const white = mat('#efe9dc'), red = mat('#9c3b2c'), dark = mat('#3d4a52');
+			g.add(box(10, 8, 20, white, 0, 4, 0));
+			g.add(roof(11, 5.5, 21, red, 0, 8, 0));
+			g.add(box(5.5, 17, 5.5, white, 0, 8.5, -12));
+			const spire = new T.Mesh(GEO.cone, dark);
+			spire.scale.set(5, 9, 5);
+			spire.position.set(0, 21.5, -12);
+			g.add(spire);
+			g.add(box(0.2, 2, 0.2, mat('#d4af37'), 0, 27, -12));
+			g.add(box(1, 0.2, 0.2, mat('#d4af37'), 0, 27.3, -12));
+			for (let z = -6; z <= 6; z += 4) g.add(box(0.1, 3, 1.2, World.materials().litWin, 5.02, 4.5, z));
+			g.add(box(0.1, 3, 1.6, mat('#5b3a25'), 0, 1.5, -14.8).rotateY(Math.PI / 2));
+			g.traverse((o) => { o.castShadow = this.shadows; o.receiveShadow = true; });
+			group.add(g);
+		}
+
+		barn(group, s, d, seed) {
+			const g = new T.Group();
+			this.place(g, s, d);
+			g.position.y = this.terrainY(s, d) - 0.2;
+			g.rotation.y += (hash(seed) - 0.5) * 0.3;
+			const wood = mat(hash(seed + 1) < 0.5 ? '#7a4a2a' : '#8e3b2e');
+			g.add(box(10, 6, 16, wood, 0, 3, 0));
+			g.add(roof(11, 4.2, 17, mat('#5a5a5a'), 0, 6, 0));
+			g.add(box(0.1, 4, 4, mat('#4a2d18'), 5.02, 2, 0));
+			g.traverse((o) => { o.castShadow = this.shadows; o.receiveShadow = true; });
+			group.add(g);
+		}
+
+		road(group, sA, sB, d0, d1, color) {
+			group.add(new T.Mesh(this.ribbon(sA, sB, 4, [d0, d1], (s, d) => this.terrainY(s, d) + 0.09), mat(color || '#55555b', { surf: 'road' })));
+		}
+
+		crossRoad(group, s, dA, dB, color) {
+			const cols = [];
+			for (let d = dA; d <= dB; d += 4) cols.push(d);
+			group.add(new T.Mesh(this.ribbon(s - 3, s + 3, 6, cols, (ss, d) => this.terrainY(ss, d) + 0.1), mat(color || '#55555b', { side: T.DoubleSide, surf: 'road' })));
+		}
+
+		// Miasteczko przy stacji: ulica wzdłuż torów, przecznice, domy z ogródkami, kościół, latarnie,
+		// auta i przechodnie. Przy przystanku: gospodarstwa z oborą i pastwiskiem.
+		buildTown(group, dyn, st, big) {
+			const mid = (st.platformStart + st.platformEnd) / 2;
+			const ps = st.platformStart, pe = st.platformEnd;
+			const seed0 = st.pos * 0.37;
+			if (!big) {
+				this.road(group, mid - 90, mid + 90, 40, 44, '#8a7a5a');
+				for (let k = 0; k < 2; k++) {
+					const s = mid + (k ? 55 : -55), sd = seed0 + k * 9;
+					this.house(group, s, 54, sd, 1, true);
+					this.barn(group, s + 22 * (k ? 1 : -1), 62, sd + 3);
+					this.fence(group, s - 24, s + 24, 47, 76);
+					this.buildPasture(group, dyn, s - 25, s + 25, 80, 120, sd);
+				}
+				return;
+			}
+			const sA = ps - 130, sB = pe + 130;
+			this.road(group, sA, sB, 43, 49);
+			this.road(group, sA, sB, 41.5, 43, '#9a958c');
+			this.road(group, sA, sB, 49, 50.5, '#9a958c');
+			const cross = [mid - 60, mid + 60];
+			for (const cs of cross) this.crossRoad(group, cs, 49, 175);
+			let n = 0;
+			for (let s = sA + 8; s < sB - 8; s += 21) {
+				if (cross.some((c) => Math.abs(s - c) < 12)) continue;
+				const sd = seed0 + n++ * 1.7;
+				for (const d of [36, 60]) {
+					if (d === 36 && s > ps - 30 && s < pe + 10) continue; // tu stoi dworzec
+					if (hash(sd + d) < 0.15) continue;
+					this.house(group, s, d, sd + d, 0.95, true);
+					if (hash(sd + d * 3) < 0.45) this.fence(group, s - 9, s + 9, d > 45 ? 54 : 30, d > 45 ? 68 : 40, '#e8e2d4');
+				}
+			}
+			for (const cs of cross) {
+				for (let d = 76; d < 170; d += 22) {
+					for (const side of [-1, 1]) {
+						const sd = seed0 + d + side * 5 + cs;
+						if (hash(sd) < 0.2) continue;
+						this.house(group, cs + side * 13, d, sd, 0.9, true);
+					}
+				}
+			}
+			this.church(group, mid, 190);
+			// latarnie uliczne
+			const lamps = [];
+			const steel = mat('#4a5058');
+			for (let s = sA + 10; s < sB; s += 32) {
+				const g = new T.Group();
+				this.place(g, s, 41);
+				g.position.y = this.terrainY(s, 41);
+				g.add(box(0.14, 5.2, 0.14, steel, 0, 2.6, 0));
+				g.add(box(1.5, 0.08, 0.08, steel, 0.75, 5.15, 0));
+				const strut = box(0.06, 0.8, 0.06, steel, 0.35, 4.85, 0);
+				strut.rotation.z = -0.9;
+				g.add(strut);
+				lamps.push(this.lampHead(g, 1.5, 5.1, 0, 0));
+				group.add(g);
+			}
+			dyn.push({ type: 'lamps', lamps });
+			// auta na ulicy
+			const cars = [];
+			for (let k = 0; k < 3; k++) {
+				const car = this.carModel(st.pos + k * 3);
+				group.add(car);
+				const dir = k % 2 ? -1 : 1;
+				cars.push({ obj: car, s: sA + hash(st.pos + k) * (sB - sA), d: dir > 0 ? 47.4 : 44.6, dir, speed: 8 + hash(st.pos + k * 2) * 5 });
+			}
+			dyn.push({ type: 'traffic', cars, sA, sB });
+			// przechodnie
+			const nw = 8;
+			const { bodies, heads, setAnim } = World.peopleMeshes(nw);
+			const list = [];
+			for (let k = 0; k < nw; k++) {
+				bodies.setColorAt(k, tmpColor.setHex(PEOPLE[Math.floor(hash(st.pos + k * 9.1) * PEOPLE.length)]));
+				heads.setColorAt(k, tmpColor.setHex(SKIN[Math.floor(hash(st.pos + k * 4.3) * SKIN.length)]));
+				list.push({ s: sA + hash(st.pos + k * 2.3) * (sB - sA), d: hash(st.pos + k) < 0.5 ? 42.2 : 49.8, dir: hash(st.pos + k * 4) < 0.5 ? -1 : 1, spd: 1.1 + hash(st.pos + k * 5) * 0.5, seed: k });
+				setAnim(k, hash(st.pos + k * 6.1) * 6.28, 1, (1.1 + hash(st.pos + k * 5) * 0.5) * 0.62); // idą – tempo kroku wg prędkości
+			}
+			bodies.castShadow = heads.castShadow = this.shadows;
+			bodies.frustumCulled = heads.frustumCulled = false;
+			group.add(bodies, heads);
+			dyn.push({ type: 'walkers', bodies, heads, list, sA, sB });
+		}
+
+		carModel(seed) {
+			// model ma przód w +z, a w grze przód obiektów jadących wzdłuż kierunku ruchu to −z
+			const g = new T.Group();
+			const car = NS.props.carModel(seed, this.shadows);
+			car.rotation.y = Math.PI;
+			g.add(car);
+			return g;
+		}
+
+		// Pastwisko z płotem i stadem krów lub owiec, które powoli się przemieszczają.
+		buildPasture(group, dyn, sA, sB, dA, dB, seed) {
+			this.fence(group, sA, sB, dA, dB);
+			const sheep = hash(seed + 0.3) < 0.4;
+			const n = sheep ? 8 + Math.floor(hash(seed) * 7) : 4 + Math.floor(hash(seed) * 4);
+			const body = new T.InstancedMesh(sheep ? GEO.ico : GEO.box, mat('#ffffff', sheep ? { flatShading: true } : undefined), n);
+			const head = new T.InstancedMesh(GEO.box, mat(sheep ? '#2a2a2a' : '#ffffff'), n);
+			const legs = new T.InstancedMesh(GEO.box, mat('#2a2a2a'), n * 4);
+			const list = [];
+			for (let k = 0; k < n; k++) {
+				const sd = seed + k * 3.3;
+				const c = sheep ? [0.9, 0.88, 0.82] : [[0.95, 0.95, 0.93], [0.15, 0.13, 0.12], [0.5, 0.32, 0.2], [0.75, 0.6, 0.45]][Math.floor(hash(sd) * 4)];
+				body.setColorAt(k, tmpColor.setRGB(c[0], c[1], c[2], T.SRGBColorSpace));
+				if (!sheep) head.setColorAt(k, tmpColor.setRGB(c[0] * 0.9, c[1] * 0.9, c[2] * 0.9, T.SRGBColorSpace));
+				list.push({ s: sA + 4 + hash(sd + 0.1) * (sB - sA - 8), d: dA + 4 + hash(sd + 0.2) * (dB - dA - 8), h: hash(sd + 0.3) * 6.28, t: hash(sd + 0.4) * 5, walk: false, graze: hash(sd + 0.5) < 0.6 });
+			}
+			for (const m of [body, head, legs]) {
+				m.frustumCulled = false;
+				m.castShadow = this.shadows;
+				m.receiveShadow = true;
+				group.add(m);
+			}
+			const parts = sheep
+				? { body: [0, 0.75, 0, 1.2, 0.95, 1.5], head: [0, 0.95, -0.85, 0.35, 0.4, 0.45], leg: [0.3, 0.25, 0.45, 0.15, 0.5, 0.15], headDown: 0.45 }
+				: { body: [0, 1.3, 0, 1.0, 1.0, 2.2], head: [0, 1.55, -1.35, 0.5, 0.55, 0.7], leg: [0.35, 0.45, 0.8, 0.2, 0.9, 0.2], headDown: 0.75 };
+			const zone = { sA, sB, dA, dB };
+			this.zones.push(zone);
+			dyn.push({ type: 'herd', body, head, legs, list, parts, bounds: zone, zone });
+		}
+
+		buildPastures(group, dyn, c, s0) {
+			for (let k = 0; k < 2; k++) {
+				const seed = c * 41.7 + k * 13.3;
+				if (hash(seed) > 0.22) continue;
+				const sA = s0 + 15 + hash(seed + 0.1) * 100, sB = sA + 55 + hash(seed + 0.2) * 20;
+				const side = hash(seed + 0.3) < 0.5 ? -1 : 1;
+				const dn = 30 + hash(seed + 0.4) * 60, dfar = dn + 35 + hash(seed + 0.5) * 20;
+				const dA = side > 0 ? dn : -dfar, dB = side > 0 ? dfar : -dn;
+				let ok = true;
+				for (let s = sA; s <= sB && ok; s += 10) {
+					for (let d = dA; d <= dB && ok; d += 10) {
+						if (this.excluded(s, d) || this.field(s, d) || vnoise(s * 0.006 + 2, d * 0.012) > 0.5) ok = false;
+					}
+				}
+				if (ok) this.buildPasture(group, dyn, sA, sB, dA, dB, seed);
+			}
+		}
+
+		// latarnia peronowa (x – słup, sgn – strona toru: wysięgnik w stronę −sgn); zwraca klosz
+		/* pochylnia na końcu peronu (jak na PKP: ok. 1:8, z wierzchu peronu do poziomu główki szyny): klin o szerokości
+		   peronu P od z0 w kierunku dir (±1 wzdłuż osi z), spód w ziemi na głębokości deep */
+		platformRamp(g, P, z0, dir, material, deep) {
+			const L = 6, h = 0.755;
+			const sh = new T.Shape([new T.Vector2(0, -deep), new T.Vector2(L, -deep), new T.Vector2(L, 0.02), new T.Vector2(0, h)]);
+			const geo = new T.ExtrudeGeometry(sh, { depth: P.width, bevelEnabled: false });
+			// dir = +1: kształt x → +z, wyciągnięcie → −x; dir = −1: x → −z, wyciągnięcie → +x (obrót – bez odwracania ścian)
+			geo.rotateY(dir > 0 ? -Math.PI / 2 : Math.PI / 2);
+			geo.translate(P.c + (dir > 0 ? P.width / 2 : -P.width / 2), 0, z0);
+			const m = new T.Mesh(geo, material);
+			m.castShadow = this.shadows;
+			m.receiveShadow = true;
+			g.add(m);
+		}
+
+		platformLamp(g, x, z, sgn) {
+			if (!World.poleGeo) {
+				World.poleGeo = new T.CylinderGeometry(0.055, 0.1, 1, 12);
+				World.poleGeo.userData.shared = true;
+			}
+			const M = World.materials();
+			const paint = matS('#3e4650', { roughness: 0.5, metalness: 0.55 });
+			const base = new T.Mesh(GEO.cyl, paint);
+			base.scale.set(0.36, 0.3, 0.36);
+			base.position.set(x, 0.92, z);
+			g.add(base);
+			const pole = new T.Mesh(World.poleGeo, paint);
+			// wymiary jak latarnie peronowe: wysięgnik ok. 3,6 m nad peronem, oprawa ok. 0,55 m
+			pole.scale.set(0.85, 3.5, 0.85);
+			pole.position.set(x, 0.77 + 0.3 + 1.75, z);
+			pole.castShadow = this.shadows;
+			g.add(pole);
+			const collar = new T.Mesh(GEO.cyl, paint);
+			collar.scale.set(0.2, 0.12, 0.2);
+			collar.position.set(x, 2.3, z);
+			g.add(collar);
+			// wygięty wysięgnik: kilka odcinków rury po łuku
+			const pts = [];
+			for (let k = 0; k <= 5; k++) {
+				const a = (k / 5) * (Math.PI / 2);
+				pts.push([x - sgn * (0.7 - 0.7 * Math.cos(a)), 4.35 + 0.22 * Math.sin(a) - (k / 5) * 0.06]);
+			}
+			const up = new T.Vector3(0, 1, 0), va = new T.Vector3(), vb = new T.Vector3();
+			for (let k = 0; k < pts.length - 1; k++) {
+				va.set(pts[k][0], pts[k][1], z);
+				vb.set(pts[k + 1][0], pts[k + 1][1], z);
+				const t = new T.Mesh(GEO.cyl, paint);
+				t.scale.set(0.06, va.distanceTo(vb), 0.06);
+				t.position.copy(va).add(vb).multiplyScalar(0.5);
+				t.quaternion.setFromUnitVectors(up, vb.sub(va).normalize());
+				g.add(t);
+			}
+			g.add(box(0.05, 0.32, 0.05, paint, x, 4.35, z));
+			const end = pts[pts.length - 1];
+			return this.lampHead(g, end[0] - sgn * 0.22, end[1] - 0.05, z, 0.77, false, 0.7);
+		}
+
+		// dwustronna tabliczka podwieszona w poprzek peronu (lico w stronę ±z) na dwóch zawiesiach
+		hangSign(g, tex, w, h, x, y, z, hangTo) {
+			if (!World.boardGeo) {
+				World.boardGeo = new T.PlaneGeometry(1, 1);
+				World.boardGeo.userData.shared = true;
+			}
+			World.signMats = World.signMats || new Map();
+			if (!World.signMats.has(tex.uuid)) {
+				const m = NS.util.patch(new T.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.05 }), 'lit');
+				World.signMats.set(tex.uuid, m);
+			}
+			const m = World.signMats.get(tex.uuid);
+			const frame = matS('#c9cdd2', { roughness: 0.4, metalness: 0.5 });
+			g.add(box(0.06, h + 0.08, w + 0.08, frame, x, y, z).rotateY(Math.PI / 2));
+			for (const side of [1, -1]) {
+				const p = new T.Mesh(World.boardGeo, m);
+				p.scale.set(w, h, 1);
+				p.rotation.y = side > 0 ? 0 : Math.PI;
+				p.position.set(x, y, z + side * 0.035);
+				g.add(p);
+			}
+			// zawiesia do wysięgnika / dachu
+			const top = hangTo || y + h / 2 + 0.25, hl = top - (y + h / 2);
+			for (const dz of [-w * 0.35, w * 0.35]) g.add(box(0.025, hl, 0.025, frame, x, y + h / 2 + hl / 2, z + dz));
+		}
+
+		platformTexture(n) {
+			return canvasTexture('peron|' + n, 256, 176, (c, w, h) => {
+				c.fillStyle = '#1c3d6e';
+				c.fillRect(0, 0, w, h);
+				c.strokeStyle = '#ffffff';
+				c.lineWidth = 6;
+				c.strokeRect(6, 6, w - 12, h - 12);
+				c.fillStyle = '#ffffff';
+				c.textAlign = 'center';
+				c.textBaseline = 'middle';
+				c.font = '800 96px system-ui, sans-serif';
+				c.fillText(String(n), w / 2, h * 0.42);
+				c.font = '600 30px system-ui, sans-serif';
+				c.fillText('peron', w / 2, h * 0.82);
+			});
+		}
+
+		exitTexture() {
+			return canvasTexture('wyjscie', 384, 124, (c, w, h) => {
+				c.fillStyle = '#1e7b3c';
+				c.fillRect(0, 0, w, h);
+				c.fillStyle = '#ffffff';
+				c.textAlign = 'left';
+				c.textBaseline = 'middle';
+				c.font = '700 54px system-ui, sans-serif';
+				c.fillText('Wyjście', 30, h / 2 + 2);
+				// strzałka
+				c.beginPath();
+				c.moveTo(w - 110, h / 2 - 10); c.lineTo(w - 60, h / 2 - 10); c.lineTo(w - 60, h / 2 - 30);
+				c.lineTo(w - 22, h / 2); c.lineTo(w - 60, h / 2 + 30); c.lineTo(w - 60, h / 2 + 10); c.lineTo(w - 110, h / 2 + 10);
+				c.closePath();
+				c.fill();
+			});
+		}
+
+		// głośnik peronowy na słupie latarni
+		speaker(g, x, y, z, sgn) {
+			const grey = matS('#d6d8da', { roughness: 0.5, metalness: 0.3 });
+			g.add(box(0.12, 0.12, 0.12, grey, x - sgn * 0.12, y, z));
+			const horn = new T.Mesh(GEO.cone, grey);
+			horn.scale.set(0.3, 0.42, 0.3);
+			horn.rotation.z = sgn * Math.PI / 2 * 0.85;
+			horn.position.set(x - sgn * 0.35, y - 0.03, z);
+			g.add(horn);
+		}
+
+		// zegar peronowy (dwustronny), wskazówki pokazują czas gry
+		platformClock(g, x, y, z, hangTo) {
+			const face = canvasTexture('zegar', 256, 256, (c, w) => {
+				c.fillStyle = '#ffffff';
+				c.beginPath(); c.arc(w / 2, w / 2, w / 2 - 4, 0, Math.PI * 2); c.fill();
+				c.fillStyle = '#111111';
+				for (let k = 0; k < 60; k++) {
+					const a = (k / 60) * Math.PI * 2, big = k % 5 === 0;
+					c.save(); c.translate(w / 2, w / 2); c.rotate(a);
+					c.fillRect(-(big ? 5 : 2), -w / 2 + 14, big ? 10 : 4, big ? 30 : 12);
+					c.restore();
+				}
+			});
+			const fm = NS.util.patch(new T.MeshStandardMaterial({ map: face, roughness: 0.4 }), 'lit');
+			fm.userData.shared = true;
+			if (!World.discGeo) { World.discGeo = new T.CircleGeometry(0.5, 32); World.discGeo.userData.shared = true; }
+			const body = new T.Mesh(GEO.cyl, matS('#2a2d31', { roughness: 0.4, metalness: 0.5 }));
+			body.scale.set(0.82, 0.12, 0.82);
+			body.rotation.x = Math.PI / 2;
+			body.position.set(x, y, z);
+			g.add(body);
+			const top = hangTo || y + 0.85;
+			g.add(box(0.05, top - y - 0.4, 0.05, matS('#3e4650', { metalness: 0.55, roughness: 0.5 }), x, (top + y + 0.4) / 2, z));
+			const hands = [];
+			for (const side of [1, -1]) {
+				const f = new T.Mesh(World.discGeo, fm);
+				f.scale.setScalar(0.74);
+				f.rotation.y = side > 0 ? 0 : Math.PI;
+				f.position.set(x, y, z + side * 0.065);
+				g.add(f);
+				const black = mat('#111111');
+				const hour = new T.Group(), minute = new T.Group();
+				hour.add(box(0.035, 0.2, 0.01, black, 0, 0.08, 0));
+				minute.add(box(0.025, 0.3, 0.01, black, 0, 0.12, 0));
+				for (const h of [hour, minute]) {
+					h.position.set(x, y, z + side * 0.072);
+					if (side < 0) h.rotation.y = Math.PI;
+					g.add(h);
+				}
+				hands.push({ hour, minute, side });
+			}
+			return { type: 'clock', hands };
+		}
+
+		/* Wiata przystankowa (jak na zmodernizowanych przystankach): stalowa rama grafitowa, płaski dach z blendą,
+		   tylna i boczne ściany szklane w ramach, ławka w środku, tabliczka z nazwą nad wejściem, listwa LED.
+		   Zwraca punkt światła do puli świateł nocą. */
+		haltShelter(g, P, sz, name) {
+			const M = World.materials();
+			const frame = matS('#3a3f45', { roughness: 0.45, metalness: 0.6 });
+			const roofM = matS('#4a5058', { roughness: 0.5, metalness: 0.4 });
+			const sg = P.sgn, L = 7, H = 2.65, y0 = 0.77;
+			const xb = P.back - sg * 0.3;
+			// głębokość: dach z blendą (0,45 m przed słupami) kończy się co najmniej 0,3 m przed krawędzią peronu
+			const D = Math.max(1.0, Math.min(2.0, Math.abs(xb - P.edge) - 0.75)), xf = xb - sg * D, xc = (xb + xf) / 2;
+			// słupy
+			for (const x of [xb, xf]) for (const z of [sz - L / 2, sz + L / 2]) g.add(box(0.1, H, 0.1, frame, x, y0 + H / 2, z));
+			g.add(box(0.1, H, 0.1, frame, xb, y0 + H / 2, sz));
+			// dach z lekkim spadkiem ku tyłowi i blendą
+			const roof = box(D + 0.6, 0.1, L + 0.6, roofM, xc - sg * 0.15, y0 + H + 0.08, sz);
+			roof.rotation.z = sg * 0.05;
+			roof.castShadow = this.shadows;
+			g.add(roof);
+			g.add(box(0.05, 0.28, L + 0.6, frame, xf - sg * 0.42, y0 + H + 0.05, sz));
+			// ściany szklane: tylna (dwa pola) i boczne (do połowy głębokości – wejście od frontu)
+			for (const [z0, z1] of [[sz - L / 2, sz], [sz, sz + L / 2]]) {
+				g.add(box(0.03, H - 0.25, z1 - z0 - 0.12, M.glass, xb, y0 + (H - 0.25) / 2 + 0.12, (z0 + z1) / 2));
+				for (const y of [y0 + 0.12, y0 + H - 0.12]) g.add(box(0.06, 0.06, z1 - z0, frame, xb, y, (z0 + z1) / 2));
+			}
+			for (const z of [sz - L / 2, sz + L / 2]) {
+				const w = D * 0.55, x = xb - sg * w / 2;
+				g.add(box(w, H - 0.25, 0.03, M.glass, x, y0 + (H - 0.25) / 2 + 0.12, z));
+				g.add(box(w, 0.06, 0.06, frame, x, y0 + H - 0.12, z));
+			}
+			// ławka w środku, tabliczka z nazwą nad wejściem
+			this.bench(g, xb - sg * 0.55, sz - 1.4, sg);
+			this.bench(g, xb - sg * 0.55, sz + 1.4, sg);
+			this.nameBoard(g, name, 3.4, 0.5, xf - sg * 0.46, y0 + H - 0.05, sz, false);
+			// listwa LED pod dachem i punkt światła
+			g.add(box(0.12, 0.03, L - 1.2, M.lampLens, xc, y0 + H - 0.04, sz));
+			const o = new T.Object3D();
+			o.userData.power = 0.3;
+			o.userData.drop = 1.1;
+			o.position.set(xc, y0 + H, sz);
+			g.add(o);
+			const pool = new T.Mesh(M.poolGeo, M.lampPool);
+			pool.scale.setScalar(3.2);
+			pool.position.set(xc, y0 + 0.03, sz);
+			pool.renderOrder = 5;
+			g.add(pool);
+			return [o];
+		}
+
+		// barierka: słupki co 2 m, poręcz i przeciąg; wzdłuż z (x stałe) albo w poprzek (axis 'x')
+		railing(g, a0, a1, fixed, y0, axis) {
+			const steel = matS('#7d858e', { roughness: 0.45, metalness: 0.6 });
+			const L = Math.abs(a1 - a0), n = Math.max(1, Math.round(L / 2)), mid = (a0 + a1) / 2;
+			for (let k = 0; k <= n; k++) {
+				const a = a0 + ((a1 - a0) * k) / n;
+				g.add(axis === 'x' ? box(0.05, 1.1, 0.05, steel, a, y0 + 0.55, fixed) : box(0.05, 1.1, 0.05, steel, fixed, y0 + 0.55, a));
+			}
+			for (const y of [y0 + 1.08, y0 + 0.55]) g.add(axis === 'x' ? box(L, 0.045, 0.045, steel, mid, y, fixed) : box(0.045, 0.045, L, steel, fixed, y, mid));
+		}
+
+		/* Przystanek: pas dotykowy przy krawędzi, barierki wzdłuż tylnej krawędzi i na końcu peronu, pochylnia
+		   z poręczami na początku peronu (od strony nadjeżdżającego pociągu) i chodnik do przejścia przez tory. */
+		haltPlatformExtras(g, P, len, mid, st) {
+			const sg = P.sgn, y0 = 0.77;
+			const h0 = R.heightAt(this.route, mid);
+			const tactile = mat('#d9d4c4', { roughness: 0.95 });
+			// pas dotykowy (jaśniejsze płyty z wypustkami) wzdłuż żółtej linii
+			g.add(box(0.4, 0.03, len, tactile, P.line + sg * 0.42, y0 + 0.01, 0));
+			// barierka wzdłuż tyłu i w poprzek na drugim końcu (przy pochylni otwarte)
+			const xr = P.back - sg * 0.08;
+			this.railing(g, -len / 2 + 0.2, len / 2 - 0.2, xr, y0);
+			this.railing(g, P.edge + sg * 0.6, P.back - sg * 0.1, -len / 2 + 0.15, y0, 'x');
+			// pochylnia: od końca peronu w dół do terenu, przy tylnej krawędzi
+			const RL = 18, RW = 2.4, xc = P.back - sg * (RW / 2 + 0.1), z0 = len / 2;
+			const yb = this.terrainY(mid - (z0 + RL), xc) - h0 + 0.06;
+			const geo = new T.BoxGeometry(RW, 1, RL);
+			const pa = geo.attributes.position;
+			for (let i = 0; i < pa.count; i++) {
+				const t = (pa.getZ(i) + RL / 2) / RL;
+				pa.setY(i, pa.getY(i) > 0 ? y0 + (yb - y0) * t : Math.min(yb, y0 + (yb - y0) * t) - 0.5);
+			}
+			geo.computeVertexNormals();
+			const ramp = new T.Mesh(geo, matS('#b8b2a6', { roughness: 0.9, surf: 'concrete' }));
+			ramp.userData.ownGeometry = true;
+			ramp.position.set(xc, 0, z0 + RL / 2);
+			ramp.castShadow = this.shadows;
+			ramp.receiveShadow = true;
+			g.add(ramp);
+			// poręcze pochylni (obie strony)
+			const steel = matS('#7d858e', { roughness: 0.45, metalness: 0.6 });
+			const ang = Math.atan2(y0 - yb, RL), Lr = Math.hypot(RL, y0 - yb);
+			for (const e of [-1, 1]) {
+				const x = xc + e * (RW / 2 - 0.05);
+				for (let k = 0; k <= 9; k++) {
+					const t = k / 9;
+					g.add(box(0.05, 1.0, 0.05, steel, x, y0 + (yb - y0) * t + 0.5, z0 + RL * t));
+				}
+				for (const dy of [0.95, 0.5]) {
+					const r = box(0.045, 0.045, Lr, steel, x, (y0 + yb) / 2 + dy, z0 + RL / 2);
+					r.rotation.x = ang;
+					g.add(r);
+				}
+			}
+			// chodnik od pochylni do przejścia przez tory
+			g.add(box(RW, 0.12, 5.2, mat('#9b968d', { roughness: 0.95 }), xc, yb - 0.02, z0 + RL + 2.6));
+		}
+
+		/* Przejście w poziomie szyn na przystanku (za początkiem peronów): płyty między szynami i przy nich,
+		   chodnik między torami, „labirynty” z barierek przy torach, tablica ostrzegawcza. */
+		pedCrossing(g, sides, len, mid) {
+			const dbl = this.route.double;
+			const h0 = R.heightAt(this.route, mid);
+			const zc = len / 2 + 18 + 4.2;
+			const panel = mat('#3a3a3a', { roughness: 0.9 });
+			const walk = mat('#9b968d', { roughness: 0.95 });
+			const tracks = dbl ? [0, SECOND] : [0];
+			for (const t of tracks) {
+				g.add(box(1.36, 0.1, 2.4, panel, t, -0.07, zc));
+				for (const e of [-1, 1]) g.add(box(0.72, 0.1, 2.4, panel, t + e * 1.18, -0.07, zc));
+			}
+			if (dbl) g.add(box(Math.abs(SECOND) - 3.08, 0.1, 2.4, walk, SECOND / 2, -0.1, zc));
+			// chodnik z boków torowiska do chodników od pochylni (pochyły)
+			for (const P of sides) {
+				const xIn = P.sgn > 0 ? 1.55 : (dbl ? SECOND : 0) - 1.55;
+				const xOut = P.back - P.sgn * 1.3;
+				const yOut = this.terrainY(mid - zc, xOut) - h0 + 0.04;
+				const L = Math.abs(xOut - xIn), slab = box(L, 0.1, 2.4, walk, (xIn + xOut) / 2, (yOut - 0.07) / 2, zc);
+				// koniec +x płyty: przy torze (xIn < xOut) albo przy peronie lewym
+				slab.rotation.z = Math.atan2(xOut > xIn ? yOut + 0.07 : -0.07 - yOut, L);
+				g.add(slab);
+				// labirynt: dwie przesunięte barierki przed torem (biało-czerwone)
+				const xb = P.sgn > 0 ? 3.0 : (dbl ? SECOND : 0) - 3.0;
+				const yB = this.terrainY(mid - zc, xb) - h0;
+				const red = mat('#c62f2f'), white = mat('#f2f2f2');
+				for (const [dz, dx] of [[-1.25, 0.55], [1.25, -0.55]]) {
+					const x = xb + P.sgn * dx;
+					for (const e of [-1, 1]) g.add(box(0.06, 1.0, 0.06, red, x + e * 0.8, yB + 0.5, zc + dz));
+					g.add(box(1.7, 0.06, 0.06, white, x, yB + 0.95, zc + dz));
+					g.add(box(1.7, 0.06, 0.06, red, x, yB + 0.55, zc + dz));
+				}
+				// tablica „Uwaga! Patrz na pociąg”
+				const xs = P.back + P.sgn * 0.6;
+				const ys = this.terrainY(mid - zc + 2, xs) - h0;
+				g.add(box(0.07, 2.2, 0.07, matS('#7d858e', { metalness: 0.6, roughness: 0.45 }), xs, ys + 1.1, zc - 2));
+				const tex = labelTexture('UWAGA! POCIĄG', '#f2c230', '#111111');
+				const pm = new T.MeshStandardMaterial({ map: tex, roughness: 0.6 });
+				pm.userData.shared = false;
+				for (const side of [0, Math.PI]) {
+					const pl = new T.Mesh(new T.PlaneGeometry(1.5, 0.34), pm);
+					pl.userData.ownMaterial = pl.userData.ownGeometry = true;
+					pl.rotation.y = side;
+					pl.position.set(xs, ys + 2.05, zc - 2 + (side ? -0.04 : 0.04));
+					g.add(pl);
+				}
+			}
+		}
+
+		// biletomat: obudowa z zaokrąglonym daszkiem, podświetlony ekran i wrzutnie od strony peronu
+		ticketMachine(g, x, z, sg) {
+			const body = matS('#2f3438', { roughness: 0.4, metalness: 0.5 }), y0 = 0.77;
+			g.add(box(0.5, 1.55, 0.75, body, x, y0 + 0.78, z));
+			const cap = new T.Mesh(GEO.cyl, body);
+			cap.scale.set(0.5, 0.75, 0.5);
+			cap.rotation.x = Math.PI / 2;
+			cap.position.set(x, y0 + 1.56, z);
+			g.add(cap);
+			g.add(box(0.02, 0.36, 0.48, new T.MeshBasicMaterial({ color: '#7fb7e6' }), x - sg * 0.26, y0 + 1.22, z));
+			g.add(box(0.03, 0.08, 0.6, mat('#f2c230'), x - sg * 0.26, y0 + 1.5, z));
+			g.add(box(0.03, 0.12, 0.14, mat('#111111'), x - sg * 0.26, y0 + 0.92, z - 0.15));
+			g.add(box(0.03, 0.05, 0.22, mat('#111111'), x - sg * 0.26, y0 + 0.75, z + 0.12));
+		}
+
+		// tablica elektroniczna z kierunkiem jazdy (pomarańczowe diody), na słupie, czytelna z peronu i z pociągu
+		infoDisplay(g, x, z, dest) {
+			const tex = canvasTexture(`halt-led|${dest}`, 512, 128, (c, w, h) => {
+				c.fillStyle = '#0b0b0b';
+				c.fillRect(0, 0, w, h);
+				c.fillStyle = '#ffa31a';
+				c.textBaseline = 'middle';
+				c.font = '700 34px ui-monospace, Consolas, monospace';
+				c.fillText('Os', 16, 36);
+				c.fillText(dest.toUpperCase().slice(0, 18), 90, 36);
+				c.font = '600 28px ui-monospace, Consolas, monospace';
+				c.fillText('Pociąg osobowy · peron 1', 16, 92);
+				c.fillStyle = 'rgba(0,0,0,0.35)';
+				for (let y = 0; y < h; y += 3) c.fillRect(0, y, w, 1);
+			});
+			const steel = matS('#3a3f45', { roughness: 0.45, metalness: 0.6 });
+			// wyświetlacz ok. 1,3 × 0,4 m na słupku, dolna krawędź ok. 2,4 m nad peronem
+			g.add(box(0.08, 2.6, 0.08, steel, x, 0.77 + 1.3, z));
+			g.add(box(0.12, 0.42, 1.35, steel, x, 0.77 + 2.6, z));
+			const lm = new T.MeshBasicMaterial({ map: tex, toneMapped: false });
+			lm.userData.shared = false;
+			for (const side of [-1, 1]) {
+				const pl = new T.Mesh(new T.PlaneGeometry(1.25, 0.31), lm);
+				pl.userData.ownMaterial = pl.userData.ownGeometry = true;
+				pl.rotation.y = side * Math.PI / 2;
+				pl.position.set(x + side * 0.07, 0.77 + 2.6, z);
+				g.add(pl);
+			}
+		}
+
+		// wiata peronowa; zwraca świetlówki (do oświetlenia nocą)
+		shelter(g, P, sl, sz) {
+			const M = World.materials();
+			const steel = matS('#5d6670', { roughness: 0.45, metalness: 0.6 });
+			const under = mat('#dfe2e6', { roughness: 0.7, emissive: '#5a5d62' });
+			const roofM = matS('#4d555e', { roughness: 0.55, metalness: 0.45 });
+			const fascia = matS('#1c3d6e', { roughness: 0.4, metalness: 0.3 });
+			const sg = P.sgn;
+			const xb = P.back - sg * 0.25;          // linia słupów (tył peronu)
+			// przednia krawędź dachu tuż za krawędzią peronu (nie nad torem – skrajnia: dach i blenda nie wchodzą nad pociąg)
+			const xf = P.edge + sg * 0.1;
+			const yb = 3.78, yf = 4.02;             // dach wyżej z przodu, spływa do rynny z tyłu
+			const span = Math.abs(xf - xb) + 0.4;
+			const slope = Math.atan2(yf - yb, Math.abs(xf - xb));
+			const xm = (xb + xf) / 2, ym = (yb + yf) / 2;
+			const n = Math.max(2, Math.round(sl / 5));
+			for (let k = 0; k <= n; k++) {
+				const z = sz - sl / 2 + 0.3 + (k * (sl - 0.6)) / n;
+				// słup (dwuteownik): środnik + półki
+				g.add(box(0.06, yb - 0.77, 0.18, steel, xb, (yb + 0.77) / 2, z));
+				for (const dz of [-0.08, 0.08]) g.add(box(0.18, yb - 0.77, 0.03, steel, xb, (yb + 0.77) / 2, z + dz));
+				g.add(box(0.36, 0.05, 0.36, steel, xb, 0.8, z));
+				// wysięgnik pod dachem
+				const arm = box(span, 0.16, 0.12, steel, xm, ym - 0.12, z);
+				arm.rotation.z = sg > 0 ? slope : -slope;
+				g.add(arm);
+				// zastrzał
+				const bx0 = xb, by0 = yb - 1.0, bx1 = xb + (xf - xb) * 0.45, by1 = yb + (yf - yb) * 0.45 - 0.18;
+				const br = box(Math.hypot(bx1 - bx0, by1 - by0), 0.08, 0.08, steel, (bx0 + bx1) / 2, (by0 + by1) / 2, z);
+				br.rotation.z = Math.atan2(by1 - by0, bx1 - bx0);
+				g.add(br);
+			}
+			// dach: pokrycie + jaśniejszy spód
+			const roof = box(span, 0.08, sl + 0.4, roofM, xm + sg * 0.1, ym + 0.02, sz); // przód nad krawędzią peronu
+			roof.rotation.z = sg > 0 ? slope : -slope;
+			roof.castShadow = this.shadows;
+			g.add(roof);
+			const ceil = box(span, 0.03, sl, under, xm, ym - 0.05, sz);
+			ceil.rotation.z = roof.rotation.z;
+			g.add(ceil);
+			// blenda z przodu, rynna z tyłu
+			g.add(box(0.06, 0.34, sl + 0.4, fascia, xf - sg * 0.08, yf - 0.05, sz));
+			const gut = new T.Mesh(GEO.cyl, steel);
+			gut.scale.set(0.16, sl + 0.4, 0.16);
+			gut.rotation.x = Math.PI / 2;
+			gut.position.set(xb + sg * 0.15, yb - 0.02, sz);
+			g.add(gut);
+			// świetlówki pod dachem (dwa pasy)
+			const lights = [];
+			for (const t of [0.35, 0.7]) {
+				const x = xb + (xf - xb) * t, y = yb + (yf - yb) * t - 0.12;
+				const tube = box(0.09, 0.05, sl - 1.5, M.lampLens, x, y, sz);
+				g.add(tube);
+				if (t > 0.5) continue; // jeden rząd plam światła (dwa nakładałyby się i prześwietlały posadzkę)
+				for (let z = sz - sl / 2 + 3.5; z < sz + sl / 2 - 2; z += 7) {
+					const pool = new T.Mesh(M.poolGeo, M.lampPool);
+					pool.scale.setScalar(3.0);
+					pool.position.set(xb + (xf - xb) * 0.52, 0.8, z);
+					pool.renderOrder = 5;
+					g.add(pool);
+				}
+			}
+			// punkty dla puli świateł punktowych – wzdłuż wiaty, między pasami świetlówek
+			const xl = xb + (xf - xb) * 0.52, yl = yb + (yf - yb) * 0.52 - 0.1;
+			const nl = Math.max(1, Math.round(sl / 8));
+			for (let k = 0; k < nl; k++) {
+				const o = new T.Object3D();
+				// świetlówki są słabsze od latarni, a światło punktowe niżej – żeby nie prześwietlać spodu dachu
+				o.userData.power = 0.35;
+				o.userData.drop = 1.3;
+				o.position.set(xl, yl, sz - sl / 2 + (sl * (k + 0.5)) / nl);
+				g.add(o);
+				lights.push(o);
+			}
+			// tylna ściana: panele szklane w ramach
+			const frame = matS('#7d858e', { roughness: 0.4, metalness: 0.6 });
+			const xw = xb + sg * 0.12;
+			g.add(box(0.06, 2.3, sl - 0.4, M.glass, xw, 2.1, sz));
+			for (const y of [0.98, 3.25]) g.add(box(0.08, 0.07, sl - 0.4, frame, xw, y, sz));
+			for (let z = sz - sl / 2 + 0.2; z <= sz + sl / 2 - 0.2 + 1e-6; z += (sl - 0.4) / Math.round((sl - 0.4) / 1.6)) g.add(box(0.08, 2.3, 0.06, frame, xw, 2.1, z));
+			// ściany boczne (osłona od wiatru)
+			for (const e of [-1, 1]) {
+				const z = sz + e * (sl / 2 - 0.2);
+				const w = 1.6, xc = xw - sg * w / 2;
+				g.add(box(w, 2.3, 0.05, M.glass, xc, 2.1, z));
+				for (const y of [0.98, 3.25]) g.add(box(w, 0.07, 0.07, frame, xc, y, z));
+				g.add(box(0.07, 2.3, 0.07, frame, xw - sg * w, 2.1, z));
+			}
+			return lights;
+		}
+
+		// ławka: żeliwne boki z nogami i podłokietnikami, drewniane listwy siedziska i oparcia (oparcie od strony tyłu peronu)
+		bench(g, x, z, sg) {
+			const iron = matS('#2f3438', { roughness: 0.5, metalness: 0.6 });
+			const wood = mat('#9a6a3c', { roughness: 0.8 });
+			const L = 1.9, y0 = 0.77;
+			for (const e of [-1, 1]) {
+				const zz = z + e * (L / 2 - 0.08);
+				g.add(box(0.06, 0.45, 0.06, iron, x - sg * 0.2, y0 + 0.22, zz));
+				g.add(box(0.06, 0.45, 0.06, iron, x + sg * 0.2, y0 + 0.22, zz));
+				g.add(box(0.5, 0.05, 0.06, iron, x, y0 + 0.44, zz));
+				const back = box(0.06, 0.55, 0.06, iron, x + sg * 0.24, y0 + 0.72, zz);
+				back.rotation.z = -sg * 0.18;
+				g.add(back);
+				g.add(box(0.42, 0.04, 0.07, iron, x - sg * 0.02, y0 + 0.68, zz)); // podłokietnik
+			}
+			for (let k = 0; k < 4; k++) g.add(box(0.1, 0.04, L, wood, x - sg * (0.18 - k * 0.12), y0 + 0.48, z));
+			for (let k = 0; k < 3; k++) {
+				const sl = box(0.035, 0.1, L, wood, x + sg * (0.26 + k * 0.025), y0 + 0.62 + k * 0.14, z);
+				sl.rotation.z = -sg * 0.18;
+				g.add(sl);
+			}
+		}
+
+		// kosz na śmieci na słupku
+		bin(g, x, z) {
+			const post = matS('#3e4650', { roughness: 0.5, metalness: 0.55 });
+			g.add(box(0.06, 1.0, 0.06, post, x, 1.27, z));
+			const can = new T.Mesh(GEO.cyl, matS('#2f5e3a', { roughness: 0.45, metalness: 0.4 }));
+			can.scale.set(0.42, 0.6, 0.42);
+			can.position.set(x, 1.45, z);
+			g.add(can);
+			const rim = new T.Mesh(GEO.cyl, post);
+			rim.scale.set(0.46, 0.05, 0.46);
+			rim.position.set(x, 1.76, z);
+			g.add(rim);
+		}
+
+		/* Budynek dworca (elewacja od strony torów w x = 12, wejście na osi z = bz + 2.5 – tam idą wysiadający):
+		   piętrowy korpus z frontowym szczytem (zegar w szczycie, nazwa stacji między kondygnacjami, zadaszone
+		   wejście), dwa parterowe skrzydła z poczekalnią i kasami, cokół, gzymsy, boniowane narożniki,
+		   okna w opaskach z nadprożami i parapetami, kominy, rynny; przed budynkiem utwardzony plac. */
+		stationBuilding(g, name, bz, lamps) {
+			const M = World.materials();
+			const sh = this.shadows;
+			const add = (o) => { o.castShadow = sh; o.receiveShadow = true; g.add(o); return o; };
+			// kolory elewacji i dachu zależne od stacji
+			let hs = 0;
+			for (const ch of name) hs = (hs * 31 + ch.charCodeAt(0)) % 9973;
+			const wall = mat(['#d9dccf', '#e9c9a4', '#c98f72', '#ead7c3', '#e8d9b5'][Math.floor(hs / 15) % 5], { roughness: 0.92 }), trim = mat('#f5f0e4', { roughness: 0.85 });
+			const plinth = mat('#77706a', { roughness: 0.95 }), roofM = mat(['#7a3326', '#5a5f66', '#8e3b2e'][hs % 3], { roughness: 0.7 });
+			const brick = mat('#9c4a36', { roughness: 0.9 }), sill = mat('#a8a194'), wood = mat('#5b3a25', { roughness: 0.7 });
+			const tin = matS('#59616a', { roughness: 0.5, metalness: 0.5 }), paving = mat('#9b968d', { roughness: 0.95 });
+			const G = -0.95, y0 = 0.77, X = 12;
+			const zc = bz + 2.5;
+			// plac przed dworcem na poziomie peronu
+			add(box(5.95, y0 - G, 29, paving, 9.05, (y0 + G) / 2, zc));
+
+			// dach dwuspadowy: płaszczyzny + trójkąt szczytu w kolorze ściany; axis 'z' – kalenica wzdłuż toru
+			const gable = (cx, ye, cz, span, len, rise, axis, ov) => {
+				const tri = new T.Mesh(GEO.prism, wall);
+				tri.scale.set(span / 0.866, rise / 0.75, len);
+				tri.position.set(cx, ye + 0.25 * (rise / 0.75), cz);
+				if (axis === 'x') tri.rotation.y = Math.PI / 2;
+				add(tri);
+				const a = Math.atan2(rise, span / 2), lp = (span / 2 + ov) / Math.cos(a);
+				const mx = (span / 2 + ov) / 2, my = ye + rise - (Math.tan(a) * (span / 2 + ov)) / 2 + 0.1;
+				for (const e of [-1, 1]) {
+					const pl = axis === 'z'
+						? box(lp, 0.16, len + ov * 2, roofM, cx + e * mx, my, cz)
+						: box(len + ov * 2, 0.16, lp, roofM, cx, my, cz + e * mx);
+					if (axis === 'z') pl.rotation.z = -e * a; else pl.rotation.x = e * a;
+					add(pl);
+				}
+				add(axis === 'z' ? box(0.3, 0.2, len + ov * 2, roofM, cx, ye + rise + 0.12, cz) : box(len + ov * 2, 0.2, 0.3, roofM, cx, ye + rise + 0.12, cz));
+				// rynny pod okapami
+				const ex = span / 2 + ov - 0.05, ey = ye - Math.tan(a) * ov + 0.02;
+				for (const e of [-1, 1]) g.add(axis === 'z' ? box(0.16, 0.14, len + ov * 2, tin, cx + e * ex, ey, cz) : box(len + ov * 2, 0.14, 0.16, tin, cx, ey, cz + e * ex));
+			};
+			// okno w opasce z krzyżem, parapetem i nadprożem z kluczem; nx – kierunek elewacji (±1 w osi x)
+			const win = (x, y, z, w, h, nx) => {
+				g.add(box(0.12, h + 0.3, w + 0.3, trim, x + nx * 0.03, y, z));
+				g.add(box(0.12, h, w, M.litWin, x + nx * 0.05, y, z));
+				g.add(box(0.13, h, 0.07, trim, x + nx * 0.07, y, z));
+				g.add(box(0.13, 0.07, w, trim, x + nx * 0.07, y + h * 0.18, z));
+				g.add(box(0.32, 0.08, w + 0.45, sill, x + nx * 0.14, y - h / 2 - 0.19, z));
+				g.add(box(0.2, 0.22, w + 0.5, trim, x + nx * 0.08, y + h / 2 + 0.26, z));
+				g.add(box(0.24, 0.32, 0.24, trim, x + nx * 0.1, y + h / 2 + 0.3, z));
+			};
+			const winZ = (x, y, z, w, h, nz) => { // okno na ścianie szczytowej (elewacja ±z)
+				g.add(box(w + 0.3, h + 0.3, 0.12, trim, x, y, z + nz * 0.03));
+				g.add(box(w, h, 0.12, M.litWin, x, y, z + nz * 0.05));
+				g.add(box(0.07, h, 0.13, trim, x, y, z + nz * 0.07));
+				g.add(box(w + 0.45, 0.08, 0.32, sill, x, y - h / 2 - 0.19, z + nz * 0.14));
+				g.add(box(w + 0.5, 0.22, 0.2, trim, x, y + h / 2 + 0.26, z + nz * 0.08));
+			};
+
+			// korpus: piętrowy, szczyt frontowy
+			const D = 9.5, Lc = 11, Hc = 7.2, xc = X + D / 2;
+			add(box(D + 0.25, y0 - G + 0.45, Lc + 0.25, plinth, xc, (G + y0 + 0.45) / 2, zc));
+			add(box(D, Hc, Lc, wall, xc, y0 + Hc / 2, zc));
+			add(box(D + 0.12, 0.2, Lc + 0.12, trim, xc, y0 + 3.75, zc));     // gzyms międzykondygnacyjny
+			add(box(D + 0.45, 0.3, Lc + 0.45, trim, xc, y0 + Hc - 0.1, zc)); // gzyms koronujący
+			for (const e of [-1, 1]) for (let k = 0; k < 9; k++) {
+				const y = y0 + 0.5 + k * 0.78;
+				g.add(box(0.1, 0.5, k % 2 ? 0.55 : 0.85, trim, X - 0.04, y, zc + e * (Lc / 2 - (k % 2 ? 0.27 : 0.42))));
+			}
+			gable(xc, y0 + Hc + 0.05, zc, Lc, D, 3.3, 'x', 0.5);
+			// zegar w szczycie
+			const cg = new T.Group();
+			const clock = this.platformClock(cg, 0, 0, 0, 0.45);
+			cg.scale.setScalar(1.7);
+			cg.rotation.y = -Math.PI / 2;
+			cg.position.set(X - 0.12, y0 + Hc + 1.25, zc);
+			g.add(cg);
+			// nazwa stacji między kondygnacjami
+			this.nameBoard(g, name, 8.2, 1.15, X - 0.08, y0 + 4.55, zc, true);
+			// wejście: dwuskrzydłowe drzwi z naświetlem w opasce, schodek, daszek na wspornikach
+			g.add(box(0.14, 3.6, 2.9, trim, X - 0.03, y0 + 1.8, zc));
+			g.add(box(0.12, 2.5, 2.2, wood, X - 0.06, y0 + 1.25, zc));
+			for (const e of [-1, 1]) g.add(box(0.13, 1.5, 0.75, M.litWin, X - 0.08, y0 + 1.5, zc + e * 0.5));
+			g.add(box(0.13, 0.7, 2.2, M.litWin, X - 0.06, y0 + 2.95, zc));
+			g.add(box(0.13, 0.06, 2.2, trim, X - 0.08, y0 + 2.55, zc));
+			add(box(2.0, 0.12, 3.8, tin, X - 1.0, y0 + 3.55, zc));
+			g.add(box(1.95, 0.25, 0.08, tin, X - 1.0, y0 + 3.45, zc - 1.9));
+			g.add(box(1.95, 0.25, 0.08, tin, X - 1.0, y0 + 3.45, zc + 1.9));
+			g.add(box(0.1, 0.25, 3.8, tin, X - 2.0, y0 + 3.45, zc));
+			for (const e of [-1, 1]) {
+				const rod = box(0.04, 0.04, Math.hypot(1.9, 1.0), tin, X - 0.95, y0 + 4.05, zc + e * 1.6);
+				rod.rotation.y = Math.PI / 2;
+				rod.rotation.z = -Math.atan2(1.0, 1.9);
+				g.add(rod);
+			}
+			// okna korpusu: parter obok wejścia, piętro trzy; z tyłu również
+			for (const e of [-1, 1]) win(X, y0 + 1.75, zc + e * 3.4, 1.4, 2.3, -1);
+			for (const z of [-3.4, 0, 3.4]) win(X, y0 + 5.35, zc + z, 1.15, 1.55, -1);
+			for (const z of [-3.4, 0, 3.4]) {
+				win(X + D, y0 + 1.75, zc + z, 1.3, 2.0, 1);
+				win(X + D, y0 + 5.35, zc + z, 1.15, 1.55, 1);
+			}
+			// kominy
+			for (const e of [-1, 1]) {
+				add(box(0.8, 3.2, 0.8, brick, xc + e * 2.6, y0 + Hc + 2.3, zc + e * 2.2));
+				g.add(box(1.0, 0.15, 1.0, trim, xc + e * 2.6, y0 + Hc + 3.95, zc + e * 2.2));
+			}
+
+			// skrzydła parterowe: poczekalnia (−z) i kasy (+z)
+			const Dw = 8, Lw = 8.5, Hw = 4.4, xw = X + 0.6, xcw = xw + Dw / 2;
+			for (const e of [-1, 1]) {
+				const zw = zc + e * (Lc / 2 + Lw / 2);
+				add(box(Dw + 0.25, y0 - G + 0.45, Lw, plinth, xcw, (G + y0 + 0.45) / 2, zw));
+				add(box(Dw, Hw, Lw, wall, xcw, y0 + Hw / 2, zw));
+				add(box(Dw + 0.4, 0.26, Lw, trim, xcw, y0 + Hw - 0.08, zw));
+				gable(xcw, y0 + Hw + 0.05, zw - e * 0.3, Dw, Lw + 0.6, 2.4, 'z', 0.45);
+				const ze = zw + e * Lw / 2;
+				g.add(box(0.1, Hw, 0.5, trim, xw - 0.04, y0 + Hw / 2, ze - e * 0.25));
+				// okna od strony peronu; w skrzydle kas – drzwi z tabliczką
+				const zs = [-2.6, 0, 2.6].map((z) => zw + z);
+				zs.forEach((z, k) => {
+					if (e > 0 && k === 1) {
+						g.add(box(0.14, 2.75, 1.7, trim, xw - 0.03, y0 + 1.37, z));
+						g.add(box(0.12, 2.45, 1.3, wood, xw - 0.06, y0 + 1.22, z));
+						g.add(box(0.13, 1.2, 0.9, M.litWin, xw - 0.08, y0 + 1.6, z));
+						add(box(1.2, 0.08, 2.2, tin, xw - 0.6, y0 + 2.95, z));
+						this.plaque(g, 'KASY', 1.5, 0.4, xw - 0.09, y0 + 3.45, z);
+					} else win(xw, y0 + 1.75, z, 1.35, 2.2, -1);
+				});
+				for (const z of [-2.6, 0, 2.6]) win(xw + Dw, y0 + 1.75, zw + z, 1.2, 1.9, 1);
+				// okna w szczycie skrzydła
+				for (const x of [-1.8, 1.8]) winZ(xcw + x, y0 + 1.75, ze, 1.2, 2.0, e);
+				winZ(xcw, y0 + Hw + 0.9, ze + e * 0.0, 0.7, 0.8, e);
+				// rura spustowa
+				g.add(box(0.12, Hw + 0.4, 0.12, tin, xw - 0.15, (G + y0 + Hw) / 2 + 0.1, ze - e * 0.12));
+			}
+			// kinkiety: na skrzydłach między oknami i pod daszkiem wejścia
+			const bracket = matS('#2a2d31', { roughness: 0.45, metalness: 0.6 });
+			for (const e of [-1, 1]) for (const dz of [-1.3, 1.3]) {
+				const z = zc + e * (Lc / 2 + Lw / 2) + dz;
+				g.add(box(0.5, 0.06, 0.06, bracket, xw - 0.25, y0 + 3.05, z));
+				g.add(box(0.06, 0.4, 0.06, bracket, xw - 0.03, y0 + 2.9, z));
+				lamps.push(this.wallLamp(g, xw - 0.5, y0 + 2.9, z, y0));
+			}
+			lamps.push(this.wallLamp(g, X - 1.0, y0 + 3.42, zc, y0, true));
+			this.plaque(g, 'POCZEKALNIA', 2.6, 0.4, xw - 0.09, y0 + 3.45, zc - (Lc / 2 + Lw / 2));
+			// donice z kwiatami i ławka pod ścianą
+			const flowers = mat('#c24a5a', { roughness: 0.9 }), pot = mat('#6d655c');
+			for (const e of [-1, 1]) {
+				g.add(box(0.7, 0.55, 0.7, pot, X - 0.9, y0 + 0.28, zc + e * 2.0));
+				const f = new T.Mesh(GEO.sphere, flowers);
+				f.scale.set(0.75, 0.45, 0.75);
+				f.position.set(X - 0.9, y0 + 0.65, zc + e * 2.0);
+				g.add(f);
+			}
+			this.bench(g, xw - 0.7, zc + Lc / 2 + 2.6 + 1.3, 1);
+			this.bench(g, xw - 0.7, zc - Lc / 2 - 4.0, 1);
+			return clock;
+		}
+
+		// mała latarnia ścienna (latarenka z kloszem); flush – oprawa podsufitowa pod daszkiem
+		wallLamp(g, x, y, z, groundY, flush) {
+			const M = World.materials();
+			if (!flush) {
+				const cap = new T.Mesh(GEO.cyl, M.lampHousing);
+				cap.scale.set(0.34, 0.08, 0.34);
+				cap.position.set(x, y + 0.02, z);
+				g.add(cap);
+			}
+			const lens = new T.Mesh(GEO.sphere, M.lampLens);
+			lens.scale.set(flush ? 0.5 : 0.24, flush ? 0.1 : 0.3, flush ? 0.5 : 0.24);
+			lens.position.set(x, y - (flush ? 0 : 0.17), z);
+			g.add(lens);
+			lens.userData.power = 0.6;
+			const halo = new T.Sprite(M.lampHalo);
+			halo.scale.set(1.0, 1.0, 1);
+			halo.userData.lampHalo = true;
+			halo.position.set(x, y - 0.18, z);
+			g.add(halo);
+			const pool = new T.Mesh(M.poolGeo, M.lampPool);
+			pool.scale.setScalar(2.8);
+			pool.position.set(x - 0.4, groundY + 0.03, z);
+			pool.renderOrder = 5;
+			g.add(pool);
+			return lens;
+		}
+
+		// tabliczka z napisem na ścianie (front na −x)
+		plaque(g, text, w, h, x, y, z) {
+			const tex = labelTexture(text, '#1c3d6e', '#ffffff');
+			const m = NS.util.patch(new T.MeshStandardMaterial({ map: tex, roughness: 0.5 }), 'clean');
+			m.userData.shared = false;
+			if (!World.boardGeo) { World.boardGeo = new T.PlaneGeometry(1, 1); World.boardGeo.userData.shared = true; }
+			const p = new T.Mesh(World.boardGeo, m);
+			p.userData.ownMaterial = true;
+			p.scale.set(w, h, 1);
+			p.rotation.y = -Math.PI / 2;
+			p.position.set(x, y, z);
+			g.add(p);
+		}
+
+		// płaska tablica z nazwą stacji ustawiona wzdłuż toru (lokalna oś z); oneSided – tylko strona od toru (−x)
+		nameBoard(g, name, w, h, x, y, z, oneSided) {
+			const tex = labelTexture(name, '#1c3d6e', '#ffffff');
+			if (!World.boardGeo) {
+				World.boardGeo = new T.PlaneGeometry(1, 1);
+				World.boardGeo.userData.shared = true;
+			}
+			const m = new T.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.1 });
+			NS.util.patch(m, 'clean');
+			m.userData.shared = false;
+			const frame = mat('#d9dde2', { roughness: 0.4, metalness: 0.4 });
+			g.add(box(0.06, h + 0.12, w + 0.12, frame, x, y, z));
+			for (const side of oneSided ? [-1] : [-1, 1]) {
+				const p = new T.Mesh(World.boardGeo, m);
+				p.userData.ownMaterial = true;
+				p.scale.set(w, h, 1);
+				p.rotation.y = side * Math.PI / 2;
+				p.position.set(x + side * 0.035, y, z);
+				p.castShadow = false;
+				g.add(p);
+			}
+		}
+
+		/* Semafor świetlny (wzór PKP): fundament, maszt rurowy w biało-czerwone pasy, drabinka z tyłu i podest,
+		   głowica – czarna tarcza tła z białą obwódką i pięć komór (od góry: zielona, pomarańczowa, czerwona,
+		   pomarańczowa dolna, biała), każda z daszkiem i soczewką; tabliczka z oznaczeniem na maszcie.
+		   Lico od strony nadjeżdżającego pociągu (lokalne +z). Zapalane: zielona / pomarańczowa / czerwona. */
+		buildSignal(group, dyn, sig, idx) {
+			if (!World.SG) {
+				const sh = (gm) => { gm.userData.shared = true; return gm; };
+				World.SG = {
+					visor: sh(new T.CylinderGeometry(0.21, 0.21, 0.32, 14, 1, true, -Math.PI / 2, Math.PI).rotateX(Math.PI / 2).translate(0, 0, 0.16)),
+					ring: sh(new T.CylinderGeometry(0.19, 0.19, 0.06, 16).rotateX(Math.PI / 2)),
+					lens: sh(new T.SphereGeometry(0.15, 14, 10).scale(1, 1, 0.45)),
+					shield: (() => {
+						const shp = new T.Shape(), w = 0.36, h = 1.38, r = 0.32;
+						shp.moveTo(-w + r, -h); shp.lineTo(w - r, -h); shp.quadraticCurveTo(w, -h, w, -h + r);
+						shp.lineTo(w, h - r); shp.quadraticCurveTo(w, h, w - r, h); shp.lineTo(-w + r, h);
+						shp.quadraticCurveTo(-w, h, -w, h - r); shp.lineTo(-w, -h + r); shp.quadraticCurveTo(-w, -h, -w + r, -h);
+						return sh(new T.ExtrudeGeometry(shp, { depth: 0.05, bevelEnabled: false }));
+					})(),
+				};
+			}
+			const G = World.SG;
+			const g = new T.Group();
+			// trasa rzeczywista: maszt w wolnym miejscu obok torów z mapy, między torami albo bramownica nad torami
+			const spot = this.env ? this.envSignalSpot(sig.pos, sig) : { d: sig.d !== undefined ? sig.d : 3.4 };
+			this.place(g, sig.pos, spot.d);
+			const steel = matS('#9aa0a6', { roughness: 0.45, metalness: 0.6 });
+			const white = mat('#eeeeee'), red = mat('#c62828'), black = matS('#121212', { roughness: 0.5, metalness: 0.2 });
+			const mastG = new T.Group();
+			g.add(mastG);
+			if (spot.gantry) {
+				mastG.visible = false;
+				this.envGantry(g, spot.l - spot.d, spot.r - spot.d, 7.1, steel);
+				g.add(box(0.1, 0.5, 0.1, steel, 1.6, 6.8, -0.12));
+			}
+			// fundament
+			mastG.add(box(0.8, 0.5, 0.8, mat('#9e9a92', { roughness: 0.95 }), 0, -0.05, 0));
+			// maszt w pasy
+			// wymiary jak PKP: głowica pięciokomorowa ok. 1,9 × 0,5 m, środek ok. 4,9 m nad główką szyny
+			const mastH = 3.7;
+			for (let k = 0; k < 7; k++) {
+				const seg = new T.Mesh(GEO.cyl, k % 2 ? white : red);
+				seg.scale.set(0.2, mastH / 7, 0.2);
+				seg.position.set(0, 0.2 + (k + 0.5) * (mastH / 7), 0);
+				mastG.add(seg);
+			}
+			const cap = new T.Mesh(GEO.cyl, steel);
+			cap.scale.set(0.26, 0.08, 0.26);
+			cap.position.set(0, 0.2 + mastH, 0);
+			mastG.add(cap);
+			// drabinka z tyłu masztu i podest pod głowicą
+			for (const x of [-0.2, 0.2]) mastG.add(box(0.04, mastH - 0.6, 0.04, steel, x, 0.5 + (mastH - 0.6) / 2, -0.28));
+			for (let y = 0.8; y < mastH; y += 0.32) mastG.add(box(0.4, 0.03, 0.03, steel, 0, y, -0.28));
+			mastG.add(box(0.8, 0.05, 0.6, steel, 0, 3.55, -0.05));
+			for (const x of [-0.39, 0.39]) mastG.add(box(0.03, 0.7, 0.03, steel, x, 3.9, -0.33));
+			mastG.add(box(0.8, 0.03, 0.03, steel, 0, 4.25, -0.33));
+			// głowica (podgrupa w skali 0,7): tarcza tła z obwódką, komory świateł, poświata
+			const hy = spot.gantry ? 6.0 : 4.9; // środek głowicy
+			const HS = 0.7;
+			const head = new T.Group();
+			// na bramownicy: głowica 1,6 m w prawo od osi toru (poza przewodem jezdnym i pantografem)
+			const hx = spot.gantry ? 1.6 : 0;
+			head.position.set(hx, hy, 0);
+			head.scale.setScalar(HS);
+			g.add(head);
+			if (!spot.gantry) g.add(box(0.12, 0.5, 0.12, steel, 0, hy - 1.38 * HS - 0.1, -0.1));
+			const rim = new T.Mesh(G.shield, white);
+			rim.scale.set(1.08, 1.04, 1);
+			head.add(rim);
+			const shield = new T.Mesh(G.shield, black);
+			shield.position.set(0, 0, 0.02);
+			head.add(shield);
+			head.add(box(0.5, 2.5, 0.35, black, 0, 0, -0.17));
+			// komory świateł
+			const ORDER = ['green', 'yellow', 'red', 'yellow2', 'white'];
+			const DARK = { green: 0x123018, yellow: 0x3a2808, red: 0x3a0e0c, yellow2: 0x3a2808, white: 0x3a3a3a };
+			const lamps = ORDER.map((name, k) => {
+				const y = 1.08 - k * 0.54;
+				const ring = new T.Mesh(G.ring, steel);
+				ring.position.set(0, y, 0.09);
+				head.add(ring);
+				const visor = new T.Mesh(G.visor, black);
+				visor.position.set(0, y, 0.07);
+				head.add(visor);
+				const m = new T.Mesh(G.lens, new T.MeshBasicMaterial({ color: DARK[name] }));
+				m.userData.ownMaterial = true;
+				m.position.set(0, y, 0.12);
+				head.add(m);
+				m.userData.dark = DARK[name];
+				return m;
+			});
+			// tabliczka z oznaczeniem semafora
+			const label = sig.label || (sig.type === 'starter' ? 'O' + (sig.station + 1) : sig.name.replace('Sbl ', 'S'));
+			const tex = labelTexture(label, '#f4f4f4', '#111111');
+			const pm = new T.MeshStandardMaterial({ map: tex, roughness: 0.6 });
+			NS.util.patch(pm, 'lit');
+			pm.userData.shared = false;
+			if (!World.boardGeo) { World.boardGeo = new T.PlaneGeometry(1, 1); World.boardGeo.userData.shared = true; }
+			const plate = new T.Mesh(World.boardGeo, pm);
+			plate.userData.ownMaterial = true;
+			plate.scale.set(0.7, 0.16, 1);
+			plate.position.set(spot.gantry ? 1.6 : 0, spot.gantry ? hy - 1.25 : 2.6, 0.11);
+			g.add(plate);
+			// poświata przy świecącej lampie (położenie ustawiane przy zmianie sygnału)
+			const glow = sprite(glowTexture(), 2.2, 2.2, { additive: true, fog: false });
+			glow.position.set(0, 0, 0.5);
+			head.add(glow);
+			g.traverse((o) => { if (o.isMesh) { o.castShadow = this.shadows; o.receiveShadow = true; } });
+			dyn.push({ type: 'signal', index: idx, lamps, glow, aspect: null });
+			group.add(g);
+		}
+
+		// tablica przy torze na słupku, przodem do nadjeżdżającego pociągu; shape: 'sq' | 'tri'
+		buildBoard(group, s, tex, shape) {
+			// nie w miejscu słupa trakcyjnego (słupy co 60 m po tej samej stronie toru) – przesunięcie przed słup
+			if (this.route.electrified) {
+				const m = ((s % 60) + 60) % 60;
+				if (m < 2.5) s -= 3 - m;
+				else if (m > 57.5) s -= 3 - (60 - m) ;
+			}
+			const g = new T.Group();
+			this.place(g, s, this.env ? this.envBoardSpot(s) : 3.1);
+			const pole = matS('#8a8f94', { roughness: 0.5, metalness: 0.6 });
+			const p = new T.Mesh(GEO.cyl, pole);
+			p.scale.set(0.08, 2.9, 0.08);
+			p.position.set(0, 1.25, 0.05);
+			g.add(p);
+			// obejmy mocujące tarczę do słupka (tarcza ok. 0,85 m – jak tablice PKP)
+			for (const y of [2.45, 2.95]) g.add(box(0.13, 0.05, 0.1, pole, 0, y, 0.05));
+			this.fixedBoard(g, tex, shape || 'sq', 0.85, 0, 2.7, 0);
+			group.add(g);
+		}
+
+		// Płaska tarcza: lico (tekstura) od strony nadjeżdżającego pociągu (lokalne +z), szary tył z blachy.
+		// Materiały wspólne dla jednakowych tarcz.
+		fixedBoard(g, tex, shape, size, x, y, z) {
+			if (!World.boardGeo) {
+				World.boardGeo = new T.PlaneGeometry(1, 1);
+				World.boardGeo.userData.shared = true;
+			}
+			World.boardMats = World.boardMats || new Map();
+			const get = (key, make) => {
+				if (!World.boardMats.has(key)) World.boardMats.set(key, make());
+				return World.boardMats.get(key);
+			};
+			const front = get(tex.uuid, () => NS.util.patch(new T.MeshStandardMaterial({ map: tex, alphaTest: 0.5, roughness: 0.45, metalness: 0.05 }), 'lit'));
+			const backTex = boardTexture('', '#7d8287', shape === 'tri' ? 'tri' : 'sq');
+			const back = get('back|' + shape, () => NS.util.patch(new T.MeshStandardMaterial({ map: backTex, alphaTest: 0.5, roughness: 0.55, metalness: 0.5 }), 'lit'));
+			const f = new T.Mesh(World.boardGeo, front);
+			f.scale.set(size, size, 1);
+			f.position.set(x, y, z + 0.11);
+			f.castShadow = true;
+			g.add(f);
+			const b = new T.Mesh(World.boardGeo, back);
+			b.scale.set(size, size, 1);
+			b.rotation.y = Math.PI;
+			b.position.set(x, y, z + 0.1);
+			g.add(b);
+		}
+
+		roadY(s, d) {
+			const h = R.heightAt(this.route, s);
+			const ad = this.eff(d);
+			if (ad < 3.4) return h - 0.14;
+			const t = smoothstep(3.4, 7, ad);
+			return (h - 0.14) * (1 - t) + (this.terrainY(s, d) + 0.08) * t;
+		}
+
+		buildCrossing(group, dyn, cr) {
+			const pts = [], idx = [];
+			const ds = [];
+			for (let d = -150; d <= 150; d += 5) ds.push(d);
+			ds.forEach((d, j) => {
+				for (const off of [-3.2, 3.2]) {
+					R.sidePoint(this.route, cr.pos + off, d, tp);
+					pts.push(tp.x, this.roadY(cr.pos + off, d), tp.z);
+				}
+				if (j) {
+					const a = (j - 1) * 2, b = a + 1, c = a + 2, e = a + 3;
+					idx.push(a, c, b, b, c, e);
+				}
+			});
+			const geo = new T.BufferGeometry();
+			geo.setAttribute('position', new T.Float32BufferAttribute(pts, 3));
+			geo.setIndex(idx);
+			geo.computeVertexNormals();
+			const road = new T.Mesh(geo, mat('#4c4c52', { side: T.DoubleSide }));
+			road.receiveShadow = true;
+			group.add(road);
+
+			const lights = [], glows = [];
+			for (const [off, side] of [[-5, this.route.double ? SECOND - 5.6 : -5.6], [5, 5.6]]) {
+				const g = new T.Group();
+				this.place(g, cr.pos + off, side);
+				g.position.y = this.roadY(cr.pos + off, side);
+				g.add(box(0.12, 3.2, 0.12, mat('#777777'), 0, 1.6, 0));
+				// krzyż św. Andrzeja: białe ramiona (ok. 1,3 m) z czerwonym obramowaniem
+				for (const a of [0.62, -0.62]) {
+					const red = box(1.35, 0.24, 0.05, mat('#c62828'), 0, 2.9, 0.01);
+					red.rotation.z = a;
+					g.add(red);
+					const arm = box(1.29, 0.15, 0.06, mat('#f4f4f4'), 0, 2.9, 0.03);
+					arm.rotation.z = a;
+					g.add(arm);
+				}
+				// sygnalizator: belka, czarne tarcze z daszkami, dwie lampy
+				g.add(box(1.2, 0.12, 0.08, mat('#333333'), 0, 2.2, -0.02));
+				for (const lx of [-0.4, 0.4]) {
+					const plate = new T.Mesh(GEO.cyl, mat('#141414'));
+					plate.scale.set(0.62, 0.04, 0.62);
+					plate.rotation.x = Math.PI / 2;
+					plate.position.set(lx, 2.2, 0.02);
+					g.add(plate);
+					g.add(box(0.42, 0.04, 0.22, mat('#141414'), lx, 2.42, 0.13));
+					const l = new T.Mesh(GEO.sphere, new T.MeshBasicMaterial({ color: 0x3a1a1a }));
+					l.userData.ownMaterial = true;
+					l.scale.set(0.3, 0.3, 0.14);
+					l.position.set(lx, 2.2, 0.08);
+					g.add(l);
+					lights.push(l);
+					const gl = sprite(glowTexture(), 3, 3, { additive: true, color: 0xff3020, fog: false });
+					gl.position.set(lx, 2.2, 0.35);
+					gl.material.opacity = 0;
+					g.add(gl);
+					glows.push(gl);
+				}
+				// znak i lampy przodem do nadjeżdżających aut (droga biegnie w poprzek toru)
+				g.rotateY(side < 0 ? -Math.PI / 2 : Math.PI / 2);
+				group.add(g);
+			}
+			const cars = [];
+			for (let k = 0; k < 3; k++) {
+				const car = this.carModel(cr.pos + k * 1.7);
+				group.add(car);
+				const dir = k % 2 ? -1 : 1;
+				cars.push({ obj: car, dir, p: -dir * (20 + k * 60), speed: 11 + hash(cr.pos + k * 3) * 5, stop: dir > 0 ? (this.route.double ? -12.5 : -7.5) : 7.5 });
+			}
+			dyn.push({ type: 'crossing', cr, lights, glows, cars });
+		}
+
+		/* Wiadukt nad ulicą (trasy rzeczywiste): betonowe przęsło z gzymsami i balustradami, przyczółki ze
+		   skrzydłami, filary przy dłuższych obiektach, pod spodem jezdnia z chodnikami i oznakowaniem. */
+		buildViaduct(group, b) {
+			const sp = this.bridgeSpan(b), mid = (sp[0] + sp[1]) / 2, len = Math.max(14, sp[1] - sp[0]);
+			const g = new T.Group();
+			const conc = mat('#a7a39b', { roughness: 0.92 }), dark = mat('#8a867e', { roughness: 0.95 });
+			const rail = matS('#5d6670', { roughness: 0.5, metalness: 0.5 });
+			const dbl = this.route.double && !this.env; // trasa rzeczywista: drugi tor (z mapy) ma własny pomost
+			const cx = dbl ? SECOND / 2 : 0, wide = dbl ? 10.6 : 6;
+			const h0 = R.heightAt(this.route, mid);
+			// przęsło i gzymsy
+			g.add(box(wide, 1.1, len + 1, conc, cx, -0.95, 0));
+			for (const sx of [-1, 1]) {
+				g.add(box(0.45, 0.35, len + 1, dark, cx + sx * (wide / 2 + 0.05), -0.25, 0));
+				// balustrada: słupki i poręcze
+				for (let z = -len / 2; z <= len / 2 + 1e-6; z += 2) g.add(box(0.07, 1.0, 0.07, rail, cx + sx * (wide / 2 - 0.05), 0.4, z));
+				for (const y of [0.85, 0.45]) g.add(box(0.06, 0.06, len + 0.5, rail, cx + sx * (wide / 2 - 0.05), y, 0));
+			}
+			// przyczółki ze skrzydłami
+			for (const e of [-1, 1]) {
+				const z = e * (len / 2 + 1.6);
+				if (this.env) {
+					// przyczółek zamyka nasyp: szerokość korony nasypu, wysokość do dna obniżenia pod przęsłem
+					const shL = this.bridgeShoulder(b, -1), shR = this.bridgeShoulder(b, 1);
+					const yIn = Math.min(this.terrainY(e > 0 ? b.from + 1 : b.to - 1, 0), this.terrainY((b.from + b.to) / 2, 0)) - h0;
+					const hh = Math.max(2, -0.4 - yIn + 0.8), abW = shL + shR + 1.5, ax = (shR - shL) / 2;
+					g.add(box(abW, hh, 3.2, conc, ax, -0.4 - hh / 2, z));
+					for (const sx of [-1, 1]) g.add(box(0.6, hh, 9, conc, ax + sx * (abW / 2 + 0.3), -0.4 - hh / 2, z + e * 4));
+					continue;
+				}
+				const yb = this.terrainY(mid - z, 0) - h0;
+				const hh = Math.max(2, -0.4 - yb + 1.2);
+				g.add(box(wide + 1.2, hh, 3.2, conc, cx, -0.4 - hh / 2, z));
+				for (const sx of [-1, 1]) {
+					const wing = box(0.6, hh, 6, conc, cx + sx * (wide / 2 + 0.3), -0.4 - hh / 2, z + e * 2.5);
+					g.add(wing);
+				}
+			}
+			// filary pośrednie (poza jezdnią pod środkiem)
+			if (len > 26) {
+				for (let z = -len / 2 + 9; z < len / 2 - 8; z += 10) {
+					if (Math.abs(z) < 7) continue;
+					const yb = this.terrainY(mid - z, 0) - h0;
+					const hh = Math.max(1, -1.5 - yb);
+					for (const sx of [-1, 1]) {
+						const p = new T.Mesh(GEO.cyl, conc);
+						p.scale.set(1.1, hh, 1.1);
+						p.position.set(cx + sx * (wide / 2 - 1.6), -1.5 - hh / 2, z);
+						g.add(p);
+					}
+				}
+			}
+			g.traverse((o) => { if (o.isMesh) { o.castShadow = this.shadows; o.receiveShadow = true; } });
+			// jezdnia pod wiaduktem: pas wzdłuż terenu w poprzek toru, chodniki, linia środkowa
+			const strip = (z0, z1, dy, material) => {
+				const posA = [], idx = [];
+				const xs = [];
+				for (let x = -70; x <= 70; x += 5) xs.push(x);
+				for (const x of xs) for (const z of [z0, z1]) posA.push(x, this.terrainY(mid - z, x) - h0 + dy, z);
+				for (let k = 0; k < xs.length - 1; k++) {
+					const a = k * 2, c = k * 2 + 2;
+					idx.push(a, a + 1, c, c, a + 1, c + 1);
+				}
+				const geo = new T.BufferGeometry();
+				geo.setAttribute('position', new T.Float32BufferAttribute(posA, 3));
+				geo.setIndex(idx);
+				geo.computeVertexNormals();
+				const m = new T.Mesh(geo, material);
+				m.receiveShadow = true;
+				g.add(m);
+			};
+			if (!this.env) {
+				// ulica pod wiaduktem (na trasach rzeczywistych jest z mapy)
+				strip(-3.5, 3.5, 0.12, mat('#3b3e42', { roughness: 0.9 }));
+				strip(3.5, 5.3, 0.25, mat('#8f8a82', { roughness: 0.95 }));
+				strip(-5.3, -3.5, 0.25, mat('#8f8a82', { roughness: 0.95 }));
+				strip(-0.08, 0.08, 0.14, mat('#e8e8e2', { roughness: 0.8 }));
+			}
+			this.bendGroup(g, mid);
+			group.add(g);
+		}
+
+		buildBridge(group, b) {
+			const mid = (b.from + b.to) / 2, len = b.to - b.from;
+			const g = new T.Group();
+			const stone = mat('#9a9287');
+			const steel = mat('#3d5566');
+			const spans = Math.max(1, Math.round(len / 45));
+			const sl = len / spans;
+			const dbl = this.route.double && !this.env;
+			const cx = dbl ? SECOND / 2 : 0, wide = dbl ? 10 : 5.4;
+			for (let i = 0; i <= spans; i++) {
+				const z = len / 2 - i * sl;
+				g.add(box(i === 0 || i === spans ? 6 : 3.4, 11, wide - 0.4, stone, cx, -6.4, z).rotateY(0));
+			}
+			g.add(box(wide, 0.6, len, mat('#4c5257'), cx, -0.75, 0));
+			const panels = 6;
+			for (let i = 0; i < spans; i++) {
+				const za = len / 2 - i * sl, zb = za - sl;
+				for (const x of dbl ? [SECOND - 2.7, 2.7] : [-2.7, 2.7]) {
+					g.add(box(0.28, 0.4, sl, steel, x, -0.3, (za + zb) / 2));
+					g.add(box(0.28, 0.32, sl - (2 * sl) / panels, steel, x, 4.8, (za + zb) / 2));
+					for (let k = 0; k <= panels; k++) {
+						const z = za - (k * sl) / panels;
+						if (k > 0 && k < panels) g.add(box(0.2, 5.1, 0.2, steel, x, 2.25, z));
+						if (k < panels) {
+							const z2 = z - sl / panels;
+							const end = k === 0 || k === panels - 1;
+							const y1 = -0.3, y2 = 4.8;
+							const up = k % 2 === 0;
+							const ya = end ? (k === 0 ? y1 : y2) : up ? y1 : y2;
+							const yb = end ? (k === 0 ? y2 : y1) : up ? y2 : y1;
+							const dz = z2 - z, dy = yb - ya;
+							const diag = box(0.16, Math.hypot(dz, dy), 0.16, steel, x, (ya + yb) / 2, (z + z2) / 2);
+							diag.rotation.x = Math.atan2(dz, dy);
+							g.add(diag);
+						}
+					}
+				}
+			}
+			g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+			if (this.env) { this.bendGroup(g, mid); group.add(g); return; } // trasa rzeczywista: rzeka i brzegi z mapy
+			const M = World.materials();
+			const water = new T.Mesh(new T.PlaneGeometry(640, len - 14).rotateX(-Math.PI / 2), M.water);
+			water.position.set(0, -8.25, 0);
+			water.receiveShadow = true;
+			g.add(water);
+			// trzciny wzdłuż brzegów
+			const reeds = new T.InstancedMesh(GEO.cone, M.reed, 260);
+			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p3 = new T.Vector3();
+			let n = 0;
+			for (let i = 0; i < 260; i++) {
+				const bank = hash(b.from + i) < 0.5 ? 1 : -1;
+				const z = bank * ((len - 14) / 2 - hash(b.from + i * 1.7) * 5);
+				const x = (hash(b.from + i * 2.3) - 0.5) * 520;
+				if (Math.abs(x) < 6) continue;
+				const k = 0.7 + hash(b.from + i * 3.1) * 0.7;
+				m4.compose(p3.set(x, -8.25 + 0.9 * k, z), q, sc.set(0.35 * k, 1.9 * k, 0.35 * k));
+				reeds.setMatrixAt(n++, m4);
+			}
+			reeds.count = n;
+			g.add(reeds);
+			this.bendGroup(g, mid);
+			group.add(g);
+		}
+
+		buildTunnel(group, dyn, t) {
+			const r = this.route;
+			const cols = [];
+			for (let d = -110; d <= 110; d += 10) cols.push(d);
+			const hill = (s, d) => {
+				const ws = smoothstep(t.from - 22, t.from, s) * (1 - smoothstep(t.to, t.to + 22, s));
+				const ridge = 15 + 10 * vnoise(s * 0.01, 4);
+				const cd = Math.cos((Math.PI * Math.min(1, Math.abs(d) / 110)) / 2);
+				const h = R.heightAt(r, s);
+				return Math.max(this.terrainY(s, d), h - 0.95 + ridge * ws * cd * cd) + 0.06;
+			};
+			const ownMat = patch(new T.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 1, side: T.DoubleSide }), 'lit');
+			const geo = this.ribbon(t.from - 24, t.to + 24, 6, cols, hill, (s, d, y) => {
+				const n = vnoise(s * 0.05, d * 0.05);
+				const rock = y - R.heightAt(r, s) > 14 ? 0.15 : 0;
+				return tmpColor.setRGB(0.27 + rock + n * 0.06, 0.4 + n * 0.08 - rock * 0.3, 0.22 + rock * 0.5, T.SRGBColorSpace);
+			});
+			const mound = new T.Mesh(geo, ownMat);
+			mound.castShadow = true;
+			mound.receiveShadow = true;
+			group.add(mound);
+			const stone = mat('#8c857a');
+			for (const s of [t.from, t.to]) {
+				const g = new T.Group();
+				this.place(g, s, 0);
+				const dbl = r.double, cx = dbl ? SECOND / 2 : 0, w = dbl ? 9.8 : 5.2;
+				g.add(box(2, 8.5, 2, stone, cx - w / 2 - 1, 3.3, 0));
+				g.add(box(2, 8.5, 2, stone, cx + w / 2 + 1, 3.3, 0));
+				g.add(box(w + 4, 2, 2, stone, cx, 7.4, 0));
+				g.add(box(w, 6.4, 0.6, mat('#111111'), cx, 2.3, s === t.from ? 0.9 : -0.9));
+				group.add(g);
+			}
+			dyn.push({ type: 'tunnel', t, mat: ownMat, ownMat });
+		}
+
+		// ---------- aktualizacja ----------
+		// stan latarń: klosze, poświaty, plamy i stożki światła (wspólne materiały) + pula świateł punktowych
+		updateLamps(dark, haze) {
+			const M = World.M;
+			const night = dark > 0.15 ? Math.min(1, (dark - 0.1) * 1.5) : 0;
+			if (night > 0) M.lampLens.color.setRGB(1, 0.82, 0.55).multiplyScalar(1 + 3.5 * night);
+			else M.lampLens.color.set('#d8d4c8');
+			M.lampHalo.opacity = 0.75 * night;
+			M.lampHalo.color.setRGB(1, 0.8, 0.55).multiplyScalar(1.6);
+			M.lampPool.opacity = 0.42 * night;
+			// w mgle, deszczu i śniegu światło rozprasza się w powietrzu – szersza, miękka poświata
+			const hz = Math.min(1, haze);
+			M.lampHalo.opacity = (0.75 + 0.2 * hz) * night;
+			const hs = 1.5 + 4.5 * hz;
+			if (Math.abs(hs - (this.haloSize || 0)) > 0.05) {
+				this.haloSize = hs;
+				for (const ch of this.chunks.values()) ch.group.traverse((o) => { if (o.userData.lampHalo) o.scale.set(hs, hs, 1); });
+			}
+			const pool = this.lightPool;
+			if (!night) {
+				for (const l of pool) l.intensity = 0;
+				return;
+			}
+			const cand = [];
+			for (const ch of this.chunks.values()) {
+				for (const d of ch.dyn) {
+					// lampy semaforów mają własne poświaty – pula świateł jest tylko dla latarń, wiat i kinkietów
+					if (!d.lamps || d.type === 'signal') continue;
+					for (const lens of d.lamps) {
+						lens.getWorldPosition(V3);
+						const dd = V3.distanceToSquared(this.viewPos);
+						if (dd < 260 * 260) cand.push({ dd, x: V3.x, y: V3.y - (lens.userData.drop || 0.4), z: V3.z, k: lens.userData.power || 1 });
+					}
+				}
+			}
+			cand.sort((a, b) => a.dd - b.dd);
+			pool.forEach((l, k) => {
+				const c = cand[k];
+				if (!c) { l.intensity = 0; return; }
+				l.position.set(c.x, c.y, c.z);
+				l.intensity = 52 * night * c.k;
+			});
+		}
+
+		update(sim, dt, dark, haze) {
+			if (!this.route) return;
+			this.time += dt;
+			// swobodna kamera: świat wokół kamery (streamS – jej kilometraż), w obie strony po równo
+			const free = this.streamS !== null && this.streamS !== undefined;
+			const front = free ? this.streamS : sim.st.pos;
+			const c0 = Math.floor((front - (free ? 900 : BEHIND)) / C), c1 = Math.floor((front + (free ? 900 : AHEAD)) / C);
+			for (const [c, ch] of this.chunks) {
+				if (c < c0 - 1 || c > c1 + 1) {
+					this.dropChunk(ch);
+					this.chunks.delete(c);
+				}
+			}
+			const cMin = Math.floor(-500 / C), cMax = Math.floor((this.route.length + 300) / C);
+			const fc = Math.floor(front / C);
+			const order = [];
+			if (free) {
+				for (let k = 0; fc - k >= c0 || fc + k <= c1; k++) {
+					if (fc + k <= c1) order.push(fc + k);
+					if (k && fc - k >= c0) order.push(fc - k);
+				}
+			} else {
+				for (let c = fc; c <= c1; c++) order.push(c);
+				for (let c = fc - 1; c >= c0; c--) order.push(c);
+			}
+			let built = 0;
+			for (const c of order) {
+				if (c < cMin || c > cMax || this.chunks.has(c)) continue;
+				this.chunks.set(c, this.buildChunk(c));
+				if (!this.warm && ++built >= 2) break;
+			}
+			this.warm = false;
+			// kawałki wokół pociągu (kamery) jeszcze do zbudowania – ekran wczytywania czeka, aż będzie 0
+			this.pending = order.filter((c) => c >= cMin && c <= cMax && !this.chunks.has(c)).length;
+			if (World.M) {
+				this.updateLamps(dark, haze || 0);
+				World.M.litWin.emissiveIntensity = dark > 0.25 ? 0.9 * dark : 0;
+				if (this.envNight) this.envNight(dark);
+				World.M.normals.offset.x = (this.time * 0.006) % 1;
+				World.M.normals.offset.y = (this.time * 0.011) % 1;
+			}
+
+			const blink = Math.floor(this.time / 0.45) % 2;
+			for (const ch of this.chunks.values()) {
+				for (const d of ch.dyn) this.updateDyn(d, sim, dt, dark, blink);
+			}
+		}
+
+		// Pasażerowie na peronie: czekający idą do najbliższych drzwi i wsiadają, wysiadający idą do wyjścia.
+		updatePassengers(d, sim) {
+			// nowa symulacja (np. po pociągu pokazowym w menu) – stan stacji od nowa
+			if (d.sim !== sim) { d.sim = sim; d.init = false; d.boarding = false; d.lastT = null; d.doorQ = null; }
+			const st = d.st, ss = sim.ss[d.index];
+			const dts = d.lastT === null ? 0 : Math.max(0, Math.min(0.5, sim.time - d.lastT));
+			d.lastT = sim.time;
+			const W = d.W, A = d.A, I = d.I, S = d.S, Sp = d.Sp;
+			let dirty = false;
+			if (!d.init) {
+				d.init = true;
+				dirty = true;
+				const n = st.terminus ? 0 : Math.min(W.cap, ss.initial);
+				const gone = ss.state === 'served' && sim.service !== d.index;
+				const departed = ss.state === 'departed' || ss.state === 'missed';
+				W.list.forEach((p, k) => { p.state = k < n && !gone && !departed ? 'wait' : 'off'; });
+				for (const P of [W, A, I, S, Sp]) P.bodies.count = P.heads.count = P.list.length; // tylko ustawione osoby
+			}
+			/* Wymiana pasażerów przy drzwiach (czas symulacji t):
+			   – po otwarciu drzwi (ok. 1,4 s) najpierw wysiadają: kolejno co ok. 1,5 s na drzwi, ze stopnia wagonu
+			     (podłoga o STEP wyżej) schodzą na peron i idą do wyjścia;
+			   – czekający podchodzą do najbliższych drzwi i stają w kolejce po obu stronach (nie w przejściu), po
+			     wysiadających wchodzą pojedynczo: do krawędzi peronu, stopniem w górę do przedsionka;
+			   – zamknięcie drzwi: kto jest w drzwiach, kończy ruch, kolejka zostaje na peronie. */
+			const STEP = 0.56, t = sim.time, E = d.edgeX, sg = d.sgn;
+			const boarding = sim.service === d.index && sim.doorsOpen;
+			if (boarding && !d.boarding) {
+				d.doors = (this.trainDoors || []).map((v) => {
+					if (d.bend === undefined) return d.g.worldToLocal(v.clone());
+					const q = this.toTrack(v.x, v.z, d.bend);
+					return new T.Vector3(q.d, v.y, d.bend - q.s);
+				}).filter((v) => Math.abs(v.z) < d.len / 2 + 6);
+				d.doorQ = d.doors.map((dr) => ({ z: dr.z, free: t + 1.4, aEnd: t + 1.4, n: 0 }));
+				const nA = d.doors.length && d.index > 0 ? 2 + Math.floor(hash(st.pos + sim.time) * 6) : 0;
+				A.list.forEach((p, k) => {
+					if (k < nA) {
+						const Dq = d.doorQ[k % d.doorQ.length];
+						p.door = Dq;
+						p.x = E - sg * 0.9;
+						p.z = Dq.z + (hash(p.seed) - 0.5) * 0.3;
+						p.y = STEP;
+						p.t0 = Dq.aEnd;
+						Dq.aEnd += 1.3 + hash(p.seed + 1) * 0.5;
+						p.tx = d.exit.x;
+						p.tz = d.exit.z + (hash(p.seed) - 0.5) * 4;
+						p.next = null;
+						p.state = 'inside';
+					} else p.state = 'off';
+				});
+				for (const Dq of d.doorQ) Dq.free = Dq.aEnd + 0.3; // wsiadający po wysiadających
+				dirty = true;
+			}
+			d.boarding = boarding;
+			if (boarding && d.doorQ && d.doorQ.length) {
+				for (const p of W.list) {
+					if (p.state !== 'wait') continue;
+					let best = d.doorQ[0], bd = Infinity;
+					for (const Dq of d.doorQ) {
+						const dd = Math.abs(Dq.z - p.z);
+						if (dd < bd) { bd = dd; best = Dq; }
+					}
+					if (bd > 25) continue; // za daleko od drzwi pociągu – zostaje (pociąg krótszy od peronu)
+					// miejsce w kolejce: na przemian po obu stronach drzwi, kolejni dalej od nich
+					const q = best.n++, side = q % 2 ? 1 : -1, row = Math.floor(q / 2);
+					p.door = best;
+					p.tx = E + sg * (0.5 + 0.3 * row);
+					p.tz = best.z + side * (0.75 + 0.35 * row) + (hash(p.seed) - 0.5) * 0.15;
+					p.next = 'queue';
+					p.state = 'walk';
+				}
+			} else {
+				for (const p of W.list) if ((p.state === 'walk' && p.next === 'queue') || p.state === 'queue' || p.state === 'board') { p.state = 'wait'; p.next = null; }
+				for (const p of A.list) if (p.state === 'inside') p.state = 'off';
+				if (d.doorQ) for (const Dq of d.doorQ) Dq.n = 0;
+			}
+			const sm = (a, b, x) => { const u = Math.max(0, Math.min(1, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+			for (const P of [W, A]) {
+				for (const p of P.list) {
+					const st0 = p.state;
+					if (st0 === 'off' || st0 === 'wait') continue;
+					dirty = true;
+					if (st0 === 'walk' || st0 === 'board') {
+						const dx = p.tx - p.x, dz = p.tz - p.z, L = Math.hypot(dx, dz), step = p.spd * dts * (st0 === 'board' ? 0.8 : 1);
+						if (L <= Math.max(step, 0.12)) {
+							p.x = p.tx; p.z = p.tz;
+							if (st0 === 'board') { p.state = 'step'; p.st = 0; }
+							else p.state = p.next === 'queue' ? 'queue' : 'off';
+						} else { p.x += (dx / L) * step; p.z += (dz / L) * step; }
+					} else if (st0 === 'queue') {
+						const Dq = p.door;
+						if (boarding && Dq && t >= Dq.free) {
+							Dq.free = t + 1.5;
+							p.tx = E + sg * 0.12;
+							p.tz = Dq.z;
+							p.state = 'board';
+						}
+					} else if (st0 === 'step') {
+						// wejście: z krawędzi peronu stopniem w górę do przedsionka i w głąb wagonu
+						p.st += dts / 0.9;
+						p.x = E + sg * 0.12 - sg * 0.95 * p.st;
+						p.y = STEP * sm(0.12, 0.6, p.st);
+						if (p.st >= 1) { p.state = 'off'; p.y = 0; }
+					} else if (st0 === 'inside') {
+						if (t >= p.t0) { p.state = 'out'; p.st = 0; }
+					} else if (st0 === 'out') {
+						// wyjście: z przedsionka na stopień i w dół na peron
+						p.st += dts / 1.0;
+						p.x = E - sg * 0.9 + sg * 1.45 * p.st;
+						p.y = STEP * (1 - sm(0.4, 0.8, p.st));
+						if (p.st >= 1) { p.y = 0; p.state = 'walk'; p.next = null; }
+					}
+				}
+			}
+			// spacerujący: idą do celu wzdłuż peronu, czasem przystają i rozglądają się, potem wybierają nowy cel
+			for (const p of Sp.list) {
+				if (p.state === 'off') continue;
+				dirty = true;
+				if (p.state === 'pause') {
+					p.wait -= dts;
+					if (p.wait <= 0) { p.state = 'stroll'; p.tz = (Math.random() - 0.5) * 2 * p.zr; }
+					continue;
+				}
+				const dz = p.tz - p.z, step = p.spd * dts;
+				if (Math.abs(dz) <= Math.max(step, 0.2)) {
+					if (Math.random() < 0.5) { p.state = 'pause'; p.wait = 3 + Math.random() * 8; }
+					else p.tz = (Math.random() - 0.5) * 2 * p.zr;
+				} else p.z += Math.sign(dz) * step;
+			}
+			if (!dirty) return;
+			for (const P of [W, A, I, S, Sp]) {
+				P.list.forEach((p, k) => {
+					const on = p.state !== 'off' && p.state !== 'inside';
+					const bob = p.y || 0; // podskok i ruch kończyn – w shaderze (personMat); p.y – stopień wagonu
+					const moving = p.state === 'walk' || p.state === 'stroll' || p.state === 'board' || p.state === 'step' || p.state === 'out';
+					if (P.setAnim) P.setAnim(k, hash(p.seed + 0.33) * 6.28, moving ? 1 : p.state === 'sit' ? -1 : 0, p.spd * 0.62);
+					const s = on ? 0.95 + hash(p.seed) * 0.12 : 0;
+					// idący patrzą w stronę celu, czekający – na tor
+					const yaw = p.state === 'sit' ? p.yaw : p.state === 'stroll' ? (p.tz > p.z ? Math.PI : 0) : p.state === 'pause' ? (p.x > 0 ? Math.PI / 2 : -Math.PI / 2) + Math.sin(p.seed) * 0.8
+						: p.state === 'walk' || p.state === 'board' ? Math.atan2(-(p.tx - p.x), -(p.tz - p.z))
+						: p.state === 'step' ? sg * Math.PI / 2 : p.state === 'out' ? -sg * Math.PI / 2
+						: p.state === 'queue' && p.door ? Math.atan2(-(E - p.x), -(p.door.z - p.z)) : p.x > 0 ? Math.PI / 2 : -Math.PI / 2;
+					if (d.bend !== undefined) {
+						// stacja wygięta po łuku: położenie na łuku i obrót wg kierunku toru w tym miejscu
+						R.sidePoint(this.route, d.bend - p.z, p.x, tp);
+						Q1.setFromAxisAngle(V3B.set(0, 1, 0), yaw - tp.heading);
+						M4.compose(V3.set(tp.x, tp.y + 0.77 + bob, tp.z), Q1, S3.set(s, s, s));
+					} else {
+						Q1.setFromAxisAngle(V3B.set(0, 1, 0), yaw);
+						M4.compose(V3.set(p.x, 0.77 + bob, p.z), Q1, S3.set(s, s, s));
+					}
+					P.bodies.setMatrixAt(k, M4);
+					P.heads.setMatrixAt(k, M4);
+				});
+				P.bodies.instanceMatrix.needsUpdate = P.heads.instanceMatrix.needsUpdate = true;
+				if (P.bodies.instanceColor) P.bodies.instanceColor.needsUpdate = true;
+				if (P.heads.instanceColor) P.heads.instanceColor.needsUpdate = true;
+			}
+		}
+
+		// stado na pastwisku: zwierzęta skubią trawę i powoli przechodzą w inne miejsce
+		updateHerd(d, dt) {
+			const b = d.bounds, P = d.parts;
+			const up = V3B.set(0, 1, 0);
+			d.list.forEach((a, k) => {
+				a.t -= dt;
+				if (a.t <= 0) {
+					a.walk = Math.random() < 0.35;
+					a.graze = !a.walk && Math.random() < 0.7;
+					a.h += (Math.random() - 0.5) * 2.2;
+					a.t = 3 + Math.random() * 7;
+				}
+				if (a.walk) {
+					a.s += Math.cos(a.h) * 0.6 * dt;
+					a.d += Math.sin(a.h) * 0.6 * dt;
+					if (a.s < b.sA + 3 || a.s > b.sB - 3) { a.h = Math.PI - a.h; a.s = Math.max(b.sA + 3, Math.min(b.sB - 3, a.s)); }
+					if (a.d < b.dA + 3 || a.d > b.dB - 3) { a.h = -a.h; a.d = Math.max(b.dA + 3, Math.min(b.dB - 3, a.d)); }
+				}
+				R.sidePoint(this.route, a.s, a.d, tp);
+				Q1.setFromAxisAngle(up, -(tp.heading + a.h));
+				M4B.compose(V3.set(tp.x, this.terrainY(a.s, a.d), tp.z), Q1, S3.set(1, 1, 1));
+				const part = (m, i, x, y, z, sx, sy, sz) => {
+					M4.compose(V3.set(x, y, z), Q0, S3.set(sx, sy, sz));
+					M4.premultiply(M4B);
+					m.setMatrixAt(i, M4);
+				};
+				const [bx, by, bz, bw, bh, bl] = P.body;
+				part(d.body, k, bx, by, bz, bw, bh, bl);
+				const [hx, hy, hz, hw, hh, hl] = P.head;
+				part(d.head, k, hx, hy - (a.graze ? P.headDown : 0), hz, hw, hh, hl);
+				const [lx, ly, lz, lw, lh, ll] = P.leg;
+				const sw = a.walk ? Math.sin(this.time * 6 + k) * 0.15 : 0;
+				part(d.legs, k * 4, -lx, ly, -lz + sw, lw, lh, ll);
+				part(d.legs, k * 4 + 1, lx, ly, -lz - sw, lw, lh, ll);
+				part(d.legs, k * 4 + 2, -lx, ly, lz - sw, lw, lh, ll);
+				part(d.legs, k * 4 + 3, lx, ly, lz + sw, lw, lh, ll);
+			});
+			for (const m of [d.body, d.head, d.legs]) {
+				m.instanceMatrix.needsUpdate = true;
+				if (m.instanceColor) m.instanceColor.needsUpdate = true;
+			}
+		}
+
+		updateStreet(d, dt) {
+			if (d.type === 'traffic') {
+				for (const c of d.cars) {
+					c.s += c.dir * c.speed * dt;
+					if (c.s > d.sB) c.s = d.sA;
+					if (c.s < d.sA) c.s = d.sB;
+					R.sidePoint(this.route, c.s, c.d, tp);
+					c.obj.position.set(tp.x, this.terrainY(c.s, c.d) + 0.1, tp.z);
+					c.obj.rotation.y = -tp.heading + (c.dir > 0 ? 0 : Math.PI);
+				}
+				return;
+			}
+			// przechodnie
+			const up = V3B.set(0, 1, 0);
+			d.list.forEach((p, k) => {
+				p.s += p.dir * p.spd * dt;
+				if (p.s > d.sB || p.s < d.sA) { p.dir = -p.dir; p.s = Math.max(d.sA, Math.min(d.sB, p.s)); }
+				R.sidePoint(this.route, p.s, p.d, tp);
+				const y = this.terrainY(p.s, p.d) + 0.1;
+				const bob = 0; // podskok i ruch kończyn – w shaderze (personMat)
+				Q1.setFromAxisAngle(up, -tp.heading + (p.dir > 0 ? 0 : Math.PI));
+				M4.compose(V3.set(tp.x, y - 0.1 + bob, tp.z), Q1, S3.set(1, 1, 1));
+				d.bodies.setMatrixAt(k, M4);
+				d.heads.setMatrixAt(k, M4);
+			});
+			d.bodies.instanceMatrix.needsUpdate = d.heads.instanceMatrix.needsUpdate = true;
+			if (d.bodies.instanceColor) d.bodies.instanceColor.needsUpdate = true;
+			if (d.heads.instanceColor) d.heads.instanceColor.needsUpdate = true;
+		}
+
+		updateDyn(d, sim, dt, dark, blink) {
+			const front = sim.st.pos;
+			if (d.type === 'signal') {
+				const aspect = sim.signals[d.index].aspect;
+				if (aspect !== d.aspect) {
+					d.aspect = aspect;
+					// kolory ponad 1.0 świecą w bloomie
+					const on = { green: 0, yellow: 1, red: 2 }[aspect];
+					d.lamps.forEach((l, k) => {
+						l.material.color.setHex(k === on ? ASPECT_COLOR[aspect] : l.userData.dark);
+						if (k === on) l.material.color.multiplyScalar(4);
+					});
+					d.glow.material.color.setHex(ASPECT_COLOR[aspect]).multiplyScalar(1.6);
+					d.glow.position.y = d.lamps[on].position.y;
+				}
+				d.glow.material.opacity = 0.55 + dark * 0.45;
+			} else if (d.type === 'station') {
+				for (const g of d.glows) {
+					g.material.opacity = dark > 0.15 ? Math.min(1, dark * 1.3) : 0;
+					g.material.color.setRGB(1.5, 1.15, 0.7);
+				}
+				this.updatePassengers(d, sim);
+			} else if (d.type === 'clock') {
+				const t = (sim.clock() % 43200) / 3600;
+				for (const h of d.hands) {
+					// wskazówki obracają się zgodnie z ruchem wskazówek zegara patrząc na tarczę
+					h.hour.rotation.z = -(t / 12) * Math.PI * 2;
+					h.minute.rotation.z = -(t % 1) * Math.PI * 2;
+				}
+			} else if (d.type === 'herd') {
+				this.updateHerd(d, dt);
+			} else if (d.type === 'traffic' || d.type === 'walkers') {
+				this.updateStreet(d, dt);
+			} else if (d.type === 'crossing') {
+				const cr = d.cr;
+				// sygnalizacja: pociąg gracza albo pociąg z przeciwka (jedzie w stronę malejącego kilometrażu)
+				const ot = this.otherTrain;
+				const active = (front > cr.pos - 800 && front - sim.L < cr.pos + 5) || (!!ot && ot.s < cr.pos + 800 && ot.s + ot.len > cr.pos - 5);
+				d.lights.forEach((l, k) => {
+					const on = active && (k % 2) === blink;
+					l.material.color.setHex(on ? 0xff3020 : 0x3a1a1a);
+					if (on) l.material.color.multiplyScalar(4);
+					d.glows[k].material.opacity = on ? 0.9 : 0;
+				});
+				// u – położenie auta wzdłuż jego kierunku jazdy; linia zatrzymania i początek torowiska
+				for (const car of d.cars) {
+					if (car.v === undefined) car.v = car.speed;
+					const u = car.dir * car.p;
+					const stopU = car.dir * car.stop;
+					const entryU = stopU + 3.5; // przód auta wjeżdża na tory
+					let vmax = car.speed;
+					if (active && u < entryU) {
+						// przed linią – hamowanie do linii; za linią, ale przed torami – zatrzymanie od razu
+						vmax = u <= stopU ? Math.sqrt(2 * 4 * Math.max(0, stopU - u)) : 0;
+					}
+					// kolejka: nie najeżdżaj na auto przed sobą
+					for (const o of d.cars) {
+						if (o === car || o.dir !== car.dir) continue;
+						const gap = car.dir * o.p - u;
+						if (gap > 0 && gap < 40) vmax = Math.min(vmax, Math.sqrt(2 * 4 * Math.max(0, gap - 6.5)));
+					}
+					car.v = vmax > car.v ? Math.min(vmax, car.v + 2.5 * dt) : Math.max(vmax, car.v - 8 * dt);
+					let nu = u + car.v * dt;
+					if (nu > 150) { nu = -150; car.v = car.speed; }
+					car.p = car.dir * nu;
+					const off = car.dir > 0 ? -1.6 : 1.6;
+					R.sidePoint(this.route, cr.pos + off, car.p, tp);
+					car.obj.position.set(tp.x, this.roadY(cr.pos + off, car.p), tp.z);
+					car.obj.rotation.y = -tp.heading - (car.dir > 0 ? Math.PI / 2 : -Math.PI / 2);
+				}
+			} else if (d.type === 'tunnel') {
+				const t = d.t;
+				const near = front > t.from - 40 && front - sim.L < t.to + 40;
+				const target = near ? 0.3 : 1;
+				d.mat.opacity += (target - d.mat.opacity) * Math.min(1, dt * 3);
+				d.mat.depthWrite = d.mat.opacity > 0.98;
+			}
+		}
+	}
+
+	NS.World = World;
+	World.TERRAIN_D = TERRAIN_D; // kolumny siatki terenu (odsunięcia od osi), wiersze co 4 m
+})();

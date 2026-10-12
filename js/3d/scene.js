@@ -1,0 +1,701 @@
+/* Renderer 3D: scena Three.js, kamera nad pociągiem obracana za kierunkiem jazdy, słońce i księżyc według
+   godziny, niebo z chmurami, horyzont, pogoda, efekty po renderowaniu (ACES, bloom, okluzja), ustawienia
+   jakości, minimapa. */
+(function () {
+	'use strict';
+	const T = window.THREE;
+	const R = window.TrainRoutes;
+	const P = window.TrainPhysics;
+	const NS = window.Train3D;
+	const { sprite, boardTexture, smoothstep, U } = NS.util;
+
+	/* Cienie kaskadowe: słońce to kilka świateł kierunkowych o tym samym kierunku i kolorze, każde z mapą cieni
+	   o innym zasięgu (od najmniejszego). W shaderze oświetlenia (lights_fragment_begin – podmieniony dla wszystkich
+	   materiałów, także tych z cieniami chmur) piksel bierze światło tylko z pierwszej kaskady, w której mapie leży
+	   (z marginesem 3% od brzegu), a poza wszystkimi – z ostatniej, bez cienia; materiały bez cieni – z pierwszej.
+	   Światło liczy się więc raz, a cień pochodzi z najostrzejszej mapy obejmującej piksel. */
+	const CSM_OK = (() => {
+		const C = T.ShaderChunk;
+		const a = 'DirectionalLightShadow directionalLightShadow;\n\t#endif\n\t#pragma unroll_loop_start\n\tfor ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {';
+		const b = '\t\tdirectionalLightShadow = directionalLightShadows[ i ];\n\t\tdirectLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;';
+		const src = C.lights_fragment_begin;
+		if (!src.includes(a) || !src.includes(b)) return false;
+		C.lights_fragment_begin = src
+			.replace(a, 'DirectionalLightShadow directionalLightShadow;\n\t#endif\n\tbool csmDone = false;\n\t#pragma unroll_loop_start\n\tfor ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {')
+			.replace(b, [
+				'\t\tdirectionalLightShadow = directionalLightShadows[ i ];',
+				'\t\t{',
+				'\t\t\tvec3 csmP = vDirectionalShadowCoord[ i ].xyz / vDirectionalShadowCoord[ i ].w;',
+				'\t\t\tbool csmIn = all( greaterThan( csmP.xy, vec2( 0.03 ) ) ) && all( lessThan( csmP.xy, vec2( 0.97 ) ) ) && csmP.z < 1.0;',
+				'\t\t\tbool csmUse = ! csmDone && ( csmIn || ! receiveShadow || UNROLLED_LOOP_INDEX == NUM_DIR_LIGHT_SHADOWS - 1 );',
+				'\t\t\tif ( csmUse ) {',
+				'\t\t\t\tcsmDone = true;',
+				'\t\t\t\tdirectLight.color *= ( directLight.visible && receiveShadow && csmIn ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;',
+				'\t\t\t} else directLight.color = vec3( 0.0 );',
+				'\t\t}',
+			].join('\n'));
+		return true;
+	})();
+	// kaskady: zasięg (połowa boku mapy, m) przy niskiej kamerze; wyżej – większe (mnożnik wg wysokości)
+	const CASCADES = [36, 120, 380];
+
+	// Ustawienia jakości: rozdzielczość, cienie, efekty po renderowaniu, gęstość roślinności, ilość opadu.
+	const QUALITY = {
+		low: { name: 'niska', pr: 1, shadow: 1024, post: false, bloom: false, ao: false, atmo: false, msaa: 0, density: 0.5, particles: 0.35 },
+		medium: { name: 'średnia', pr: 1.5, shadow: 2048, post: true, bloom: true, ao: false, atmo: false, msaa: 4, density: 0.8, particles: 0.7 },
+		high: { name: 'wysoka', pr: 2, shadow: 4096, post: true, bloom: true, ao: true, atmo: true, msaa: 4, density: 1.15, particles: 1 },
+	};
+	const ASPECT = { red: '#ff3b30', yellow: '#ffb020', green: '#34d058' };
+	const FOV = 45;
+	const PITCH = (36 * Math.PI) / 180; // domyślne pochylenie osi kamery w dół
+	const PITCH_MIN = (10 * Math.PI) / 180;
+	const PITCH_MAX = (82 * Math.PI) / 180;
+
+	// Słońce według godziny (lato: wschód ok. 5:30, zachód ok. 20:15): e – sinus wysokości nad horyzontem, az – azymut.
+	function sunModel(clockSec) {
+		const h = (((clockSec / 3600) % 24) + 24) % 24;
+		let e;
+		if (h >= 5.5 && h <= 20.25) e = 0.8 * Math.sin((Math.PI * (h - 5.5)) / 14.75);
+		else e = -0.35 * Math.sin((Math.PI * (h > 20.25 ? h - 20.25 : h + 3.75)) / 9.25);
+		return { e, az: (Math.PI * (h - 12.9)) / 12 };
+	}
+	const clamp01 = (x) => Math.max(0, Math.min(1, x));
+	const CAM_MODES = ['follow', 'cab', 'side', 'cinema'];
+	const CAM_NAMES = { follow: 'za pociągiem', cab: 'z kabiny', side: 'z boku', cinema: 'kinowa (ujęcia przy stacjach i przejazdach)' };
+	const tmpC = new T.Color();
+	function angleLerp(a, b, t) {
+		let d = b - a;
+		while (d > Math.PI) d -= Math.PI * 2;
+		while (d < -Math.PI) d += Math.PI * 2;
+		return a + d * t;
+	}
+
+	class Renderer3D {
+		constructor(canvas, mini) {
+			this.canvas = canvas;
+			this.mini = mini;
+			this.mctx = mini.getContext('2d');
+			this.gl = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+			this.gl.shadowMap.enabled = true;
+			this.gl.shadowMap.type = T.PCFSoftShadowMap;
+			this.scene = new T.Scene();
+			this.camera = new T.PerspectiveCamera(FOV, 1, 0.5, 2600);
+			this.scene.fog = new T.Fog(0xcfe6f7, 450, 1500);
+
+			this.hemi = new T.HemisphereLight(0xdfeeff, 0x4a5a32, 1.2);
+			this.sun = new T.DirectionalLight(0xffffff, 2.6);
+			this.sun.castShadow = true;
+			const sc = this.sun.shadow.camera;
+			sc.left = -170; sc.right = 170; sc.top = 170; sc.bottom = -170; sc.near = 10; sc.far = 900;
+			this.sun.shadow.bias = -0.0003;
+			this.sun.shadow.normalBias = 0.5;
+			this.scene.add(this.hemi, this.sun, this.sun.target);
+			// dalsze kaskady (kolejność dodania = kolejność w shaderze: od najmniejszej mapy)
+			this.cascades = [this.sun];
+			for (let k = 1; CSM_OK && k < CASCADES.length; k++) {
+				const l = new T.DirectionalLight(0xffffff, 2.6);
+				l.castShadow = true;
+				l.shadow.bias = -0.0003;
+				this.scene.add(l, l.target);
+				this.cascades.push(l);
+			}
+			this.csmFrame = 0;
+
+			this.post = NS.createPost3D(T, this.gl);
+			this.sky = NS.createSky3D(T);
+			this.scene.add(this.sky.mesh);
+			this.horizon = new NS.Horizon(this.scene);
+			// promienie słońca w powietrzu i flara obiektywu (z Pogranicza)
+			this.sunFx = NS.createSunFx3D(T, { scene: this.scene, heightAt: () => this.focus.y - 1 });
+			// poświata księżyca (nocą, za terenem zasłonięta)
+			this.moonGlow = sprite(NS.util.glowTexture(), 1, 1, { additive: true, color: 0xb8c8ff, fog: false });
+			this.moonGlow.material.depthWrite = false;
+			this.moonGlow.renderOrder = 950;
+			this.scene.add(this.moonGlow);
+			this.weather = new NS.Weather(this.scene);
+			this.weatherKey = 'auto';
+			this.env = { zenith: new T.Color(), horizon: new T.Color(), ground: new T.Color('#3a4a2a'), sunDir: new T.Vector3(), sunColor: new T.Color() };
+			this.sunDir = new T.Vector3(0, 1, 0);
+			this.moonDir = new T.Vector3(0, 1, 0);
+			this.lightDir = new T.Vector3(0.3, 0.8, 0.4).normalize();
+			this.hazeColor = new T.Color();
+			this.focus = new T.Vector3();
+			this.rainCenter = new T.Vector3();
+			this.time = 0;
+			this.envT = 0;
+			this.dark = 0;
+
+			this.world = new NS.World(this.scene);
+			this.life = new NS.Life(this.scene);
+			this.camMode = 'follow';
+			this.trainModel = null;
+			this.routeId = null;
+			this.quality = null;
+			// opcje renderera z ustawień: skala rozdzielczości, wygładzanie (MSAA), cienie
+			this.renderOpts = { scale: 1, aa: true, shadows: true };
+			this.setQuality('medium');
+
+			// znacznik drogi hamowania
+			const mm = new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75, depthWrite: false });
+			this.assistBar = new T.Mesh(new T.BoxGeometry(5, 0.08, 0.6), mm);
+			this.assistLabel = sprite(boardTexture('H4', '#ffffff', 'sq'), 2.4, 2.4);
+			this.assistLabel.position.y = 3;
+			this.assistGroup = new T.Group();
+			this.assistGroup.add(this.assistBar, this.assistLabel);
+			this.scene.add(this.assistGroup);
+			this.assist = true;
+
+			this.grade = { lightTint: new T.Color(1, 1, 1), shadowTint: new T.Color(1, 1, 1), saturation: 1.1 };
+			this.zoomLevels = [1, 1.7, 0.65];
+			this.zoomNames = ['normalny', 'daleki', 'bliski'];
+			this.zoomIdx = 0;
+			this.zoom = 1;
+			this.camHeading = 0;
+			this.camState = { back: 0 };
+			this.size = { w: 0, h: 0 };
+			this.tp = {};
+			this.tq = {};
+			this.yaw = 0;
+			this.pitch = PITCH;
+			this.userZoom = 1;
+			this.rotKey = 0;
+			this.inputEnabled = false;
+			this.bindInput();
+		}
+
+		cycleZoom() {
+			this.zoomIdx = (this.zoomIdx + 1) % this.zoomLevels.length;
+			return this.zoomNames[this.zoomIdx];
+		}
+
+		resize(hudH) {
+			const w = window.innerWidth, h = Math.max(120, window.innerHeight - hudH);
+			if (w === this.size.w && h === this.size.h) return;
+			this.size = { w, h };
+			const pr = Math.min(window.devicePixelRatio || 1, this.quality.pr) * this.renderOpts.scale;
+			this.gl.setPixelRatio(pr);
+			this.gl.setSize(w, h, true);
+			this.post.setSize(w * pr, h * pr, this.renderOpts.aa ? this.quality.msaa : 0);
+			this.camera.aspect = w / h;
+			this.camera.updateProjectionMatrix();
+			const dpr = Math.min(window.devicePixelRatio || 1, 2);
+			this.mini.width = Math.round(w * dpr);
+			this.mini.height = Math.round(64 * dpr);
+			this.mini.style.width = w + 'px';
+			this.mini.style.height = '64px';
+			this.mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		}
+
+		setQuality(key) {
+			const q = QUALITY[key] || QUALITY.medium;
+			if (this.quality === q) return;
+			this.quality = q;
+			this.gl.toneMapping = q.post ? T.NoToneMapping : T.ACESFilmicToneMapping;
+			this.cascades.forEach((l, k) => {
+				const n = k === 0 ? q.shadow : Math.min(2048, q.shadow);
+				l.shadow.mapSize.set(n, n);
+				if (l.shadow.map) {
+					l.shadow.map.dispose();
+					l.shadow.map = null;
+				}
+			});
+			this.world.density = q.density;
+			this.world.shadows = q.shadow >= 2048;
+			this.weather.setQuality(q.particles);
+			this.size = { w: 0, h: 0 };
+			// tone mapping jest wkompilowany w shadery – przekompiluj materiały
+			for (const m of NS.util.allMaterials) m.needsUpdate = true;
+			this.scene.traverse((o) => {
+				const m = o.material;
+				if (m) (Array.isArray(m) ? m : [m]).forEach((x) => { x.needsUpdate = true; });
+			});
+			if (this.world.route) this.world.setRoute(this.world.route);
+		}
+
+		setRenderOptions(o) {
+			const shadowsChanged = o.shadows !== undefined && o.shadows !== this.renderOpts.shadows;
+			Object.assign(this.renderOpts, o);
+			this.size = { w: 0, h: 0 }; // wymuś nowy rozmiar bufora
+			if (shadowsChanged) {
+				this.gl.shadowMap.enabled = this.renderOpts.shadows;
+				for (const l of this.cascades) l.castShadow = this.renderOpts.shadows;
+				this.syncCascades();
+				// stan cieni jest wkompilowany w shadery
+				this.scene.traverse((ob) => {
+					const m = ob.material;
+					if (m) (Array.isArray(m) ? m : [m]).forEach((x) => { x.needsUpdate = true; });
+				});
+				for (const m of NS.util.allMaterials) m.needsUpdate = true;
+			}
+		}
+
+		// nazwa karty graficznej (do ustawień)
+		gpuName() {
+			try {
+				const gl = this.gl.getContext();
+				const ext = gl.getExtension('WEBGL_debug_renderer_info');
+				return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+			} catch (e) {
+				return '';
+			}
+		}
+
+		setWeather(key) {
+			this.weatherKey = key;
+			if (this.routeId) this.weather.set(key, this.routeId, false);
+		}
+
+		reset(sim) {
+			if (this.routeId !== sim.route.id || !this.world.route) {
+				this.world.setRoute(sim.route);
+				this.routeId = sim.route.id;
+			} else this.world.warm = true;
+			if (this.trainModel) this.trainModel.dispose();
+			this.trainModel = new NS.TrainModel(this.scene, sim.train, { shadows: this.quality.shadow >= 1024, player: true, destination: sim.route.stations[sim.route.stations.length - 1].name });
+			if (this.cab) this.cab.dispose();
+			this.cab = new NS.CabInterior(this.trainModel);
+			this.life.reset(sim.route, { shadows: this.quality.shadow >= 2048 });
+			// trasa rzeczywista: pociągi z przeciwka po prawdziwym torze z mapy (nie po torze z gry)
+			this.life.lane = this.world.env ? (s) => this.world.envLaneAt(s) : null;
+			// wysokość toru z mapy względem niwelety toru pociągu (teren, nasypy, wiadukty)
+			this.life.laneY = this.world.env ? (s) => this.world.envTrackY(s, this.world.envLaneAt(s), false, false) - R.heightAt(sim.route, s) : null;
+			this.weather.set(this.weatherKey, sim.route.id, true);
+			this.camHeading = R.trackPoint(sim.route, sim.st.pos + 15).heading;
+			this.zoom = this.zoomLevels[this.zoomIdx];
+			this.camState.snap = true;
+		}
+
+		// Słońce/księżyc, kolory nieba, światło, mgła, chmury, pogoda, odbicia nieba.
+		updateEnvironment(sim, dt) {
+			this.time += dt;
+			const { e, az } = sunModel(sim.route.startClock + sim.time);
+			const el = Math.asin(Math.max(-1, Math.min(1, e)));
+			this.sunDir.set(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+			this.moonDir.set(-Math.sin(az) * 0.75, 0.55, -Math.cos(az) * 0.75).normalize();
+			this.rainCenter.copy(this.camera.position).lerp(this.focus, 0.65);
+			this.weather.light = 0.25 + 0.75 * smoothstep(-0.1, 0.25, this.e === undefined ? 1 : this.e);
+			const W = this.weather.update(dt, this.camera.position, this.focus);
+			const pal = this.sky.palette(e);
+			const zen = this.env.zenith.copy(pal.zenith), hor = this.env.horizon.copy(pal.horizon), sunCol = this.env.sunColor.copy(pal.sunlight);
+			const dayK = smoothstep(-0.04, 0.22, e);
+			const gray = this.hazeColor.copy(hor).lerp(tmpC.setRGB(0.5, 0.53, 0.57), 0.65).multiplyScalar(0.3 + 0.7 * smoothstep(-0.15, 0.3, e));
+			this.sky.update({ camera: this.camera, time: this.time, e, sunDir: this.sunDir, moonDir: this.moonDir, zenith: zen, horizon: hor, sunlight: sunCol, haze: W.haze, hazeColor: gray, cover: W.cover });
+			this.sky.clouds(this.time, W.shadow * clamp01((e + 0.02) / 0.15));
+
+			// światło kierunkowe: słońce w dzień, księżyc w nocy
+			if (e > -0.03) {
+				this.lightDir.copy(this.sunDir);
+				this.sun.color.copy(sunCol);
+				this.sun.intensity = 0.05 + 3.5 * dayK * W.sun;
+			} else {
+				this.lightDir.copy(this.moonDir);
+				this.sun.color.setRGB(0.55, 0.65, 0.95);
+				this.sun.intensity = 0.6 * (1 - smoothstep(-0.1, 0.0, e)) * (1 - W.haze * 0.7);
+			}
+			this.syncCascades();
+			this.hemi.color.copy(zen).lerp(hor, 0.5).lerp(gray, W.haze * 0.6);
+			this.hemi.groundColor.setRGB(0.16, 0.19, 0.11).multiplyScalar(0.3 + dayK);
+			// światło otoczenia dzielone między półkulę i odbicia nieba (razem dawały płaski, wyblakły obraz)
+			this.hemi.intensity = (0.3 + 0.78 * smoothstep(-0.2, 0.3, e)) * (0.8 + 0.2 * W.sun);
+			this.scene.environmentIntensity = 0.3 + 0.45 * dayK;
+			// korekta barw: chłodne cienie, ciepłe światła (złota godzina – cieplej), nocą chłodniej i mniej nasycenia
+			const golden = dayK * (1 - smoothstep(0.12, 0.35, e)) * W.sun, night = 1 - dayK;
+			this.grade.lightTint.setRGB(1.035, 1.0, 0.95).lerp(tmpC.setRGB(1.09, 0.99, 0.86), golden * 0.6).lerp(tmpC.setRGB(0.97, 1.0, 1.06), night);
+			this.grade.shadowTint.setRGB(0.95, 0.98, 1.05).lerp(tmpC.setRGB(0.86, 0.94, 1.14), night);
+			this.grade.saturation = (1.1 - 0.14 * W.haze) * (1 - 0.18 * night) * (1 + golden * 0.1);
+
+			const fog = this.scene.fog;
+			// o zmierzchu mgła chłodnieje (zamiast przejmować pomarańcz zachodu)
+			fog.color.copy(hor).lerp(zen, 0.45 * (1 - dayK)).lerp(gray, Math.min(1, 0.25 + W.haze));
+			fog.near = W.fogNear;
+			fog.far = W.fogFar;
+			this.gl.setClearColor(fog.color);
+			this.dark = Math.min(0.95, 1 - smoothstep(-0.1, 0.12, e) + W.haze * 0.3 + (1 - W.sun) * 0.12);
+
+			U.uTime.value = this.time;
+			U.uWind.value = W.wind;
+			U.uWet.value = W.wet;
+			U.uSnow.value = W.snowGround;
+			U.uRain.value = W.rain;
+
+			// odbicia nieba (lakier, szyby, szyny, woda, mokra ziemia) – odświeżane co 2 s
+			this.envT -= dt;
+			if (this.envT <= 0 || !this.scene.environment) {
+				this.envT = 2;
+				this.env.sunDir.copy(this.sunDir);
+				const env = { zenith: zen.clone().lerp(gray, W.haze), horizon: hor.clone().lerp(gray, W.haze), ground: this.env.ground, sunDir: this.sunDir, sunColor: sunCol.clone().multiplyScalar(dayK * W.sun) };
+				this.scene.environment = this.post.environment(env);
+			}
+			this.horizon.update(this.camera, this.focus.y - 3, fog.color, 0.25 + 0.75 * dayK, W.haze);
+			// słońce: promienie i flara; księżyc: poświata
+			this.sunFx.update({ camera: this.camera, imageRays: true, sunDir: this.sunDir, sunColor: sunCol, e, haze: W.haze, mist: W.haze * 0.5, focus: { x: this.focus.x, y: this.focus.z }, span: 700 });
+			const moonVis = Math.max(0, Math.min(1, -e / 0.12)) * (1 - Math.min(1, W.haze * 1.2));
+			this.moonGlow.visible = moonVis > 0.02;
+			if (this.moonGlow.visible) {
+				this.moonGlow.position.copy(this.camera.position).addScaledVector(this.moonDir, 1800);
+				this.moonGlow.scale.setScalar(420);
+				this.moonGlow.material.opacity = 0.32 * moonVis;
+			}
+			this.e = e;
+			this.dayK = dayK;
+			this.W = W;
+		}
+
+		// ---- sterowanie kamerą przez gracza: obrót wokół punktu przed pociągiem, pochylenie, oddalenie ----
+		bindInput() {
+			const c = this.canvas;
+			let drag = null;
+			c.addEventListener('pointerdown', (e) => {
+				if (!this.inputEnabled) return;
+				drag = { x: e.clientX, y: e.clientY, id: e.pointerId };
+				c.setPointerCapture(e.pointerId);
+				c.classList.add('dragging');
+			});
+			c.addEventListener('pointermove', (e) => {
+				if (!drag || e.pointerId !== drag.id) return;
+				if (this.free) this.freeLook(e.clientX - drag.x, e.clientY - drag.y);
+				else this.rotate((e.clientX - drag.x) * 0.006, (e.clientY - drag.y) * 0.005);
+				drag.x = e.clientX;
+				drag.y = e.clientY;
+			});
+			const end = () => { drag = null; c.classList.remove('dragging'); };
+			c.addEventListener('pointerup', end);
+			c.addEventListener('pointercancel', end);
+			c.addEventListener('dblclick', () => { if (this.inputEnabled && !this.free) this.resetView(); });
+			c.addEventListener('contextmenu', (e) => e.preventDefault());
+			c.addEventListener('wheel', (e) => {
+				if (!this.inputEnabled) return;
+				e.preventDefault();
+				if (this.free) this.freeWheel(e.deltaY);
+				else this.zoomBy(Math.exp(e.deltaY * 0.0012));
+			}, { passive: false });
+		}
+
+		rotate(dYaw, dPitch) {
+			this.yaw -= dYaw;
+			while (this.yaw > Math.PI) this.yaw -= Math.PI * 2;
+			while (this.yaw < -Math.PI) this.yaw += Math.PI * 2;
+			this.pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, this.pitch + dPitch));
+		}
+
+		zoomBy(f) {
+			this.userZoom = Math.max(0.35, Math.min(3.5, this.userZoom * f));
+		}
+
+		resetView() {
+			this.yaw = 0;
+			this.pitch = PITCH;
+			this.userZoom = 1;
+		}
+
+		// fotel maszynisty: K przełącza między kabiną a poprzednim widokiem
+		toggleCab() {
+			if (this.camMode === 'cab') this.camMode = this.prevMode || 'follow';
+			else {
+				this.prevMode = this.camMode;
+				this.camMode = 'cab';
+			}
+			this.resetView();
+			this.camState.snap = true;
+			return this.camMode === 'cab';
+		}
+
+		cycleCamMode() {
+			this.camMode = CAM_MODES[(CAM_MODES.indexOf(this.camMode) + 1) % CAM_MODES.length];
+			this.resetView();
+			this.camState.snap = true;
+			return CAM_NAMES[this.camMode];
+		}
+
+		// ujęcie kinowe: przy wjeździe na stację z końca peronu, przy przejeździe – z drogi
+		cinemaShot(sim) {
+			const route = sim.route, front = sim.st.pos;
+			const tp = this.tp;
+			let st = null;
+			if (sim.service !== null && sim.service !== undefined) st = route.stations[sim.service];
+			else {
+				const n = route.stations[sim.next];
+				if (n && n.stop && n.pos - front < 650 && n.pos - front > -20) st = n;
+			}
+			if (st) {
+				R.sidePoint(route, st.platformEnd + 26, 12.5, tp);
+				this.camera.position.set(tp.x, tp.y + 2.8, tp.z);
+				R.trackPoint(route, Math.min(front - 12, st.platformEnd), tp);
+				this.camera.lookAt(tp.x, tp.y + 2.2, tp.z);
+				this.focus.set(tp.x, tp.y, tp.z);
+				return true;
+			}
+			const cr = route.crossings.find((c) => c.pos - front < 320 && c.pos - front > -sim.L);
+			if (cr) {
+				R.sidePoint(route, cr.pos + 6, 16, tp);
+				this.camera.position.set(tp.x, tp.y + 2.2, tp.z);
+				R.trackPoint(route, front - 15, tp);
+				this.camera.lookAt(tp.x, tp.y + 2.4, tp.z);
+				this.focus.set(tp.x, tp.y, tp.z);
+				return true;
+			}
+			return false;
+		}
+
+		setNear(n) {
+			if (this.camera.near !== n) {
+				this.camera.near = n;
+				this.camera.updateProjectionMatrix();
+			}
+		}
+
+		updateCamera(sim, dt) {
+			if (this.free) return this.freeUpdate(sim, dt); // swobodna kamera (js/3d/freecam.js)
+			const route = sim.route, front = sim.st.pos, v = sim.st.v;
+			const tp = this.tp;
+			this.zoom += (this.zoomLevels[this.zoomIdx] - this.zoom) * Math.min(1, dt * 2.5);
+			if (this.rotKey) this.rotate(this.rotKey * dt * 1.6, 0);
+			const target = R.trackPoint(route, front + 20 + v * 0.8, this.tq).heading;
+			this.camHeading = this.camState.snap ? target : angleLerp(this.camHeading, target, Math.min(1, dt * 1.6));
+			// Kadr bazowy: czoło pociągu w dolnej części ekranu, tor daleko przed nim.
+			// Kamera krąży wokół punktu „ahead” przed czołem; yaw = obrót gracza względem kierunku jazdy.
+			const ahead = (6 + v * 0.8) * this.zoom; // środek ekranu: tyle metrów przed czołem
+			const below = (16 + v * 0.1) * this.zoom; // dolna krawędź (przy widoku domyślnym): tyle metrów za czołem
+			const half = (FOV * Math.PI) / 360;
+			const pitch = this.pitch;
+			const span = 1 / Math.tan(pitch) - 1 / Math.tan(Math.min(1.55, pitch + half));
+			const spanDefault = 1 / Math.tan(PITCH) - 1 / Math.tan(PITCH + half);
+			// przy płaskiej kamerze nie zjeżdżaj niżej niż ok. 7 m
+			const height = Math.max(7, ((ahead + below) / Math.max(span, spanDefault * 0.55)) * this.userZoom);
+			const want = this.camState;
+			R.trackPoint(route, front, tp);
+			const fx = Math.sin(this.camHeading), fz = -Math.cos(this.camHeading);
+			// za pociągiem: środek obrotu przed czołem; po obróceniu kamery w bok – środek składu
+			const facing = Math.max(0, Math.cos(this.yaw));
+			const along = ahead * facing - sim.L * 0.4 * (1 - facing);
+			const px = tp.x + fx * along, pz = tp.z + fz * along;
+			const k = want.snap ? 1 : Math.min(1, dt * 5);
+			if (want.snap) { want.x = px; want.z = pz; want.h = tp.y; }
+			want.x += (px - want.x) * k;
+			want.z += (pz - want.z) * k;
+			want.h += (tp.y - want.h) * k;
+			want.snap = false;
+			const dir = this.camHeading + this.yaw;
+			const horiz = height / Math.tan(pitch);
+			// nie wchodź pod teren (pagórki obok toru przy płaskiej kamerze)
+			const camS = front + along - horiz * Math.cos(this.yaw), camD = -horiz * Math.sin(this.yaw);
+			const camY = Math.max(want.h + height, this.world.terrainY(camS, camD) + 3);
+			this.focus.set(want.x, want.h, want.z);
+			const mode = this.camMode === 'cinema' ? (this.cinemaShot(sim) ? 'cinema' : 'follow') : this.camMode;
+			this.setNear(mode === 'cab' ? 0.15 : 0.5);
+			this.viewMode = mode;
+			// kąt pionowy, ale ograniczony tak, by w poziomie nie przekroczyć ~100° (szerokie ekrany: bez „rybiego oka”)
+			const baseFov = mode === 'cab' ? 62 : FOV;
+			const maxH = ((mode === 'cab' ? 100 : 105) * Math.PI) / 180;
+			const fov = Math.round(Math.min(baseFov, (2 * Math.atan(Math.tan(maxH / 2) / this.camera.aspect) * 180) / Math.PI) * 10) / 10;
+			if (this.camera.fov !== fov) {
+				this.camera.fov = fov;
+				this.camera.updateProjectionMatrix();
+			}
+			if (this.cab) this.cab.setVisible(mode === 'cab');
+			if (mode === 'follow') {
+				this.camera.position.set(want.x - Math.sin(dir) * horiz, camY, want.z + Math.cos(dir) * horiz);
+				this.camera.lookAt(want.x, want.h + Math.min(2, 14 / height), want.z);
+			} else if (mode === 'cab') {
+				// z kabiny: oczy maszynisty siedzącego w fotelu, rozglądanie myszą
+				const eye = this.cab.eyeWorld(this.cabEye || (this.cabEye = new T.Vector3()), sim, this.time);
+				const down = Math.max(-0.5, Math.min(1.1, 0.1 + (this.pitch - PITCH) * 0.9));
+				const dirW = this.cab.lookDir(this.cabDir || (this.cabDir = new T.Vector3()), this.yaw, down);
+				this.camera.position.copy(eye);
+				this.camera.lookAt(eye.x + dirW.x, eye.y + dirW.y, eye.z + dirW.z);
+				R.trackPoint(route, front + 40, tp);
+				this.focus.set(tp.x, tp.y, tp.z);
+			} else if (mode === 'side') {
+				// z boku: kamera obok środka składu, obrót myszą wokół pociągu
+				const sc = front - sim.L * 0.5;
+				R.trackPoint(route, sc, tp);
+				const h = tp.heading, dist = 30 * this.userZoom * this.zoom;
+				const a = this.yaw;
+				const ox = (Math.cos(h) * Math.cos(a) + Math.sin(h) * Math.sin(a)) * dist;
+				const oz = (Math.sin(h) * Math.cos(a) - Math.cos(h) * Math.sin(a)) * dist;
+				const lift = 3 + (this.pitch - PITCH + 0.35) * dist * 0.6;
+				this.camera.position.set(tp.x + ox, Math.max(tp.y + 1.5, tp.y + lift), tp.z + oz);
+				this.camera.lookAt(tp.x, tp.y + 2.2, tp.z);
+				this.focus.set(tp.x, tp.y, tp.z);
+			}
+			this.aimSun(tp.y, height);
+		}
+
+		// kaskady jak słońce: ten sam kolor i natężenie; bez cieni (shader liczy wtedy każde światło) – tylko pierwsza
+		syncCascades() {
+			for (let k = 1; k < this.cascades.length; k++) {
+				const l = this.cascades[k];
+				l.color.copy(this.sun.color);
+				l.intensity = this.sun.intensity;
+				l.visible = this.sun.visible && this.renderOpts.shadows;
+			}
+		}
+
+		/* Słońce i cienie podążają za widokiem (y – wysokość terenu, height – wysokość kamery). Kaskady: najbliższa
+		   (ostra, ok. 36 m) przed kamerą, dalsze coraz większe; zasięgi rosną z wysokością kamery w stałych stopniach
+		   (z histerezą). Bez migotania: środek każdej mapy przesuwany o całe teksele w płaszczyźnie prostopadłej do
+		   promieni (krawędzie cieni nie „pełzają”), przesunięcie wzdłuż normalnej wg wielkości teksela. Dalsze
+		   kaskady odświeżane na zmianę, co drugą klatkę. */
+		aimSun(y, height) {
+			const STEPS = [[0, 1], [45, 1.6], [110, 2.6], [200, 4]];
+			let k = this.shadowStep ?? 0;
+			while (k + 1 < STEPS.length && height > STEPS[k + 1][0] * 1.12) k++;
+			while (k > 0 && height < STEPS[k][0] * 0.88) k--;
+			this.shadowStep = k;
+			const mul = STEPS[k][1];
+			// baza światła: f – kierunek promieni, r, u – osie mapy cieni (jak lookAt kamery cienia z górą +y)
+			const ld = this.lightDir, ly = Math.max(0.12, ld.y);
+			const f = this.sunF || (this.sunF = new T.Vector3()), r = this.sunR || (this.sunR = new T.Vector3()), u = this.sunU || (this.sunU = new T.Vector3());
+			f.set(-ld.x, -ly, -ld.z).normalize();
+			r.set(0, 1, 0).cross(f).normalize();
+			u.copy(f).cross(r).normalize();
+			// kierunek patrzenia w poziomie – kaskady wysunięte przed kamerę
+			const cam = this.camera.position, fw = this.camFw || (this.camFw = new T.Vector3());
+			this.camera.getWorldDirection(fw);
+			fw.y = 0;
+			if (fw.lengthSq() < 1e-6) fw.set(0, 0, -1);
+			fw.normalize();
+			const c = this.sunC || (this.sunC = new T.Vector3());
+			const n = this.cascades.length;
+			this.csmFrame++;
+			this.cascades.forEach((l, i) => {
+				// jedna mapa (bez kaskad): dawny zasięg wokół punktu widoku
+				const ext = n === 1 ? Math.min(400, 110 * mul) : Math.min(i === n - 1 ? 700 : 400, CASCADES[i] * mul);
+				const shc = l.shadow.camera;
+				const D = Math.max(400, ext * 1.6);
+				if (shc.right !== ext || shc.far !== D * 2 + ext) {
+					shc.left = -ext; shc.right = ext; shc.top = ext; shc.bottom = -ext;
+					shc.near = 1; shc.far = D * 2 + ext;
+					shc.updateProjectionMatrix();
+				}
+				const ts = (2 * ext) / (l.shadow.mapSize.x || 2048);
+				l.shadow.normalBias = Math.max(0.04, ts * 1.4);
+				if (n === 1) c.set(this.focus.x, y, this.focus.z);
+				else c.set(cam.x + fw.x * ext * 0.62, y, cam.z + fw.z * ext * 0.62);
+				const cr = c.dot(r), cu = c.dot(u), cf = c.dot(f);
+				c.copy(r).multiplyScalar(Math.round(cr / ts) * ts).addScaledVector(u, Math.round(cu / ts) * ts).addScaledVector(f, cf);
+				l.target.position.copy(c);
+				l.position.copy(c).addScaledVector(f, -D);
+				// dalsze kaskady odświeżane na zmianę (co drugą klatkę każda) – w klatce rysują się dwie mapy cieni
+				if (i > 0) {
+					l.shadow.autoUpdate = false;
+					if (this.csmFrame % 2 === i % 2 || this.csmFrame < 3) l.shadow.needsUpdate = true;
+				}
+			});
+			this.syncCascades();
+		}
+
+		updateAssist(sim) {
+			const show = this.assist && sim.st.v > 0.5 && sim.status === 'running';
+			this.assistGroup.visible = show;
+			if (!show) return;
+			const d = P.brakingEstimate(sim.st.v, sim.train.serviceDecel);
+			const p = R.trackPoint(sim.route, sim.st.pos + d, this.tq);
+			this.assistGroup.position.set(p.x, p.y + 0.1, p.z);
+			this.assistGroup.rotation.y = -p.heading;
+		}
+
+		draw(sim, dt, hudH) {
+			this.resize(hudH);
+			// pociąg ustawiany przed kamerą – kamera w kabinie nie może być o klatkę spóźniona
+			this.trainModel.weather = this.W; // deszcz i śnieg – częstsze łuki na pantografie
+			this.trainModel.update(sim, this.dark, dt);
+			this.updateCamera(sim, dt);
+			this.cab.update(sim, dt, this.dark);
+			this.updateEnvironment(sim, dt);
+			this.world.trainDoors = sim.doorsOpen ? this.trainModel.doorPoints() : null;
+			this.world.viewPos.copy(this.camera.position);
+			this.world.otherTrain = this.life.other;
+			const W = this.W || { haze: 0, snow: 0, rain: 0 };
+			this.world.update(sim, dt, this.dark, W.haze + W.snow * 0.6 + W.rain * 0.4);
+			this.life.update(sim, dt, this.dark, this.focus, this.W || { rain: 0, snow: 0 });
+			this.updateAssist(sim);
+			const q = this.quality;
+			const exposure = 1 + 0.7 * (1 - this.dayK);
+			if (q.post) {
+				const W = this.W;
+				const rays = this.e > 0 ? 0.4 * (1 - W.haze) * W.sun * (1 - smoothstep(0.25, 0.55, this.e)) : 0;
+				this.post.render(this.scene, this.camera, {
+					bloom: q.bloom,
+					bloomStrength: 0.5,
+					// AO z bufora głębi myli się przy niskiej kamerze patrzącej płasko nad terenem (kabina, z boku,
+					// ujęcia kinowe) – przyciemnia wtedy rozległe płaskie obszary; włączone tylko w widoku z góry
+					ao: q.ao && this.viewMode === 'follow' && this.camera.position.y - this.focus.y > 12,
+					aoRadius: 2.2,
+					aoStrength: 1.2,
+					aoFade: 140,
+					exposure,
+					saturation: this.grade.saturation,
+					contrast: 1.07,
+					shadowTint: this.grade.shadowTint,
+					lightTint: this.grade.lightTint,
+					vignette: 0.26,
+					grade: 1,
+					time: this.time,
+					atmosphere: q.atmo
+						? { sunDir: this.sunDir, sunColor: this.env.sunColor, haze: this.scene.fog.color, base: this.focus.y - 8, density: 0.0012 + W.haze * 0.006, falloff: 0.05, rays }
+						: null,
+				});
+			} else {
+				this.gl.toneMappingExposure = exposure;
+				this.gl.setRenderTarget(null);
+				this.gl.render(this.scene, this.camera);
+			}
+			this.drawMinimap(sim);
+		}
+
+		drawMinimap(sim) {
+			const ctx = this.mctx, r = sim.route, W = this.size.w;
+			ctx.clearRect(0, 0, W, 64);
+			if (this.miniRect === false) return;
+			// w grze mapka trasy wypełnia miejsce w górnym pasku HUD (między stacją a punktami)
+			const mr = this.miniRect;
+			const x0 = mr ? mr.x0 : 16, x1 = mr ? mr.x1 : W - 70, y = 34;
+			const mx = (p) => x0 + 10 + (Math.max(0, Math.min(r.length, p)) / r.length) * (x1 - x0 - 20);
+			ctx.fillStyle = 'rgba(14,19,28,0.82)';
+			ctx.beginPath();
+			ctx.roundRect(x0, 8, x1 - x0, 46, 8);
+			ctx.fill();
+			ctx.strokeStyle = '#8a94a3';
+			ctx.lineWidth = 2;
+			ctx.beginPath();
+			ctx.moveTo(mx(0), y);
+			ctx.lineTo(mx(r.bufferPos), y);
+			ctx.stroke();
+			ctx.lineWidth = 4;
+			ctx.strokeStyle = '#2b2f36';
+			for (const t of r.tunnels) { ctx.beginPath(); ctx.moveTo(mx(t.from), y); ctx.lineTo(mx(t.to), y); ctx.stroke(); }
+			ctx.strokeStyle = '#4aa3df';
+			for (const b of r.bridges) { ctx.beginPath(); ctx.moveTo(mx(b.from), y); ctx.lineTo(mx(b.to), y); ctx.stroke(); }
+			ctx.font = '600 11px system-ui, sans-serif';
+			ctx.textBaseline = 'middle';
+			r.stations.forEach((s, i) => {
+				const px = mx(s.pos);
+				ctx.fillStyle = s.stop ? '#f4f4f4' : 'rgba(0,0,0,0)';
+				ctx.strokeStyle = '#f4f4f4';
+				ctx.lineWidth = 1.5;
+				ctx.beginPath();
+				ctx.arc(px, y, 4, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.stroke();
+				ctx.fillStyle = s.stop ? '#e8edf3' : '#9aa5b3';
+				ctx.textAlign = i === 0 ? 'left' : i === r.stations.length - 1 ? 'right' : 'center';
+				ctx.fillText(s.name, px, 18);
+			});
+			for (const sig of sim.signals) {
+				ctx.fillStyle = ASPECT[sig.aspect];
+				ctx.beginPath();
+				ctx.arc(mx(sig.pos), y + 10, 2.5, 0, Math.PI * 2);
+				ctx.fill();
+			}
+			ctx.fillStyle = '#ffb020';
+			const a = mx(sim.st.pos - sim.L), b = mx(sim.st.pos);
+			ctx.fillRect(a, y - 4, Math.max(5, b - a), 8);
+			ctx.fillStyle = '#c9d1db';
+			ctx.textAlign = 'right';
+			ctx.fillText(`${(sim.st.pos / 1000).toFixed(2)} km`, x1 - 8, y + 11);
+		}
+	}
+
+	NS.Renderer3D = Renderer3D;
+})();

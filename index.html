@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="pl">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Maszynista</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+	<!-- ekran startowy od pierwszej klatki (przed wczytaniem skryptów – bez mignięcia menu); js/screens.js go przejmuje -->
+	<div id="boot" class="scr scr-boot" role="status" aria-live="polite"><canvas class="scr-bg" aria-hidden="true"></canvas><div class="scr-boot-card"><svg class="scr-logo" viewBox="0 0 120 120" aria-hidden="true"><rect x="4" y="4" width="112" height="112" rx="26" fill="#161c26" stroke="#2c3646" stroke-width="3"/><rect x="28" y="22" width="64" height="66" rx="14" fill="#ffb020"/><rect x="34" y="30" width="23" height="20" rx="4" fill="#0d1118"/><rect x="63" y="30" width="23" height="20" rx="4" fill="#0d1118"/><rect x="28" y="57" width="64" height="5" fill="#c77d0a"/><circle cx="41" cy="73" r="5.5" fill="#fff4d6"/><circle cx="79" cy="73" r="5.5" fill="#fff4d6"/><path d="M40 92 L31 108 M80 92 L89 108" stroke="#8f9bad" stroke-width="4" stroke-linecap="round"/><path d="M33 98 H87 M29 105 H91" stroke="#2c3646" stroke-width="3"/></svg><h1>MASZYNISTA</h1><p class="scr-sub">symulator jazdy pociągiem po prawdziwych liniach</p><div class="scr-bar"><b></b></div><p class="scr-press">Kliknij lub naciśnij dowolny klawisz</p><p class="scr-ver"></p></div></div>
+	<script src="js/screens.js"></script>
+	<canvas id="view"></canvas>
+	<canvas id="mini"></canvas>
+
+	<div id="toasts"></div>
+	<div id="prompt" class="hidden"></div>
+	<button id="btn-pause" class="corner hidden" title="Pauza (Esc)">❚❚</button>
+	<div id="fps" class="hidden"></div>
+
+	<div id="hud" class="hidden">
+		<!-- pasek u góry: zegar, postój / następna stacja, mapka trasy (rysowana pod spodem), punkty -->
+		<!-- lewa strona: zegar, punkty, bieżąca stacja i rozkład jako oś czasu -->
+		<div class="hud-panel hud-trip">
+			<div class="trip-head">
+				<div><label>Zegar</label><b id="i-clock">--:--:--</b><span id="i-delay"></span></div>
+				<div class="score"><label>Punkty</label><b id="i-score">0</b><span id="i-score-sub"></span></div>
+			</div>
+			<div class="trip-now"><label id="i-station-label">Następna stacja</label><b id="i-station">—</b><span id="i-station-sub"></span></div>
+			<div class="timeline" id="timeline"></div>
+		</div>
+
+		<!-- prawy środek: semafor, ograniczenie, profil -->
+		<div class="hud-panel hud-signals">
+			<div class="sig-box" id="sig-box">
+				<label>Semafor</label>
+				<div class="sig-row">
+					<div class="sig-head" id="i-signal-lamp"><i class="sl g"></i><i class="sl y"></i><i class="sl r"></i></div>
+					<div class="sig-info"><b id="i-signal">—</b><em id="i-signal-dist">—</em><span id="i-signal-sub"></span></div>
+				</div>
+				<div class="dist-bar"><i id="i-signal-bar"></i></div>
+				<span class="hint-line" id="i-signal-hint"></span>
+			</div>
+			<div class="limit-box" id="limit-box">
+				<label>Ograniczenie</label>
+				<div class="lim-row">
+					<div class="limit-disc" id="i-limit-disc"><b id="i-limit">—</b></div>
+					<div class="lim-next" id="i-limit-next-box">
+						<div class="limit-disc small" id="i-limit-next-disc"><b id="i-limit-next">—</b></div>
+						<span id="i-limit-next-dist"></span>
+					</div>
+				</div>
+				<span class="hint-line" id="i-limit-sub"></span>
+			</div>
+			<div class="grade-box"><label>Profil</label><div class="grade-row"><i class="grade-ico" id="i-grade-ico"></i><b id="i-grade">0 ‰</b></div><span id="i-accel"></span></div>
+		</div>
+
+		<!-- lewy dół: prędkość, nastawnik, lampki -->
+		<div class="hud-panel hud-drive">
+			<div class="gauge"><canvas id="speedo"></canvas></div>
+			<div class="lever-box">
+				<div class="label">Nastawnik</div>
+				<div id="lever"></div>
+				<div class="effort">
+					<div class="bar" title="Siła pociągowa"><i id="eff-trac"></i></div>
+					<div class="bar brake" title="Ciśnienie w cylindrach hamulcowych"><i id="eff-brake"></i></div>
+				</div>
+			</div>
+			<div class="lamps">
+				<span id="l-ca" class="ind" title="Czuwak – potwierdź spacją">CA</span>
+				<span id="l-doors" class="ind" title="Drzwi">DRZWI</span>
+				<span id="l-brake" class="ind" title="Hamulec">HAM</span>
+				<span id="l-time" class="ind on-blue" title="Przyspieszenie czasu (T)">×1</span>
+			</div>
+		</div>
+
+		<!-- prawy dół: sterowanie -->
+		<div class="hud-panel hud-controls">
+			<div class="controls">
+				<button data-act="up" title="Nastawnik w górę (↑ / W)">▲ Jazda</button>
+				<button data-act="down" title="Nastawnik w dół (↓ / S)">▼ Hamuj</button>
+				<button data-act="neutral" title="Pozycja zerowa (0)">0</button>
+				<button data-act="doors" title="Drzwi (D)">Drzwi</button>
+				<button data-act="horn" title="Syrena (H – przytrzymaj)">Syrena</button>
+				<button data-act="ca" title="Czuwak (spacja)">CA</button>
+				<button data-act="cab" title="Fotel maszynisty – widok z kabiny (K)">Kabina</button>
+				<button data-act="camera" title="Tryb kamery (V)">Kamera</button>
+				<button data-act="time" title="Przyspieszenie czasu (T)">Czas ×</button>
+				<button data-act="panto" title="Pantograf: podnieś / opuść (U)">Pantograf</button>
+				<button data-act="wipers" title="Wycieraczki: wyłączone / przerywane / ciągłe / szybkie (R)">Wycieraczki</button>
+				<button data-act="emergency" class="danger" title="Hamowanie nagłe (E / Backspace)">NAGŁE</button>
+			</div>
+		</div>
+	</div>
+
+	<!-- swobodna kamera: lot nad mapą (F), symulacja stoi -->
+	<div id="free" class="hud-panel free-panel hidden">
+		<div class="free-head"><b>Swobodna kamera</b><button id="free-close" class="primary" title="Wróć do jazdy (F / Esc)">Wróć do jazdy</button></div>
+		<div class="free-info" id="free-info">—</div>
+		<label class="free-label">Kilometraż <span id="free-km-val"></span></label>
+		<input type="range" id="free-km" min="0" max="1000" step="10" value="0">
+		<div class="free-row">
+			<button data-free="train" title="Kamera nad pociągiem">Do pociągu</button>
+			<button data-free="high" title="Widok z wysokości 150 m">Z góry</button>
+			<button data-free="bird" title="Widok z wysokości 35 m">Z lotu ptaka</button>
+			<button data-free="walk" title="Na wysokości oczu (1,7 m)">Pieszo</button>
+		</div>
+		<label class="free-label">Prędkość
+			<select id="free-speed"><option value="0.25">wolno</option><option value="1" selected>normalnie</option><option value="3">szybko</option></select>
+		</label>
+		<div class="free-tabs">
+			<button data-free-tab="stations" class="sel">Stacje i przystanki</button>
+			<button data-free-tab="issues" id="free-tab-issues" title="Miejsca, których generator trasy nie był pewien">Uwagi generatora</button>
+		</div>
+		<div class="free-stations" id="free-stations"></div>
+		<div class="free-issues hidden" id="free-issues"></div>
+		<div class="free-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / strzałki – ruch · <kbd>Q</kbd>/<kbd>E</kbd> – w dół / w górę · <kbd>Shift</kbd> – szybciej · przeciągnij myszą – rozglądanie · kółko – wysokość · <kbd>P</kbd> – pauza (pora dnia, pogoda) · <kbd>F</kbd> / <kbd>Esc</kbd> – powrót do jazdy</div>
+	</div>
+
+	<div id="menu" class="overlay">
+		<div class="panel menu-main" id="scr-main">
+			<h1>Maszynista</h1>
+			<p class="tagline">Prosty symulator pociągu: ruszaj, hamuj, zatrzymuj się przy peronie i trzymaj się rozkładu.</p>
+			<nav class="menu-buttons">
+				<button id="btn-single" class="primary big">Gra jednoosobowa</button>
+				<button id="btn-gen" class="big">Generator tras</button>
+				<button id="btn-settings" class="big">Ustawienia</button>
+				<button id="btn-exit" class="big hidden">Wyjście</button>
+			</nav>
+			<p class="version" id="version"></p>
+		</div>
+
+		<div class="panel wide hidden" id="scr-gen">
+			<div class="panel-head"><button class="back" id="gen-back">← Wróć</button><h2>Generator tras</h2></div>
+			<p class="hint">Trasa z prawdziwej linii kolejowej: tory, stacje i przystanki, ograniczenia prędkości, semafory z nazwami, łuki,
+				mosty i wiadukty z OpenStreetMap oraz profil wysokości z modelu terenu. Rozkład jazdy liczony jest z fizyki pociągu.
+				Potrzebny jest internet; serwery danych bywają przeciążone – wtedy generator sam ponawia próby.</p>
+			<div class="gen-grid">
+				<section class="pick">
+					<h3>Nowa trasa</h3>
+					<label class="gen-field">Stacja początkowa <input id="gen-from" type="text" placeholder="np. Gliwice" autocomplete="off"></label>
+					<label class="gen-field">Stacja końcowa <input id="gen-to" type="text" placeholder="np. Katowice" autocomplete="off"></label>
+					<label class="gen-field">Numer linii (opcjonalnie) <input id="gen-line" type="text" placeholder="np. 137" autocomplete="off"></label>
+					<p class="hint">Nazwy jak w rozkładzie jazdy, z polskimi znakami. Stacje do 70 km od siebie (w linii prostej).
+						Numer linii pomaga wybrać właściwe tory, gdy obok biegnie kilka linii.</p>
+					<label class="gen-check"><input type="checkbox" id="gen-env" checked> Prawdziwe otoczenie – budynki, drogi, lasy i wody z mapy (dłużej: +1–2 min)</label>
+					<label class="gen-check"><input type="checkbox" id="gen-dem" checked> Ukształtowanie terenu – nasypy, wykopy, wzniesienia (pomiar NMT GUGiK, ok. 1–2 min; poza Polską dłużej)</label>
+					<label class="gen-check"><input type="checkbox" id="gen-official" checked> Dane oficjalne – BDOT10k (GUGiK: budynki, drogi, tereny, lasy, wody) i PKP PLK (prędkości, perony); pierwsze pobranie ok. 15 MB na powiat</label>
+					<label class="gen-check"><input type="checkbox" id="gen-nmpt" checked> Budynki, drzewa i wiadukty z pomiaru (NMPT GUGiK – wolny serwer: pierwsze pobranie ok. 1 min na 3 km trasy, potem z pamięci)</label>
+					<div class="gen-examples" id="gen-examples"></div>
+					<button id="gen-run" class="primary">Generuj trasę</button>
+				</section>
+				<section class="pick">
+					<h3>Przebieg</h3>
+					<div id="gen-log" class="gen-log"><div class="muted">Wpisz stacje i kliknij „Generuj trasę”.</div></div>
+					<div id="gen-result"></div>
+					<h3>Wygenerowane trasy</h3>
+					<div id="gen-list" class="gen-list"></div>
+				</section>
+			</div>
+			<p class="hint source">Dane: © współtwórcy OpenStreetMap (licencja ODbL), Copernicus DEM (przez Open-Meteo).</p>
+		</div>
+
+		<div class="panel wide hidden" id="scr-single">
+			<div class="panel-head"><button class="back" id="single-back">← Wróć</button><h2>Gra jednoosobowa</h2></div>
+			<nav class="tabs" id="single-tabs">
+				<button data-tab="map" class="sel"><i>1</i><span>Mapa</span><small id="sum-map"></small></button>
+				<button data-tab="train"><i>2</i><span>Pociąg</span><small id="sum-train"></small></button>
+				<button data-tab="cond"><i>3</i><span>Warunki</span><small id="sum-cond"></small></button>
+				<button data-tab="help"><i>4</i><span>Pomoc</span><small id="sum-help"></small></button>
+			</nav>
+			<section class="tab" id="tab-map">
+				<div id="route-list"></div>
+			</section>
+			<section class="tab hidden" id="tab-train">
+				<div class="seg" id="train-kind">
+					<button data-kind="pass">Pasażerski <small>lokomotywa + wagony</small></button>
+					<button data-kind="emu">Zespół trakcyjny <small>EZT</small></button>
+					<button data-kind="freight">Towarowy <small>bez postojów</small></button>
+				</div>
+				<div class="train-grid">
+					<div class="tcard tc-lead">
+						<div class="tcard-h"><i>1</i><h3 id="lead-h">Lokomotywa</h3><small id="lead-hint">seria i malowanie</small></div>
+						<div class="stock-list" id="lead-list"></div>
+						<div class="livery" id="lead-livery"></div>
+						<p class="stock-desc" id="stock-desc"></p>
+					</div>
+					<div class="tcard tc-consist">
+						<div class="tcard-h"><i>2</i><h3>Skład</h3><small id="consist-hint">kliknij wagon – zaznaczenie, przeciągnij – kolejność</small></div>
+						<canvas id="stock-view" aria-label="Podgląd składu 3D"></canvas>
+						<div class="view-hint">podgląd: przeciągnij – obrót, kółko – przybliżenie</div>
+						<div id="consist"></div>
+						<div class="car-actions hidden" id="car-actions">
+							<span class="ca-name" id="ca-name"></span>
+							<button type="button" id="ca-left" title="Przesuń wagon bliżej lokomotywy">◀</button>
+							<button type="button" id="ca-right" title="Przesuń wagon dalej od lokomotywy">▶</button>
+							<button type="button" class="ca-del" id="ca-del" title="Odczep wagon (Delete)">✕ Odczep wagon</button>
+						</div>
+						<div class="livery" id="car-livery"></div>
+						<div id="consist-stats"></div>
+						<p class="hint" id="cars-hint"></p>
+					</div>
+				</div>
+				<div class="tcard tc-wagons" id="wagon-box">
+					<div class="tcard-h"><i>3</i><h3>Wagony</h3><small>kliknij, aby dołączyć na koniec składu</small></div>
+					<div class="stock-list" id="wagon-list"></div>
+				</div>
+				<div class="tcard tc-wagons hidden" id="units-box">
+					<div class="tcard-h"><i>3</i><h3>Liczba zespołów</h3><small>zespoły łączone w jeden pociąg</small></div>
+					<div class="cars-row"><input type="range" id="opt-units" min="1" max="3" step="1"><b id="opt-units-val"></b></div>
+				</div>
+			</section>
+			<section class="tab hidden" id="tab-cond">
+				<h3>Pogoda</h3>
+				<div class="tiles" id="weather-tiles"></div>
+				<select id="opt-weather" class="hidden"><option value="auto">jak w scenariuszu</option><option value="clear">słonecznie</option><option value="cloudy">pochmurno</option><option value="rain">deszcz</option><option value="fog">mgła</option><option value="snow">śnieg</option></select>
+				<h3>Pora dnia (odjazd)</h3>
+				<div class="tiles" id="time-tiles"></div>
+				<select id="opt-time" class="hidden"><option value="auto">jak w scenariuszu</option><option value="05:20">świt (5:20)</option><option value="08:00">rano (8:00)</option><option value="12:00">południe (12:00)</option><option value="16:00">popołudnie (16:00)</option><option value="19:50">zachód słońca (19:50)</option><option value="23:00">noc (23:00)</option><option value="custom">własna godzina…</option></select>
+				<label class="row-opt custom-time">Własna godzina <input type="time" id="opt-time-custom" class="hidden" value="21:30"></label>
+			</section>
+			<section class="tab hidden" id="tab-help">
+				<h3>Pomoc w jeździe</h3>
+				<div class="options">
+					<label><input type="checkbox" id="opt-ca" checked> Czuwak (CA) – co minutę potwierdź spacją</label>
+					<label><input type="checkbox" id="opt-assist" checked> Asystent hamowania – znacznik drogi hamowania</label>
+				</div>
+				<h3>Sterowanie</h3>
+				<div class="help-grid">
+					<div><kbd>↑</kbd>/<kbd>W</kbd> nastawnik w górę (J1…J5 = jazda)</div>
+					<div><kbd>↓</kbd>/<kbd>S</kbd> nastawnik w dół (H1…H4 = hamowanie)</div>
+					<div><kbd>0</kbd> pozycja zerowa (wybieg)</div>
+					<div><kbd>E</kbd>/<kbd>Backspace</kbd> hamowanie nagłe</div>
+					<div><kbd>D</kbd> otwarcie drzwi na stacji</div>
+					<div><kbd>H</kbd> syrena (przytrzymaj)</div>
+					<div><kbd>U</kbd> pantograf: podnieś / opuść</div>
+					<div><kbd>R</kbd> wycieraczki</div>
+					<div><kbd>Spacja</kbd> potwierdzenie czuwaka</div>
+					<div><kbd>T</kbd> przyspieszenie czasu ×1/×2/×4</div>
+					<div><kbd>Z</kbd> widok normalny / daleki / bliski</div>
+					<div><kbd>←</kbd>/<kbd>→</kbd> lub przeciąganie myszą – obrót kamery</div>
+					<div>kółko myszy – oddalenie, <kbd>C</kbd> – kamera za pociągiem</div>
+					<div><kbd>V</kbd> tryb kamery: za pociągiem / z kabiny / z boku / kinowa</div>
+					<div><kbd>K</kbd> fotel maszynisty (kabina) i z powrotem</div>
+					<div><kbd>M</kbd> dźwięk, <kbd>Esc</kbd> pauza</div>
+				</div>
+				<h3>Zasady</h3>
+				<ul class="rules">
+					<li>Zatrzymaj czoło pociągu przy tablicy <b>W4</b> (biała z czarnym paskiem) – im dokładniej, tym więcej punktów. Cały pociąg musi stać przy peronie.</li>
+					<li>Po zatrzymaniu naciśnij <kbd>D</kbd>. Drzwi zamkną się same, a semafor odjazdowy zmieni się na zielony w chwili odjazdu z rozkładu.</li>
+					<li>Skład towarowy jedzie bez postojów – zatrzymaj się dopiero na stacji końcowej (czołem przy W4) i naciśnij <kbd>D</kbd>.</li>
+					<li>Semafor: <span class="dot red"></span> stój, <span class="dot yellow"></span> następny semafor wskazuje „stój”, <span class="dot green"></span> wolna droga. Minięcie czerwonego kończy grę.</li>
+					<li>Żółte tablice to nowe ograniczenie prędkości, pomarańczowe trójkąty je zapowiadają. Ograniczenie obowiązuje, dopóki cały pociąg go nie minie.</li>
+					<li>Przed przejazdami (tablica <b>W6</b>) użyj syreny. Na końcowej stacji za peronem jest kozioł oporowy.</li>
+				</ul>
+			</section>
+			<div class="start-bar">
+				<div id="summary"></div>
+				<button id="btn-start" class="primary">Rozpocznij jazdę (Enter)</button>
+			</div>
+		</div>
+	</div>
+	<div id="settings" class="overlay hidden">
+		<div class="panel">
+			<div class="panel-head"><button class="back" id="settings-back">← Wróć</button><h2>Ustawienia</h2></div>
+			<section class="set">
+				<h3>Dźwięk</h3>
+				<label class="row-opt"><input type="checkbox" id="set-sound" checked> Dźwięk włączony <kbd>M</kbd></label>
+				<label class="row-opt">Głośność <input type="range" id="set-volume" min="0" max="100" step="5"> <span id="set-volume-val">80%</span></label>
+			</section>
+			<section class="set">
+				<h3>Grafika</h3>
+				<label class="row-opt">Jakość <select id="opt-quality"><option value="low">niska</option><option value="medium">średnia</option><option value="high">wysoka</option></select></label>
+				<p class="hint" id="quality-hint"></p>
+			</section>
+			<section class="set">
+				<h3>Renderer</h3>
+				<label class="row-opt">Rozdzielczość renderowania <select id="set-scale"><option value="0.5">50%</option><option value="0.67">67%</option><option value="0.85">85%</option><option value="1">100%</option></select></label>
+				<label class="row-opt"><input type="checkbox" id="set-aa" checked> Wygładzanie krawędzi (MSAA)</label>
+				<label class="row-opt"><input type="checkbox" id="set-shadows" checked> Cienie</label>
+				<label class="row-opt"><input type="checkbox" id="set-fps"> Licznik klatek na sekundę</label>
+				<p class="hint" id="gpu-info"></p>
+			</section>
+		</div>
+	</div>
+
+	<div id="pause" class="overlay hidden">
+		<div class="panel pause-panel">
+			<div class="pause-head">
+				<h2>Pauza</h2>
+				<div class="pause-info" id="pause-info"></div>
+			</div>
+			<section class="pause-sec">
+				<h3>Pogoda</h3>
+				<div class="tiles pause-tiles" id="pause-weather-tiles"></div>
+				<select id="pause-weather" class="hidden"><option value="auto">jak w scenariuszu</option><option value="clear">słonecznie</option><option value="cloudy">pochmurno</option><option value="rain">deszcz</option><option value="fog">mgła</option><option value="snow">śnieg</option></select>
+			</section>
+			<section class="pause-sec">
+				<h3>Pora dnia <small>przestawia bieżącą godzinę jazdy</small></h3>
+				<div class="tiles pause-tiles" id="pause-time-tiles"></div>
+				<select id="pause-time" class="hidden"><option value="auto">jak w scenariuszu</option><option value="05:20">świt (5:20)</option><option value="08:00">rano (8:00)</option><option value="12:00">południe (12:00)</option><option value="16:00">popołudnie (16:00)</option><option value="19:50">zachód słońca (19:50)</option><option value="23:00">noc (23:00)</option><option value="custom">własna godzina…</option></select>
+				<label class="row-opt pause-custom hidden" id="pause-custom-row">Własna godzina <input type="time" id="pause-time-custom" value="21:30"></label>
+			</section>
+			<button id="btn-resume" class="primary pause-resume">Wznów (Esc)</button>
+			<div class="pause-actions">
+				<button id="btn-free">Swobodna kamera (F)</button>
+				<button id="btn-pause-settings">Ustawienia</button>
+				<button id="btn-quit">Wróć do menu</button>
+			</div>
+		</div>
+	</div>
+
+	<div id="end" class="overlay hidden">
+		<div class="panel">
+			<h2 id="end-title">Koniec trasy</h2>
+			<p id="end-reason"></p>
+			<div class="end-score"><span id="end-stars"></span><b id="end-points"></b></div>
+			<table id="end-table"></table>
+			<div id="end-penalties"></div>
+			<div class="row">
+				<button id="btn-again" class="primary">Jedź jeszcze raz (Enter)</button>
+				<button id="btn-menu">Menu</button>
+			</div>
+		</div>
+	</div>
+
+	<script src="js/physics.js"></script>
+	<script src="js/routes.js"></script>
+	<script src="routes/gliwice-zabrze.js"></script>
+	<script src="js/gen/sources.js"></script>
+	<script src="js/osm-route.js"></script>
+	<script src="js/sim.js"></script>
+	<script src="js/audio.js"></script>
+	<script src="vendor/three.global.js"></script>
+	<script src="js/3d/sky.js"></script>
+	<script src="js/3d/common.js"></script>
+	<script src="js/3d/post.js"></script>
+	<script src="js/3d/sunfx.js"></script>
+	<script src="js/3d/horizon.js"></script>
+	<script src="js/3d/weather.js"></script>
+	<script src="js/3d/props.js"></script>
+	<script src="js/3d/world.js"></script>
+	<script src="js/3d/real-env.js"></script>
+	<script src="js/3d/train.js"></script>
+	<script src="js/3d/life.js"></script>
+	<script src="js/3d/cab.js"></script>
+	<script src="js/3d/preview.js"></script>
+	<script src="js/3d/scene.js"></script>
+	<script src="js/3d/freecam.js"></script>
+	<script src="js/hud.js"></script>
+	<script src="js/main.js"></script>
+</body>
+</html>

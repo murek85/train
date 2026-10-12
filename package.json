@@ -1,0 +1,74 @@
+{
+	"name": "maszynista",
+	"version": "0.2.0",
+	"private": true,
+	"description": "Prosty symulator pociągu w przeglądarce",
+	"author": "Marcin Murawski",
+	"main": "electron/main.js",
+	"scripts": {
+		"start": "node server.js",
+		"test": "node --test \"tests/*.test.js\"",
+		"build:three": "node tools/build-three.js",
+		"icon": "node tools/make-icon.js",
+		"app": "electron .",
+		"app:check": "node tools/app-check.js",
+		"dist": "node tools/dist.js",
+		"dist:dir": "node tools/dist.js --dir"
+	},
+	"devDependencies": {
+		"electron": "^44.7.0",
+		"electron-builder": "^26.15.3"
+	},
+	"build": {
+		"appId": "pl.maszynista.symulator",
+		"productName": "Maszynista",
+		"copyright": "© 2026 Marcin Murawski",
+		"directories": {
+			"output": "dist",
+			"buildResources": "build"
+		},
+		"files": [
+			"**/*",
+			"!tests/**",
+			"!tools/**",
+			"!dist/**",
+			"!build/**",
+			"!**/*.md",
+			"!server.js",
+			"!vendor/three.module.js",
+			"!**/*.py",
+			"!**/*.cmd",
+			"!.claude/**"
+		],
+		"asar": true,
+		"win": {
+			"target": [
+				{
+					"target": "nsis",
+					"arch": [
+						"x64"
+					]
+				},
+				{
+					"target": "portable",
+					"arch": [
+						"x64"
+					]
+				}
+			],
+			"icon": "build/icon.png"
+		},
+		"nsis": {
+			"oneClick": false,
+			"perMachine": false,
+			"allowToChangeInstallationDirectory": true,
+			"createDesktopShortcut": true,
+			"createStartMenuShortcut": true,
+			"shortcutName": "Maszynista",
+			"artifactName": "Maszynista-${version}-instalator.${ext}"
+		},
+		"portable": {
+			"artifactName": "Maszynista-${version}-przenosna.${ext}"
+		}
+	}
+}
