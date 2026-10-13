@@ -36,8 +36,10 @@
 			].join('\n'));
 		return true;
 	})();
-	// kaskady: zasięg (połowa boku mapy, m) przy niskiej kamerze; wyżej – większe (mnożnik wg wysokości)
-	const CASCADES = [36, 120, 380];
+	/* kaskady: zasięg (połowa boku mapy, m) przy niskiej kamerze; wyżej – większe (mnożnik wg wysokości). Druga
+	   kaskada węższa (80 zamiast 120 m) – w niej leży zwykle reszta składu za lokomotywą; przy 120 m teksel miał
+	   ok. 12 cm i cienie wagonów były rozmyte. */
+	const CASCADES = [36, 80, 340];
 
 	// Ustawienia jakości: rozdzielczość, cienie, efekty po renderowaniu, gęstość roślinności, ilość opadu.
 	const QUALITY = {
@@ -207,7 +209,8 @@
 			this.quality = q;
 			this.gl.toneMapping = q.post ? T.NoToneMapping : T.ACESFilmicToneMapping;
 			this.cascades.forEach((l, k) => {
-				const n = k === 0 ? q.shadow : Math.min(2048, q.shadow);
+				// dwie bliższe kaskady w pełnej rozdzielczości jakości (pociąg i otoczenie przy nim), najdalsza do 2048
+				const n = k < 2 ? q.shadow : Math.min(2048, q.shadow);
 				l.shadow.mapSize.set(n, n);
 				if (l.shadow.map) {
 					l.shadow.map.dispose();
@@ -289,6 +292,11 @@
 			this.moonDir.set(-Math.sin(az) * 0.75, 0.55, -Math.cos(az) * 0.75).normalize();
 			this.rainCenter.copy(this.camera.position).lerp(this.focus, 0.65);
 			this.weather.light = 0.25 + 0.75 * smoothstep(-0.1, 0.25, this.e === undefined ? 1 : this.e);
+			/* opad: nie pada w tunelu – w widoku z kabiny, gdy czoło jest ponad 10 m w tunelu (kamera zza pociągu wisi
+			   nad terenem, tam pada) – ani wewnątrz wagonów */
+			const pos = sim.st.pos, tl = sim.route.tunnels || [];
+			this.weather.shelterTarget = !this.free && this.camMode === 'cab' && tl.some((t) => pos > t.from + 10 && pos < t.to - 5) ? 1 : 0;
+			if (this.trainModel) this.weather.setCars(this.trainModel.cars, this.camera.position);
 			const W = this.weather.update(dt, this.camera.position, this.focus);
 			const pal = this.sky.palette(e);
 			const zen = this.env.zenith.copy(pal.zenith), hor = this.env.horizon.copy(pal.horizon), sunCol = this.env.sunColor.copy(pal.sunlight);
@@ -760,9 +768,15 @@
 					shc.updateProjectionMatrix();
 				}
 				const ts = (2 * ext) / (l.shadow.mapSize.x || 2048);
-				l.shadow.normalBias = Math.max(0.04, ts * 1.4);
+				// przesunięcie wzdłuż normalnej mniejsze (przy ts × 1,4 cienie kurczyły się i odklejały od podstaw)
+				l.shadow.normalBias = Math.max(0.025, ts * 0.9);
 				if (n === 1) c.set(this.focus.x, y, this.focus.z);
-				else c.set(cam.x + fw.x * ext * 0.62, y, cam.z + fw.z * ext * 0.62);
+				else if (i === 0) {
+					// najostrzejsza kaskada: między punktem przed kamerą a pociągiem (widok zza pociągu – kamera 30–60 m
+					// za nim; środek przed samą kamerą zostawiał część składu w drugiej, rzadszej mapie)
+					const fx = cam.x + fw.x * ext * 0.62, fz = cam.z + fw.z * ext * 0.62;
+					c.set(fx + (this.focus.x - fx) * 0.6, y, fz + (this.focus.z - fz) * 0.6);
+				} else c.set(cam.x + fw.x * ext * 0.62, y, cam.z + fw.z * ext * 0.62);
 				const cr = c.dot(r), cu = c.dot(u), cf = c.dot(f);
 				c.copy(r).multiplyScalar(Math.round(cr / ts) * ts).addScaledVector(u, Math.round(cu / ts) * ts).addScaledVector(f, cf);
 				l.target.position.copy(c);
@@ -809,9 +823,11 @@
 				this.post.render(this.scene, this.camera, {
 					bloom: q.bloom,
 					bloomStrength: 0.5,
-					// AO z bufora głębi myli się przy niskiej kamerze patrzącej płasko nad terenem (kabina, z boku,
-					// ujęcia kinowe) – przyciemnia wtedy rozległe płaskie obszary; włączone tylko w widoku z góry
-					ao: q.ao && this.viewMode === 'follow' && this.camera.position.y - this.focus.y > 12,
+					/* AO w każdym widoku z zewnątrz, niezależnie od wysokości kamery – wcześniej tylko w widoku z góry
+					   (kamera ponad 12 m nad pociągiem), bo przy płaskim spojrzeniu przyciemniało rozległe płaszczyzny;
+					   po zejściu kamery cieniowanie nagle słabło. Płaskie spojrzenie wygasza teraz shader AO (post.js);
+					   w kabinie bez AO (wnętrze widziane z bliska). */
+					ao: q.ao && this.viewMode !== 'cab',
 					aoRadius: 2.2,
 					aoStrength: 1.2,
 					aoFade: 140,

@@ -390,7 +390,97 @@
 		// pomosty z pomiaru (dm ponad dem.base, −1 – brak): wiadukty nad torem (drogowe, kolejowe), mosty obok
 		// wysokości dróg z pomiaru (dm ponad dem.base) dla wierszy env.r
 		const roadZ = new Map();
-		(env.r || []).forEach((row, i) => { if (env.rh && env.rh[i]) roadZ.set(row, env.rh[i]); });
+		/* wysokości jezdni z pomiaru (dm) wygładzone wzdłuż drogi (średnia ważona ±12 m): pomiar co kilka metrów
+		   z dokładnością 0,1 m dawał schodki i załamania pochylenia; końce bez zmian (styk z innymi drogami) */
+		(env.r || []).forEach((row, i) => {
+			const z0 = env.rh && env.rh[i];
+			if (!z0) return;
+			const n = (row.length - 1) / 2;
+			if (n < 3 || z0.length < n) { roadZ.set(row, z0.slice()); return; }
+			const cum = [0];
+			for (let k = 1; k < n; k++) cum.push(cum[k - 1] + Math.hypot(row[1 + k * 2] - row[k * 2 - 1], row[2 + k * 2] - row[k * 2]));
+			const z = z0.slice();
+			for (let k = 1; k < n - 1; k++) {
+				let sw = 0, sz = 0;
+				for (let j = k; j >= 0 && cum[k] - cum[j] <= 12; j--) { const w = 1 - (cum[k] - cum[j]) / 13; sw += w; sz += w * z0[j]; }
+				for (let j = k + 1; j < n && cum[j] - cum[k] <= 12; j++) { const w = 1 - (cum[j] - cum[k]) / 13; sw += w; sz += w * z0[j]; }
+				z[k] = sz / sw;
+			}
+			roadZ.set(row, z);
+		});
+		/* pochylenie jezdni najwyżej 12% (po sieci dróg, także przez węzły): garby z pomiaru ścięte. Węzeł przy końcu
+		   wiaduktu nad torami dostawał wysokość pomostu (pomiar powierzchni) – drogi z niego spadały po 30–50% (rampy
+		   ze stromym klinem terenu); pomost schodzi teraz do skrzyżowania (overpassPlan). Doliny (przejścia pod
+		   torami) bez zmian – tylko obniżanie. */
+		{
+			// węzły: punkty dróg bliżej niż 1 m (końce dróg w danych nie zawsze w tym samym miejscu)
+			const verts = [], keyOf = (s, d) => Math.floor(s) * 4096 + Math.floor(d + 2048), byKey = new Map();
+			for (const [row, z] of roadZ) {
+				const n = Math.min((row.length - 1) / 2, z.length), base = verts.length;
+				for (let k = 0; k < n; k++) {
+					const key = keyOf(row[1 + k * 2], row[2 + k * 2]);
+					verts.push({ z, k, row, base, n, key });
+					if (!byKey.has(key)) byKey.set(key, []);
+					byKey.get(key).push(base + k);
+				}
+			}
+			const zv = Float64Array.from(verts, (v) => v.z[v.k]), heap = [];
+			/* końce wiaduktów drogowych z mapy: pomost może zejść do skrzyżowania najwyżej 8% na odcinku od ostatniego
+			   miejsca nad torem (tor z mapy bliżej niż 4,5 m albo oś) do końca – drogi w tym węźle nie niżej (wiadukt
+			   kończący się tuż za torami ma dalej estakadę albo wysoki nasyp, nie garb z pomiaru) */
+			const floor = new Float64Array(verts.length).fill(-Infinity);
+			const tSegs = new Map();
+			(env.t || []).forEach((row) => {
+				for (let k = 1; k + 3 < row.length; k += 2) {
+					const b = Math.floor((row[k] + row[k + 2]) / 2 / 50);
+					if (!tSegs.has(b)) tSegs.set(b, []);
+					tSegs.get(b).push([row[k], row[k + 1], row[k + 2], row[k + 3]]);
+				}
+			});
+			const overTrack = (s1, d1) => {
+				if (Math.abs(d1) < 6) return true;
+				for (let b = Math.floor(s1 / 50) - 1; b <= Math.floor(s1 / 50) + 1; b++) for (const [a1, a2, b1, b2] of tSegs.get(b) || []) {
+					const L2 = (b1 - a1) ** 2 + (b2 - a2) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((s1 - a1) * (b1 - a1) + (d1 - a2) * (b2 - a2)) / L2));
+					if (Math.hypot(a1 + (b1 - a1) * t - s1, a2 + (b2 - a2) * t - d1) < 4.5) return true;
+				}
+				return false;
+			};
+			for (const orow of env.o || []) {
+				const n = (orow.length - 1) / 2;
+				if (n < 2) continue;
+				for (const [k0, st] of [[0, 1], [n - 1, -1]]) {
+					let room = 0;
+					for (let k = k0; k >= 0 && k < n; k += st) {
+						if (overTrack(orow[1 + k * 2], orow[2 + k * 2])) break;
+						if (k !== k0) room += Math.hypot(orow[1 + k * 2] - orow[1 + (k - st) * 2], orow[2 + k * 2] - orow[2 + (k - st) * 2]);
+					}
+					const es = orow[1 + k0 * 2], ed = orow[2 + k0 * 2];
+					for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const j of byKey.get(keyOf(es, ed) + a * 4096 + b) || []) {
+						const w = verts[j];
+						if (Math.hypot(w.row[1 + w.k * 2] - es, w.row[2 + w.k * 2] - ed) < 1.5) floor[j] = Math.max(floor[j], zv[j] - 0.8 * room);
+					}
+				}
+			}
+			const push = (z, i) => { heap.push([z, i]); let j = heap.length - 1; while (j > 0) { const p2 = (j - 1) >> 1; if (heap[p2][0] <= heap[j][0]) break; [heap[p2], heap[j]] = [heap[j], heap[p2]]; j = p2; } };
+			const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let j = 0; for (;;) { const a = 2 * j + 1, b = a + 1; let m = j; if (a < heap.length && heap[a][0] < heap[m][0]) m = a; if (b < heap.length && heap[b][0] < heap[m][0]) m = b; if (m === j) break; [heap[m], heap[j]] = [heap[j], heap[m]]; j = m; } } return top; };
+			zv.forEach((z, i) => push(z, i));
+			const G = 1.2; // dm na metr
+			while (heap.length) {
+				const [z, i] = pop();
+				if (z > zv[i]) continue;
+				const v = verts[i], row = v.row, vs = row[1 + v.k * 2], vd = row[2 + v.k * 2];
+				const relax = (j, dist) => { const c2 = Math.max(floor[j], z + G * dist); if (c2 < zv[j] - 0.01) { zv[j] = c2; push(c2, j); } };
+				for (const k2 of [v.k - 1, v.k + 1]) if (k2 >= 0 && k2 < v.n) relax(v.base + k2, Math.hypot(row[1 + k2 * 2] - row[1 + v.k * 2], row[2 + k2 * 2] - row[2 + v.k * 2]));
+				for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const j of byKey.get(v.key + a * 4096 + b) || []) {
+					if (j === i) continue;
+					const w = verts[j], dist = Math.hypot(w.row[1 + w.k * 2] - vs, w.row[2 + w.k * 2] - vd);
+					// wspólny punkt (węzeł) albo dwa końce dróg obok siebie – nie przecięcie dróg na różnych poziomach
+					const endV = v.k === 0 || v.k === v.n - 1, endW = w.k === 0 || w.k === w.n - 1;
+					if (dist < 0.05 || (dist < 1 && endV && endW)) relax(j, dist);
+				}
+			}
+			verts.forEach((v, i) => { v.z[v.k] = zv[i]; });
+		}
 		const deckZ = new Map();
 		for (const [rows2, zs] of [[env.o, env.oz], [env.ro, env.roz], [env.ob, env.obz]]) (rows2 || []).forEach((row, i) => { if (zs && zs[i] >= 0) deckZ.set(row, zs[i]); });
 		// profil jezdni z pomiaru w każdym punkcie łamanej (dm ponad dem.base)
@@ -451,7 +541,180 @@
 			if (lim - pl.edge < pl.width) st.platform = Object.assign({}, pl, { width: Math.round(Math.max(2.5, lim - pl.edge) * 10) / 10, island: pl.island || lim < Infinity });
 		}
 		this.env.wagons = this.envPlanWagons(env.t || []);
+		this.envTrenchInit();
 		envMaterials();
+	};
+
+	/* Wkopy drogowe (np. DTŚ w Gliwicach i Katowicach): jezdnia ponad 4 m poniżej ulic do 25 m obok (co najmniej dwa
+	   punkty innych dróg, poza pasem 30 m od toru). Pomiar terenu daleko od toru jest rzadki (kolumny co ~80 m) – punkt
+	   pomiaru trafiający w dno wkopu zamieniał wkop szerokości 25 m w dolinę na 150 m. Wynik:
+	   - e.trench: Map(wiersz env.r → Float64Array poziomu ulic obok w każdym punkcie, NaN – nie we wkopie, dm jak roadZ),
+	   - e.trSegs: odcinki we wkopie [s1, d1, s2, d2, półszerokość, poziom ulic dm] (po kawałkach: e.trByChunk),
+	   - punkty pomiaru terenu w pasie wkopu (do 6 m od krawędzi jezdni) – na poziomie ulic obok (kopia e.dem.v). */
+	World.prototype.envTrenchInit = function () {
+		const e = this.env, env = this.route.env, D = e.dem;
+		e.trench = new Map();
+		e.trSegs = [];
+		e.trByChunk = new Map();
+		e.trPortals = [];
+		if (!D || !D.lidar || !env.r) return;
+		const G = 25, grid = new Map(), key = (s, d) => Math.floor(s / G) * 8192 + Math.floor(d / G + 4096);
+		const pts = [];
+		env.r.forEach((row, i) => {
+			const z = e.roadZ.get(row);
+			if (!z) return;
+			// punkty co ≤ 8 m wzdłuż drogi (w danych punkty tylko na załamaniach – proste ulice miały ich za mało)
+			const n = Math.min((row.length - 1) / 2, z.length);
+			const put = (q) => { pts.push(q); const kk = key(q.s, q.d); if (!grid.has(kk)) grid.set(kk, []); grid.get(kk).push(q); };
+			for (let k = 0; k < n; k++) {
+				const k2 = Math.min(k, n - 2), Ld = Math.hypot(row[3 + k2 * 2] - row[1 + k2 * 2], row[4 + k2 * 2] - row[2 + k2 * 2]) || 1;
+				const us = (row[3 + k2 * 2] - row[1 + k2 * 2]) / Ld, ud = (row[4 + k2 * 2] - row[2 + k2 * 2]) / Ld;
+				put({ s: row[1 + k * 2], d: row[2 + k * 2], z: z[k], i, us, ud, end: k === 0 || k === n - 1 });
+				if (k + 1 < n) {
+					const L = Math.hypot(row[3 + k * 2] - row[1 + k * 2], row[4 + k * 2] - row[2 + k * 2]), m = Math.floor(L / 8);
+					for (let j = 1; j <= m; j++) { const t = j / (m + 1); put({ s: row[1 + k * 2] + (row[3 + k * 2] - row[1 + k * 2]) * t, d: row[2 + k * 2] + (row[4 + k * 2] - row[2 + k * 2]) * t, z: z[k] + (z[k + 1] - z[k]) * t, i, us, ud }); }
+				}
+			}
+		});
+		const proc = (row, i) => {
+			const z = e.roadZ.get(row);
+			if (!z || row[0] > 6) return;
+			const n = Math.min((row.length - 1) / 2, z.length), ref = new Float64Array(n).fill(NaN);
+			let any = false;
+			for (let k = 0; k < n; k++) {
+				const s1 = row[1 + k * 2], d1 = row[2 + k * 2];
+				if (Math.abs(d1) < 30) continue;
+				const k2 = Math.min(k, n - 2), Lv = Math.hypot(row[3 + k2 * 2] - row[1 + k2 * 2], row[4 + k2 * 2] - row[2 + k2 * 2]) || 1;
+				const vs = (row[3 + k2 * 2] - row[1 + k2 * 2]) / Lv, vd = (row[4 + k2 * 2] - row[2 + k2 * 2]) / Lv;
+				const hi = [];
+				// tylko ulice biegnące wzdłuż (do 35°) – dojazdy do wiaduktu nad drogą (w poprzek, w górę) to nie wkop
+				for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const q of grid.get(key(s1, d1) + a * 8192 + b) || []) {
+					if (q.i === i || q.z < z[k] + 40 || Math.abs(q.us * vs + q.ud * vd) < 0.82) continue;
+					if (Math.hypot(q.s - s1, q.d - d1) < 25) hi.push(q.z);
+				}
+				if (hi.length < 2) continue;
+				hi.sort((x, y) => x - y);
+				ref[k] = hi[hi.length >> 1];
+				any = true;
+			}
+			if (!any) return;
+			// pojedyncze punkty bez wkopu między punktami we wkopie (do 30 m) – też we wkopie (poziom z sąsiadów)
+			for (let k = 1; k < n - 1; k++) if (Number.isNaN(ref[k])) {
+				let a = k - 1, b = k + 1;
+				while (b < n && Number.isNaN(ref[b])) b++;
+				if (!Number.isNaN(ref[a]) && b < n && Math.hypot(row[1 + b * 2] - row[1 + a * 2], row[2 + b * 2] - row[2 + a * 2]) < 80) for (let j = k; j < b; j++) ref[j] = Math.max(z[j] + 40, (ref[a] + ref[b]) / 2);
+			}
+			// końce drogi (podział drogi w danych, wlot tunelu, rozwidlenie) – do 30 m jak ostatni punkt we wkopie, jeśli nadal głęboko
+			for (const st of [1, -1]) {
+				let L = st > 0 ? n - 1 : 0;
+				while (L >= 0 && L < n && Number.isNaN(ref[L])) L -= st;
+				if (L < 0 || L >= n) continue;
+				for (let k = L + st; k >= 0 && k < n; k += st) {
+					if (Math.hypot(row[1 + k * 2] - row[1 + L * 2], row[2 + k * 2] - row[2 + L * 2]) > 30 || ref[L] - z[k] <= 40) break;
+					ref[k] = ref[L];
+				}
+			}
+			e.trench.set(row, ref);
+			const hw = Math.max(e.rInfo[i].w || 5, ROAD_W[row[0]] || 5) / 2;
+			/* koniec jezdni we wkopie bez dalszej drogi (tunel – w danych bez odcinków w tunelu): portal tunelu */
+			for (const [k, k2] of [[0, 1], [n - 1, n - 2]]) {
+				if (Number.isNaN(ref[k]) || ref[k] - z[k] < 30) continue;
+				const es = row[1 + k * 2], ed = row[2 + k * 2];
+				// koniec przy granicy obszaru mapy (droga ucięta, nie tunel)
+				if (Math.abs(ed) > MASK_D - 40 || es < 40 || es > this.route.length - 40) continue;
+				let joined = false;
+				for (let a = -1; a <= 1 && !joined; a++) for (let b = -1; b <= 1 && !joined; b++) for (const q of grid.get(key(es, ed) + a * 8192 + b) || []) {
+					if (q.i !== i && Math.hypot(q.s - es, q.d - ed) < 1.5) { joined = true; break; }
+				}
+				if (joined) continue;
+				const us = es - row[1 + k2 * 2], ud = ed - row[2 + k2 * 2], L = Math.hypot(us, ud) || 1;
+				e.trPortals.push({ s: es, d: ed, us: us / L, ud: ud / L, hw, z: D.base + z[k] / 10 - D.off, top: D.base + ref[k] / 10 - D.off });
+			}
+			for (let k = 0; k + 1 < n; k++) {
+				if (Number.isNaN(ref[k]) && Number.isNaN(ref[k + 1])) continue;
+				const r2 = Number.isNaN(ref[k]) ? ref[k + 1] : Number.isNaN(ref[k + 1]) ? ref[k] : (ref[k] + ref[k + 1]) / 2;
+				const sg = [row[1 + k * 2], row[2 + k * 2], row[3 + k * 2], row[4 + k * 2], hw, r2];
+				e.trSegs.push(sg);
+				for (let c = Math.floor((Math.min(sg[0], sg[2]) - 10) / C); c <= Math.floor((Math.max(sg[0], sg[2]) + 10) / C); c++) {
+					if (!e.trByChunk.has(c)) e.trByChunk.set(c, []);
+					e.trByChunk.get(c).push(sg);
+				}
+			}
+		};
+		/* najpierw drogi główne (do drogi powiatowej – DTŚ, trasy); mniejsze (jednojezdniowe łączniki, ulice) tylko przy
+		   wkopie drogi głównej (zjazdy) – osiedlowa ulica wzdłuż wyższych ulic na zboczu to nie wkop (wąwóz z murami) */
+		env.r.forEach((row, i) => { if (row[0] <= 4) proc(row, i); });
+		const major = e.trSegs.slice();
+		env.r.forEach((row, i) => {
+			if (row[0] <= 4 || row[0] > 6) return;
+			for (let k = 1; k < row.length; k += 2) {
+				const s1 = row[k], d1 = row[k + 1];
+				if (major.some(([sa, da, sb, db]) => {
+					const L2 = (sb - sa) ** 2 + (db - da) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((s1 - sa) * (sb - sa) + (d1 - da) * (db - da)) / L2));
+					return Math.hypot(sa + (sb - sa) * t - s1, da + (db - da) * t - d1) < 20;
+				})) { proc(row, i); return; }
+			}
+		});
+		if (!e.trSegs.length) return;
+		// pomiar terenu w pasie wkopu – poziom ulic obok
+		const v = (e.dem.v = Array.from(e.dem.v)), dc = D.dc;
+		if (!dc) return;
+		for (const [sa, da, sb, db, hw, r2] of e.trSegs) {
+			const L = Math.hypot(sb - sa, db - da) || 1e-9;
+			for (let ri = Math.max(0, Math.floor((Math.min(sa, sb) - hw - 6 - D.s0) / D.ds)); ri <= Math.min(D.rows - 1, Math.ceil((Math.max(sa, sb) + hw + 6 - D.s0) / D.ds)); ri++) {
+				const ss = D.s0 + ri * D.ds;
+				for (let j = 0; j < dc.length; j++) {
+					const dd = dc[j], t = Math.max(0, Math.min(1, ((ss - sa) * (sb - sa) + (dd - da) * (db - da)) / (L * L)));
+					if (Math.hypot(sa + (sb - sa) * t - ss, da + (db - da) * t - dd) < hw + 6) v[ri * D.cols + j] = Math.max(v[ri * D.cols + j], Math.round(r2));
+				}
+			}
+		}
+	};
+	// czy (s, d) w pasie jezdni we wkopie (+ ext metrów, z maski dróg – szybko): komórki oznaczone w envRoadMask
+	World.prototype.envInTrench = function (s, d, ext) {
+		const e = this.env;
+		if (!e || !e.trSegs || !e.trSegs.length || Math.abs(d) >= MASK_D - 2) return false;
+		const c = Math.floor(s / C);
+		if (!e.trByChunk.has(c)) return false;
+		this.envRoadMask(c);
+		const f = e.rTrench && e.rTrench.get(c);
+		if (!f) return false;
+		const si = Math.floor(s - c * C), di = Math.floor(d + MASK_D), r = Math.max(0, Math.round(ext || 0));
+		for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) {
+			const s2 = si + a;
+			if (s2 < 0 || s2 >= C || a * a + b * b > r * r) continue;
+			if (f[s2 * 2 * MASK_D + di + b]) return true;
+		}
+		return false;
+	};
+	// poziom jezdni we wkopie najbliższej punktowi (s, d) (wartość bezwzględna; undefined – brak w promieniu 12 m)
+	World.prototype.envTrenchFloor = function (s, d) {
+		const e = this.env, D = e.dem;
+		let best, bd = 12;
+		for (const row of e.trench.keys()) {
+			const z = e.roadZ.get(row), n = Math.min((row.length - 1) / 2, z.length);
+			if (Math.abs(row[1] - s) > 800 && Math.abs(row[row.length - 2] - s) > 800) continue;
+			for (let k = 0; k + 1 < n; k++) {
+				const sa = row[1 + k * 2], da = row[2 + k * 2], sb = row[3 + k * 2], db = row[4 + k * 2];
+				if (Math.min(sa, sb) > s + 12 || Math.max(sa, sb) < s - 12) continue;
+				const L2 = (sb - sa) ** 2 + (db - da) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((s - sa) * (sb - sa) + (d - da) * (db - da)) / L2));
+				const dist = Math.hypot(sa + (sb - sa) * t - s, da + (db - da) * t - d);
+				if (dist < bd) { bd = dist; best = D.base + (z[k] + (z[k + 1] - z[k]) * t) / 10 - D.off; }
+			}
+		}
+		return best;
+	};
+	// punkt (s, d) w pasie jezdni we wkopie (do half od krawędzi): poziom ulic obok (wartość bezwzględna) albo undefined
+	World.prototype.envTrenchAt = function (s, d, extra) {
+		const e = this.env;
+		if (!e || !e.trByChunk) return undefined;
+		const D = e.dem;
+		let best;
+		for (const [sa, da, sb, db, hw, r2] of e.trByChunk.get(Math.floor(s / C)) || []) {
+			const L2 = (sb - sa) ** 2 + (db - da) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((s - sa) * (sb - sa) + (d - da) * (db - da)) / L2));
+			if (Math.hypot(sa + (sb - sa) * t - s, da + (db - da) * t - d) < hw + (extra || 0)) best = Math.max(best === undefined ? -Infinity : best, D.base + r2 / 10 - D.off);
+		}
+		return best;
 	};
 
 	// rodzaj zagospodarowania w punkcie (s, d)
@@ -495,6 +758,28 @@
 		const ri = Math.round((s - e.g.s0) / e.g.step), ci = Math.round((d - e.g.d0) / e.g.step);
 		if (ri < 0 || ri >= e.rows || ci < 0 || ci >= e.g.cols) return 0;
 		return e.grid[ri * e.g.cols + ci];
+	};
+
+	/* poziom wody (pomiar lidarowy): mediana terenu z pomiaru w serii komórek „woda” wiersza rastra, w której leży
+	   punkt; undefined – poza wodą. Pomiar nad wodą jest zaszumiony (łachy, schodki lustra) – lustro i dno z tego poziomu. */
+	World.prototype.envWaterLevel = function (s, d) {
+		const e = this.env;
+		if (!e || !e.dem || !e.dem.lidar) return undefined;
+		const g = e.g, ri = Math.round((s - g.s0) / g.step), ci = Math.round((d - g.d0) / g.step);
+		if (ri < 0 || ri >= e.rows || ci < 0 || ci >= g.cols || e.grid[ri * g.cols + ci] !== 9) return undefined;
+		let a = ci;
+		while (a > 0 && e.grid[ri * g.cols + a - 1] === 9) a--;
+		if (!e.wLvl) e.wLvl = new Map();
+		const key = ri * g.cols + a;
+		let v = e.wLvl.get(key);
+		if (v === undefined) {
+			const hs = [], s0 = g.s0 + ri * g.step;
+			for (let c2 = a; c2 < g.cols && e.grid[ri * g.cols + c2] === 9; c2++) hs.push(this.demGround(s0, g.d0 + c2 * g.step));
+			hs.sort((x, y) => x - y);
+			v = hs[hs.length >> 1];
+			e.wLvl.set(key, v);
+		}
+		return v;
 	};
 
 	// czy punkt leży w obrysie budynku (drzewa, trawa)
@@ -647,11 +932,23 @@
 		if (D && D.lidar && th) {
 			const lo = c * C - 13, hi = (c + 1) * C + 13, segT = [];
 			for (const cc of [c - 1, c, c + 1]) for (const { k, row, i } of e.tByChunk.get(cc) || []) if (th[i] && !(row[0] & 2)) segT.push([row[1 + k * 2], row[2 + k * 2], row[3 + k * 2], row[4 + k * 2], i, k]);
+			// odcinki torów w przedziałach po 25 m wzdłuż trasy (wg zakresu s) – drogę porównujemy tylko z sąsiednimi
+			// (wcześniej każdy z każdym: ok. 0,1 s na kawałek)
+			const BK = 25, buckets = new Map();
+			for (const q of segT) {
+				for (let b = Math.floor(Math.min(q[0], q[2]) / BK); b <= Math.floor(Math.max(q[0], q[2]) / BK); b++) {
+					if (!buckets.has(b)) buckets.set(b, []);
+					buckets.get(b).push(q);
+				}
+			}
 			for (const cc of [c - 1, c, c + 1]) for (const { k, row } of e.rByChunk.get(cc) || []) {
 				const z = e.roadZ.get(row);
 				if (!z) continue;
 				const x1 = row[1 + k * 2], y1 = row[2 + k * 2], x2 = row[3 + k * 2], y2 = row[4 + k * 2];
-				for (const [x3, y3, x4, y4, i, tk] of segT) {
+				if (Math.max(x1, x2) < lo || Math.min(x1, x2) > hi) continue;
+				const near = new Set();
+				for (let b = Math.floor(Math.min(x1, x2) / BK); b <= Math.floor(Math.max(x1, x2) / BK); b++) for (const q of buckets.get(b) || []) near.add(q);
+				for (const [x3, y3, x4, y4, i, tk] of near) {
 					const den = (x2 - x1) * (y4 - y3) - (y2 - y1) * (x4 - x3);
 					if (Math.abs(den) < 1e-9) continue;
 					const t = ((x3 - x1) * (y4 - y3) - (y3 - y1) * (x4 - x3)) / den, u = ((x3 - x1) * (y2 - y1) - (y3 - y1) * (x2 - x1)) / den;
@@ -667,16 +964,41 @@
 		return out;
 	};
 	World.prototype.envRoadMask = function (c) {
+		const m = this.env.rmasks.get(c);
+		if (m) return m;
+		const g = this.envRoadMaskSteps(c);
+		let r;
+		while (!(r = g.next()).done);
+		return r.value;
+	};
+	// maska krokami (co odcinek drogi / toru; kilkadziesiąt ms na kawałek) – budowa kawałka przygotowuje maski przed siatką terenu
+	World.prototype.envRoadMaskSteps = function* (c) {
 		const e = this.env;
 		if (e.rmasks.has(c)) return e.rmasks.get(c);
 		for (const k of e.rmasks.keys()) if (Math.abs(k - c) > 12) e.rmasks.delete(k);
 		const W = 2 * MASK_D, mask = new Int16Array(C * W).fill(-32768), s0 = c * C;
+		// najniższa jezdnia w komórce (32767 – brak): gdzie jezdnie różnią się o ponad 4 m, wyższa biegnie nad niższą
+		// (wiadukt drogowy nieoznaczony w danych) – teren w poziomie niższej, wyższa rysowana na swojej wysokości
+		const lowZ = new Int16Array(C * W).fill(32767);
+		// to samo w samym pasie jezdni (bez poboczy 2,5 m): skrzyżowanie dwóch poziomów tylko tam, gdzie jezdnie się
+		// przecinają – dawniej także, gdy niższa ulica biegła obok rampy wiaduktu (rów i „pomost” wzdłuż całego zjazdu)
+		const coreHi = new Int16Array(C * W).fill(-32768), coreLo = new Int16Array(C * W).fill(32767);
+		// komórki jezdni we wkopie (envTrenchInit): bez poboczy (dalej teren na poziomie ulic obok, mur przy krawędzi);
+		// siatka terenu poza wkopem nie schodzi do jego dna (meshTerrainY)
+		const trFlag = new Uint8Array(C * W);
 		for (const cc of [c - 1, c, c + 1]) {
-			for (const { k, row } of e.rByChunk.get(cc) || []) {
+			for (const { k, row, i } of e.rByChunk.get(cc) || []) {
 				const z = e.roadZ.get(row);
 				if (!z) continue;
 				const sa = row[1 + k * 2], da = row[2 + k * 2], sb = row[3 + k * 2], db = row[4 + k * 2], za = z[k], zb = z[k + 1];
-				const half = (ROAD_W[row[0]] || 5) / 2 + 2.5, r = Math.ceil(half);
+				// odcinek we wkopie albo jego sąsiad (końce wkopu na rampach); dalsze odcinki tej drogi – zwykle, z poboczami
+				const tr = e.trench && e.trench.get(row);
+				let inTr = false;
+				if (tr) for (let j = Math.max(0, k - 1); j <= Math.min(tr.length - 1, k + 2); j++) if (!Number.isNaN(tr[j])) inTr = true;
+				const hwT = Math.max(e.rInfo[i].w || 5, ROAD_W[row[0]] || 5) / 2;
+				// szerokość jak rysowana jezdnia (szersza z danych i typowej) – dawniej typowa: między jezdniami dwujezdniowej
+				// drogi (np. DTŚ 14,5 m) zostawał pas terenu z pomiaru, a krawędzie jezdni wspinały się po nim klinami
+				const half = inTr ? hwT + 0.5 : hwT + 2.5, r = Math.ceil(half), core2 = (hwT + 0.5) ** 2;
 				const L = Math.hypot(sb - sa, db - da), n = Math.max(1, Math.ceil(L / 0.7));
 				for (let q = 0; q <= n; q++) {
 					const s = sa + ((sb - sa) * q) / n, d = da + ((db - da) * q) / n, zz = Math.round(za + ((zb - za) * q) / n);
@@ -687,11 +1009,155 @@
 						if (a * a + b * b > half * half + 0.5) continue;
 						const si = si0 + a, di = di0 + b;
 						// na skrzyżowaniu dróg – wyższa (dojazd do wiaduktu nad niższą ulicą)
-						if (si >= 0 && si < C && di >= 0 && di < W && zz > mask[si * W + di]) mask[si * W + di] = zz;
+						if (si >= 0 && si < C && di >= 0 && di < W) {
+							if (zz > mask[si * W + di]) mask[si * W + di] = zz;
+							if (zz < lowZ[si * W + di]) lowZ[si * W + di] = zz;
+							if (a * a + b * b <= core2) {
+								if (zz > coreHi[si * W + di]) coreHi[si * W + di] = zz;
+								if (zz < coreLo[si * W + di]) coreLo[si * W + di] = zz;
+								if (inTr) trFlag[si * W + di] = 1;
+							}
+						}
 					}
+				}
+				yield;
+			}
+		}
+		// łączniki pod mostami (wysokość z końców dróg): teren pod mostem w poziomie przejścia
+		for (const lk of this.envLinksZ()) {
+			if (!lk) continue;
+			const [ti, sa, da, sb, db, za, zb] = lk;
+			if (Math.max(sa, sb) < s0 - 12 || Math.min(sa, sb) > s0 + C + 12) continue;
+			const half = (ROAD_W[ti] || 5) / 2 + 2.5, rr = Math.ceil(half);
+			const L = Math.hypot(sb - sa, db - da), n = Math.max(1, Math.ceil(L / 0.7));
+			for (let q = 0; q <= n; q++) {
+				const ss = sa + ((sb - sa) * q) / n, dd = da + ((db - da) * q) / n, zz = Math.round(za + ((zb - za) * q) / n);
+				const si0 = Math.floor(ss - s0), di0 = Math.floor(dd + MASK_D);
+				for (let a = -rr; a <= rr; a++) for (let b = -rr; b <= rr; b++) {
+					if (a * a + b * b > half * half + 0.5) continue;
+					const si = si0 + a, di = di0 + b;
+					if (si < 0 || si >= C || di < 0 || di >= W) continue;
+					const ix = si * W + di;
+					if (mask[ix] === -32768 || zz < mask[ix]) mask[ix] = zz;
+					if (zz < lowZ[ix]) lowZ[ix] = zz;
 				}
 			}
 		}
+		yield;
+		const bridged = new Uint8Array(C * W);
+		for (let ix = 0; ix < mask.length; ix++) {
+			if (coreLo[ix] === 32767) continue;
+			if (coreHi[ix] - coreLo[ix] > 40) { mask[ix] = lowZ[ix]; bridged[ix] = 1; }
+			// w pasie jezdni – jej poziom (pobocze wyższej drogi obok nie podnosi niższej jezdni)
+			else mask[ix] = coreHi[ix];
+		}
+		if (!e.rBridged) e.rBridged = new Map();
+		e.rBridged.set(c, bridged);
+		if (!e.rTrench) e.rTrench = new Map();
+		for (const k of e.rTrench.keys()) if (Math.abs(k - c) > 12) e.rTrench.delete(k);
+		e.rTrench.set(c, trFlag);
+		if (!e.rCoreLo) e.rCoreLo = new Map();
+		for (const k of e.rCoreLo.keys()) if (Math.abs(k - c) > 12) e.rCoreLo.delete(k);
+		e.rCoreLo.set(c, coreLo);
+		/* Mury oporowe: jezdnia obok niższej (rampa wiaduktu nad ulicą w dole) – w pasie niższej jezdni do 7 m od krawędzi
+		   wyższej ponad 1,2 m niżej; przy końcach wiaduktów drogowych z mapy także rampa nad terenem (pomiar terenu ponad
+		   1,5 m niżej 4,5 m od krawędzi – wykop przy torach). Mur przy krawędzi wyższej jezdni od niższego poziomu do jej
+		   poziomu + balustrada 1 m; pobocze wyższej drogi po stronie muru nie podnosi terenu. Dawniej siatka terenu (węzły
+		   co ok. 10 m) rozmazywała różnicę poziomów w stromy klin, a rampa zjeżdżała po nim. */
+		const walls = [], D0 = e.dem;
+		if (D0 && D0.lidar) {
+			const abs = (z) => D0.base + z / 10 - D0.off, rel = (y) => Math.round((y + D0.off - D0.base) * 10);
+			const coreAt = (s, d) => {
+				const si = Math.floor(s - s0), di = Math.floor(d + MASK_D);
+				return si < 0 || si >= C || di < 0 || di >= W ? undefined : coreLo[si * W + di];
+			};
+			const trAt = (s, d) => {
+				const si = Math.floor(s - s0), di = Math.floor(d + MASK_D);
+				return si >= 0 && si < C && di >= 0 && di < W && trFlag[si * W + di] === 1;
+			};
+			const oEnds = [];
+			for (let cc = c - 2; cc <= c + 2; cc++) for (const orow of e.oByChunk.get(cc) || []) oEnds.push([orow[1], orow[2]], [orow[orow.length - 2], orow[orow.length - 1]]);
+			const nearO = (s1, d1) => oEnds.some(([s2, d2]) => Math.hypot(s2 - s1, d2 - d1) < 45);
+			const clear = [];
+			for (const cc of [c - 1, c, c + 1]) for (const { k, row, i } of e.rByChunk.get(cc) || []) {
+				const z = e.roadZ.get(row);
+				if (!z || row[0] > 6) continue; // bez ścieżek i chodników
+				const sa = row[1 + k * 2], da = row[2 + k * 2], sb = row[3 + k * 2], db = row[4 + k * 2], L = Math.hypot(sb - sa, db - da);
+				if (L < 0.5 || Math.abs(da) < 9 || Math.abs(db) < 9 || Math.max(sa, sb) < s0 - 1 || Math.min(sa, sb) > s0 + C + 1) continue;
+				const hw = Math.max(e.rInfo[i].w || 5, ROAD_W[row[0]] || 5) / 2, us = (sb - sa) / L, ud = (db - da) / L;
+				const trR = e.trench && e.trench.get(row);
+				for (const sg of [1, -1]) {
+					const ns = -ud * sg, nd = us * sg;
+					let cur = null;
+					for (let t = 0; t <= L + 1e-6; t += 1) {
+						const tt = Math.min(t, L), ps = sa + us * tt, pd = da + ud * tt, zA = z[k] + ((z[k + 1] - z[k]) * tt) / L;
+						if (ps < s0 || ps >= s0 + C) { cur = null; continue; }
+						// od 1,7 m za krawędzią (pas własnej jezdni w masce sięga 0,5 m dalej, z zaokrągleniem komórek – do ok. 1,4 m)
+						let lo = null, oLo = hw + 3.5, road = false, blocked = false, hiQ = -Infinity;
+						for (let o = hw + 1.7; o <= hw + 7.5; o += 0.5) {
+							const q = coreAt(ps + ns * o, pd + nd * o);
+							if (q === undefined) break;
+							if (q !== 32767 && q < zA - 12) {
+								// niższa jezdnia we wkopie (bez wkopu tej drogi) – ścianę stawia wkop, ta droga zostaje na górze
+								if (!trR && trAt(ps + ns * o, pd + nd * o)) { blocked = true; break; }
+								lo = q; oLo = o; road = true; break;
+							}
+							if (q !== 32767 && q <= zA + 12) { blocked = true; break; } // inna jezdnia w podobnym poziomie – bez muru
+							if (q !== 32767) { hiQ = q; break; } // wyższa jezdnia obok (ulica nad wkopem)
+						}
+						// ściana wkopu: od jezdni do poziomu ulic obok (+ balustrada)
+						if (lo === null && !blocked && trR) {
+							let rA = Number.isNaN(trR[k]) ? trR[k + 1] : Number.isNaN(trR[k + 1]) ? trR[k] : trR[k] + ((trR[k + 1] - trR[k]) * tt) / L;
+							if (hiQ > rA) rA = hiQ;
+							// dalej (8 m za krawędzią) niżej niż ulice – np. rampa zjazdu obok: mur do jej poziomu
+							const qs = ps + ns * (hw + 8), qd = pd + nd * (hw + 8), si = Math.floor(qs - s0), di = Math.floor(qd + MASK_D);
+							const mz = si >= 0 && si < C && di >= 0 && di < W ? mask[si * W + di] : -32768;
+							const far = mz !== -32768 ? mz : rel(this.demGround(qs, qd));
+							if (far < rA) rA = Math.max(zA + 15, far);
+							if (!Number.isNaN(rA) && rA > zA + 15) {
+								if (!cur) { cur = []; walls.push(cur); }
+								cur.push({ s: ps + ns * (hw + 0.3), d: pd + nd * (hw + 0.3), y0: abs(zA) - 0.3, y1: abs(rA) + 1.0, cap: abs(rA), ns, nd });
+								continue;
+							}
+						}
+						if (lo === null && oEnds.length && nearO(ps, pd)) {
+							const qs = ps + ns * (hw + 4.5), qd = pd + nd * (hw + 4.5), g = this.demGround(qs, qd);
+							if (abs(zA) - g > 1.5 && Math.abs(qd) > 7) lo = rel(g);
+						}
+						if (lo === null) { cur = null; continue; }
+						if (!cur) { cur = []; walls.push(cur); }
+						cur.push({ s: ps + ns * (hw + 0.3), d: pd + nd * (hw + 0.3), y0: abs(lo) - 0.3, y1: abs(zA) + 0.1 + 1.0 });
+						// między murem a niższą jezdnią – teren w jej poziomie; przy rampie – teren z pomiaru
+						for (let o = hw + 0.5; o <= oLo; o += 0.5) clear.push(ps + ns * o, pd + nd * o, road ? lo : -32768);
+					}
+				}
+				yield;
+			}
+			// pobocze za murem: teren z pomiaru (poza pasami jezdni)
+			for (let q = 0; q < clear.length; q += 3) {
+				const si = Math.floor(clear[q] - s0), di = Math.floor(clear[q + 1] + MASK_D);
+				for (const [a2, b2] of [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1]]) {
+					const ix = (si + a2) * W + di + b2;
+					if (si + a2 >= 0 && si + a2 < C && di + b2 >= 0 && di + b2 < W && coreLo[ix] === 32767) mask[ix] = clear[q + 2];
+				}
+			}
+		}
+		if (!e.rWalls) e.rWalls = new Map();
+		for (const k of e.rWalls.keys()) if (Math.abs(k - c) > 12) e.rWalls.delete(k);
+		// łączenie odcinków muru (kolejne odcinki drogi, przerwy do 2,5 m) – bez pojedynczych płyt; najkrótsze (do 4 m) pominięte
+		const ws = walls.filter((w) => w.length > 0);
+		for (let merged = true; merged; ) {
+			merged = false;
+			for (let i1 = 0; i1 < ws.length && !merged; i1++) for (let i2 = 0; i2 < ws.length && !merged; i2++) {
+				if (i1 === i2) continue;
+				const A = ws[i1], B = ws[i2], ea = A[A.length - 1];
+				const dist = (p1, p2) => Math.hypot(p1.s - p2.s, p1.d - p2.d);
+				if (dist(ea, B[0]) < 2.5) { ws[i1] = A.concat(B); ws.splice(i2, 1); merged = true; }
+				else if (dist(ea, B[B.length - 1]) < 2.5 && dist(A[0], B[0]) > 2.5) { ws[i1] = A.concat(B.slice().reverse()); ws.splice(i2, 1); merged = true; }
+			}
+		}
+		const wLen = (w) => w.reduce((L, q, j) => L + (j ? Math.hypot(q.s - w[j - 1].s, q.d - w[j - 1].d) : 0), 0);
+		e.rWalls.set(c, ws.filter((w) => w.length > 1 && wLen(w) >= 4));
 		// tory z mapy poza torowiskiem naszej linii (po drogach – mają pierwszeństwo): teren pod nimi na poziomie podtorza
 		// (nasyp do 2,5 m, wykop do 6 m)
 		const D = e.dem, th = this.route.env.th;
@@ -720,6 +1186,7 @@
 						if (!byTrack[ix] || zz < mask[ix]) { mask[ix] = zz; byTrack[ix] = 1; }
 					}
 				}
+				yield;
 			}
 			/* przejazdy w poziomie (droga z mapy przez tor z mapy, różnica poziomów do 2 m): jezdnia na wysokości główki
 			   szyny (podsypka i podkłady pod nawierzchnią przejazdu), rampy 10% wzdłuż drogi do 12 m od toru */
@@ -738,11 +1205,219 @@
 		e.rmasks.set(c, mask);
 		return mask;
 	};
+	/* łączniki dróg pod mostami naszej linii (envUnderLinks) z wysokością z pomiaru końców łączonych dróg (dm, jak
+	   env.rh): [ti, sa, da, sb, db, za, zb]; bez pomiaru – null. Dawniej łącznik leżał na terenie, a końce dróg (w
+	   przejściu pod mostem kilka metrów niżej) kończyły się rowem z uskokiem przed mostem. */
+	World.prototype.envLinksZ = function () {
+		const e = this.env;
+		if (e.linksZ) return e.linksZ;
+		const env = this.route.env;
+		if (!e.roadLinks) e.roadLinks = this.envUnderLinks(env.r, 1);
+		const endZ = (sx, dx) => {
+			for (const row of env.r) {
+				const z = e.roadZ.get(row);
+				if (!z) continue;
+				const n = (row.length - 1) / 2;
+				for (const k of [0, n - 1]) if (Math.hypot(row[1 + k * 2] - sx, row[2 + k * 2] - dx) < 0.6) return z[k];
+			}
+			return null;
+		};
+		e.linksZ = e.roadLinks.map((lk) => { const za = endZ(lk[1], lk[2]), zb = endZ(lk[3], lk[4]); return za === null || zb === null ? null : lk.concat([za, zb]); });
+		return e.linksZ;
+	};
+	/* Mury oporowe (liczone z maską dróg kawałka – envRoadMask): łamane [{ s, d, y0, y1 }] wzdłuż krawędzi jezdni. */
+	World.prototype.envRetainingWalls = function (c) {
+		const e = this.env;
+		if (!e || !e.dem || !e.dem.lidar) return [];
+		this.envRoadMask(c);
+		return (e.rWalls && e.rWalls.get(c)) || [];
+	};
+	World.prototype.buildEnvRetainingWalls = function (group, c) {
+		const walls = this.envRetainingWalls(c), r = this.route, e = this.env;
+		const portals = (e.trPortals || []).filter((q) => Math.floor(q.s / C) === c);
+		if (!walls.length && !portals.length) return;
+		const P = [], dark = [], cap = [];
+		const at = (q, y) => { R.sidePoint(r, q.s, q.d, tp); return [tp.x, y, tp.z]; };
+		for (const w of walls) for (let j = 1; j < w.length; j++) {
+			const a = w[j - 1], b = w[j];
+			const a0 = at(a, a.y0), a1 = at(a, a.y1), b0 = at(b, b.y0), b1 = at(b, b.y1);
+			P.push(...a0, ...b0, ...b1, ...a0, ...b1, ...a1);
+			// ściana wkopu: chodnik na koronie (7 m na zewnątrz, na poziomie ulic) – przykrywa przejście siatki terenu z dna
+			if (a.cap !== undefined && b.cap !== undefined && a.ns * b.ns + a.nd * b.nd > 0.7 && Math.hypot(a.s - b.s, a.d - b.d) < 3 && Math.abs(a.cap - b.cap) < 1) {
+				const o = (q, w) => ({ s: q.s + q.ns * w, d: q.d + q.nd * w });
+				const c0 = at(o(a, 0), a.cap + 0.04), c1 = at(o(b, 0), b.cap + 0.04), c2 = at(o(b, 7.2), b.cap + 0.04), c3 = at(o(a, 7.2), a.cap + 0.04);
+				cap.push(...c0, ...c1, ...c2, ...c0, ...c2, ...c3);
+			}
+		}
+		/* portale tuneli na końcach jezdni we wkopie: ściana czołowa w poprzek (filary po bokach, nadproże nad wlotem
+		   wysokości do 5,5 m) i ciemne wnętrze tunelu (8 m w głąb) */
+		const quad = (dst, A, B, Cq, Dq) => dst.push(...A, ...B, ...Cq, ...A, ...Cq, ...Dq);
+		for (const q of portals) {
+			const ns = -q.ud, nd = q.us, Wd = q.hw + 2, top = q.top + 1, open = Math.min(q.z + 5.5, q.top - 0.8);
+			const pt = (o, along, y) => at({ s: q.s + ns * o + q.us * along, d: q.d + nd * o + q.ud * along }, y);
+			quad(P, pt(-Wd, 0, q.z - 0.3), pt(-q.hw, 0, q.z - 0.3), pt(-q.hw, 0, top), pt(-Wd, 0, top));
+			quad(P, pt(q.hw, 0, q.z - 0.3), pt(Wd, 0, q.z - 0.3), pt(Wd, 0, top), pt(q.hw, 0, top));
+			quad(P, pt(-q.hw, 0, open), pt(q.hw, 0, open), pt(q.hw, 0, top), pt(-q.hw, 0, top));
+			const D8 = 12;
+			// płyta stropu portalu nad wlotem (16 m w głąb – zakrywa przejście terenu z dna wkopu do ulic nad tunelem)
+			quad(P, pt(-Wd - 3, 0, q.top + 0.05), pt(Wd + 3, 0, q.top + 0.05), pt(Wd + 3, 20, q.top + 0.05), pt(-Wd - 3, 20, q.top + 0.05));
+			quad(dark, pt(-q.hw, D8, q.z - 0.2), pt(q.hw, D8, q.z - 0.2), pt(q.hw, D8, open), pt(-q.hw, D8, open));
+			quad(dark, pt(-q.hw, 0.05, q.z - 0.2), pt(-q.hw, D8, q.z - 0.2), pt(-q.hw, D8, open), pt(-q.hw, 0.05, open));
+			quad(dark, pt(q.hw, 0.05, q.z - 0.2), pt(q.hw, D8, q.z - 0.2), pt(q.hw, D8, open), pt(q.hw, 0.05, open));
+			quad(dark, pt(-q.hw, 0.05, open), pt(q.hw, 0.05, open), pt(q.hw, D8, open), pt(-q.hw, D8, open));
+			quad(dark, pt(-q.hw, 0.05, q.z + 0.02), pt(q.hw, 0.05, q.z + 0.02), pt(q.hw, D8, q.z + 0.02), pt(-q.hw, D8, q.z + 0.02));
+		}
+		if (cap.length) {
+			const g3 = new T.BufferGeometry();
+			g3.setAttribute('position', new T.Float32BufferAttribute(cap, 3));
+			g3.computeVertexNormals();
+			if (!World.capM) World.capM = new T.MeshLambertMaterial({ color: '#a7a49d', side: T.DoubleSide });
+			const m3 = new T.Mesh(g3, World.capM);
+			m3.receiveShadow = true;
+			group.add(m3);
+		}
+		if (dark.length) {
+			const g2 = new T.BufferGeometry();
+			g2.setAttribute('position', new T.Float32BufferAttribute(dark, 3));
+			if (!World.tunnelM) World.tunnelM = new T.MeshBasicMaterial({ color: '#0b0c0e', side: T.DoubleSide });
+			group.add(new T.Mesh(g2, World.tunnelM));
+		}
+		if (!P.length) return;
+		const geo = new T.BufferGeometry();
+		geo.setAttribute('position', new T.Float32BufferAttribute(P, 3));
+		geo.computeVertexNormals();
+		if (!World.wallM) World.wallM = new T.MeshLambertMaterial({ color: '#aaa69d', side: T.DoubleSide });
+		const m = new T.Mesh(geo, World.wallM);
+		m.castShadow = true;
+		m.receiveShadow = true;
+		group.add(m);
+	};
+	World.prototype.roadBridged = function (s, d) {
+		const e = this.env;
+		if (!e || Math.abs(d) >= MASK_D) return false;
+		const c = Math.floor(s / C);
+		this.envRoadMask(c);
+		const b = e.rBridged && e.rBridged.get(c);
+		return !!b && b[Math.floor(s - c * C) * 2 * MASK_D + Math.floor(d + MASK_D)] === 1;
+	};
 	World.prototype.roadLevel = function (s, d) {
 		const e = this.env, D = e && e.dem;
 		if (!D || !D.lidar || Math.abs(d) >= MASK_D) return undefined;
 		const c = Math.floor(s / C), z = this.envRoadMask(c)[Math.floor(s - c * C) * 2 * MASK_D + Math.floor(d + MASK_D)];
 		return z === -32768 ? undefined : D.base + z / 10 - D.off;
+	};
+	/* Wysokość węzła siatki terenu (wiersze co 4 m, kolumny World.TERRAIN_D – daleko od toru co kilkadziesiąt metrów):
+	   teren, ale nie wyżej niż najniższa jezdnia (albo tor z mapy) w trójkątach przylegających do węzła. Inaczej płaskie
+	   trójkąty rozpięte nad drogą między wyższymi punktami obok wystawały ponad jej poziom z pomiaru, a nawierzchnia
+	   (surfY – nie niżej niż siatka) wspinała się po nich: drogi, chodniki i ścieżki falowały (do ok. 0,8 m). Węzły
+	   przy torze (do 8 m) bez zmian. */
+	/* kolumny siatki terenu kawałka c: World.TERRAIN_D, a przy wkopach drogowych (envTrenchInit) dodatkowo co 2,5 m w pasie
+	   wkopu ±6 m – ściany wkopu ostre zamiast doliny na szerokość kilku kolumn (daleko od toru co 60–80 m) */
+	World.prototype.envTerrainCols = function (c) {
+		const e = this.env, TD = World.TERRAIN_D;
+		if (!e || !e.trByChunk || !TD) return TD;
+		if (!e.tCols) e.tCols = new Map();
+		let cols = e.tCols.get(c);
+		if (cols) return cols;
+		const segs = e.trByChunk.get(c);
+		if (!segs || !segs.length) cols = TD;
+		else {
+			const add = [];
+			for (const [, da, , db, hw] of segs) {
+				const a = Math.min(da, db) - hw - 6, b = Math.max(da, db) + hw + 6;
+				for (let d = Math.ceil(a / 2.5) * 2.5; d <= b; d += 2.5) if (Math.abs(d) > 10 && d > TD[0] && d < TD[TD.length - 1]) add.push(d);
+			}
+			const all = [...TD, ...add].sort((x, y) => x - y);
+			cols = all.filter((d, j) => j === 0 || d - all[j - 1] > 0.8 || TD.includes(d));
+			cols = cols.filter((d, j) => j === 0 || d !== cols[j - 1]);
+		}
+		e.tCols.set(c, cols);
+		return cols;
+	};
+	World.prototype.meshTerrainY = function (s, d) {
+		const y = this.terrainY(s, d), e = this.env, D = e && e.dem, TD = this.envTerrainCols(Math.floor(s / C));
+		if (!D || !D.lidar || !TD || Math.abs(d) < 8 || Math.abs(d) >= MASK_D - 1) return y;
+		// za portalem tunelu (12 m w głąb, pod płytą portalu) – teren na poziomie jezdni (bez zbocza w otworze wlotu)
+		for (const q of e.trPortals || []) {
+			const a = (s - q.s) * q.us + (d - q.d) * q.ud, o = -(s - q.s) * q.ud + (d - q.d) * q.us;
+			if (a > -0.5 && a < 14.5 && Math.abs(o) < q.hw + 4.5) return Math.min(y, q.z - 0.2);
+		}
+		// węzeł we wkopie (do 1,5 m za krawędzią jezdni) – w dół do jezdni we wkopie; poza nim jezdnie we wkopie pomijane
+		/* węzeł do 4,5 m za krawędzią jezdni we wkopie – na dno: trójkąt siatki z węzłem na górze nie wchodzi przed mur
+		   (węzły co 2,5 × 4 m; dawniej trójkąty trawy przed ścianą); rów za murem przykrywa płyta chodnika (mury) */
+		const inTr = this.envInTrench(s, d, 4);
+		let j = 0;
+		while (j < TD.length - 1 && TD[j] < d - 0.01) j++;
+		const dl = Math.max(-MASK_D + 1, j > 0 ? TD[j - 1] : d), dr = Math.min(MASK_D - 1, j < TD.length - 1 ? TD[j + 1] : d);
+		let zMin = 32767;
+		for (let ss = Math.floor(s - 4); ss <= Math.floor(s + 4); ss++) {
+			const c = Math.floor(ss / C), mask = this.envRoadMask(c), row = (ss - c * C) * 2 * MASK_D, trF = !inTr && e.rTrench && e.rTrench.get(c);
+			for (let dd = Math.floor(dl + MASK_D); dd <= Math.floor(dr + MASK_D); dd++) {
+				const z = mask[row + dd];
+				if (z !== -32768 && z < zMin && !(trF && trF[row + dd])) zMin = z;
+			}
+		}
+		if (inTr) { const tz = this.envTrenchFloor(s, d); if (tz !== undefined) return Math.min(y, tz); }
+		return zMin === 32767 ? y : Math.min(y, D.base + zMin / 10 - D.off);
+	};
+	/* Droga przejazdu kolejowego na trasie rzeczywistej: prawdziwa ulica z mapy (ucięta przy torze) – koniec po jednej
+	   i po drugiej stronie toru przy przejeździe, połączone odcinkiem przez tory; z każdej strony do ok. 120 m ulicy.
+	   Wynik: pts ([s, d] od strony d < 0), cum, L, link [a, b] (łącznik – do narysowania jezdni), zone [a, b] – pas torów
+	   (tor pociągu i tory z mapy, ±3,2 m) wzdłuż drogi; null – brak pary końców (wtedy droga z gry w poprzek toru). */
+	World.prototype.envCrossingPath = function (cr) {
+		const env = this.route.env;
+		if (!env || !env.r) return null;
+		const ends = [];
+		env.r.forEach((row, i) => {
+			const n = (row.length - 1) / 2;
+			if (n < 2 || row[0] > 8) return;
+			for (const [k, k2] of [[0, 1], [n - 1, n - 2]]) {
+				const s = row[1 + k * 2], d = row[2 + k * 2];
+				if (Math.abs(s - cr.pos) > 30 || Math.abs(d) > 22 || Math.abs(d) < 3) continue;
+				// kierunek od toru: następny punkt dalej od osi
+				if (Math.abs(row[2 + k2 * 2]) <= Math.abs(d)) continue;
+				ends.push({ i, k, s, d, row, n, ti: row[0] });
+			}
+		});
+		let best = null;
+		for (const a of ends) for (const b of ends) {
+			if (a.d >= 0 || b.d <= 0) continue;
+			// odcinek a–b przecina oś blisko przejazdu; ta sama klasa drogi – premia
+			const sx = a.s + ((b.s - a.s) * -a.d) / (b.d - a.d);
+			const cost = Math.abs(sx - cr.pos) + (a.ti !== b.ti ? 6 : 0) + Math.abs(a.d) * 0.2 + b.d * 0.2;
+			if (Math.abs(sx - cr.pos) < 18 && (!best || cost < best.cost)) best = { a, b, cost };
+		}
+		if (!best) return null;
+		const side = (e) => {
+			const out = [];
+			let L = 0, prev = null;
+			const step = e.k === 0 ? 1 : -1;
+			for (let k = e.k; k >= 0 && k < e.n; k += step) {
+				const p = [e.row[1 + k * 2], e.row[2 + k * 2]];
+				if (prev) L += Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+				out.push(p);
+				prev = p;
+				if (L > 120) break;
+			}
+			return out; // od toru na zewnątrz
+		};
+		const A = side(best.a).reverse(), B = side(best.b);
+		const pts = A.concat(B), cum = [0];
+		for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+		const L = cum[cum.length - 1];
+		const at = (u) => {
+			let k = 0;
+			while (k < cum.length - 2 && cum[k + 1] < u) k++;
+			const t = (u - cum[k]) / ((cum[k + 1] - cum[k]) || 1);
+			return [pts[k][0] + (pts[k + 1][0] - pts[k][0]) * t, pts[k][1] + (pts[k + 1][1] - pts[k][1]) * t];
+		};
+		let za = Infinity, zb = -Infinity;
+		for (let u = 0; u <= L; u += 0.5) {
+			const [s, d] = at(u);
+			if (Math.abs(d) < 3.2 || this.envTracksAt(s).some((t) => Math.abs(t.d - d) < 3.2)) { za = Math.min(za, u); zb = Math.max(zb, u); }
+		}
+		if (za > zb) { za = cum[A.length - 1]; zb = cum[A.length]; }
+		return { pts, cum, L, at, link: [cum[A.length - 1], cum[A.length]], zone: [za, zb], w: (this.env.rInfo[best.a.i] && this.env.rInfo[best.a.i].w) || 6 };
 	};
 	World.prototype.onRoad = function (s, d) {
 		if (!this.env || Math.abs(d) >= MASK_D) return false;
@@ -854,7 +1529,7 @@
 		// długość od punktu nad torem w obie strony; wysokość: pełna w pasie torów, potem zjazd do terenu
 		let ci = 0;
 		P.forEach((p, k) => { if (Math.abs(p[1]) < Math.abs(P[ci][1])) ci = k; });
-		const cum = [0];
+		let cum = [0];
 		for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + Math.hypot(P[k][0] - P[k - 1][0], P[k][1] - P[k - 1][1]));
 		// pomost: z pomiaru (NMPT) albo typowo 7,2 m (drogowy) / 7,6 m (kolejowy) nad główką szyny
 		const zM = this.deckLevel(row), hTop = zM !== undefined ? zM : R.heightAt(r, P[ci][0]) + (rail ? 7.6 : 7.2);
@@ -871,9 +1546,62 @@
 		const Y = prof ? P.map(([s, d], k) => {
 			let y = Math.max(prof[k], this.terrainY(s, d) + 0.1);
 			// nad zelektryfikowanymi – spód pomostu (0,9 m pod wierzchem) min. 5,7 m: sieć obniżona pod wiaduktem mieści się
-			if (Math.abs(d) < 6 || this.envTrackGap(s, d) < 3) y = Math.max(y, R.heightAt(r, s) + (r.electrified ? 6.6 : 5.5) + (rail ? 0.4 : 0));
+			if (Math.abs(d) < 6 || this.envTrackGap(s, d) < 3) y = Math.max(y, R.heightAt(r, s) + (this.ownWire(s) ? 6.6 : 5.5) + (rail ? 0.4 : 0));
 			return y;
 		}) : P.map((_, k) => yOf(k));
+		/* koniec pomostu nisko nad terenem (zjazd): wierzch w poziomie dochodzącej jezdni (nawierzchnia + 0,1 m), zjazd
+		   wyrównany na ostatnich 20 m – z pomiaru (NMPT: balustrady, auta) koniec wypadał ok. 0,5 m wyżej niż ulica
+		   dalej i jezdnia urywała się progiem z bokami pomostu */
+		if (!rail && P.length > 2) for (const kE of [0, P.length - 1]) {
+			const tgt = this.surfY(P[kE][0], P[kE][1]) + 0.1, dz = tgt - Y[kE];
+			if (Math.abs(dz) < 0.05 || Math.abs(dz) > 8) continue;
+			// długość wyrównania: co najmniej 20 m, przy większej różnicy pochylenie zjazdu do 8%
+			let room = 0;
+			for (let k = kE, st2 = kE === 0 ? 1 : -1; k >= 0 && k < P.length; k += st2) {
+				if (Math.abs(P[k][1]) < 6 || this.envTrackGap(P[k][0], P[k][1]) < 3) break;
+				room = Math.abs(cum[k] - cum[kE]);
+			}
+			// dalej niż 10% na odcinku do toru – estakada / nasyp (bez ściągania pomostu w dół)
+			if (dz < 0 && -dz > 0.1 * room + 0.3) continue;
+			const LB = Math.min(Math.max(20, Math.abs(dz) / 0.08), Math.max(room, 1));
+			for (let k = 0; k < P.length; k++) {
+				const u = Math.abs(cum[k] - cum[kE]);
+				if (u >= LB || Math.abs(P[k][1]) <= 8) continue;
+				let y = Math.max(this.terrainY(P[k][0], P[k][1]) + 0.1, Y[k] + dz * (1 - u / LB));
+				// nad torami – skrajnia (jak w profilu z pomiaru)
+				if (this.envTrackGap(P[k][0], P[k][1]) < 3) y = Math.max(y, R.heightAt(r, P[k][0]) + (this.ownWire(P[k][0]) ? 6.6 : 5.5));
+				Y[k] = y;
+			}
+		}
+		/* wiadukt drogowy kończący się nad wykopem toru (w danych obiekt krótki – np. 11 m nad torem w głębokim
+		   wykopie; skarpy wykopu w grze 1:1,5 są szersze niż prawdziwe ściany oporowe): pomost przedłużony w kierunku
+		   jezdni, dopóki teren jest ponad 3 m niżej (do 40 m) – inaczej droga dojazdowa schodziła po skarpie na dno
+		   wykopu i wracała (zerwany dojazd, „ściany”); jezdnia z mapy pod przedłużeniem nie jest rysowana (inDeckExt) */
+		let xa = 0, xb = 0;
+		if (!rail && P.length > 1) {
+			const ext = (E, Pv, y) => {
+				const ux = E[0] - Pv[0], uy = E[1] - Pv[1], L = Math.hypot(ux, uy) || 1, out = [];
+				for (let t = 2; t <= 40; t += 2) {
+					const q = [E[0] + (ux / L) * t, E[1] + (uy / L) * t];
+					if (this.terrainY(q[0], q[1]) > y - 3) break;
+					out.push(q);
+				}
+				return out;
+			};
+			const n0 = P.length, yA = Y[0], yB = Y[n0 - 1];
+			const head = ext(P[0], P[1], yA).reverse(), tail = ext(P[n0 - 1], P[n0 - 2], yB);
+			if (head.length || tail.length) {
+				P.unshift(...head);
+				Y.unshift(...head.map(() => yA));
+				P.push(...tail);
+				Y.push(...tail.map(() => yB));
+				xa = head.length;
+				xb = tail.length;
+				ci += xa;
+				cum = [0];
+				for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + Math.hypot(P[k][0] - P[k - 1][0], P[k][1] - P[k - 1][1]));
+			}
+		}
 		// nasyp pod zjazdami: tam, gdzie pod pomostem nie ma toru (przęsło nad torami zostaje otwarte)
 		const G = P.map(([s, d]) => this.terrainY(s, d) + 0.05);
 		// droga lub ścieżka pod pomostem (poziom jezdni ponad 3 m niżej) – przęsło otwarte, bez nasypu
@@ -942,7 +1670,7 @@
 				}
 			}
 		}
-		return { w, P, cum, Y, G, embk, ems, piers, dirN };
+		return { w, P, cum, Y, G, embk, ems, piers, dirN, xa, xb };
 	};
 
 	/* Kontrola obiektów nad torami (wiadukty drogowe i kolejowe z mapy) – te same obliczenia co rysowanie
@@ -1635,12 +2363,15 @@
 
 	// kolor i materiał terenu tras rzeczywistych
 	World.prototype.envTerrainColor = function (s, d) {
+		// dno wkopu drogowego: utwardzone (szare) – w szczelinach między jezdniami i na rozwidleniach nie świeci trawa
+		if (this.envInTrench(s, d, 1)) return [0.3, 0.3, 0.31];
 		const k = this.areaAt(s, d);
 		const n = vnoise(s * 0.02, d * 0.02);
 		const c = AREA_RGB[k] || AREA_RGB[0];
 		return [c[0] + 0.08 * (n - 0.5), c[1] + 0.07 * (n - 0.5), c[2] + 0.04 * (n - 0.5)];
 	};
 	World.prototype.envTerrainMat = function (s, d) {
+		if (this.envInTrench(s, d, 1)) return [0, 0, 1];
 		const k = this.areaAt(s, d);
 		const sd = AREA_SAND[k] || 0;
 		return [1 - sd, sd, 0];
@@ -1710,10 +2441,20 @@
 		if (e.lane) return e.lane;
 		const n = Math.ceil((this.route.length - LANE_S0) / LANE_STEP) + 1;
 		const cand = [], cost = [], back = [];
+		// tory z odstawionymi wagonami (envPlanWagons): zajęte odcinki [od, do] w s dla każdego toru z mapy – pociąg z
+		// przeciwka nie jedzie przez stojący skład
+		const busy = new Map();
+		for (const list of (e.wagons && e.wagons.values()) || []) for (const w of list) {
+			if (w.i === undefined) continue;
+			const half = w.len / 2 + 4;
+			if (!busy.has(w.i)) busy.set(w.i, []);
+			busy.get(w.i).push([w.s - half, w.s + half]);
+		}
+		const occupied = (t, s) => (busy.get(t.i) || []).some(([a, b]) => s > a && s < b);
 		for (let i = 0; i < n; i++) {
 			const s = LANE_S0 + i * LANE_STEP;
 			// stan 0 – brak toru; dalej tory po lewej
-			const ds = [NaN].concat(this.envTracksAt(s).filter((t) => !(t.side & 4) && Math.abs(t.d) > 3 && t.d > -45 && t.d < 45).map((t) => t.d + (t.side & 1 ? 1000 : 0)));
+			const ds = [NaN].concat(this.envTracksAt(s).filter((t) => !(t.side & 4) && Math.abs(t.d) > 3 && t.d > -45 && t.d < 45 && !occupied(t, s)).map((t) => t.d + (t.side & 1 ? 1000 : 0)));
 			cand.push(ds);
 			// koszt: odległość od rozstawu 4,5 m po lewej (po prawej – gdy pociąg gracza jedzie lewym torem – z dopłatą)
 			const unary = ds.map((d) => {
@@ -1976,12 +2717,22 @@
 		let diff = this.demGround(s, d) - F;
 		// skarpa: przejście na szerokości 1,5 × różnica + 8 m (nasyp / wykop), stacje płaskie
 		const wB = this.env.dem.lidar ? 0.5 * Math.abs(diff) + 2 : 1.5 * Math.abs(diff) + 8; // NMT: skarpy są w pomiarze
-		diff *= smoothstep(0, wB, beyond) * (1 - fl);
-		let y = F + diff - (this.areaAt(s, d) === 9 && Math.abs(d) > 10 ? 1.1 : 0);
+		/* pod przęsłem mostu nad wodą (pomiar lidarowy): teren z pomiaru także przy osi – dawniej korona torowiska
+		   (poziom toru) biegła pod mostem jak grobla w poprzek rzeki (Wisła w Toruniu: ściana ok. 10 m nad wodą) */
+		let wk = 0;
+		if (this.env.dem.lidar && Math.abs(d) < 40) for (const b of this.route.bridges) {
+			if (b.kind !== 'water' || s < b.from || s > b.to) continue;
+			wk = Math.max(wk, smoothstep(b.from, b.from + 8, s) * (1 - smoothstep(b.to - 8, b.to, s)));
+		}
+		diff *= Math.max(wk, smoothstep(0, wB, beyond) * (1 - fl));
+		let y = F + diff - (this.areaAt(s, d) === 9 && (Math.abs(d) > 10 || wk > 0.5) ? 1.1 : 0);
+		// dno pod wodą nie wyżej niż 0,9 m pod poziomem wody (łachy z zaszumionego pomiaru przebijały lustro)
+		if (Math.abs(d) > 10 || wk > 0.5) { const wl = this.envWaterLevel(s, d); if (wl !== undefined) y = Math.min(y, wl - 0.9); }
 		if (dp > 0) y = Math.min(y, F - dp);
 		// droga lub tor z mapy z pomiaru: teren w ich pasie na ich wysokości (za koroną torowiska; w jej obrębie – gdy
 		// tor leży niżej niż korona); na stacjach – poza peronami (od 14 m od osi)
-		if ((fl < 0.5 && Math.abs(d) >= 8) || Math.abs(d) >= 14) {
+		// pod przęsłem naszego mostu także przy torze: droga przechodząca pod mostem (łącznik) – teren w jej poziomie
+		if ((fl < 0.5 && Math.abs(d) >= 8) || Math.abs(d) >= 14 || (Math.abs(d) < 14 && this.underBridge(s, d))) {
 			const ry = this.roadLevel(s, d);
 			if (ry !== undefined && (beyond > 1.5 || ry - 0.12 < y - 0.3)) y = ry - 0.12;
 		}
@@ -2028,23 +2779,52 @@
 		const base = this.envTrackY(s, d, crossing, row[0] & 2);
 		return base + Math.max(0, y - base) * nearK;
 	};
+	/* udział „toru ukośnego” (w poprzek naszej linii) w punkcie odcinka k toru z mapy i: w węzłach z kierunku między
+	   sąsiednimi węzłami (|Δd| / |Δs| 0,12–0,3 – przejście płynne), wzdłuż odcinka liniowo. Dawniej rozstrzygał każdy
+	   odcinek osobno (próg 0,2) – na łukach rozchodzących się torów kolejne odcinki przeskakiwały między wzorami
+	   wysokości i szyny miały uskoki po kilkadziesiąt centymetrów co kilka metrów. */
+	World.prototype.envRowCross = function (i, k, s, d) {
+		const e = this.env, row = this.route.env.t[i];
+		if (!e.rowCross) e.rowCross = new Map();
+		let w = e.rowCross.get(i);
+		if (!w) {
+			const n = (row.length - 1) / 2;
+			w = new Float32Array(n);
+			for (let v = 0; v < n; v++) {
+				const a = Math.max(0, v - 1), b = Math.min(n - 1, v + 1);
+				const ds = Math.abs(row[1 + b * 2] - row[1 + a * 2]), dd = Math.abs(row[2 + b * 2] - row[2 + a * 2]);
+				w[v] = smoothstep(0.12, 0.3, dd / (ds || 1e-9));
+			}
+			e.rowCross.set(i, w);
+		}
+		const sa0 = row[1 + k * 2], da0 = row[2 + k * 2], sb0 = row[3 + k * 2], db0 = row[4 + k * 2];
+		const L2 = (sb0 - sa0) ** 2 + (db0 - da0) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((s - sa0) * (sb0 - sa0) + (d - da0) * (db0 - da0)) / L2));
+		return w[k] + (w[k + 1] - w[k]) * t;
+	};
 	World.prototype.envRowY = function (i, k, s, d) {
 		const row = this.route.env.t[i];
-		const sa0 = row[1 + k * 2], da0 = row[2 + k * 2], sb0 = row[3 + k * 2], db0 = row[4 + k * 2];
-		const crossing = Math.abs(db0 - da0) > 0.2 * Math.abs(sb0 - sa0);
+		const wc = this.envRowCross(i, k, s, d);
 		const yl = this.envRowMeasured(i, k, s, d);
 		if (yl !== undefined) {
 			/* pomiar (NMT): tory przy osi (do 6 m) – poziom naszej linii; dalej zmierzona wysokość, przy czym różnice do
 			   0,5 m wyrównane do naszej linii (perony, rozjazdy stacji bez uskoków; te tory tworzą torowisko linii), od
-			   1,2 m – pełny pomiar (inna linia) */
+			   1,2 m – pełny pomiar (inna linia); przejście przy 5–7,5 m od osi płynne */
 			const h = R.heightAt(this.route, s);
-			// tor ukośny pod naszym mostem: nie wyżej niż dno wykopu (przejście, którego pomiar nie widzi)
-			if (crossing) { const dp = yl < h + 2 ? this.dip(s, d, true) : 0; return dp > 0.5 ? Math.min(yl, h - dp) : yl; }
+			let yc = yl;
+			if (wc > 0) {
+				// tor ukośny pod naszym mostem: nie wyżej niż dno wykopu (przejście, którego pomiar nie widzi)
+				const dp = yl < h + 2 ? this.dip(s, d, true) : 0;
+				if (dp > 0.5) yc = Math.min(yl, h - dp);
+			}
 			const diff = yl - h;
-			if (Math.abs(d) < 6) return h;
-			return h + diff * smoothstep(0.5, 1.2, Math.abs(diff));
+			const yp = h + diff * smoothstep(0.5, 1.2, Math.abs(diff)) * smoothstep(5, 7.5, Math.abs(d));
+			return yp + (yc - yp) * wc;
 		}
-		return this.envTrackY(s, d, crossing, row[0] & 2, this.envRowZ(i, k, s, d));
+		const z = this.envRowZ(i, k, s, d);
+		if (wc <= 0) return this.envTrackY(s, d, false, row[0] & 2, z);
+		if (wc >= 1) return this.envTrackY(s, d, true, row[0] & 2, z);
+		const y0 = this.envTrackY(s, d, false, row[0] & 2, z), y1 = this.envTrackY(s, d, true, row[0] & 2, z);
+		return y0 + (y1 - y0) * wc;
 	};
 	// wysokość główki szyny toru z mapy z pomiaru NMT (env.th, dm ponad dem.base) w układzie gry; brak – undefined
 	World.prototype.envRowMeasured = function (i, k, s, d) {
@@ -2149,6 +2929,13 @@
 	     słupy po obu stronach, trzy i więcej – bramka nad grupą torów z wieszakami nad każdym torem.
 	   Przewody jako cienkie pasy (widoczne z bliska) i linie (z daleka). */
 	const CAT = { cw: 5.6, sys: 1.4, sag: 0.9, stagger: 0.25 };
+	// sieć nad torem pociągu w miejscu s: odcinki z siecią z generatora (wire), bez nich – cała trasa wg electrified
+	World.prototype.ownWire = function (s) {
+		const r = this.route;
+		if (r.wire) return r.wire.some(([a, b]) => s >= a && s <= b);
+		return !!r.electrified;
+	};
+
 	World.prototype.envPoles = function () {
 		const e = this.env;
 		if (e.poles) return e.poles;
@@ -2256,11 +3043,26 @@
 		if (e.ovh.has(c)) return e.ovh.get(c);
 		const out = [];
 		for (const cc of [c - 1, c, c + 1]) {
-			for (const row of e.oByChunk.get(cc) || []) { const pl = this.overpassPlan(row, false); out.push({ P: pl.P, Y: pl.Y, w: pl.w }); }
+			for (const row of e.oByChunk.get(cc) || []) { const pl = this.overpassPlan(row, false); out.push({ P: pl.P, Y: pl.Y, w: pl.w, xa: pl.xa, xb: pl.xb }); }
 			for (const row of (e.roByChunk && e.roByChunk.get(cc)) || []) { const pl = this.overpassPlan(row, true); out.push({ P: pl.P, Y: pl.Y, w: pl.w }); }
 		}
 		e.ovh.set(c, out);
 		return out;
+	};
+	// punkt (s, d) pod przedłużeniem wiaduktu drogowego nad wykopem (overpassPlan: xa, xb) – jezdnia z mapy tu nie jest rysowana
+	World.prototype.inDeckExt = function (s, d) {
+		if (!this.env) return false;
+		for (const o of this.envOverheads(Math.floor(s / C))) {
+			if (!o.xa && !o.xb) continue;
+			const P = o.P, n = P.length;
+			for (let k = 0; k + 1 < n; k++) {
+				if (!(k < o.xa || k >= n - 1 - o.xb)) continue;
+				const a = P[k], b = P[k + 1], ds = b[0] - a[0], dd = b[1] - a[1], L2 = ds * ds + dd * dd || 1;
+				const t = Math.max(0, Math.min(1, ((s - a[0]) * ds + (d - a[1]) * dd) / L2));
+				if (Math.hypot(s - (a[0] + ds * t), d - (a[1] + dd * t)) < o.w / 2 + 0.5) return true;
+			}
+		}
+		return false;
 	};
 	World.prototype.deckBottom = function (s, d, list) {
 		let best = Infinity;
@@ -2322,7 +3124,7 @@
 		const inChunk = (s) => s >= s0 && s < s1;
 		// tor pociągu
 		for (let p = 0; p + 1 < poles.length; p++) {
-			if (!inChunk(poles[p])) continue;
+			if (!inChunk(poles[p]) || !this.ownWire(poles[p]) || !this.ownWire(poles[p + 1])) continue;
 			span([poles[p], 0, p, R.heightAt(r, poles[p])], [poles[p + 1], 0, p + 1, R.heightAt(r, poles[p + 1])]);
 		}
 		// tory zelektryfikowane z mapy (przęsła, których pierwszy słup jest w tym kawałku)
@@ -2389,8 +3191,11 @@
 			const h = R.heightAt(r, s);
 			// tory zelektryfikowane w tym miejscu (tor pociągu + z mapy): te same punkty podwieszenia co przęsła – każde
 			// przęsło ma słup na obu końcach (wcześniej tory dobierane osobno – część przewodów wisiała bez słupów)
-			const ds = [0];
+			// tor pociągu – tylko na odcinku z siecią (słup przy końcu przęsła: tu albo u sąsiada)
+			const own = this.ownWire(s) && (this.ownWire(poles[p - 1] ?? s) || this.ownWire(poles[p + 1] ?? s));
+			const ds = own ? [0] : [];
 			for (const d of supAt.get(p) || []) if (Math.abs(d) < 60 && ds.every((x) => Math.abs(x - d) > 1.2)) ds.push(d);
+			if (!ds.length) continue;
 			ds.sort((a, b) => a - b);
 			const groups = [];
 			for (const d of ds) { const g = groups[groups.length - 1]; if (g && d - g[g.length - 1] <= 7.5) g.push(d); else groups.push([d]); }
@@ -2578,7 +3383,9 @@
 	};
 
 	// ---------- budowa kawałka ----------
-	World.prototype.buildEnvChunk = function (group, c, dyn) {
+	/* Generator: kolejne etapy budowy rozdzielone yield – kawałek buduje się przez kilka klatek (World.update),
+	   do sceny trafia w całości. Między krokami nie buduje się nic innego (pule envLampSink / envDeckSink). */
+	World.prototype.buildEnvChunk = function* (group, c, dyn) {
 		const e = this.env;
 		if (!e) return;
 		const M = envMaterials();
@@ -2587,22 +3394,29 @@
 		this.envDeckSink = { mk: { p: [], c: [] }, deck: { p: [], c: [] }, lamps: [], signs: [] };
 		this.buildEnvOverpasses(group, e.oByChunk.get(c) || []);
 		this.buildEnvOverpasses(group, e.roByChunk.get(c) || [], true);
+		yield;
 		const rs = e.rByChunk.get(c) || [];
 		rs.c0 = c * C;
 		if (dyn) this.buildEnvLamps(group, rs, dyn);
-		this.buildEnvBuildings(group, e.bByChunk.get(c) || [], M);
+		yield* this.buildEnvBuildings(group, e.bByChunk.get(c) || [], M);
+		yield;
 		const rsegs = (e.rByChunk.get(c) || []).slice();
 		rsegs.c0 = c * C;
-		this.buildEnvRoads(group, rsegs, M);
+		yield* this.buildEnvRoads(group, rsegs, M);
+		this.buildEnvRetainingWalls(group, c);
 		this.buildEnvWater(group, c, e.wByChunk.get(c) || []);
+		yield;
 		this.buildEnvBridges(group, e.obByChunk.get(c) || []);
 		this.deckDressFlush(group, this.envDeckSink);
 		this.envDeckSink = null;
-		this.buildEnvTracks(group, e.tByChunk.get(c) || []);
+		yield;
+		yield* this.buildEnvTracks(group, e.tByChunk.get(c) || []);
+		yield;
 		this.buildEnvWagons(group, e.wagons.get(c));
 		this.buildEnvBuffers(group, e.kByChunk.get(c));
 		this.buildEnvSwitches(group, e.swByChunk.get(c));
 		if (dyn) this.buildEnvYardLights(group, c, dyn);
+		yield;
 		this.buildEnvPlatforms(group, e.pByChunk.get(c) || []);
 		this.buildEnvRoofs(group, e.rfByChunk.get(c) || []);
 		if (dyn && this.envLampSink.length) dyn.push({ type: 'lamps', lamps: this.envLampSink });
@@ -2720,7 +3534,8 @@
 
 	/* Tory z mapy obok toru gracza (stacyjne, bocznice, linie równoległe): podsypka, szyny i podkłady scalone
 	   w trzy siatki na kawałek. Odcinki pokrywające się z torem gracza, drugim torem i peronami z gry są pomijane. */
-	World.prototype.buildEnvTracks = function (group, segs) {
+	// generator (krok co odcinek toru) – zob. buildEnvChunk
+	World.prototype.buildEnvTracks = function* (group, segs) {
 		if (!segs.length) return;
 		const r = this.route, M = World.materials();
 		const bal = { p: [] }, balOld = { p: [] }, rails = { p: [] }, rust = { p: [] };
@@ -2744,6 +3559,7 @@
 		let dzOf = null, yWide = null;
 		const tzAll = this.route.env.tz;
 		for (const { i, k, row } of segs) {
+			yield;
 			const onBridge = row[0] & 2, disused = row[0] & 4, side = (row[0] & 1) || disused;
 			const sa0 = row[1 + k * 2], da0 = row[2 + k * 2], sb0 = row[3 + k * 2], db0 = row[4 + k * 2];
 			const crossing = Math.abs(db0 - da0) > 0.2 * Math.abs(sb0 - sa0);
@@ -2819,11 +3635,14 @@
 		const sl = (list, material, sc, geo) => {
 			if (!list.length) return;
 			const inst = new T.InstancedMesh(geo || NS.util.GEO.box, material, list.length);
-			const m4 = new T.Matrix4(), qt = new T.Quaternion(), p3 = new T.Vector3(), upV = new T.Vector3(0, 1, 0);
+			const m4 = new T.Matrix4(), qt = new T.Quaternion(), p3 = new T.Vector3(), upV = new T.Vector3(0, 1, 0), shade = new T.Color();
 			list.forEach(([s, d, ang, dz], i) => {
 				R.sidePoint(r, s, d, tp);
 				qt.setFromAxisAngle(upV, -tp.heading - ang);
 				inst.setMatrixAt(i, m4.compose(p3.set(tp.x, tp.y - 0.27 - (dz || 0), tp.z), qt, sc));
+				// lekko różne odcienie podkładów (wiek, zabrudzenie)
+				const hs = NS.util.hash(s * 1.37 + d * 3.1);
+				inst.setColorAt(i, shade.setScalar(hs < 0.08 ? 0.72 : 0.9 + NS.util.hash(s * 2.11 + d) * 0.16));
 			});
 			inst.receiveShadow = true;
 			group.add(inst);
@@ -2847,6 +3666,20 @@
 	World.prototype.envRoofAt = function (s, d) {
 		const e = this.env;
 		return !!e && !!e.rfAll && e.rfAll.some((o) => s > o.s0 - 0.5 && s < o.s1 + 0.5 && inPoly(o.pts, s, d));
+	};
+	// spód zadaszenia z mapy nad punktem (s, d) – wysokość nad główką szyny (jak buildEnvRoofs); brak dachu – undefined
+	World.prototype.envRoofUnder = function (s, d) {
+		const e = this.env;
+		if (!e || !e.rfAll) return undefined;
+		let best;
+		for (const o of e.rfAll) {
+			if (!(s > o.s0 - 0.5 && s < o.s1 + 0.5 && inPoly(o.pts, s, d))) continue;
+			const over = o.overTrack !== undefined ? o.overTrack : o.pts.some((p) => Math.abs(p[1]) < 1.8);
+			const hRail = over ? Math.max(8.5, o.h || 0) : o.h > 2.5 ? Math.min(7, o.h + 0.77) : 4.4;
+			const y = hRail - 0.3;
+			if (best === undefined || y < best) best = y;
+		}
+		return best;
 	};
 	// czy peron stacji ma zadaszenie z mapy (wtedy bez wiaty z gry)
 	World.prototype.envRoofOver = function (st) {
@@ -3192,7 +4025,10 @@
 				const P = st.platform, sg = P.side, a = st.platformStart, b = st.platformEnd, back = P.edge + P.width - 0.05;
 				const near = clip(pts, (p) => sg * p[1] - P.edge);
 				const parts = [clip(near, (p) => a - p[0]), clip(near, (p) => p[0] - b), clip(clip(clip(near, (p) => p[0] - a), (p) => b - p[0]), (p) => sg * p[1] - back)];
-				parts.forEach((q, k) => { if (q.length >= 3) draw(q, (s2) => R.heightAt(r, s2) - 0.005, k === 0 ? [a] : k === 1 ? [b] : [a, b]); });
+				// wysokość jak model peronu stacji (przesunięty o różnicę względem 0,76 m – peron niski, np. 0,30 m z PKP PLK);
+				// dawniej zawsze 0,76 m – ławki, kosze, wiata i pasażerowie modelu „wpadały” w dorysowaną płytę
+				const dh = typeof P.h === 'number' ? P.h - 0.76 : 0;
+				parts.forEach((q, k) => { if (q.length >= 3) draw(q, (s2) => R.heightAt(r, s2) - 0.005 + dh, k === 0 ? [a] : k === 1 ? [b] : [a, b]); });
 				continue;
 			}
 			if (pts.some(([s, d]) => this.envOccupied(s, d, 0.3))) continue;
@@ -3211,7 +4047,15 @@
 				if (poly.some(([s, d]) => this.envOccupied(s, d, 0.3))) continue;
 			}
 			const ph = this.route.env.ph, D = this.env.dem, yTop = ph && ph[i] >= 0 && D && D.lidar ? D.base + ph[i] / 10 - D.off : null;
-			draw(poly, (s, d) => (yTop !== null ? yTop - 0.77 : this.envTrackY(s, d, false, false)));
+			// bez pomiaru: wysokość peronów pobliskiej stacji (PKP PLK, np. 0,30 m), inaczej typowe 0,76 m
+			let hSt = 0.77;
+			if (yTop === null) {
+				const cs = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+				const st = r.stations.find((x) => x.platform && typeof x.platform.h === 'number' && cs > x.platformStart - 80 && cs < x.platformEnd + 80);
+				if (st) hSt = st.platform.h + 0.01;
+			}
+			pts.dy = hSt - 0.77; // wyposażenie (latarnie, tablice) na tej samej wysokości
+			draw(poly, (s, d) => (yTop !== null ? yTop - 0.77 : this.envTrackY(s, d, false, false) + hSt - 0.77));
 		}
 		// wyposażenie: latarnie co 30 m wzdłuż osi peronu i tablice z nazwą najbliższej stacji
 		for (const pts of deco) {
@@ -3224,12 +4068,14 @@
 			for (let s = s0 + 12; s < s1 - 6; s += 30) {
 				const g = new T.Group();
 				this.place(g, s, dm);
+				g.position.y += pts.dy || 0;
 				lamps.push(this.platformLamp(g, 0, 0, dm > 0 ? 1 : -1));
 				group.add(g);
 			}
 			for (const f of [0.3, 0.7]) {
 				const s = s0 + (s1 - s0) * f, g = new T.Group();
 				this.place(g, s, dm);
+				g.position.y += pts.dy || 0;
 				this.nameBoard(g, st.name, 4.2, 0.8, 0, 3.0, 0, false);
 				g.add(box(0.08, 2.75, 0.08, mat('#5d6670'), 0, 1.6, -1.7));
 				g.add(box(0.08, 2.75, 0.08, mat('#5d6670'), 0, 1.6, 1.7));
@@ -3254,7 +4100,8 @@
 		}
 	};
 
-	World.prototype.buildEnvBuildings = function (group, list, M) {
+	// generator (krok co budynek) – zob. buildEnvChunk
+	World.prototype.buildEnvBuildings = function* (group, list, M) {
 		if (!list.length) return;
 		const r = this.route;
 		const fa = { p: [], uv: [], c: [] }, pl = { p: [], uv: [], c: [] };
@@ -3266,6 +4113,7 @@
 		const Z = [0, 0];
 		const reserved = (this.env && this.env.reserved) || [];
 		for (const b of list) {
+			yield;
 			if (reserved.some((q) => b.s1 > q.s0 && b.s0 < q.s1 && b.d1 > q.d0 && b.d0 < q.d1)) continue;
 			const row = b.row, n = b.n, kind = row[0], h = row[1] / 10, roofS = row[2];
 			const seed = b.i * 1.37 + b.cs * 0.013;
@@ -3287,7 +4135,11 @@
 			}
 			cx /= n; cz /= n;
 			base -= 0.3;
-			const top = base + 0.3 + h;
+			// budynek na zboczu (podstawa w najniższym punkcie): dach co najmniej 2,5 m ponad najwyższym punktem terenu pod
+			// obrysem – inaczej górna strona chowała się w terenie („zapadnięty” budynek przy wykopie lub nasypie)
+			let topG = -Infinity;
+			for (let k = 0; k < n; k++) topG = Math.max(topG, this.terrainY(row[3 + k * 2], row[4 + k * 2]));
+			const top = Math.max(base + 0.3 + h, topG + Math.min(h, 2.5));
 			/* nad torami (hala peronowa, zadaszenie, pomost – w danych jako budynek): sam dach na zmierzonej wysokości,
 			   widoczny też od spodu, bez ścian */
 			let overTrack = false;
@@ -3613,8 +4465,10 @@
 	   przykrywałaby jezdnie, chodniki i place). Węzły siatki z pamięci podręcznej. */
 	const tpS = {};
 	World.prototype.surfY = function (s, d) {
-		const y = this.terrainY(s, d), D = World.TERRAIN_D;
+		const y = this.terrainY(s, d), D = this.envTerrainCols(Math.floor(s / C));
 		if (!D || d <= D[0] || d >= D[D.length - 1]) return y;
+		// jezdnia we wkopie: na swoim poziomie (siatka przy ścianie wkopu wznosi się ku ulicom obok)
+		if (this.envInTrench(s, d, 0)) return y;
 		let j = 1;
 		while (D[j] <= d) j++;
 		j--;
@@ -3623,11 +4477,11 @@
 		if (!e.meshY || e.meshY.size > 200000) e.meshY = new Map();
 		// węzeł siatki terenu: położenie w świecie (x, z) i wysokość – jak w ribbon() (wiersze co 4 m, kolumny D)
 		const node = (a, b) => {
-			const key = a * 64 + b;
+			const key = a * 4096 + Math.round(D[b] * 4) + 2400;
 			let n = e.meshY.get(key);
 			if (n === undefined) {
 				R.sidePoint(r, a * 4, D[b], tpS);
-				n = [tpS.x, tpS.z, this.terrainY(a * 4, D[b])];
+				n = [tpS.x, tpS.z, this.meshTerrainY(a * 4, D[b])]; // jak siatka terenu (ribbon)
 				e.meshY.set(key, n);
 			}
 			return n;
@@ -3772,7 +4626,7 @@
 			const j = rows.findIndex((p, i) => rInf[i].ti === lk[0] && p.length > 1 && (near(p[0]) || near(p[p.length - 1])));
 			rows.push([a, b]);
 			rInf.push(j >= 0 ? rInf[j] : { ti: lk[0], w: ROAD_W[lk[0]] || 5, lanes: 2, surf: 0, sw: 0, one: 0 });
-			rZ.push(null);
+			rZ.push(null); // (wysokość łącznika – niżej, z envLinksZ)
 		}
 		const rc = rows.map((p) => {
 			const c = [0];
@@ -3916,6 +4770,21 @@
 				pts.splice(k, 2, [(pts[k][0] + pts[k + 1][0]) / 2, (pts[k][1] + pts[k + 1][1]) / 2]);
 				seg.splice(k, 1);
 				k = Math.max(0, k - 2);
+			}
+			/* wyrównanie przebiegu: drobne załamania z danych (punkty co kilka metrów, zaokrąglenia) – punkt wewnętrzny
+			   z łagodnym skrętem (do 30°) przesunięty w stronę prostej między sąsiadami (dwa przebiegi); końce ciągu
+			   (skrzyżowania) i wyraźne zakręty bez zmian */
+			for (let it = 0; it < 2; it++) {
+				const q = pts.map((p) => p.slice());
+				for (let k = 1; k + 1 < pts.length; k++) {
+					const a = q[k - 1], b = q[k], c = q[k + 1];
+					const l1 = Math.hypot(b[0] - a[0], b[1] - a[1]), l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+					if (l1 < 0.05 || l2 < 0.05) continue;
+					const cos = ((b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1])) / (l1 * l2);
+					if (cos < 0.866) continue;
+					const mx = (a[0] * l2 + c[0] * l1) / (l1 + l2), my = (a[1] * l2 + c[1] * l1) / (l1 + l2);
+					pts[k] = [b[0] + (mx - b[0]) * 0.5, b[1] + (my - b[1]) * 0.5];
+				}
 			}
 			const n = pts.length, cum = [0];
 			for (let k = 1; k < n; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
@@ -4091,7 +4960,21 @@
 			(ch.zeb || (ch.zeb = [])).push(t);
 			put(zByChunk, Math.floor(pc[0] / C), { ch, t });
 		}
-		e.streets = { chains, juncs, chByChunk, jByChunk, zByChunk };
+		// wysokość jezdni drogi źródłowej odcinka ciągu (inf – obiekt atrybutów drogi) w punkcie (s, d): rzut na jej łamaną
+		const infRow = new Map(rInf.map((o, i) => [o, i]));
+		const rowZAt = (inf, s0, d0) => {
+			const i = infRow.get(inf), p = rows[i], z = rZ[i], D = e.dem;
+			if (i === undefined || !z || !p || p.length < 2 || !D) return null;
+			let best = null, bd = Infinity;
+			for (let k = 0; k + 1 < p.length && k + 1 < z.length; k++) {
+				const a = p[k], b = p[k + 1], ds = b[0] - a[0], dd = b[1] - a[1], L2 = ds * ds + dd * dd || 1;
+				const t = Math.max(0, Math.min(1, ((s0 - a[0]) * ds + (d0 - a[1]) * dd) / L2));
+				const dist = Math.hypot(s0 - a[0] - ds * t, d0 - a[1] - dd * t);
+				if (dist < bd) { bd = dist; best = z[k] + (z[k + 1] - z[k]) * t; }
+			}
+			return best === null ? null : D.base + best / 10 - D.off;
+		};
+		e.streets = { chains, juncs, chByChunk, jByChunk, zByChunk, rowZAt };
 		return e.streets;
 	};
 
@@ -4107,11 +4990,16 @@
 		return parkMat;
 	};
 
-	World.prototype.buildEnvRoads = function (group, segs, M) {
+	// generator (kroki co ciąg ulicy, skrzyżowanie, trójkąt placu) – zob. buildEnvChunk
+	World.prototype.buildEnvRoads = function* (group, segs, M) {
 		if (segs.c0 === undefined) return;
 		const e = this.env, r = this.route, st = this.envStreets(), ci = Math.floor(segs.c0 / C);
-		const dst = { p: [], c: [] }, mk = { p: [], c: [] };
-		const skip = (s, d) => (Math.abs(d) < 7.5 && !this.underBridge(s, d)) || this.envStationZone(s, d) || this.route.crossings.some((x) => Math.abs(s - x.pos) < 12 && Math.abs(d) < 40);
+		/* u – położenie w poprzek jezdni (odsunięcie od osi, połowa szerokości, liczba pasów; 0 – poza jezdnią z pasami):
+		   shader dróg rysuje z niego koleiny i brud przy krawędziach (common.js ROAD_GLSL) */
+		const dst = { p: [], c: [], u: [] }, mk = { p: [], c: [] };
+		const manholes = [], drains = [];
+		const ZL = [0, 0, 0];
+		const skip = (s, d) => (Math.abs(d) < 7.5 && !this.underBridge(s, d)) || this.envStationZone(s, d) || this.route.crossings.some((x) => Math.abs(s - x.pos) < 12 && Math.abs(d) < 40) || this.inDeckExt(s, d);
 		const white = col.set('#e9e7e0').clone(), side = col.set('#a7a49d').clone(), curb = col.set('#c9c6be').clone();
 		// wysokość nawierzchni z pamięcią (te same punkty liczone wielokrotnie przez podział trójkątów)
 		const SY = new Map();
@@ -4121,18 +5009,33 @@
 			if (y === undefined) { y = this.surfY(s, d); SY.set(key, y); }
 			return y;
 		};
-		const W = (p, dy) => { R.sidePoint(r, p[0], p[1], tp); return [tp.x, sY(p[0], p[1]) + dy, tp.z]; };
+		const W = (p, dy) => { R.sidePoint(r, p[0], p[1], tp); return [tp.x, (p.length > 2 ? p[2] : sY(p[0], p[1])) + dy, tp.z]; };
+		/* skrzyżowanie dwóch poziomów (roadBridged): punkt jezdni na wysokości jej drogi z pomiaru (wyższa – pomost nad
+		   niższą); poza nim – nawierzchnia jak zwykle */
+		const lvl = (p, inf) => {
+			if (!inf || !this.roadBridged(p[0], p[1])) return p;
+			const z = st.rowZAt(inf, p[0], p[1]);
+			if (z === null) return p;
+			const q = [p[0], p[1], z];
+			q.L = p.L;
+			return q;
+		};
+		const deck = dst, deckC = col.set('#9a968d').clone(); // boki pomostu – w siatce jezdni (kolor wierzchołków)
 		// trójkąt zwrócony w górę
-		const tri = (d0, a, b, c, rgb) => {
-			if ((b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]) > 0) d0.p.push(...a, ...b, ...c);
+		const tri = (d0, a, b, c, rgb, L) => {
+			const up = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]) > 0;
+			if (up) d0.p.push(...a, ...b, ...c);
 			else d0.p.push(...a, ...c, ...b);
 			for (let q = 0; q < 3; q++) d0.c.push(rgb.r, rgb.g, rgb.b);
+			if (d0.u) for (const q of up ? [0, 1, 2] : [0, 2, 1]) d0.u.push(...((L && L[q]) || ZL));
 		};
+		const midL = (a, b) => (a.L && b.L ? [(a.L[0] + b.L[0]) / 2, (a.L[1] + b.L[1]) / 2, a.L[2]] : undefined);
 		/* trójkąt w (s, d) dzielony na cztery, dopóki teren w połowie boków odbiega od płaszczyzny trójkąta
 		   (siatka terenu ma załamania co kilka–kilkadziesiąt metrów; duży trójkąt jezdni zapadał się pod nie) */
 		const triS = (d0, A, B, Cq, dy, rgb, lvl = 0) => {
 			if (lvl < 3) {
 				const ab = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2], bc = [(B[0] + Cq[0]) / 2, (B[1] + Cq[1]) / 2], ca = [(Cq[0] + A[0]) / 2, (Cq[1] + A[1]) / 2];
+				ab.L = midL(A, B); bc.L = midL(B, Cq); ca.L = midL(Cq, A);
 				const L = Math.max(Math.hypot(B[0] - A[0], B[1] - A[1]), Math.hypot(Cq[0] - B[0], Cq[1] - B[1]), Math.hypot(A[0] - Cq[0], A[1] - Cq[1]));
 				if (L > 2.5) {
 					const yA = sY(A[0], A[1]), yB = sY(B[0], B[1]), yC = sY(Cq[0], Cq[1]);
@@ -4144,7 +5047,7 @@
 					}
 				}
 			}
-			tri(d0, W(A, dy), W(B, dy), W(Cq, dy), rgb);
+			tri(d0, W(A, dy), W(B, dy), W(Cq, dy), rgb, [A.L, B.L, Cq.L]);
 		};
 		const quad = (d0, A, B, Cq, D, dy, rgb) => {
 			if (skip((A[0] + Cq[0]) / 2, (A[1] + Cq[1]) / 2)) return;
@@ -4152,18 +5055,36 @@
 			triS(d0, A, Cq, D, dy, rgb);
 		};
 		// pas wzdłuż odcinka k ciągu między odsunięciami (sa·w/2 + ea) i (sb·w/2 + eb), w zakresie [ta, tb], kawałki do 4 m
-		const band = (d0, ch, k, ta, tb, sa, ea, sb, eb, dy, rgb) => {
+		const band = (d0, ch, k, ta, tb, sa, ea, sb, eb, dy, rgb, lanes = 0) => {
 			ta = Math.max(ta, ch.cum[k]);
 			tb = Math.min(tb, ch.cum[k + 1]);
 			if (tb - ta < 0.02) return;
 			const n = Math.max(1, Math.ceil((tb - ta) / 4));
 			// kawałek dzielony, dopóki teren między jego końcami nie jest prawie płaski (załamania, strome zjazdy)
-			const piece = (t0, t1, lvl) => {
-				if (lvl < 3 && t1 - t0 > 0.6) {
+			const inf = ch.seg[k] && ch.seg[k].inf;
+			const piece = (t0, t1, lv) => {
+				if (lv < 3 && t1 - t0 > 0.6) {
 					const y0 = sY(...chPtK(ch, k, t0, (sa + sb) / 2, (ea + eb) / 2)), y1 = sY(...chPtK(ch, k, t1, (sa + sb) / 2, (ea + eb) / 2)), tm = (t0 + t1) / 2;
-					if (Math.abs(sY(...chPtK(ch, k, tm, (sa + sb) / 2, (ea + eb) / 2)) - (y0 + y1) / 2) > 0.04) { piece(t0, tm, lvl + 1); piece(tm, t1, lvl + 1); return; }
+					if (Math.abs(sY(...chPtK(ch, k, tm, (sa + sb) / 2, (ea + eb) / 2)) - (y0 + y1) / 2) > 0.04) { piece(t0, tm, lv + 1); piece(tm, t1, lv + 1); return; }
 				}
-				quad(d0, chPtK(ch, k, t0, sa, ea), chPtK(ch, k, t0, sb, eb), chPtK(ch, k, t1, sb, eb), chPtK(ch, k, t1, sa, ea), dy, rgb);
+				// położenie w poprzek jezdni (tylko jezdnia z pasami ruchu – lanes > 0)
+				const lat = (p, sg, t) => { if (lanes) { const L = ch.cum[k + 1] - ch.cum[k], f2 = L > 1e-9 ? Math.max(0, Math.min(1, (t - ch.cum[k]) / L)) : 0, w2 = ch.w[k] + (ch.w[k + 1] - ch.w[k]) * f2; p.L = [(sg * w2) / 2, w2 / 2, lanes]; } return p; };
+				const A = lvl(lat(chPtK(ch, k, t0, sa, ea), sa, t0), inf), B = lvl(lat(chPtK(ch, k, t0, sb, eb), sb, t0), inf), Cq = lvl(lat(chPtK(ch, k, t1, sb, eb), sb, t1), inf), D = lvl(lat(chPtK(ch, k, t1, sa, ea), sa, t1), inf);
+				if (A.length > 2 || B.length > 2 || Cq.length > 2 || D.length > 2) {
+					if (skip((A[0] + Cq[0]) / 2, (A[1] + Cq[1]) / 2)) return;
+					const Q = [A, B, Cq, D].map((p) => W(p, dy));
+					tri(d0, Q[0], Q[1], Q[2], rgb, [A.L, B.L, Cq.L]);
+					tri(d0, Q[0], Q[2], Q[3], rgb, [A.L, Cq.L, D.L]);
+					// pomost wyższej jezdni nad terenem: boki (gzyms) 0,9 m wzdłuż krawędzi jezdni
+					if (d0 === dst && sa === -1 && sb === 1) for (const [p, q] of [[A, D], [B, Cq]]) {
+						const wp = W(p, dy), wq = W(q, dy);
+						if (wp[1] - sY(p[0], p[1]) < 1.5 && wq[1] - sY(q[0], q[1]) < 1.5) continue;
+						const bp = [wp[0], wp[1] - 0.9, wp[2]], bq = [wq[0], wq[1] - 0.9, wq[2]];
+						for (const [x, y, z] of [[wp, wq, bq], [wp, bq, bp], [wp, bq, wq], [wp, bp, bq]]) { deck.p.push(...x, ...y, ...z); for (let j = 0; j < 3; j++) { deck.c.push(deckC.r, deckC.g, deckC.b); if (deck.u) deck.u.push(...ZL); } }
+					}
+					return;
+				}
+				quad(d0, A, B, Cq, D, dy, rgb);
 			};
 			for (let q = 0; q < n; q++) piece(ta + ((tb - ta) * q) / n, ta + ((tb - ta) * (q + 1)) / n, 0);
 		};
@@ -4175,7 +5096,7 @@
 				const p0 = P[q], p1 = P[q + 1];
 				if (skip((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2)) continue;
 				const a0 = W(p0, 0.06), a1 = W(p0, 0.19), b0 = W(p1, 0.06), b1 = W(p1, 0.19);
-				for (const [x, y, z] of [[a0, b0, b1], [a0, b1, a1], [a0, b1, b0], [a0, a1, b1]]) { d0.p.push(...x, ...y, ...z); for (let k = 0; k < 3; k++) d0.c.push(curb.r, curb.g, curb.b); }
+				for (const [x, y, z] of [[a0, b0, b1], [a0, b1, a1], [a0, b1, b0], [a0, a1, b1]]) { d0.p.push(...x, ...y, ...z); for (let k = 0; k < 3; k++) { d0.c.push(curb.r, curb.g, curb.b); if (d0.u) d0.u.push(...ZL); } }
 			}
 		};
 		const sample = (ch, k, ta, tb, sg) => {
@@ -4187,12 +5108,21 @@
 			return out;
 		};
 		const roadDy = (ti) => 0.1 + (10 - ti) * 0.003;
+		// element płaski na jezdni (studzienka, kratka): punkt ciągu w t, kierunek wzdłuż ciągu
+		const furn = (list, ch, k, t, sd, ex, dy) => {
+			const p = chPtK(ch, k, t, sd, ex), q = chPtK(ch, k, t + 1, sd, ex);
+			if (skip(p[0], p[1]) || this.roadBridged(p[0], p[1])) return;
+			const a = W(p, dy), b = W(q, dy);
+			list.push([a[0], a[1], a[2], Math.atan2(b[0] - a[0], b[2] - a[2])]);
+		};
 
 		// ciągi ulic: jezdnia, chodniki z krawężnikiem, oznakowanie (od końców przyciętych na skrzyżowaniach)
 		for (const { ch, k } of st.chByChunk.get(ci) || []) {
 			const f = ch.seg[k].inf, ti = f.ti, dy = roadDy(ti), T0 = ch.trim[0], T1 = ch.trim[1];
 			const t0 = T0.t, t1 = ch.L - T1.t;
-			band(dst, ch, k, t0, t1, -1, 0, 1, 0, dy, col.set(SURF_C[f.surf] || ROAD_C[ti] || '#46494c').clone());
+			// asfalt z pasami ruchu: koleiny i brud przy krawędziach w shaderze (położenie w poprzek – lanes)
+			const lanesK = f.surf === 0 && ti <= 7 && Math.min(ch.w[k], ch.w[k + 1]) >= 4.5 ? Math.max(1, f.lanes || (f.one ? 1 : 2)) : 0;
+			band(dst, ch, k, t0, t1, -1, 0, 1, 0, dy, col.set(SURF_C[f.surf] || ROAD_C[ti] || '#46494c').clone(), lanesK);
 			const [swP, swN] = ch.sw[k];
 			for (const [on, sg, a0, a1] of [[swP, 1, T0.p, ch.L - T1.n], [swN, -1, T0.n, ch.L - T1.p]]) {
 				if (!on) continue;
@@ -4220,6 +5150,14 @@
 				// krawędziowe na drogach zbiorczych i ważniejszych poza zabudową
 				if (ti <= 4 && !swP && !swN) { solid(-1, 0.3); solid(1, -0.3); }
 			}
+			// studzienki w osi pasa co ok. 40 m, kratki ściekowe przy krawężnikach co ok. 25 m
+			if (lanesK) {
+				const L = lanesK;
+				const a = Math.max(t0, ch.cum[k]), b = Math.min(t1, ch.cum[k + 1]);
+				for (let x = Math.ceil((a - 13) / 40) * 40 + 13; x < b; x += 40) furn(manholes, ch, k, x, L > 1 ? -1 + 1 / L : 0, 0, dy + 0.014);
+				for (let x = Math.ceil((a - 6) / 25) * 25 + 6; x < b; x += 25) for (const [on, sg] of [[swP, 1], [swN, -1]]) if (on) furn(drains, ch, k, x, sg, -sg * 0.28, dy + 0.014);
+			}
+			yield;
 		}
 		// skrzyżowania: płat, chodniki wokół narożników, linie warunkowego zatrzymania na wlotach podporządkowanych
 		for (const J of st.jByChunk.get(ci) || []) {
@@ -4263,6 +5201,7 @@
 					else band(mk, ch, k, ta, ta + 0.3, 0, e1, 0, e2, roadDy(f.ti) + 0.02, white);
 				}
 			}
+			yield;
 		}
 		// przejścia dla pieszych (zebry): pasy 0,5 m co 1 m w poprzek jezdni, 4 m wzdłuż (po łuku ciągu)
 		for (const { ch, t } of st.zByChunk.get(ci) || []) {
@@ -4284,19 +5223,62 @@
 			for (let k = 0; k < n; k++) { const a = pts[k], b = pts[(k + 1) % n]; area += a[0] * b[1] - b[0] * a[1]; }
 			if (area < 0) pts = pts.reverse(); // przeciwnie do ruchu wskazówek w (s, d): wnętrze po lewej boków
 			const rgb = col.set(kind === 0 ? '#4a4d50' : '#a8a49c').clone(), dyP = 0.075;
-			// nawierzchnia: trójkąty dzielone po najdłuższym boku do 4 m
-			const split = (a, b, c, lvl) => {
+			/* jezdnie przez plac / parking (skrzyżowanie w obrysie placu): nawierzchnia placu pod nimi pominięta – obie
+			   warstwy leżały 2–3 cm od siebie i na łukach terenu migotały (jezdnia w łatach szarego placu) */
+			let bs0 = Infinity, bs1 = -Infinity, bd0 = Infinity, bd1 = -Infinity;
+			for (const p of pts) { bs0 = Math.min(bs0, p[0]); bs1 = Math.max(bs1, p[0]); bd0 = Math.min(bd0, p[1]); bd1 = Math.max(bd1, p[1]); }
+			const segs = [];
+			for (let cc = Math.floor((bs0 - 40) / C); cc <= Math.floor((bs1 + 40) / C); cc++) for (const { k, row: rr, i } of e.rByChunk.get(cc) || []) {
+				const sa = rr[1 + k * 2], da = rr[2 + k * 2], sb = rr[3 + k * 2], db = rr[4 + k * 2], hw = (e.rInfo[i].w || 5) / 2;
+				if (Math.max(sa, sb) < bs0 - hw || Math.min(sa, sb) > bs1 + hw || Math.max(da, db) < bd0 - hw || Math.min(da, db) > bd1 + hw) continue;
+				segs.push([sa, da, sb, db, hw - 0.15]);
+			}
+			// wiadukty drogowe z mapy (zjazd nisko nad placem) – też bez nawierzchni placu pod pomostem
+			for (let cc = Math.floor((bs0 - 40) / C); cc <= Math.floor((bs1 + 40) / C); cc++) for (const rr of e.oByChunk.get(cc) || []) {
+				const hw = ((ROAD_W[rr[0]] || 6) + 1.2) / 2;
+				for (let k = 1; k + 3 < rr.length; k += 2) {
+					const sa = rr[k], da = rr[k + 1], sb = rr[k + 2], db = rr[k + 3];
+					if (Math.max(sa, sb) < bs0 - hw || Math.min(sa, sb) > bs1 + hw || Math.max(da, db) < bd0 - hw || Math.min(da, db) > bd1 + hw) continue;
+					segs.push([sa, da, sb, db, hw - 0.15]);
+				}
+			}
+			const onRd = (p, near) => {
+				for (const [sa, da, sb, db, hw] of near) {
+					const L2 = (sb - sa) ** 2 + (db - da) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((p[0] - sa) * (sb - sa) + (p[1] - da) * (db - da)) / L2));
+					if (Math.hypot(sa + (sb - sa) * t - p[0], da + (db - da) * t - p[1]) < hw) return true;
+				}
+				return false;
+			};
+			// nawierzchnia: trójkąty dzielone po najdłuższym boku do 4 m (przy krawędzi jezdni – do 0,8 m)
+			/* near – odcinki jezdni, które mogą sięgać trójkąta (prostokąt odcinka powiększony o hw zachodzi na prostokąt
+			   trójkąta); dzieci dostają listę rodzica przefiltrowaną dalej – dawniej każdy test po wszystkich odcinkach
+			   przy placu (duży plac przecięty ulicami: dziesiątki ms) */
+			const split = (a, b, c, lvl, near = segs) => {
 				const ab = Math.hypot(b[0] - a[0], b[1] - a[1]), bc = Math.hypot(c[0] - b[0], c[1] - b[1]), ca = Math.hypot(a[0] - c[0], a[1] - c[1]), L = Math.max(ab, bc, ca);
-				if (L <= 4 || lvl > 9) {
+				if (near.length) {
+					const s0 = Math.min(a[0], b[0], c[0]), s1 = Math.max(a[0], b[0], c[0]), d0 = Math.min(a[1], b[1], c[1]), d1 = Math.max(a[1], b[1], c[1]);
+					near = near.filter(([sa, da, sb, db, hw]) => Math.max(sa, sb) + hw >= s0 && Math.min(sa, sb) - hw <= s1 && Math.max(da, db) + hw >= d0 && Math.min(da, db) - hw <= d1);
+				}
+				let fine = L <= 4 || lvl > 9;
+				if (fine && segs.length) {
+					const m = [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3], on = [a, b, c, m].filter((p) => onRd(p, near)).length;
+					if (on === 4) return; // pod jezdnią
+					if (on > 0 && L > 0.8 && lvl < 16) fine = false;
+					else if (on > 0 && onRd(m, near)) return;
+				}
+				if (fine) {
 					if (!skip((a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3)) tri(dst, W(a, dyP), W(b, dyP), W(c, dyP), rgb);
 					return;
 				}
 				const m = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
-				if (L === ab) { const x = m(a, b); split(a, x, c, lvl + 1); split(x, b, c, lvl + 1); }
-				else if (L === bc) { const x = m(b, c); split(a, b, x, lvl + 1); split(a, x, c, lvl + 1); }
-				else { const x = m(c, a); split(a, b, x, lvl + 1); split(x, b, c, lvl + 1); }
+				if (L === ab) { const x = m(a, b); split(a, x, c, lvl + 1, near); split(x, b, c, lvl + 1, near); }
+				else if (L === bc) { const x = m(b, c); split(a, b, x, lvl + 1, near); split(a, x, c, lvl + 1, near); }
+				else { const x = m(c, a); split(a, b, x, lvl + 1, near); split(x, b, c, lvl + 1, near); }
 			};
-			for (const [a1, b1, c1] of T.ShapeUtils.triangulateShape(pts.map((p) => new T.Vector2(p[0], p[1])), [])) split(pts[a1], pts[b1], pts[c1], 0);
+			for (const [a1, b1, c1] of T.ShapeUtils.triangulateShape(pts.map((p) => new T.Vector2(p[0], p[1])), [])) {
+				split(pts[a1], pts[b1], pts[c1], 0);
+				yield;
+			}
 			// krawężnik wzdłuż boków (do środka 0,2 m), bez boków przy jezdni
 			const nearRoad = (s, d) => {
 				for (const cc of [ci - 1, ci, ci + 1]) for (const { k, row: rr, i } of e.rByChunk.get(cc) || []) {
@@ -4319,6 +5301,7 @@
 					wall(dst, [i0, i1]);
 				}
 			}
+			yield;
 			if (kind !== 0 || n < 3) continue;
 			// układ miejsc: oś u wzdłuż najdłuższego boku, v do wnętrza
 			let kb = 0, Lb = 0;
@@ -4389,6 +5372,7 @@
 			const geo = new T.BufferGeometry();
 			geo.setAttribute('position', new T.Float32BufferAttribute(d0.p, 3));
 			geo.setAttribute('color', new T.Float32BufferAttribute(d0.c, 3));
+			if (d0.u && d0.u.length === d0.p.length) geo.setAttribute('aLat', new T.Float32BufferAttribute(d0.u, 3));
 			geo.computeVertexNormals();
 			// nawierzchnie oświetlone jak płaszczyzna (bez smug z drobnych pochyleń trójkątów), ściany krawężników bez zmian
 			const nm = geo.attributes.normal.array;
@@ -4396,6 +5380,40 @@
 			const m = new T.Mesh(geo, d0 === mk ? M.roadMark : M.road);
 			m.receiveShadow = true;
 			group.add(m);
+		}
+		this.roadWearFlush(group, manholes, drains);
+	};
+
+	/* Wyposażenie jezdni: studzienki i kratki ściekowe – płaskie instancje z teksturą z kanwy, tuż nad nawierzchnią
+	   (koleiny i brud przy krawędziach – w shaderze dróg). */
+	const manholeTex = () => canvasTexture('road-manhole', 128, 128, (g, w) => {
+		const c = w / 2;
+		g.clearRect(0, 0, w, w);
+		g.beginPath(); g.arc(c, c, c - 2, 0, Math.PI * 2); g.fillStyle = '#4a4744'; g.fill();
+		g.beginPath(); g.arc(c, c, c - 12, 0, Math.PI * 2); g.fillStyle = '#2f2d2b'; g.fill();
+		// wzór żeber pokrywy: pierścienie i promienie
+		g.strokeStyle = '#4f4b47'; g.lineWidth = 4;
+		for (const r of [16, 30, 44]) { g.beginPath(); g.arc(c, c, r, 0, Math.PI * 2); g.stroke(); }
+		for (let k = 0; k < 12; k++) { const a = (k / 12) * Math.PI * 2; g.beginPath(); g.moveTo(c + Math.cos(a) * 16, c + Math.sin(a) * 16); g.lineTo(c + Math.cos(a) * 50, c + Math.sin(a) * 50); g.stroke(); }
+	});
+	const drainTex = () => canvasTexture('road-drain', 128, 96, (g, w, h) => {
+		g.fillStyle = '#4b4845'; g.fillRect(0, 0, w, h);
+		g.fillStyle = '#121212'; g.fillRect(8, 8, w - 16, h - 16);
+		g.fillStyle = '#4b4845';
+		for (let x = 16; x < w - 12; x += 13) g.fillRect(x, 8, 5, h - 16);
+		g.fillRect(8, h / 2 - 3, w - 16, 6);
+	});
+	World.prototype.roadWearFlush = function (group, manholes, drains) {
+		const shared = (mm) => { mm.userData.shared = true; return mm; };
+		if (!World.flatPlane) { World.flatPlane = new T.PlaneGeometry(1, 1).rotateX(-Math.PI / 2); World.flatPlane.userData.shared = true; }
+		const m4 = new T.Matrix4(), q = new T.Quaternion(), up = new T.Vector3(0, 1, 0), p3 = new T.Vector3(), sc = new T.Vector3();
+		for (const [list, key, tex, w, l] of [[manholes, 'manholeM', manholeTex, 0.66, 0.66], [drains, 'drainM', drainTex, 0.42, 0.56]]) {
+			if (!list.length) continue;
+			const mat2 = World[key] || (World[key] = shared(patch(new T.MeshStandardMaterial({ map: tex(), alphaTest: 0.5, roughness: 0.55, metalness: 0.5, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -30 }), 'lit')));
+			const inst = new T.InstancedMesh(World.flatPlane, mat2, list.length);
+			list.forEach(([x, y, z, ang], k) => inst.setMatrixAt(k, m4.compose(p3.set(x, y, z), q.setFromAxisAngle(up, ang), sc.set(w, 1, l))));
+			inst.receiveShadow = true;
+			group.add(inst);
 		}
 	};
 
@@ -4422,14 +5440,26 @@
 				let cj = ci;
 				while (cj + 1 < g.cols && e.grid[ri * g.cols + cj + 1] === 9) cj++;
 				const dA = g.d0 + (ci - 0.5) * st, dB = g.d0 + (cj + 0.5) * st;
+				/* poziom lustra: mediana terenu w serii (+0,65 m) – dawniej z terenu w środku każdego płata 10 × 20 m; pomiar
+				   nad wodą jest zaszumiony, płaty stały schodkami (ciemne pasy na rzece) */
+				const wl = this.envWaterLevel(s, g.d0 + ci * st);
+				let yRun;
+				if (wl !== undefined) yRun = wl - 0.45;
+				else {
+					const hs = [];
+					for (let d = dA + st / 2; d < dB; d += st) hs.push(this.terrainY(s, d));
+					hs.sort((a, b) => a - b);
+					yRun = hs[hs.length >> 1] + 0.65;
+				}
 				for (let d = dA; d < dB - 1e-6; d += 20) {
 					const d2 = Math.min(dB, d + 20);
-					if (Math.abs((d + d2) / 2) < 10 || this.envStationZone(s, (d + d2) / 2)) continue;
+					// przy osi – tylko pod przęsłem mostu (Wisła w Toruniu: pas bez wody wzdłuż mostu)
+					if ((Math.abs((d + d2) / 2) < 10 && !this.underBridge(s, (d + d2) / 2)) || this.envStationZone(s, (d + d2) / 2)) continue;
 					const P = [[s - st / 2, d], [s - st / 2, d2], [s + st / 2, d2], [s + st / 2, d]].map(([ss, dd]) => {
 						R.sidePoint(r, ss, dd, tp);
 						return [tp.x, 0, tp.z];
 					});
-					const y = this.terrainY(s, (d + d2) / 2) + 0.65;
+					const y = wl !== undefined ? yRun : Math.max(yRun, this.terrainY(s, (d + d2) / 2) - 0.6);
 					for (const p of P) p[1] = y;
 					const up = ((P[2][2] - P[0][2]) * (P[1][0] - P[0][0]) - (P[2][0] - P[0][0]) * (P[1][2] - P[0][2])) < 0;
 					const T3 = (x, y2, z) => { dst.p.push(...x, ...y2, ...z); for (let i = 0; i < 3; i++) dst.c.push(1, 1, 1); };

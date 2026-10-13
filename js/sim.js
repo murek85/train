@@ -12,6 +12,7 @@
 	const CA_GRACE = 5;
 	const OVERRUN_TOL = 8; // ile metrów za koniec peronu może wystawać czoło
 	const STOP_EPS = 0.02;
+	const SNAPSHOT_V = 1; // wersja formatu zapisu gry (Sim.snapshot)
 
 	function rnd(seed) {
 		const x = Math.sin(seed * 91.17 + 7.3) * 43758.5453;
@@ -335,6 +336,7 @@
 						ss.state = 'departed';
 						ss.departAt = this.time;
 						this.sound('whistle');
+						this.events.push({ type: 'departed', index: i }); // odjazd ze stacji – gra robi autozapis
 						this.msg('Odjazd! Semafor podaje sygnał zezwalający.', 'good');
 					} else this.prompt = 'Czekaj na sygnał odjazdu…';
 				}
@@ -372,6 +374,7 @@
 						ss.departAt = this.time;
 						this.msg('Dyżurny zezwala na dalszą jazdę.', 'info');
 						this.sound('whistle');
+						this.events.push({ type: 'departed', index: n });
 					} else this.prompt = 'Czekaj na zgodę dyżurnego ruchu…';
 				}
 			}
@@ -392,6 +395,45 @@
 				this.ackCzuwak();
 				this.systemBrake('Czuwak niepotwierdzony – hamowanie nagłe (−40 pkt)', 'czuwak', 40);
 			}
+		}
+
+		// ---- zapis gry ----
+		/* Stan jazdy jako zwykły obiekt (JSON, kilka KB). Bez trasy i rozkładu – te odtwarza gra (trasa z id i składu,
+		   rozkład zapisany obok); komunikaty (events, prompt) i wartości wyliczane w kroku (limit, inTunnel) – pominięte. */
+		snapshot() {
+			const copy = (o) => JSON.parse(JSON.stringify(o));
+			return {
+				v: SNAPSHOT_V,
+				st: copy(this.st), time: this.time, lever: this.lever, status: this.status, failReason: this.failReason,
+				doorsOpen: this.doorsOpen, next: this.next, service: this.service, overspeed: this.overspeed,
+				ca: copy(this.ca), panto: copy(this.panto), penalties: copy(this.penalties), bonus: this.bonus,
+				records: copy(this.records), ss: copy(this.ss),
+				signals: this.signals.map((s) => [s.holdUntil, s.passed ? 1 : 0]),
+				crossings: this.crossings.map((c) => [c.honked ? 1 : 0, c.done ? 1 : 0]),
+			};
+		}
+
+		// jazda odtworzona z zapisu (snapshot) na tej samej trasie i tym samym składzie; niezgodny zapis – wyjątek
+		static restore(route, opts, snap) {
+			const sim = new Sim(route, opts);
+			if (!snap || snap.v !== SNAPSHOT_V) throw new Error('Nieznana wersja zapisu.');
+			if (snap.ss.length !== sim.ss.length || snap.signals.length !== sim.signals.length || snap.crossings.length !== sim.crossings.length) {
+				throw new Error('Zapis nie pasuje do trasy (trasa zmieniła się od zapisu).');
+			}
+			Object.assign(sim.st, snap.st);
+			for (const k of ['time', 'lever', 'status', 'failReason', 'doorsOpen', 'next', 'service', 'overspeed', 'bonus']) sim[k] = snap[k];
+			Object.assign(sim.ca, snap.ca);
+			Object.assign(sim.panto, snap.panto);
+			Object.assign(sim.penalties, snap.penalties);
+			sim.records = JSON.parse(JSON.stringify(snap.records));
+			sim.ss = JSON.parse(JSON.stringify(snap.ss));
+			sim.signals.forEach((s, i) => { s.holdUntil = snap.signals[i][0]; s.passed = !!snap.signals[i][1]; });
+			sim.crossings.forEach((c, i) => { c.honked = !!snap.crossings[i][0]; c.done = !!snap.crossings[i][1]; });
+			const front = sim.st.pos;
+			sim.limit = R.limitOver(route, front - sim.L, front);
+			sim.inTunnel = route.tunnels.some((t) => front > t.from && front - sim.L < t.to);
+			sim.updateSignals();
+			return sim;
 		}
 
 		// ---- informacje dla HUD ----

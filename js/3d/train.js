@@ -4,13 +4,19 @@
    pas okienny, dach, szyby czołowe – to grupy ścian tej samej bryły. Do tego: okna z widocznym wnętrzem
    (nocą oświetlonym), drzwi z uszczelkami, wyświetlacze kierunkowe, wózki z maźnicami i obracającymi się
    kołami, osłony i skrzynie podwozia, sprzęgi, pługi, trzy reflektory, wycieraczki, pantografy jednoramienne
-   z iskrzeniem nocą, żaluzje lokomotywy. */
+   z iskrzeniem nocą, żaluzje lokomotywy. Jakość: patyna, spoiny i nity w shaderze taboru (common.js, wariant 'train'),
+   okluzja wypiekana w wierzchołkach (bakeWear), fazowane krawędzie i bryły toczone w modelu szczegółowym (detail),
+   drobne detale tylko z bliska (fine / THREE.LOD). */
 (function () {
 	'use strict';
 	const T = window.THREE;
 	const R = window.TrainRoutes;
 	const NS = window.Train3D;
-	const { mat, matS, patch, box, sprite, glowTexture, disposeTree, canvasTexture, hash, GEO } = NS.util;
+	const { mat: utilMat, matS: utilMatS, patch, box: boxU, sprite, glowTexture, disposeTree, canvasTexture, hash, GEO } = NS.util;
+	/* Materiały taboru: wariant 'train' (patyna, okluzja – common.js TRAIN_GLSL); { train: g } – zabrudzenie bazowe
+	   części ruchomych (koła – mocno, reszta – lekko; części stałe brudzą się wg wysokości nad szyną). */
+	const mat = (color, extra) => utilMat(color, Object.assign({ train: 0.12 }, extra));
+	const matS = (color, extra) => utilMatS(color, Object.assign({ train: 0.12 }, extra));
 
 	// kolory malowania; nose – długość czoła (m), yb – dolna krawędź szyby czołowej, round – zaokrąglenie narożników czoła,
 	// split – płaskie czoło z dwiema szybami rozdzielonymi słupkiem (EN57, EU07); bez split – szyba „opływowa” na boki
@@ -88,6 +94,33 @@
 			if (y < 2.15) return 0;
 			return y > 2.3 && y < 3.3 && ax > 0.07 && ax < 1.2 ? 4 : 1;
 		},
+	});
+	/* Nowoczesne EZT (bryła ezt z parametrami): modern – czoło opływowe (skos z dużą szybą, bez płaskiej ściany),
+	   bez przetłoczeń, okna stałe, klimatyzatory zamiast grzybków, sprzęg Scharfenberga, pantografy jednoramienne;
+	   zones – pasy malowania [od, do, grupa] (0 paint, 1 stripe, 2 band, 7 trim); doors(len, noseF, noseR) – położenia
+	   drzwi, doorW / doorLeaves – szerokość i liczba skrzydeł; winW / pitch – okna; seats4 – fotele 2+2;
+	   wózki Jakobsa – z katalogu (spec.art). Malowanie domyślne: Elf – Koleje Śląskie, ED250 – PKP Intercity. */
+	const MODERN = {
+		base: 'ezt', modern: true, vfront: false, split: false, face: undefined, central: false, scharfenberg: true, single: true, ac: true,
+		fixedWin: true, seats4: true, panes: 1, endGroup: 1, wR: 0.42, wb: 2.6, bogieOff: 2.9, pantoZ: 0.22, headX: 0.8, headY: 1.92, tailY: 1.64, apron: '#24292e',
+	};
+	// Pesa Elf: krótkie, mocno pochylone czoło z dużą szybą, szerokie drzwi dwuskrzydłowe (jedne na człon), duże okna
+	STYLES.elf = Object.assign({}, STYLES.ezt, MODERN, {
+		prefix: 'EN76', paint: '#ffcc00', stripe: '#24292e', band: '#f2f2f2', trim: '#e30613', roof: '#a7acb1', door: '#ffcc00', seat: '#3a4a6a',
+		nose: 2.3, yb: 2.08, round: 0.5, glassT: 0.28,
+		zones: [[0, 1.75, 0], [1.75, 1.86, 7], [1.86, 2.2, 2], [2.2, 3.38, 1], [3.38, 9, 2]],
+		doorW: 1.4, doorLeaves: 2, winW: 1.55, pitch: 1.95,
+		doors: (len, noseF, noseR) => [noseF && !noseR ? -len * 0.06 : noseR && !noseF ? len * 0.06 : 0],
+	});
+	// Elf 2: dłuższe, łagodniej zaokrąglone czoło
+	STYLES.elf2 = Object.assign({}, STYLES.elf, { prefix: '48WE', nose: 2.7, yb: 1.98, round: 0.68, glassT: 0.24 });
+	// ED250 (Pendolino): długie, smukłe czoło, drzwi jednoskrzydłowe przy końcach wagonów, zwykłe wózki pod każdym wagonem
+	STYLES.ed250 = Object.assign({}, STYLES.ezt, MODERN, {
+		prefix: 'ED250', paint: '#3b4046', stripe: '#2a2e33', band: '#eceeef', trim: '#3b4046', roof: '#c9cdd1', door: '#eceeef', seat: '#33415e',
+		nose: 4.0, yb: 1.95, round: 0.8, glassT: 0.42, wR: 0.45, wb: 2.7, bogieOff: 3.4, pantoZ: 0.25, headX: 0.72, headY: 1.75, tailY: 1.5,
+		zones: [[0, 1.75, 0], [1.75, 1.83, 7], [1.83, 2.2, 2], [2.2, 3.38, 1], [3.38, 9, 2]],
+		doorW: 0.95, doorLeaves: 1, winW: 1.3, pitch: 1.6,
+		doors: (len, noseF, noseR) => [noseF ? null : -(len / 2 - 1.6), noseR ? null : len / 2 - 1.6].filter((z) => z !== null),
 	});
 	// lokomotywa składów towarowych mijanych i na bocznicach – ET22 (zamiast ogólnej bryły)
 	STYLES.cargo = STYLES.et22;
@@ -290,6 +323,78 @@
 		return g;
 	}
 
+	/* Bryła do promieni wycieraczek (addWiper): z całego pudła (kilkanaście tysięcy trójkątów, ok. 250 promieni na
+	   wycieraczkę – ponad 1 s na skład) tylko trójkąty, które promień z przodu może trafić: do WIPER_ZONE m od czoła
+	   i z rzutem (x, y) w pobliżu szyb czołowych (materiał 4) tego czoła. Promienie (wzdłuż z) biegną tylko po szybie
+	   i tuż za jej krawędzią, więc wynik jest ten sam co na całym pudle. Współrzędne – świata (jak promienie). */
+	const WIPER_ZONE = 8, WIPER_MARGIN = 0.6, WIPER_CELL = 0.15;
+	const wiperProxies = new WeakMap();
+	function wiperProxy(body, sgn, hl) {
+		let per = wiperProxies.get(body);
+		if (!per) wiperProxies.set(body, (per = {}));
+		const key = sgn + ':' + hl.toFixed(3);
+		if (key in per) return per[key];
+		const g = body.geometry, pos = g.attributes.position, idx = g.index;
+		const groups = g.groups.length ? g.groups : [{ start: 0, count: idx ? idx.count : pos.count, materialIndex: 0 }];
+		const m = body.matrixWorld, a = new T.Vector3(), b = new T.Vector3(), c = new T.Vector3();
+		const vid = (k) => (idx ? idx.getX(k) : k);
+		const tris = []; // [materialIndex, 9 współrzędnych]
+		for (const gr of groups) {
+			const end = Math.min(gr.start + gr.count, idx ? idx.count : pos.count);
+			for (let k = gr.start; k + 2 < end; k += 3) {
+				a.fromBufferAttribute(pos, vid(k)).applyMatrix4(m);
+				b.fromBufferAttribute(pos, vid(k + 1)).applyMatrix4(m);
+				c.fromBufferAttribute(pos, vid(k + 2)).applyMatrix4(m);
+				if (Math.max(sgn * a.z, sgn * b.z, sgn * c.z) < hl - WIPER_ZONE) continue;
+				tris.push([gr.materialIndex, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z]);
+			}
+		}
+		// obszar szyb czołowych w rzucie (x, y) z zapasem
+		let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+		for (const t of tris) {
+			if (t[0] !== 4) continue;
+			x0 = Math.min(x0, t[1], t[4], t[7]); x1 = Math.max(x1, t[1], t[4], t[7]);
+			y0 = Math.min(y0, t[2], t[5], t[8]); y1 = Math.max(y1, t[2], t[5], t[8]);
+		}
+		if (x0 > x1) return (per[key] = null); // bez szyby czołowej – brak wycieraczek
+		x0 -= WIPER_MARGIN; x1 += WIPER_MARGIN; y0 -= WIPER_MARGIN; y1 += WIPER_MARGIN;
+		/* siatka w rzucie (x, y), oczka WIPER_CELL m: trójkąt w każdym oczku, na które zachodzi jego prostokąt otaczający;
+		   promień (x, y) sprawdza tylko trójkąty swojego oczka – siatka (Mesh) oczka budowana przy pierwszym promieniu */
+		const cellOf = (v, v0) => Math.floor((v - v0) / WIPER_CELL);
+		const nx = cellOf(x1, x0) + 1, ny = cellOf(y1, y0) + 1;
+		const cells = new Map();
+		tris.forEach((t, i) => {
+			const tx0 = Math.min(t[1], t[4], t[7]), tx1 = Math.max(t[1], t[4], t[7]), ty0 = Math.min(t[2], t[5], t[8]), ty1 = Math.max(t[2], t[5], t[8]);
+			if (tx1 < x0 || tx0 > x1 || ty1 < y0 || ty0 > y1) return;
+			for (let ix = Math.max(0, cellOf(tx0, x0)); ix <= Math.min(nx - 1, cellOf(tx1, x0)); ix++) {
+				for (let iy = Math.max(0, cellOf(ty0, y0)); iy <= Math.min(ny - 1, cellOf(ty1, y0)); iy++) {
+					const k = ix * ny + iy;
+					if (!cells.has(k)) cells.set(k, []);
+					cells.get(k).push(i);
+				}
+			}
+		});
+		const meshes = new Map();
+		const at = (x, y) => {
+			const ix = cellOf(x, x0), iy = cellOf(y, y0);
+			if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return null; // poza szybami – tam promienie nie biegną
+			const k = ix * ny + iy;
+			if (meshes.has(k)) return meshes.get(k);
+			const list = (cells.get(k) || []).map((i) => tris[i]).sort((p, q) => p[0] - q[0]);
+			let msh = null;
+			if (list.length) {
+				const arr = new Float32Array(list.length * 9), pg = new T.BufferGeometry();
+				list.forEach((t, i) => { arr.set(t.slice(1), i * 9); if (!i || t[0] !== list[i - 1][0]) pg.addGroup(i * 3, 0, t[0]); pg.groups[pg.groups.length - 1].count += 3; });
+				pg.setAttribute('position', new T.BufferAttribute(arr, 3));
+				pg.computeBoundingSphere();
+				msh = new T.Mesh(pg, body.material); // te same materiały (strona ścian, numery materiałów)
+			}
+			meshes.set(k, msh);
+			return msh;
+		};
+		return (per[key] = { at });
+	}
+
 	/* Scalanie nieruchomych części wagonu (bezpośrednie dzieci grupy, jeden materiał bez tekstury) w jedną siatkę na
 	   materiał – mniej wywołań rysowania, więc można dodać więcej detali. Pomijane: bryła pudła, zestawy kołowe,
 	   skrzydła drzwi, światła, sprite'y. */
@@ -298,8 +403,8 @@
 		const list = group.children.slice();
 		for (const o of list) {
 			if (!o.isMesh || o.isInstancedMesh || keep.has(o) || Array.isArray(o.material) || o.material.map || !o.geometry.attributes.normal) continue;
-			const key = o.material.uuid + (o.castShadow ? 's' : '');
-			if (!buckets.has(key)) buckets.set(key, { mat: o.material, shadow: o.castShadow, items: [] });
+			const key = o.material.uuid + (o.castShadow ? 's' : '') + (o.userData.fine ? 'f' : '');
+			if (!buckets.has(key)) buckets.set(key, { mat: o.material, shadow: o.castShadow, fine: !!o.userData.fine, items: [] });
 			buckets.get(key).items.push(o);
 		}
 		for (const b of buckets.values()) {
@@ -333,6 +438,7 @@
 			m.castShadow = b.shadow;
 			m.receiveShadow = true;
 			m.userData.ownGeometry = true;
+			m.userData.fine = b.fine;
 			for (const o of b.items) {
 				group.remove(o);
 				if (o.userData.ownGeometry) o.geometry.dispose();
@@ -346,7 +452,8 @@
 	const paints = new Map();
 	function paint(color) {
 		if (!paints.has(color)) {
-			paints.set(color, patch(new T.MeshPhysicalMaterial({ color, roughness: 0.42, metalness: 0.15, clearcoat: 0.8, clearcoatRoughness: 0.18 }), 'lit'));
+			// lakier eksploatowany: powłoka mniej lustrzana niż fabryczna (patyna matowi ją dalej), spoiny i nity
+			paints.set(color, patch(new T.MeshPhysicalMaterial({ color, roughness: 0.45, metalness: 0.08, clearcoat: 0.55, clearcoatRoughness: 0.24 }), 'train', { grime: 0.06, panels: true }));
 		}
 		return paints.get(color);
 	}
@@ -417,7 +524,7 @@
 				orig.push(x, y, t, sc.z);
 			}
 		}
-		const groups = [[], [], [], [], [], [], []];
+		const groups = [[], [], [], [], [], [], [], []]; // 7 – cienki pas (trim, nowoczesne EZT)
 		const nsec = sections.length;
 		for (let i = 0; i < nsec - 1; i++) {
 			for (let j = 0; j < np; j++) {
@@ -469,10 +576,11 @@
 				}
 			}
 		};
+		// endGroup – grupa ścian czołowych bez kabiny (nowoczesne EZT – ciemna, jak pas okien)
 		if (rearNose && st.face) faceGrid(0, 1);
-		else cap(0, false, rearNose ? capGroup : 0);
+		else cap(0, false, rearNose ? capGroup : st.endGroup || 0);
 		if (frontNose && st.face) faceGrid(nsec - 1, -1);
-		else cap(nsec - 1, true, frontNose ? capGroup : 0);
+		else cap(nsec - 1, true, frontNose ? capGroup : st.endGroup || 0);
 		const geo = new T.BufferGeometry();
 		geo.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
 		const index = [];
@@ -500,47 +608,94 @@
 	   (oś pierwszej wycieraczki) – porusza się razem z pociągiem. */
 	const WET_GLSL = `
 		uniform vec3 uWP[2]; uniform vec3 uWU[2]; uniform vec3 uWV[2]; uniform float uWS[2];
-		uniform float uWL; uniform float uWD; uniform float uA0; uniform float uSweep; uniform float uWA[24]; uniform float uSA[24]; uniform float uWG; uniform float uSG;
+		uniform float uWL; uniform float uWD; uniform float uA0[2]; uniform float uSweep[2]; uniform float uWA[24]; uniform float uSA[24]; uniform float uWG; uniform float uSG;
+		uniform float uWR; uniform float uSR;
+		uniform vec3 uFwd; uniform vec3 uOrg; uniform vec2 uFlow; uniform float uStretch;
+		varying vec3 vWN;
 		varying vec3 vWG;
 		float wgH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 		float wgN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
 			return mix(mix(wgH(i), wgH(i + vec2(1.0, 0.0)), f.x), mix(wgH(i + vec2(0.0, 1.0)), wgH(i + vec2(1.0, 1.0)), f.x), f.y); }
-		// kropla w komórce siatki g (pokrycie cov): x – kropla, y – ciemny brzeg
-		vec2 wgDrop(vec2 g, float cov) {
+		/* kropla w komórce siatki g (pokrycie cov): x – kropla, y – ciemny brzeg (załamanie światła na krawędzi),
+		   zw – nachylenie powierzchni kropli (soczewka – zgina odbicia nieba) */
+		vec4 wgDrop(vec2 g, float cov) {
 			vec2 id = floor(g), f = fract(g);
-			if (wgH(id) > cov * 0.6) return vec2(0.0);
+			if (wgH(id) > cov * 0.6) return vec4(0.0);
 			vec2 c = vec2(0.3 + 0.4 * wgH(id + 7.3), 0.3 + 0.4 * wgH(id + 3.1));
 			float rad = 0.1 + 0.26 * wgH(id + 1.7) * wgH(id + 5.9);
 			vec2 dv = (f - c) / rad; dv.y *= 0.8;
-			float d = length(dv), drop = 1.0 - smoothstep(0.7, 1.0, d);
-			return vec2(drop, smoothstep(0.55, 1.0, d) * drop);
+			float d = length(dv), drop = 1.0 - smoothstep(0.75, 1.0, d);
+			return vec4(drop, smoothstep(0.6, 1.0, d) * drop, dv * drop);
 		}`;
+	/* Krople jak małe soczewki: wnętrze lekko ciemniejsze i przejrzyste (wcześniej mleczne – białe plamy), cienki
+	   ciemny brzeg, jasny refleks u góry, powierzchnia kropli zgina odbicia (normalna – WET_NORMAL). Trzy wielkości:
+	   rzadkie duże (do 2 cm), średnie i mgiełka drobnych. */
 	const WET_FRAG = `
+		float wgK = 0.0; vec2 wgDn = vec2(0.0);
 		{
-			float wa = uWG, sa = uSG;
+			/* szyba boczna (normalna w poprzek kierunku jazdy): bez wycieraczek, krople spływają – w czasie jazdy do
+			   tyłu (pęd powietrza, rozciągnięte w smugi), na postoju w dół; wzór w płaszczyźnie boku (wzdłuż jazdy, w pionie) */
+			vec3 wn = normalize(vWN);
+			float sideK = (1.0 - smoothstep(0.35, 0.6, abs(dot(wn, uFwd)))) * (1.0 - smoothstep(0.55, 0.8, abs(wn.y)));
+			bool sideG = sideK > 0.5;
+			float wa = sideG ? uWG * 0.85 : uWG, sa = uSG, wgE = 0.0;
 			for (int i = 0; i < 2; i++) {
+				if (sideG) break;
 				vec3 dd = vWG - uWP[i];
 				vec2 q = vec2(dot(dd, uWU[i]) * uWS[i], dot(dd, uWV[i]));
 				// pióro biegnie równolegle do promienia z osi, przesunięte o uWD – punkt w odległości r przeciera
 				// wycieraczka obrócona o kąt punktu minus asin(uWD / r)
 				float r = length(q), an = atan(q.y, q.x) - asin(clamp(uWD / max(r, 1e-3), 0.0, 1.0));
-				float tf = (an - uA0) / uSweep;
+				float tf = (an - uA0[i]) / uSweep[i];
 				if (r < uWL && r > uWD + 0.02 && tf > -0.04 && tf < 1.04) {
 					int b = int(clamp(tf, 0.0, 0.999) * 12.0);
 					wa = min(wa, uWA[i * 12 + b]);
 					sa = min(sa, uSA[i * 12 + b]);
 				}
+				/* ślad na obrysie przetartego pola: woda (śnieg) zgarnięta przez pióro – wąski wał tuż za łukiem końca pióra
+				   i za oboma skrajnymi położeniami (zaokrąglony brzeg, grubszy w połowie łuku) */
+				if (uWL > 0.0) {
+					float wob = 0.006 * sin(an * 37.0 + float(i) * 2.1) + 0.004 * sin(r * 61.0);
+					if (tf > -0.03 && tf < 1.03 && r > uWD) {
+						float mid = 1.0 - abs(clamp(tf, 0.0, 1.0) - 0.5) * 0.8;
+						wgE = max(wgE, (1.0 - smoothstep(0.0, 0.016 + 0.01 * mid, abs(r - uWL - 0.014 - wob))) * smoothstep(-0.03, 0.03, tf) * (1.0 - smoothstep(0.97, 1.03, tf)));
+					}
+					if (r > uWD + 0.02 && r < uWL + 0.02) {
+						float ds = tf < 0.5 ? -tf * uSweep[i] * r : (tf - 1.0) * uSweep[i] * r; // odległość za skrajnym położeniem (m)
+						wgE = max(wgE, (1.0 - smoothstep(0.0, 0.014, abs(ds - 0.012 - wob))) * smoothstep(uWD, uWD + 0.08, r));
+					}
+				}
 			}
+			wa = max(wa, uWR * wgE);
+			sa = max(sa, uSR * wgE);
 			vec3 d0 = vWG - uWP[0];
 			vec2 q0 = vec2(dot(d0, uWU[0]), dot(d0, uWV[0]));
+			vec2 qS = q0; // śnieg przymarza – bez spływania
+			if (sideG) {
+				qS = vec2(dot(vWG - uOrg, uFwd), vWG.y - uOrg.y); // w układzie pociągu (wzór jedzie z szybą)
+				q0 = vec2((qS.x + uFlow.x) * uStretch, qS.y + uFlow.y);
+			}
 			float cov = 1.0 - exp(-wa);
-			vec2 a1 = wgDrop(q0 * 13.0, cov), a2 = wgDrop(q0 * 31.0 + 0.5, cov * 0.8);
-			float drop = max(a1.x, a2.x * 0.8), rim = max(a1.y, a2.y * 0.8);
-			diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.72, 0.8, 0.88), drop * 0.5);
-			diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03), rim * 0.55);
-			diffuseColor.a = clamp(diffuseColor.a + drop * 0.32 + cov * 0.08, 0.0, 1.0);
+			vec4 a1 = wgDrop(q0 * 18.0, cov * 0.7), a2 = wgDrop(q0 * 42.0 + 0.5, cov), a3 = wgDrop(q0 * 95.0 + 0.3, cov * 1.2);
+			float drop = max(max(a1.x, a2.x * 0.85), a3.x * 0.6), rim = max(max(a1.y, a2.y * 0.85), a3.y * 0.5);
+			wgK = drop;
+			wgDn = a1.x > a2.x ? a1.zw : a2.x > a3.x ? a2.zw : a3.zw;
+			// refleks: jasny punkt u góry kropli (odbicie nieba)
+			vec2 hv = a1.x > a2.x ? a1.zw : a2.zw;
+			float hl = smoothstep(0.32, 0.0, length(hv - vec2(-0.25, 0.35) * max(a1.x, a2.x))) * max(a1.x, a2.x);
+			diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.7 + vec3(0.04, 0.05, 0.06), drop * 0.5);
+			diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.02), rim * 0.45);
+			diffuseColor.rgb += vec3(0.75, 0.8, 0.85) * hl * 0.55;
+			// mgiełka drobnych kropelek przy dużym zmoczeniu – szyba lekko matowa
+			diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.55, 0.6, 0.66), cov * 0.06);
+			// wał wody na obrysie: zlana smuga (ciemniejsza z jasnym brzegiem)
+			float film = wgE * clamp(uWR / 2.5, 0.0, 1.0);
+			diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.55 + vec3(0.12, 0.14, 0.16), film * 0.75);
+			diffuseColor.rgb += vec3(0.5, 0.55, 0.6) * film * smoothstep(0.5, 1.0, wgE) * 0.25; // jasny grzbiet wału (odbicie nieba)
+			diffuseColor.a = clamp(diffuseColor.a + film * 0.4, 0.0, 1.0);
+			diffuseColor.a = clamp(diffuseColor.a + drop * 0.12 + rim * 0.25 + hl * 0.35 + cov * 0.05, 0.0, 1.0);
 			float sCov = 1.0 - exp(-sa);
-			float sn = wgN(q0 * 7.0) * 0.6 + wgN(q0 * 21.0) * 0.4;
+			float sn = wgN(qS * 7.0) * 0.6 + wgN(qS * 21.0) * 0.4;
 			float snow = smoothstep(1.0 - sCov, 1.0 - sCov + 0.18, sn) * step(0.01, sa);
 			diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.94, 0.98), snow);
 			diffuseColor.a = max(diffuseColor.a, snow * 0.93);
@@ -552,11 +707,17 @@
 			if (prev) prev(sh, r);
 			Object.assign(sh.uniforms, U);
 			sh.vertexShader = sh.vertexShader
-				.replace('#include <common>', '#include <common>\nvarying vec3 vWG;')
-				.replace('#include <project_vertex>', '#include <project_vertex>\nvWG = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+				.replace('#include <common>', '#include <common>\nvarying vec3 vWG; varying vec3 vWN;')
+				.replace('#include <project_vertex>', '#include <project_vertex>\nvWG = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWN = mat3(modelMatrix) * normal;');
 			sh.fragmentShader = sh.fragmentShader
 				.replace('#include <common>', '#include <common>\n' + WET_GLSL)
-				.replace('#include <color_fragment>', '#include <color_fragment>\n' + WET_FRAG);
+				.replace('#include <color_fragment>', '#include <color_fragment>\n' + WET_FRAG)
+				// powierzchnia kropli zgina normalną szyby (osie szyby – oś pierwszej wycieraczki, w układzie widoku)
+				.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+				if (wgK > 0.01) {
+					vec3 tU = normalize((viewMatrix * vec4(uWU[0], 0.0)).xyz), tV = normalize((viewMatrix * vec4(uWV[0], 0.0)).xyz);
+					normal = normalize(normal + (tU * wgDn.x + tV * wgDn.y) * 0.9);
+				}`);
 		};
 		material.customProgramCacheKey = () => key + '-wet';
 		material.needsUpdate = true;
@@ -576,6 +737,221 @@
 		const b = box(t, Math.hypot(dz, dy), t, material, x, (y1 + y2) / 2, (z1 + z2) / 2);
 		b.rotation.x = Math.atan2(dz, dy);
 		return b;
+	}
+
+	/* ---- Jakość brył (model szczegółowy: pociąg gracza i podgląd składu) ----
+	   CYL – walec gładszy niż wspólny GEO.cyl (24 ściany zamiast 10 – okrągłe reflektory, zderzaki, osie). */
+	const CYL = new T.CylinderGeometry(0.5, 0.5, 1, 24);
+	CYL.userData.shared = true;
+	// bryła obrotowa wokół osi y z profilu [promień, wysokość]
+	function lathe(points, seg = 24) {
+		const g = new T.LatheGeometry(points.map(([r, y]) => new T.Vector2(r, y)), seg);
+		g.userData.shared = true;
+		return g;
+	}
+	// zderzak (oś y od płyty mocującej, m): kołnierz, tuleja zwężająca się ku przodowi, trzon, talerz; twarz talerza – BUFFER_FACE
+	const BUFFER_GEO = lathe([[0, 0], [0.2, 0], [0.2, 0.03], [0.17, 0.04], [0.16, 0.3], [0.178, 0.305], [0.178, 0.325], [0.11, 0.33], [0.11, 0.485], [0.215, 0.49], [0.232, 0.505], [0.232, 0.528], [0, 0.528]]);
+	const BUFFER_FACE = lathe([[0, 0.014], [0.1, 0.011], [0.19, 0.003], [0.215, 0]]);
+	// obudowa reflektora (promień 1, głębokość 1 – skalowana): wypukły tył, kołnierz, wnętrze czaszy; klosz wypukły; obręcz
+	const LAMP_GEO = lathe([[0, 0], [0.55, 0.03], [0.88, 0.2], [1, 0.5], [1, 0.92], [1.1, 0.96], [1.1, 1], [0.9, 1], [0.86, 0.8], [0.5, 0.55], [0, 0.5]]);
+	const LENS_GEO = lathe([[0, 0.14], [0.5, 0.11], [0.85, 0.05], [1, 0]]);
+	const RING_GEO = new T.TorusGeometry(1, 0.06, 6, 32).rotateX(Math.PI / 2);
+	RING_GEO.userData.shared = true;
+	// izolator dachowy (wysokość 1, promień 1 – skalowany): podstawa, trzy klosze, okucie u góry
+	const INSUL_GEO = lathe([[0, 0], [0.5, 0], [0.5, 0.1], [0.32, 0.13], [0.32, 0.22], [0.8, 0.28], [0.32, 0.36], [0.32, 0.44], [0.8, 0.5], [0.32, 0.58], [0.32, 0.66], [0.8, 0.72], [0.32, 0.8], [0.32, 0.88], [0.45, 0.9], [0.45, 1], [0, 1]], 14);
+	// wywietrznik dachowy „grzybek” (promień 1, wysokość 1 – skalowany): kołnierz, szyjka, kapelusz z okapem
+	const VENT_GEO = lathe([[0, 0], [0.85, 0], [0.85, 0.08], [0.5, 0.14], [0.5, 0.5], [0.95, 0.56], [1.05, 0.66], [0.85, 0.86], [0.45, 0.98], [0, 1]], 18);
+	// bryła obrotowa ustawiona osią wzdłuż z (sgn – zwrot: +1 do +z, −1 do −z), skala: promień r, długość l
+	function turned(geo, material, x, y, z, r, l, sgn) {
+		const m = new T.Mesh(geo, material);
+		m.scale.set(r, l, r);
+		m.rotation.x = sgn * Math.PI / 2;
+		m.position.set(x, y, z);
+		return m;
+	}
+
+	/* Fazowane krawędzie: prostopadłościan z zaokrągleniem krawędzi (jak RoundedBoxGeometry z dodatków Three.js –
+	   siatka 3×3 na ścianę, wierzchołki skrajne przesunięte na łuk). Krawędzie łapią światło – koniec wyglądu „z klocków”.
+	   box() fazuje tylko w modelu szczegółowym (BEVEL) i tylko bryły nie cieńsze niż 5 cm i nie krótsze niż 25 cm
+	   (listwy, żaluzje i kratki zostają proste – fazka byłaby mniejsza niż piksel). */
+	let BEVEL = false;
+	const bevelGeos = new Map();
+	function bevelGeo(w, h, d) {
+		const key = `${w.toFixed(3)}|${h.toFixed(3)}|${d.toFixed(3)}`;
+		let g = bevelGeos.get(key);
+		if (g) return g;
+		const r = Math.min(0.03, Math.min(w, h, d) * 0.18), hs = 0.5 / 3;
+		g = new T.BoxGeometry(1, 1, 1, 3, 3, 3).toNonIndexed();
+		const p = g.attributes.position, nr = g.attributes.normal, v = new T.Vector3(), q = new T.Vector3();
+		const hx = w / 2 - r, hy = h / 2 - r, hz = d / 2 - r;
+		for (let k = 0; k < p.count; k++) {
+			v.fromBufferAttribute(p, k);
+			const sx = Math.sign(v.x), sy = Math.sign(v.y), sz = Math.sign(v.z);
+			q.set(v.x - sx * hs, v.y - sy * hs, v.z - sz * hs).normalize();
+			p.setXYZ(k, hx * sx + q.x * r, hy * sy + q.y * r, hz * sz + q.z * r);
+			nr.setXYZ(k, q.x, q.y, q.z);
+		}
+		g.computeBoundingSphere();
+		g.userData.shared = true;
+		bevelGeos.set(key, g);
+		return g;
+	}
+	function box(w, h, d, material, x, y, z) {
+		if (!BEVEL || !material.isMeshStandardMaterial || material.transparent || Math.min(w, h, d) < 0.05 || Math.max(w, h, d) < 0.25) return boxU(w, h, d, material, x, y, z);
+		const m = new T.Mesh(bevelGeo(w, h, d), material);
+		m.position.set(x || 0, y || 0, z || 0);
+		return m;
+	}
+
+	/* Drobne detale (nity, cięgła, piasecznice, przewody, kratki) – userData.fine: scalane osobno i pokazywane tylko
+	   z bliska (THREE.LOD – przełącza renderer wg odległości kamery od wagonu). */
+	const FINE_DIST = 140;
+	function fine(o) {
+		o.userData.fine = true;
+		return o;
+	}
+	function fineLod(group) {
+		const list = group.children.filter((o) => o.userData.fine);
+		if (!list.length) return;
+		const near = new T.Group();
+		near.userData.lodLevel = true;
+		for (const o of list) near.add(o);
+		const lod = new T.LOD();
+		lod.addLevel(near, 0);
+		lod.addLevel(new T.Group(), FINE_DIST);
+		group.add(lod);
+	}
+
+	/* Okluzja otoczenia wypiekana w wierzchołkach (aWear.x – common.js TRAIN_GLSL): wszystkie bryły wagonu (bez
+	   szyb i wnętrz) zapisane w siatce wokseli (oczko AO_CELL), z każdego wierzchołka siatek scalonych i pudła
+	   AO_DIRS promieni w półkuli wokół normalnej (gęściej blisko normalnej) – trafienie bliżej przyciemnia mocniej.
+	   Zagłębienia, styki części, przestrzeń pod pudłem i między wózkami ciemnieją także w świetle otoczenia, którego
+	   nie łapią cienie słońca. aWear.y = 1: współrzędne siatki są współrzędnymi wagonu (patyna wg wysokości). ao =
+	   false – tylko aWear.y (pociągi mijane: bez kosztu wypiekania). */
+	const AO_CELL = 0.07, AO_STEPS = 10, AO_START = AO_CELL * 1.8;
+	const AO_DIRS = (() => {
+		const out = [], n = 12;
+		for (let k = 0; k < n; k++) {
+			const u = (k + 0.5) / n, ph = k * 2.39996, r = Math.sqrt(u);
+			out.push([r * Math.cos(ph), r * Math.sin(ph), Math.sqrt(1 - u)]);
+		}
+		return out;
+	})();
+	// wyniki wypiekania wg skrótu geometrii wagonu (ten sam wagon w kolejnym podglądzie / składzie – bez liczenia)
+	const aoCache = new Map();
+	function bakeWear(group, ao) {
+		group.updateMatrixWorld(true);
+		const inv = new T.Matrix4().copy(group.matrixWorld).invert(), M = new T.Matrix4();
+		const recv = [];
+		let tris = new Float32Array(1 << 16), nt = 0;
+		// przesłaniają bryły nieprzezroczyste z zewnątrz pojazdu (wnętrza – za ścianami pudła – pominięte)
+		const solid = (m) => m && m.visible !== false && !m.transparent && m.isMeshStandardMaterial && !/indoor/.test(m.customProgramCacheKey ? m.customProgramCacheKey() : '');
+		group.traverse((o) => {
+			if (!o.isMesh || o.isInstancedMesh || !o.geometry.attributes.position) return;
+			const e = M.multiplyMatrices(inv, o.matrixWorld).elements;
+			// odbiorniki: własna geometria w układzie wagonu (bez obrotu i skali; przesunięcie wzdłuż wagonu dozwolone)
+			if (o.userData.ownGeometry && Math.abs(e[0] - 1) + Math.abs(e[5] - 1) + Math.abs(e[10] - 1) + Math.abs(e[1]) + Math.abs(e[2]) + Math.abs(e[4]) + Math.abs(e[6]) + Math.abs(e[8]) + Math.abs(e[9]) + Math.abs(e[12]) + Math.abs(e[13]) < 1e-4) recv.push({ o, dz: e[14] });
+			if (!ao) return;
+			const g = o.geometry, pa = g.attributes.position.array, idx = g.index;
+			const cnt = idx ? idx.count : g.attributes.position.count;
+			const groups = g.groups.length ? g.groups : [{ start: 0, count: cnt, materialIndex: 0 }];
+			for (const gr of groups) {
+				if (!solid(Array.isArray(o.material) ? o.material[gr.materialIndex] : o.material)) continue;
+				const end = Math.min(cnt, gr.start + gr.count);
+				if (nt + (end - gr.start) * 3 > tris.length) { const t2 = new Float32Array(Math.max(tris.length * 2, nt + (end - gr.start) * 3)); t2.set(tris); tris = t2; }
+				for (let k = gr.start; k < end; k++) {
+					const j = (idx ? idx.getX(k) : k) * 3, x = pa[j], y = pa[j + 1], z = pa[j + 2];
+					tris[nt++] = e[0] * x + e[4] * y + e[8] * z + e[12];
+					tris[nt++] = e[1] * x + e[5] * y + e[9] * z + e[13];
+					tris[nt++] = e[2] * x + e[6] * y + e[10] * z + e[14];
+				}
+			}
+		});
+		const put = (o, a) => o.geometry.setAttribute('aWear', new T.BufferAttribute(a, 2));
+		if (!ao || !nt) {
+			for (const { o } of recv) {
+				const n = o.geometry.attributes.position.count, a = new Float32Array(n * 2);
+				for (let k = 0; k < n; k++) a[k * 2 + 1] = 1;
+				put(o, a);
+			}
+			return;
+		}
+		// skrót: wszystkie trójkąty przesłaniające i liczby wierzchołków odbiorników
+		let h = nt | 0;
+		const hv = new Int32Array(tris.buffer, 0, nt);
+		for (let k = 0; k < nt; k++) h = (Math.imul(h, 31) + hv[k]) | 0;
+		for (const { o } of recv) h = (Math.imul(h, 31) + o.geometry.attributes.position.count) | 0;
+		const hit = aoCache.get(h);
+		if (hit && hit.length === recv.length && hit.every((a, k) => a.length === recv[k].o.geometry.attributes.position.count * 2)) {
+			recv.forEach(({ o }, k) => put(o, hit[k].slice()));
+			return;
+		}
+		// siatka wokseli wokół wszystkich trójkątów
+		let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+		for (let k = 0; k < nt; k += 3) {
+			const x = tris[k], y = tris[k + 1], z = tris[k + 2];
+			if (x < x0) x0 = x; if (x > x1) x1 = x;
+			if (y < y0) y0 = y; if (y > y1) y1 = y;
+			if (z < z0) z0 = z; if (z > z1) z1 = z;
+		}
+		const C = AO_CELL, iC = 1 / C, pad = C * 2;
+		x0 -= pad; y0 -= pad; z0 -= pad;
+		const nx = Math.ceil((x1 - x0 + pad) * iC) + 1, ny = Math.ceil((y1 - y0 + pad) * iC) + 1, nz = Math.ceil((z1 - z0 + pad) * iC) + 1, nxy = nx * ny;
+		const grid = new Uint8Array(nx * ny * nz);
+		// trójkąt: punkty co ok. oczko siatki (małe trójkąty – same wierzchołki)
+		for (let k = 0; k < nt; k += 9) {
+			const ax = (tris[k] - x0) * iC, ay = (tris[k + 1] - y0) * iC, az = (tris[k + 2] - z0) * iC;
+			const ux = (tris[k + 3] - x0) * iC - ax, uy = (tris[k + 4] - y0) * iC - ay, uz = (tris[k + 5] - z0) * iC - az;
+			const wx = (tris[k + 6] - x0) * iC - ax, wy = (tris[k + 7] - y0) * iC - ay, wz = (tris[k + 8] - z0) * iC - az;
+			const L = Math.max(Math.abs(ux) + Math.abs(uy) + Math.abs(uz), Math.abs(wx) + Math.abs(wy) + Math.abs(wz), Math.abs(ux - wx) + Math.abs(uy - wy) + Math.abs(uz - wz));
+			const n = Math.min(300, Math.max(1, Math.ceil(L * 0.75)));
+			for (let i = 0; i <= n; i++) {
+				const a = i / n, bx = ax + ux * a, by = ay + uy * a, bz = az + uz * a;
+				for (let j = 0; i + j <= n; j++) {
+					const b = j / n;
+					grid[((bz + wz * b) | 0) * nxy + ((by + wy * b) | 0) * nx + ((bx + wx * b) | 0)] = 1;
+				}
+			}
+		}
+		const step = C * 0.9;
+		const occl = (px, py, pz, qx, qy, qz) => {
+			// baza styczna wokół normalnej
+			let tx, ty, tz;
+			if (Math.abs(qy) < 0.9) { tx = qz; ty = 0; tz = -qx; } else { tx = 0; ty = -qz; tz = qy; }
+			const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+			const bx = qy * tz - qz * ty, by = qz * tx - qx * tz, bz = qx * ty - qy * tx;
+			const sx = (px + qx * AO_START - x0) * iC, sy = (py + qy * AO_START - y0) * iC, sz = (pz + qz * AO_START - z0) * iC;
+			let s = 0;
+			for (const [dx, dy, dn] of AO_DIRS) {
+				const rx = (tx * dx + bx * dy + qx * dn) * step * iC, ry = (ty * dx + by * dy + qy * dn) * step * iC, rz = (tz * dx + bz * dy + qz * dn) * step * iC;
+				for (let st = 0; st < AO_STEPS; st++) {
+					const ix = Math.floor(sx + rx * st), iy = Math.floor(sy + ry * st), iz = Math.floor(sz + rz * st);
+					if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz) break;
+					if (grid[iz * nxy + iy * nx + ix]) { s += 1 - (0.6 * st) / AO_STEPS; break; }
+				}
+			}
+			return Math.min(0.92, (s / AO_DIRS.length) * 1.15);
+		};
+		const out = [];
+		for (const { o, dz } of recv) {
+			const g = o.geometry;
+			if (!g.attributes.normal) g.computeVertexNormals();
+			const pa = g.attributes.position.array, na = g.attributes.normal.array, n = g.attributes.position.count, a = new Float32Array(n * 2);
+			const seen = new Map();
+			for (let k = 0; k < n; k++) {
+				const px = pa[k * 3], py = pa[k * 3 + 1], pz = pa[k * 3 + 2] + dz, qx = na[k * 3], qy = na[k * 3 + 1], qz = na[k * 3 + 2];
+				// ten sam punkt i normalna (wierzchołki powtórzone w siatkach scalonych) – liczony raz
+				const key = (Math.round(px * 400) * 73856093) ^ (Math.round(py * 400) * 19349663) ^ (Math.round(pz * 400) * 83492791) ^ (Math.round(qx * 20 + 20) * 2654435761) ^ (Math.round(qy * 20 + 20) * 40503) ^ (Math.round(qz * 20 + 20) * 977);
+				let v = seen.get(key);
+				if (v === undefined) { v = occl(px, py, pz, qx, qy, qz); seen.set(key, v); }
+				a[k * 2] = v;
+				a[k * 2 + 1] = 1;
+			}
+			put(o, a);
+			out.push(a.slice());
+		}
+		aoCache.set(h, out);
+		if (aoCache.size > 48) aoCache.delete(aoCache.keys().next().value);
 	}
 
 	// wyświetlacz kierunkowy (pomarańczowe diody na czarnym tle)
@@ -657,6 +1033,8 @@
 			this.player = opts.player !== false;
 			this.seed = opts.seed || 1;
 			this.shadows = opts.shadows !== false;
+			// model szczegółowy (pociąg gracza, podgląd): fazowane krawędzie, wypiekana okluzja; mijane – lżejsze
+			this.detail = opts.detail ?? this.player;
 			this.destination = opts.destination || '';
 			this.ownMats = [];
 			this.doorAnim = 0; // 0 – drzwi zamknięte, 1 – otwarte (animacja)
@@ -725,10 +1103,12 @@
 				const V3 = () => new T.Vector3();
 				this.glassU = {
 					uWP: { value: [V3(), V3()] }, uWU: { value: [V3(), V3()] }, uWV: { value: [V3(), V3()] }, uWS: { value: [1, 1] },
-					uWL: { value: 0 }, uWD: { value: 0 }, uA0: { value: 0 }, uSweep: { value: 2.5 }, uWA: { value: new Float32Array(24) }, uSA: { value: new Float32Array(24) },
-					uWG: { value: 0 }, uSG: { value: 0 },
+					uWL: { value: 0 }, uWD: { value: 0 }, uA0: { value: [0, 0] }, uSweep: { value: [2.5, 2.5] }, uWA: { value: new Float32Array(24) }, uSA: { value: new Float32Array(24) },
+					uWG: { value: 0 }, uSG: { value: 0 }, uWR: { value: 0 }, uSR: { value: 0 },
+					uFwd: { value: new T.Vector3(0, 0, -1) }, uOrg: { value: new T.Vector3() }, uFlow: { value: new T.Vector2() }, uStretch: { value: 1 },
 				};
 				wetGlass(this.cabGlass, this.glassU);
+				wetGlass(this.sideGlass, this.glassU); // szyby boczne pociągu gracza – krople spływają w czasie jazdy
 			}
 			this.wheelsets = [];
 			this.headMat = new T.MeshBasicMaterial({ color: 0xfff6c8 });
@@ -744,10 +1124,15 @@
 			const freight = this.train.style === 'freight' || this.train.style === 'wagons';
 			const dd = this.train.style === 'dd';
 			const modelOf = (i) => (specs ? specs[i].model : freight && (i > 0 || this.train.style === 'wagons') ? 'freight' : dd ? (i === 0 ? 'sm42' : 'dd') : null);
-			this.cars = this.train.cars.map((len, i) => {
-				const m = modelOf(i);
-				return m === 'freight' ? this.buildFreightCar(i, len) : m === 'sm42' ? this.buildSM42(i, len) : m === 'dd' ? this.buildDD(i, len) : this.buildCar(i, len);
-			});
+			BEVEL = this.detail;
+			try {
+				this.cars = this.train.cars.map((len, i) => {
+					const m = modelOf(i);
+					return m === 'freight' ? this.buildFreightCar(i, len) : m === 'sm42' ? this.buildSM42(i, len) : m === 'dd' ? this.buildDD(i, len) : this.buildCar(i, len);
+				});
+			} finally {
+				BEVEL = false;
+			}
 			for (const c of this.cars) scene.add(c.group);
 			this.pA = {};
 			this.pB = {};
@@ -767,6 +1152,13 @@
 			});
 		}
 
+		// koniec budowy wagonu: scalenie części, drobne detale w LOD, okluzja i znacznik układu wagonu (aWear)
+		finish(group, keep) {
+			mergeStatic(group, keep);
+			fineLod(group);
+			bakeWear(group, this.detail);
+		}
+
 		// styl bryły base z malowaniem pojazdu i (wariant z katalogu taboru – nadpisane kolory)
 		styleOf(i, base) {
 			const sp = this.train.specs && this.train.specs[i];
@@ -779,25 +1171,19 @@
 		coachUnderframe(add, span, i) {
 			const dk = mat('#26292c'), mid = mat('#34383c'), slat = mat('#1b1d20');
 			const steel = matS('#4a4e53', { metalness: 0.5, roughness: 0.5 }), band = mat('#1a1a1a');
-			const cylZ = (r, l, x, y, z, m) => {
-				const c = new T.Mesh(GEO.cyl, m);
-				c.scale.set(r * 2, l, r * 2);
-				c.rotation.x = Math.PI / 2;
-				c.position.set(x, y, z);
-				return add(c);
-			};
+			const cylZ = (r, l, x, y, z, m) => turned(CYL, m, x, y, z, r * 2, l, 1);
 			const h = span / 2;
 			// przewód główny i przewód zasilający wzdłuż całego podwozia
-			cylZ(0.045, span + 3.6, 1.3, 0.95, 0, steel);
-			cylZ(0.035, span + 3.6, -1.3, 0.95, 0, mat('#3a3e42'));
+			add(cylZ(0.045, span + 3.6, 1.3, 0.95, 0, steel));
+			add(cylZ(0.035, span + 3.6, -1.3, 0.95, 0, mat('#3a3e42')));
 			// zbiorniki powietrza z obejmami
 			for (const [x, z, l] of [[0.55, -h * 0.55, 2.4], [-0.15, -h * 0.55, 1.8]]) {
-				cylZ(0.28, l, x, 0.48, z, mid);
-				for (const dz of [-l / 2 + 0.25, l / 2 - 0.25]) cylZ(0.29, 0.06, x, 0.48, z + dz, band);
+				add(cylZ(0.28, l, x, 0.48, z, mid));
+				for (const dz of [-l / 2 + 0.25, l / 2 - 0.25]) add(cylZ(0.29, 0.06, x, 0.48, z + dz, band));
 				add(box(0.1, 0.2, 0.08, dk, x, 0.8, z));
 			}
 			// cylinder hamulcowy z cięgłem (dźwignie hamulca ręcznego/powietrznego do obu wózków)
-			cylZ(0.2, 0.55, -0.55, 0.5, h * 0.05, dk);
+			add(cylZ(0.2, 0.55, -0.55, 0.5, h * 0.05, dk));
 			add(box(0.05, 0.05, span + 1.8, steel, -0.55, 0.42, 0));
 			add(box(0.06, 0.3, 0.06, steel, -0.55, 0.55, h * 0.05 + 0.4));
 			// skrzynia akumulatorów z żaluzjami
@@ -808,6 +1194,52 @@
 			// przetwornica (prądnica) i skrzynka rozdzielcza
 			add(box(1.1, 0.5, 1.4, dk, -0.35, 0.47, -h * 0.05 - 1.0));
 			add(box(0.6, 0.45, 0.7, mid, 0.75, 0.48, h * 0.05));
+			// prądnica osiowa przy pierwszym wózku i pasek do osi (w osłonie)
+			const gz = -h - 0.4;
+			add(box(0.46, 0.4, 0.6, dk, 0.4, 0.55, gz));
+			add(fine(beam(0.5, gz + 0.3, 0.46, gz + 0.7, 0.4, 0.09, band)));
+			// przewody elektryczne w rurach osłonowych wzdłuż podwozia, obejmy na poprzecznicach
+			for (const sx of [-1, 1]) add(fine(cylZ(0.03, span + 3.0, sx * 1.15, 0.86, 0, mat('#1e2022'))));
+			for (let z = -h; z <= h + 1e-6; z += span / 4) add(fine(box(2.4, 0.05, 0.06, dk, 0, 0.9, z)));
+		}
+
+		/* Podwozie EZT między wózkami: skrzynie aparatury różnej długości z żebrami usztywniającymi i żaluzjami,
+		   zbiorniki powietrza z obejmami, przewody w rurach osłonowych; nowoczesne EZT – fartuchy w kolorze dołu. */
+		emuUnderframe(add, span, st) {
+			const h = span / 2, dk = mat('#26292c'), mid = mat('#33373b'), slat = mat('#1b1d20'), band = mat('#1a1a1a');
+			const segs = [[-h, -h + span * 0.3, 2.1, 0.55, mid], [-h + span * 0.36, -h + span * 0.62, 1.5, 0.5, dk], [-h + span * 0.68, h, 2.2, 0.6, mid]];
+			segs.forEach(([a, b, w, ht, m], k) => {
+				const zc = (a + b) / 2, l = b - a, y = 0.95 - ht / 2;
+				add(box(w, ht, l, m, 0, y, zc));
+				for (const sx of [-1, 1]) {
+					for (let z = a + 0.3; z < b - 0.15; z += 0.5) add(fine(box(0.03, ht - 0.08, 0.035, dk, sx * (w / 2 + 0.012), y, z)));
+					if (k !== 1) for (let yy = y - ht / 2 + 0.1; yy < y + ht / 2 - 0.08; yy += 0.07) add(fine(box(0.02, 0.025, Math.min(1.2, l * 0.4), slat, sx * (w / 2 + 0.016), yy, zc)));
+				}
+			});
+			// zbiorniki powietrza obok środkowej skrzyni
+			const za = -h + span * 0.36, zb = -h + span * 0.62, lr = (zb - za) * 0.85;
+			for (const sx of [-1, 1]) {
+				add(turned(CYL, mid, sx * 1.05, 0.62, (za + zb) / 2, 0.42, lr, 1));
+				for (const dz of [-lr / 2 + 0.2, lr / 2 - 0.2]) add(fine(turned(CYL, band, sx * 1.05, 0.62, (za + zb) / 2 + dz, 0.44, 0.06, 1)));
+				add(fine(turned(CYL, mat('#1e2022'), sx * 1.22, 0.9, 0, 0.06, span + 2.5, 1)));
+				if (st.modern) add(box(0.05, 0.5, span + 1.2, mat(st.apron || '#24292e'), sx * 1.38, 0.78, 0));
+			}
+		}
+
+		/* Koniec wagonu (pasażerskiego, towarowego): stopnie manewrowe pod narożnikami czołownicy, uchwyty na ścianie
+		   czołowej (handle = false – wagon bez ściany czołowej na tej wysokości). zt – płaszczyzna końca, e – zwrot. */
+		endDetails(add, zt, e, handle = true) {
+			const rail = matS('#c9ccd0', { metalness: 0.85, roughness: 0.3 }), steel = matS('#3a3d41', { metalness: 0.5, roughness: 0.5 });
+			for (const sx of [-1, 1]) {
+				add(fine(box(0.42, 0.035, 0.24, steel, sx * 1.18, 0.66, zt)));
+				for (const dx of [-0.19, 0.19]) add(fine(box(0.03, 0.42, 0.03, steel, sx * 1.18 + dx, 0.86, zt)));
+				if (!handle) continue;
+				const hr = new T.Mesh(CYL, rail);
+				hr.scale.set(0.035, 0.75, 0.035);
+				hr.position.set(sx * 1.3, 1.75, zt + e * 0.07);
+				add(fine(hr));
+				for (const yy of [1.4, 2.1]) add(fine(box(0.03, 0.03, 0.09, rail, sx * 1.3, yy, zt + e * 0.03)));
+			}
 		}
 
 		/* Wózek: ramy boczne z sylwetką (nad maźnicami wyżej), belka poprzeczna, maźnice z pokrywami, sprężyny
@@ -816,7 +1248,7 @@
 		bogie(group, add, bz, wheelBase, R = WHEEL_R, kind = 'coach', axles = 2) {
 			const frame = matS('#3a3d41', { roughness: 0.55, metalness: 0.35 }), dark = matS('#45484c', { roughness: 0.5, metalness: 0.45 });
 			const springM = matS('#4c5056', { metalness: 0.6, roughness: 0.45 }), rust = matS('#5b4434', { roughness: 0.85 });
-			const wheelMat = matS('#3b3a38', { metalness: 0.65, roughness: 0.5 }), tread = matS('#b7bbbf', { metalness: 0.9, roughness: 0.28 });
+			const wheelMat = matS('#3b3a38', { metalness: 0.65, roughness: 0.5, train: 0.55 }), tread = matS('#b7bbbf', { metalness: 0.9, roughness: 0.28, train: 0 });
 			const shadows = this.shadows;
 			const half = wheelBase / 2, FX = 1.08;
 			// osie: dwie na końcach rozstawu, przy trzech (Co'Co') także środkowa
@@ -829,7 +1261,7 @@
 				for (const dz of AX) {
 					// maźnica z pokrywą i sprężyna osiowa nad nią
 					add(box(0.24, 0.3, 0.36, dark, sx * (FX + 0.02), R, bz + dz));
-					const cap = new T.Mesh(GEO.cyl, dark);
+					const cap = new T.Mesh(CYL, dark);
 					cap.scale.set(0.26, 0.08, 0.26);
 					cap.rotation.z = Math.PI / 2;
 					cap.position.set(sx * (FX + 0.17), R, bz + dz);
@@ -845,9 +1277,37 @@
 					add(box(0.12, 0.34, 0.1, rust, sx * 0.78, R, bz + dz - sd * (R + 0.06)));
 					add(beam(R + 0.15, bz + dz - sd * (R + 0.06), R + 0.42, bz + dz - sd * (R - 0.05), sx * 0.78, 0.04, dark));
 				}
+				if (kind === 'loco') {
+					for (const e of [-1, 1]) {
+						// piasecznica za skrajnym kołem i rura piaskowa do styku koła z szyną
+						const zs = bz + e * (half + R + 0.12);
+						add(box(0.3, 0.36, 0.22, dark, sx * (FX - 0.05), R + 0.15, zs));
+						add(fine(beam(R - 0.03, zs - e * 0.02, 0.14, bz + e * (half + R * 0.62), sx * 0.86, 0.035, springM)));
+						// tłumik pionowy przy skrajnej maźnicy (cylinder i tłoczysko)
+						const zd = bz + e * (half - 0.32);
+						const dmp = new T.Mesh(CYL, dark);
+						dmp.scale.set(0.11, 0.24, 0.11);
+						dmp.position.set(sx * (FX + 0.17), R + 0.2, zd);
+						add(fine(dmp));
+						const rod = new T.Mesh(CYL, springM);
+						rod.scale.set(0.045, 0.16, 0.045);
+						rod.position.set(sx * (FX + 0.17), R + 0.38, zd);
+						add(fine(rod));
+					}
+				} else {
+					// tłumiki pionowe obok sprężyn kołyskowych
+					for (const e of [-1, 1]) {
+						const dmp = new T.Mesh(CYL, dark);
+						dmp.scale.set(0.1, 0.3, 0.1);
+						dmp.position.set(sx * (FX - 0.12), R + 0.3, bz + e * 0.6);
+						add(fine(dmp));
+					}
+				}
+				// cięgło hamulcowe łączące klocki wzdłuż wózka
+				add(fine(box(0.04, 0.04, wheelBase + 2 * R, springM, sx * 0.78, R - 0.12, bz)));
 				// sprężyny kołyskowe (wagony, EZT) albo tłumik i cylinder hamulcowy (lokomotywa)
 				if (kind === 'loco') {
-					const cyl = new T.Mesh(GEO.cyl, dark);
+					const cyl = new T.Mesh(CYL, dark);
 					cyl.scale.set(0.24, 0.3, 0.24);
 					cyl.rotation.x = Math.PI / 2;
 					cyl.position.set(sx * (FX - 0.25), R + 0.2, bz);
@@ -868,7 +1328,7 @@
 				const ws = new T.Group();
 				ws.position.set(0, R, bz + dz);
 				ws.userData.r = R;
-				const axle = new T.Mesh(GEO.cyl, wheelMat);
+				const axle = new T.Mesh(CYL, wheelMat);
 				axle.scale.set(0.17, 1.9, 0.17);
 				axle.rotation.z = Math.PI / 2;
 				ws.add(axle);
@@ -913,14 +1373,14 @@
 				va.set(x1, y1, z1);
 				vb.set(x2, y2, z2);
 				const len = va.distanceTo(vb);
-				const t = new T.Mesh(GEO.cyl, m);
+				const t = new T.Mesh(CYL, m);
 				t.scale.set(r * 2, len, r * 2);
 				t.position.copy(va).add(vb).multiplyScalar(0.5);
 				t.quaternion.setFromUnitVectors(up, vb.sub(va).normalize());
 				return add(t);
 			};
 			const joint = (x, y, z, r, len, m) => {
-				const j = new T.Mesh(GEO.cyl, m || steel);
+				const j = new T.Mesh(CYL, m || steel);
 				j.scale.set(r * 2, len, r * 2);
 				j.rotation.z = Math.PI / 2;
 				j.position.set(x, y, z);
@@ -931,12 +1391,12 @@
 			const yb = H + 0.05;
 			for (const [x, z] of [[-0.62, -0.75], [0.62, -0.75], [-0.62, 0.75], [0.62, 0.75]]) {
 				add(box(0.16, 0.06, 0.16, steel, x, yb, pz + z));
-				const core = new T.Mesh(GEO.cyl, insul);
+				const core = new T.Mesh(CYL, insul);
 				core.scale.set(0.09, 0.34, 0.09);
 				core.position.set(x, yb + 0.2, pz + z);
 				add(core);
 				for (let k = 0; k < 3; k++) {
-					const shed = new T.Mesh(GEO.cyl, insul);
+					const shed = new T.Mesh(CYL, insul);
 					shed.scale.set(0.2, 0.025, 0.2);
 					shed.position.set(x, yb + 0.1 + k * 0.1, pz + z);
 					add(shed);
@@ -983,7 +1443,7 @@
 			const kz = Bz + (C.z - Bz) * 0.12, ky = By + (C.y - By) * 0.12;
 			tube(0.18, yf + 0.05, A.z + 0.25, 0.12, ky - 0.04, kz, 0.016, steel);
 			// miech pneumatyczny (napęd) i tłumik
-			const bell = new T.Mesh(GEO.cyl, dark);
+			const bell = new T.Mesh(CYL, dark);
 			bell.scale.set(0.22, 0.32, 0.22);
 			bell.rotation.x = Math.PI / 2;
 			bell.position.set(0, yf + 0.1, pz + 0.15);
@@ -1033,7 +1493,7 @@
 			const tube = (x1, y1, z1, x2, y2, z2, r, m) => {
 				va.set(x1, y1, z1);
 				vb.set(x2, y2, z2);
-				const t = new T.Mesh(GEO.cyl, m);
+				const t = new T.Mesh(CYL, m);
 				t.scale.set(r * 2, va.distanceTo(vb), r * 2);
 				t.position.copy(va).add(vb).multiplyScalar(0.5);
 				t.quaternion.setFromUnitVectors(up, vb.sub(va).normalize());
@@ -1042,12 +1502,12 @@
 			const yb = H + 0.05;
 			for (const [x, z] of [[-0.6, -0.7], [0.6, -0.7], [-0.6, 0.7], [0.6, 0.7]]) {
 				add(box(0.16, 0.06, 0.16, steel, x, yb, pz + z));
-				const core = new T.Mesh(GEO.cyl, insul);
+				const core = new T.Mesh(CYL, insul);
 				core.scale.set(0.09, 0.3, 0.09);
 				core.position.set(x, yb + 0.18, pz + z);
 				add(core);
 				for (let k = 0; k < 3; k++) {
-					const shed = new T.Mesh(GEO.cyl, insul);
+					const shed = new T.Mesh(CYL, insul);
 					shed.scale.set(0.2, 0.025, 0.2);
 					shed.position.set(x, yb + 0.09 + k * 0.09, pz + z);
 					add(shed);
@@ -1077,7 +1537,7 @@
 					tube(x, By, Bz, x * 0.8, yC, Cz, 0.026, tubeM);
 				}
 				// zawias na ramie, oś kolana, sprężyna podnosząca
-				const hinge = new T.Mesh(GEO.cyl, steel);
+				const hinge = new T.Mesh(CYL, steel);
 				hinge.scale.set(0.1, 0.8, 0.1);
 				hinge.rotation.z = Math.PI / 2;
 				hinge.position.set(0, yA, Az);
@@ -1117,45 +1577,30 @@
 			}
 			for (const x of central ? [] : [-0.88, 0.88]) {
 				add(box(0.44, 0.44, 0.05, black, x, 1.15, zt + sgn * 0.12));
-				const cs = new T.Mesh(GEO.cyl, metal);
-				cs.scale.set(0.34, 0.3, 0.34);
-				cs.rotation.x = Math.PI / 2;
-				cs.position.set(x, 1.15, zt + sgn * 0.29);
-				add(cs);
-				const pl = new T.Mesh(GEO.cyl, polish);
-				pl.scale.set(0.22, 0.2, 0.22);
-				pl.rotation.x = Math.PI / 2;
-				pl.position.set(x, 1.15, zt + sgn * 0.52);
-				add(pl);
-				const hd = new T.Mesh(GEO.cyl, metal);
-				hd.scale.set(0.46, 0.05, 0.46);
-				hd.rotation.x = Math.PI / 2;
-				hd.position.set(x, 1.15, zt + sgn * 0.63);
-				add(hd);
-				const face = new T.Mesh(GEO.cyl, polish);
-				face.scale.set(0.38, 0.012, 0.38);
-				face.rotation.x = Math.PI / 2;
-				face.position.set(x, 1.15, zt + sgn * 0.66);
-				add(face);
+				// zderzak toczony: tuleja zwężająca się ku przodowi, trzon i talerz z wypukłą, wytartą twarzą
+				add(turned(BUFFER_GEO, metal, x, 1.15, zt + sgn * 0.13, 1, 1, sgn));
+				add(turned(BUFFER_FACE, polish, x, 1.15, zt + sgn * 0.658, 1, 1, sgn));
+				// śruby płyty mocującej
+				for (const bx of [-0.16, 0.16]) for (const by of [-0.16, 0.16]) add(fine(turned(CYL, metal, x + bx, 1.15 + by, zt + sgn * 0.155, 0.045, 0.03, sgn)));
 			}
 			// hak cięgłowy i sprzęg śrubowy (ogniwa zwisają, napinacz z rączką)
 			add(box(0.14, 0.24, 0.42, metal, 0, central ? 0.9 : 1.12, zt + sgn * 0.3));
 			add(box(0.1, 0.1, 0.14, metal, 0, central ? 1.0 : 1.22, zt + sgn * 0.52));
-			for (const x of [-0.07, 0.07]) add(beam(1.12, zt + sgn * 0.48, 0.92, zt + sgn * 0.62, x, 0.035, metal));
-			const tb = new T.Mesh(GEO.cyl, metal);
+			for (const x of [-0.07, 0.07]) add(fine(beam(1.12, zt + sgn * 0.48, 0.92, zt + sgn * 0.62, x, 0.035, metal)));
+			const tb = new T.Mesh(CYL, metal);
 			tb.scale.set(0.09, 0.32, 0.09);
 			tb.rotation.x = Math.PI / 2 - sgn * 0.4;
 			tb.position.set(0, 0.9, zt + sgn * 0.7);
-			add(tb);
-			add(box(0.36, 0.03, 0.03, polish, 0, 0.9, zt + sgn * 0.72));
+			add(fine(tb));
+			add(fine(box(0.36, 0.03, 0.03, polish, 0, 0.9, zt + sgn * 0.72)));
 			// przewody hamulcowe: rura z czołownicy, wąż w łuku, głowica (czerwony kurek – przewód główny, żółty – zasilający)
 			for (const [x, col] of [[-0.42, '#b3261e'], [0.42, '#d9a514'], [-0.62, '#b3261e'], [0.62, '#d9a514']]) {
 				if (Math.abs(x) > 0.5 && beamColor === 'coach') continue;
-				add(beam(1.0, zt + sgn * 0.08, 0.82, zt + sgn * 0.22, x, 0.05, metal));
-				add(beam(0.82, zt + sgn * 0.22, 0.68, zt + sgn * 0.4, x, 0.06, hose));
-				add(beam(0.68, zt + sgn * 0.4, 0.74, zt + sgn * 0.56, x, 0.06, hose));
-				add(box(0.1, 0.08, 0.12, metal, x, 0.75, zt + sgn * 0.6));
-				add(box(0.03, 0.03, 0.1, mat(col), x + 0.05, 0.8, zt + sgn * 0.56));
+				add(fine(beam(1.0, zt + sgn * 0.08, 0.82, zt + sgn * 0.22, x, 0.05, metal)));
+				add(fine(beam(0.82, zt + sgn * 0.22, 0.68, zt + sgn * 0.4, x, 0.06, hose)));
+				add(fine(beam(0.68, zt + sgn * 0.4, 0.74, zt + sgn * 0.56, x, 0.06, hose)));
+				add(fine(box(0.1, 0.08, 0.12, metal, x, 0.75, zt + sgn * 0.6)));
+				add(fine(box(0.03, 0.03, 0.1, mat(col), x + 0.05, 0.8, zt + sgn * 0.56)));
 			}
 		}
 
@@ -1233,7 +1678,7 @@
 				dg.add(new T.Mesh(DP.body, this.driverUni || (this.driverUni = (() => { const m = new T.MeshLambertMaterial({ color: '#25365c', vertexColors: true, emissive: '#ffffff', emissiveIntensity: 0.05 }); this.ownMats.push(m); return m; })())));
 				dg.add(new T.Mesh(DP.head, this.driverSkin || (this.driverSkin = (() => { const m = new T.MeshLambertMaterial({ color: '#e2b48f', vertexColors: true, emissive: '#ffffff', emissiveIntensity: 0.05 }); this.ownMats.push(m); return m; })())));
 				const capM = mat('#1a2440', { indoor: true });
-				const crown = new T.Mesh(GEO.cyl, capM);
+				const crown = new T.Mesh(CYL, capM);
 				crown.scale.set(0.23, 0.08, 0.25);
 				crown.position.set(0, 1.79 - 0.35 + 0.02, 0.01);
 				dg.add(crown);
@@ -1257,8 +1702,15 @@
 			const body = this.curBody;
 			if (!body) return;
 			body.updateMatrixWorld(true);
+			const proxy = wiperProxy(body, sgn, hl);
+			if (!proxy) return;
 			const rc = new T.Raycaster(), dir = new T.Vector3(0, 0, -sgn);
-			const cast = (x, y) => { rc.set(new T.Vector3(x, y, sgn * (hl + 40)), dir); return rc.intersectObject(body, false)[0]; };
+			const cast = (x, y) => {
+				const msh = proxy.at(x, y);
+				if (!msh) return undefined;
+				rc.set(new T.Vector3(x, y, sgn * (hl + 40)), dir);
+				return rc.intersectObject(msh, false)[0];
+			};
 			const hitAt = (x, y) => { const h = cast(x, y); return h ? h.point.clone() : null; };
 			const glassAt = (x, y) => { const h = cast(x, y); return !!h && h.face && h.face.materialIndex === 4; };
 			if (!glassAt(px, yGuess)) return;
@@ -1271,7 +1723,8 @@
 			yB = ymid - run(cx, ymid, 0, -st) * st;
 			yT = ymid + run(cx, ymid, 0, st) * st;
 			// oś przy zewnętrznym narożniku szyby (przy krawędzi kabiny), 12 cm od bocznej krawędzi
-			const xo = Math.abs(xl) > Math.abs(xr) ? xl : xr, ox = xo - Math.sign(xo) * 0.12;
+			// (narożnik po stronie żądanej wycieraczki – na wspólnej szerokiej szybie dawniej obie trafiały w ten sam róg, np. 48WE, ST44)
+			const xo = Math.abs(cx) < 0.3 ? (px < 0 ? xl : xr) : Math.abs(xl) > Math.abs(xr) ? xl : xr, ox = xo - Math.sign(xo) * 0.12;
 			// oś 8 cm za krawędzią szyby (na pudle), linia pióra 4 cm w głąb szyby
 			const sg = top ? -1 : 1, edge = top ? yT : yB, far = top ? yB : yT;
 			const P0 = hitAt(ox, edge - sg * 0.08), E = hitAt(ox, edge + sg * 0.04), A = hitAt(cx, far - sg * 0.03);
@@ -1303,12 +1756,12 @@
 			G.add(R);
 			const blk = mat('#121314', { roughness: 0.6 }), rub = mat('#0a0a0a', { roughness: 0.9 }), frm = matS('#2b2d30', { metalness: 0.6, roughness: 0.4 });
 			// oś z podstawą na pudle
-			const cap = new T.Mesh(GEO.cyl, blk);
+			const cap = new T.Mesh(CYL, blk);
 			cap.scale.set(0.06, 0.05, 0.06);
 			cap.rotation.x = Math.PI / 2;
 			cap.position.z = 0.025;
 			R.add(cap);
-			const base = new T.Mesh(GEO.cyl, frm);
+			const base = new T.Mesh(CYL, frm);
 			base.scale.set(0.09, 0.02, 0.09);
 			base.rotation.x = Math.PI / 2;
 			base.position.z = 0.004;
@@ -1325,7 +1778,33 @@
 			R.traverse((o) => { if (o.isMesh) o.castShadow = true; });
 			group.add(G);
 			R.rotation.z = s * a0; // położenie spoczynkowe
-			this.wiperSets.push({ car: this.curCarIdx, sgn, G, R, s, L, dy, r, a0, a1 });
+			const W = { car: this.curCarIdx, sgn, G, R, s, L, dy, r, a0, a1 };
+			/* druga wycieraczka tego samego czoła, której pióro w spoczynku przecina pióro pierwszej (długie pióra na
+			   wspólnej szybie, np. Elf, ED250): ta leży wyżej – kąt spoczynku podniesiony o tyle, by pióra się nie
+			   przecinały (z odstępem 5 cm); pierwsza – dolna (rusza później, wraca wcześniej – updateWipers) */
+			const other = this.wiperSets.find((o) => o.car === W.car && o.sgn === W.sgn && o.G.position.distanceTo(G.position) > 0.05);
+			if (other) {
+				const seg = (w, a) => {
+					const D = new T.Vector3(w.s * Math.cos(a), Math.sin(a), 0), N = new T.Vector3(w.s * Math.cos(a + Math.PI / 2), Math.sin(a + Math.PI / 2), 0);
+					return [0.1, w.r].map((t) => new T.Vector3().addScaledVector(D, t).addScaledVector(N, w.dy).applyQuaternion(w.G.quaternion).add(w.G.position));
+				};
+				const near = (a, b) => {
+					// odległość odcinków (w płaszczyźnie czoła x–y; szyba prawie pionowa)
+					const d2 = (p, q1, q2) => { const ux = q2.x - q1.x, uy = q2.y - q1.y, L2 = ux * ux + uy * uy || 1e-9, t = Math.max(0, Math.min(1, ((p.x - q1.x) * ux + (p.y - q1.y) * uy) / L2)); return Math.hypot(p.x - q1.x - ux * t, p.y - q1.y - uy * t); };
+					const cr = (o, p, q) => (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
+					if (cr(b[0], b[1], a[0]) * cr(b[0], b[1], a[1]) < 0 && cr(a[0], a[1], b[0]) * cr(a[0], a[1], b[1]) < 0) return 0;
+					return Math.min(d2(a[0], b[0], b[1]), d2(a[1], b[0], b[1]), d2(b[0], a[0], a[1]), d2(b[1], a[0], a[1]));
+				};
+				if (near(seg(W, W.a0), seg(other, other.a0)) < 0.05) {
+					let a = W.a0;
+					while (a < W.a0 + 0.6 && near(seg(W, a), seg(other, other.a0)) < 0.05) a += 0.01;
+					W.a0 = a;
+					W.a1 = Math.max(W.a1, a + 0.5);
+					R.rotation.z = s * W.a0;
+					other.lower = true;
+				}
+			}
+			this.wiperSets.push(W);
 		}
 
 		// czoło kabiny: reflektory, światła końcowe, sprzęg, pług, wycieraczki; sgn −1 = przód (−z), +1 = tył
@@ -1338,30 +1817,26 @@
 			if (st.split) this.flatFront(group, add, kind, st, H, hl, sgn);
 			const chrome = matS('#c9ccd0', { metalness: 0.95, roughness: 0.18 });
 			const hx = st.headX || 0.9;
+			// czoło opływowe: narożniki cofnięte (jak w loftBody) – światła osadzone na powierzchni czoła
+			const rec = (x) => (st.modern ? (st.round ?? 0.85) * Math.pow(Math.min(1, Math.abs(x) / 0.9 / HALF), 2.4) : 0);
 			for (const x of [-hx, hx]) {
 				// reflektor: obudowa, chromowana obręcz, klosz (świeci); obok światło końcowe w mniejszej obudowie
 				for (const [lx, ly, r0, m] of [[x, st.headY || 1.62, 0.15, head], [x * 1.13, st.tailY || 1.32, 0.1, tail]]) {
-					const hs = new T.Mesh(GEO.cyl, dark);
-					hs.scale.set(r0 * 2 + 0.1, 0.1, r0 * 2 + 0.1);
-					hs.rotation.x = Math.PI / 2;
-					hs.position.set(lx, ly, zt + sgn * 0.02);
-					add(hs);
-					const ring = new T.Mesh(GEO.cyl, chrome);
-					ring.scale.set(r0 * 2 + 0.04, 0.03, r0 * 2 + 0.04);
-					ring.rotation.x = Math.PI / 2;
-					ring.position.set(lx, ly, zt + sgn * 0.075);
-					add(ring);
-					const l = new T.Mesh(GEO.cyl, m);
-					l.scale.set(r0 * 2, 0.03, r0 * 2);
-					l.rotation.x = Math.PI / 2;
-					l.position.set(lx, ly, zt + sgn * 0.085);
-					group.add(l);
-				}
-			}
+					// obudowa toczona (wypukły tył, kołnierz), chromowana obręcz, wypukły klosz
+					const z0 = zt - sgn * rec(lx);
+					add(turned(LAMP_GEO, dark, lx, ly, z0 - sgn * 0.03, r0 + 0.05, 0.1, sgn));
+					add(turned(RING_GEO, chrome, lx, ly, z0 + sgn * 0.072, r0 + 0.025, r0 + 0.025, sgn));
+					group.add(turned(LENS_GEO, m, lx, ly, z0 + sgn * 0.066, r0, r0, sgn));
+					}
+					}
+					if (st.modern) {
+						// pas LED (ciemna listwa) między reflektorami
+						add(box(2 * hx - 0.5, 0.07, 0.03, mat('#15181b'), 0, st.headY || 1.9, zt - sgn * rec(hx * 0.5) + sgn * 0.015));
+					}
 			// poręcze przy narożnikach czoła i stopnie pod nimi
 			const rail = matS('#c9ccd0', { metalness: 0.85, roughness: 0.3 });
-			for (const x of [-1.25, 1.25]) {
-				const hr = new T.Mesh(GEO.cyl, rail);
+			for (const x of st.modern ? [] : [-1.25, 1.25]) {
+				const hr = new T.Mesh(CYL, rail);
 				hr.scale.set(0.04, 0.75, 0.04);
 				hr.position.set(x, 1.85, zt + sgn * 0.05);
 				add(hr);
@@ -1374,10 +1849,10 @@
 			const pTop = nosePoint(st, H, tL, 0, yL);
 			const zL = sgn * (hl - st.nose * (1 - tL) + (st.bigLamp ? 0.1 : 0));
 			const tilt = st.bigLamp ? 0.25 : 0.6;
-			const top = new T.Mesh(GEO.cyl, head);
+			const top = new T.Mesh(CYL, head);
 			top.scale.set(st.bigLamp ? 0.4 : 0.22, 0.08, st.bigLamp ? 0.4 : 0.22);
 			if (st.bigLamp) {
-				const hous = new T.Mesh(GEO.cyl, dark);
+				const hous = new T.Mesh(CYL, dark);
 				hous.scale.set(0.52, 0.3, 0.52);
 				hous.rotation.x = Math.PI / 2 - sgn * tilt;
 				hous.position.set(0, pTop.y - 0.05, zL - sgn * 0.12);
@@ -1395,9 +1870,27 @@
 				const px = st.panes === 3 ? 0.8 : 0.6;
 				for (const x of [-px, px]) this.addWiper(group, sgn, hl, x, (yLow + yHigh) / 2, false);
 			}
-			if (st.scharfenberg) {
+			if (st.modern) {
+				/* nowoczesne EZT: sprzęg Scharfenberga wysunięty z wnęki w czole, pod nim owiewka (zgarniacz) w kolorze
+				   fartucha – zwęża się ku narożnikom jak czoło */
+				const ap = mat(st.apron || '#24292e');
+				add(box(0.9, 0.5, 0.2, mat('#121314'), 0, 1.05, zt + sgn * 0.02));
+				const c = new T.Mesh(CYL, metal);
+				c.scale.set(0.22, 0.6, 0.22);
+				c.rotation.x = Math.PI / 2;
+				c.position.set(0, 1.0, zt + sgn * 0.3);
+				add(c);
+				add(box(0.42, 0.36, 0.22, metal, 0, 1.0, zt + sgn * 0.64));
+				add(box(0.3, 0.2, 0.04, mat('#121314'), 0, 1.0, zt + sgn * 0.76));
+				// owiewka tuż pod czołem (cofnięta jak narożniki), dolna część lekko pochylona do przodu, zgarniacz u dołu
+				add(box(2.4, 0.36, 0.2, ap, 0, 0.88, zt - sgn * (rec(1.0) + 0.1)));
+				const sk = box(2.0, 0.34, 0.14, ap, 0, 0.56, zt - sgn * (rec(0.8) + 0.02));
+				sk.rotation.x = -sgn * 0.25;
+				add(sk);
+				add(box(1.7, 0.05, 0.12, matS('#26282b', { roughness: 0.6, metalness: 0.4 }), 0, 0.4, zt + sgn * 0.02));
+			} else if (st.scharfenberg) {
 				// sprzęg samoczynny Scharfenberga w osłonie i owiewka z pługiem
-				const c = new T.Mesh(GEO.cyl, metal);
+				const c = new T.Mesh(CYL, metal);
 				c.scale.set(0.32, 0.8, 0.32);
 				c.rotation.x = Math.PI / 2;
 				c.position.set(0, 1.0, zt + sgn * 0.35);
@@ -1593,21 +2086,9 @@
 				}
 				const chrome = matS('#c9ccd0', { metalness: 0.95, roughness: 0.18 });
 				for (const [x, y, r0, m] of [[0, h - 0.22, 0.2, role === 'front' ? this.headMat : mat('#c9ccd0')], [-0.85, 1.72, 0.14, role === 'front' ? this.headMat : mat('#c9ccd0')], [0.85, 1.72, 0.14, role === 'front' ? this.headMat : mat('#c9ccd0')], [-0.85, 1.98, 0.08, role === 'rear' ? this.tailMat : mat('#4a1210')], [0.85, 1.98, 0.08, role === 'rear' ? this.tailMat : mat('#4a1210')]]) {
-					const hs = new T.Mesh(GEO.cyl, black);
-					hs.scale.set(r0 * 2 + 0.1, 0.16, r0 * 2 + 0.1);
-					hs.rotation.x = Math.PI / 2;
-					hs.position.set(x, y, zf + sgn * 0.06);
-					add(hs);
-					const ring = new T.Mesh(GEO.cyl, chrome);
-					ring.scale.set(r0 * 2 + 0.04, 0.03, r0 * 2 + 0.04);
-					ring.rotation.x = Math.PI / 2;
-					ring.position.set(x, y, zf + sgn * 0.14);
-					add(ring);
-					const l = new T.Mesh(GEO.cyl, m);
-					l.scale.set(r0 * 2, 0.03, r0 * 2);
-					l.rotation.x = Math.PI / 2;
-					l.position.set(x, y, zf + sgn * 0.15);
-					group.add(l);
+					add(turned(LAMP_GEO, black, x, y, zf - sgn * 0.02, r0 + 0.05, 0.16, sgn));
+					add(turned(RING_GEO, chrome, x, y, zf + sgn * 0.142, r0 + 0.025, r0 + 0.025, sgn));
+					group.add(turned(LENS_GEO, m, x, y, zf + sgn * 0.136, r0, r0, sgn));
 				}
 				// poręcz przed czołem maski
 				for (const x of [-1.42, -0.55, 0.55, 1.42]) add(box(0.04, 0.95, 0.04, rail, x, 1.9, zf + sgn * 0.35));
@@ -1616,12 +2097,12 @@
 			front(shortH, -1, i === 0 ? 'front' : 'none');
 			front(longH, 1, i === this.train.cars.length - 1 ? 'rear' : 'none');
 			// dach długiej maski: wentylator chłodnicy, tłumik wydechu
-			const fan = new T.Mesh(GEO.cyl, dark);
+			const fan = new T.Mesh(CYL, dark);
 			fan.scale.set(1.3, 0.12, 1.3);
 			fan.position.set(0, 3.24, zEnd - 1.6);
 			add(fan);
 			add(box(1.0, 0.05, 1.0, lou2, 0, 3.31, zEnd - 1.6));
-			const ex = new T.Mesh(GEO.cyl, dark);
+			const ex = new T.Mesh(CYL, dark);
 			ex.scale.set(0.28, 0.35, 0.28);
 			ex.position.set(0, 3.38, zB - 3.4);
 			add(ex);
@@ -1636,7 +2117,7 @@
 				return yo >= 2.45 && yo < 2.62 ? 1 : 0;
 			};
 			const bodyGeo = loftBody(cl, H, true, true, st, livery, 0, wins.flat());
-			const body = add(new T.Mesh(bodyGeo, [green, cream, cream, matS(st.roof, { roughness: 0.55, metalness: 0.3 }), this.cabGlass, this.sideGlass, this.hiddenMat]));
+			const body = add(new T.Mesh(bodyGeo, [green, cream, cream, matS(st.roof, { roughness: 0.55, metalness: 0.3, panels: true }), this.cabGlass, this.sideGlass, this.hiddenMat]));
 			body.position.z = cz;
 			body.userData.ownGeometry = true;
 			// wycieraczki na szybach czołowych kabiny (nad maskami)
@@ -1660,7 +2141,7 @@
 			rg.position.set(0, FLY, cz);
 			group.add(rg);
 			const room = this.cabRoom(rg, 'loco', { nose: 0 }, H, cl / 2, -1, i === 0);
-			mergeStatic(group, new Set([body]));
+			this.finish(group, new Set([body]));
 			return { group, len, doorZ: [], kind: 'loco', st, H, bodyGeo, cab: true, room, cabSpec: { geo: bodyGeo, hl: cl / 2, nose: 0, H: H - FLY, y: FLY, z: cz } };
 		}
 
@@ -1691,7 +2172,7 @@
 				return yo >= 2.2 && yo < 2.95 ? 1 : 0;
 			};
 			const bodyGeo = loftBody(len, H, false, false, st, livery, 0, cuts);
-			const body = add(new T.Mesh(bodyGeo, [blue, yellow, yellow, matS(st.roof, { roughness: 0.55, metalness: 0.3 }), this.cabGlass, this.sideGlass, this.hiddenMat]));
+			const body = add(new T.Mesh(bodyGeo, [blue, yellow, yellow, matS(st.roof, { roughness: 0.55, metalness: 0.3, panels: true }), this.cabGlass, this.sideGlass, this.hiddenMat]));
 			body.userData.ownGeometry = true;
 			// ściany od środka (ta sama bryła, widziana od wewnątrz; okna i drzwi otwarte)
 			if (!this.ddIn) {
@@ -1717,8 +2198,15 @@
 				const lw = DOOR_W / 2, leaves = [];
 				for (let k = 0; k < 2; k++) {
 					const leaf = new T.Group();
-					leaf.add(box(0.06, 1.85, lw - 0.02, blue, 0, 0, 0));
-					leaf.add(box(0.03, 0.75, lw * 0.6, this.sideGlass, 0.01 * side, 0.35, 0));
+					// skrzydło (1,85 m) z oknem: panel dolny, pas górny, słupki po bokach okna, szyba w otworze i uszczelka
+					const ww = lw * 0.6, sw = (lw - 0.02 - ww) / 2, wy0 = -0.025, wy1 = 0.725, wc = (wy0 + wy1) / 2, wh = wy1 - wy0;
+					leaf.add(box(0.06, wy0 + 0.925, lw - 0.02, blue, 0, (wy0 - 0.925) / 2, 0));
+					leaf.add(box(0.06, 0.925 - wy1, lw - 0.02, blue, 0, (wy1 + 0.925) / 2, 0));
+					for (const sz of [-1, 1]) leaf.add(box(0.06, wh, sw, blue, 0, wc, sz * (ww / 2 + sw / 2)));
+					leaf.add(box(0.03, wh, ww, this.sideGlass, 0, wc, 0));
+					for (const y of [wy0 + 0.012, wy1 - 0.012]) leaf.add(boxU(0.064, 0.024, ww, seal, 0, y, 0));
+					for (const sz of [-1, 1]) leaf.add(boxU(0.064, wh, 0.024, seal, 0, wc, sz * (ww / 2 - 0.012)));
+					leaf.add(boxU(0.03, 0.22, 0.03, matS('#c9ccd0', { metalness: 0.85, roughness: 0.3 }), side * 0.045, -0.3, (k === 0 ? 1 : -1) * (lw / 2 - 0.1)));
 					const z0 = z + (k === 0 ? -lw / 2 : lw / 2);
 					leaf.position.set(side * (HALF + 0.035), 2.0, z0);
 					leaf.traverse((o) => { o.castShadow = shadows; o.receiveShadow = true; });
@@ -1749,25 +2237,22 @@
 				add(box(0.96, 2.15, 0.04, doorC, 0, 2.45, z0 + e * 0.02));
 				add(box(0.5, 0.6, 0.02, matS('#26323b', { roughness: 0.08, metalness: 0.3 }), 0, 2.95, z0 + e * 0.045));
 				this.buffers(add, e * (hl - 0.22), e, 'coach');
+				this.endDetails(add, z0, e);
 			}
 			if (i < n - 1) {
 				add(box(1.05, 2.3, t.gap + 0.5, mat('#161616'), 0, 2.5, hl + t.gap / 2));
 				for (let k = 0; k < 5; k++) add(box(1.19, 2.42, 0.06, mat('#262626'), 0, 2.5, hl - 0.2 + (k + 0.5) * ((t.gap + 0.4) / 5)));
 			} else for (const x of [-0.9, 0.9]) group.add(box(0.3, 0.3, 0.05, this.tailMat, x, 1.6, hl + 0.03));
 			// dach: wywietrzniki
-			const roofMat = matS(st.roof, { roughness: 0.55, metalness: 0.3 });
+			const roofMat = matS(st.roof, { roughness: 0.55, metalness: 0.3, panels: true });
 			for (let z = -hl + 2; z < hl - 1.5; z += 3) {
-				const v = new T.Mesh(GEO.cyl, mat('#30353a'));
-				v.scale.set(0.42, 0.18, 0.42);
-				v.position.set(0, H + 0.05, z);
+				const v = new T.Mesh(VENT_GEO, roofMat);
+				v.scale.set(0.25, 0.28, 0.25);
+				v.position.set(0, H - 0.06, z);
 				add(v);
-				const cp = new T.Mesh(GEO.sphere, roofMat);
-				cp.scale.set(0.5, 0.14, 0.5);
-				cp.position.set(0, H + 0.16, z);
-				add(cp);
 			}
 			this.interiorDD(group, len, zLow, zUp, zEndW, doorZ, DOOR_W, i);
-			mergeStatic(group, new Set([body]));
+			this.finish(group, new Set([body]));
 			return { group, len, doorZ, kind: 'dd', st, H, bodyGeo, cab: false, room: null };
 		}
 
@@ -1814,6 +2299,8 @@
 			let st = this.styleOf(i, model);
 			// pas na burcie: krawędzie przekroju pudła na jego granicach (malowanie ścian wg wysokości)
 			if (st.belt) st = Object.assign({}, st, { sideYs: (st.sideYs || []).concat(st.belt) });
+			// pasy malowania (nowoczesne EZT): krawędzie przekroju na granicach pasów
+			if (st.zones) st = Object.assign({}, st, { sideYs: (st.sideYs || []).concat(st.zones.map((z) => z[0])) });
 			// bryła bazowa (loco, coach, ezt, cargo) – serie różnią się parametrami stylu (wózki, okna, boki, czoło)
 			const kind = st.base || model;
 			const ezt = kind === 'ezt';
@@ -1832,13 +2319,13 @@
 			const cabWin = kind === 'loco' || kind === 'cargo' ? 1.5 : kind === 'ezt' ? 1.0 : 0;
 			// wagony pasażerskie: drzwi, okna boczne i zakres wnętrza (współrzędna z, przód = −z)
 			const passenger = kind === 'ezt' || kind === 'coach';
-			const DOOR_W = kind === 'coach' ? 0.9 : 1.3;
+			const DOOR_W = st.doorW || (kind === 'coach' ? 0.9 : 1.3);
 			const cabDepth = st.nose * 0.45 + 2.45; // ściana tylna kabiny – jak w cab.js
 			const zIn0 = noseF ? -hl + cabDepth + 0.08 : -hl + 0.35;
 			const zIn1 = noseR ? hl - cabDepth - 0.08 : hl - 0.35;
 			// EN57: dwoje drzwi dwuskrzydłowych na burtę; 111A: drzwi w przedsionkach na obu końcach
-			const doorZ = kind === 'ezt' ? [len * 0.26, -len * 0.26] : kind === 'coach' ? [hl - 1.0, -(hl - 1.0)] : [];
-			const winW = kind === 'ezt' ? 1.05 : 1.3, pitch = kind === 'ezt' ? 1.45 : 2.2;
+			const doorZ = st.doors ? st.doors(len, noseF, noseR) : kind === 'ezt' ? [len * 0.26, -len * 0.26] : kind === 'coach' ? [hl - 1.0, -(hl - 1.0)] : [];
+			const winW = (kind === 'ezt' && st.winW) || (kind === 'ezt' ? 1.05 : 1.3), pitch = st.pitch || (kind === 'ezt' ? 1.45 : 2.2);
 			const wins = [];
 			if (kind === 'coach') {
 				// 111A: dziesięć przedziałów – okno na środku każdego
@@ -1889,7 +2376,11 @@
 				if ((kind === 'coach' || kind === 'ezt' || kind === 'loco') && to < 0.01 && yo > 3.45) return 3;
 				if (yo > 3.52 && ax < 1.3) return 3;
 				const side = ax > 1.3;
-				if (kind === 'ezt') return yo >= 2.15 ? 1 : 0; // EN57: kremowa góra, niebieski dół
+				if (kind === 'ezt') {
+					// nowoczesne EZT: pasy malowania wg wysokości (zones)
+					if (st.zones) { for (const [a0, a1, g] of st.zones) if (yo >= a0 && yo < a1) return g; return 0; }
+					return yo >= 2.15 ? 1 : 0; // EN57: kremowa góra, niebieski dół
+				}
 				if (kind === 'coach') {
 					if (st.zones) { for (const [a0, a1, g] of st.zones) if (yo >= a0 && yo < a1) return g; return 0; }
 					return yo >= 1.3 && yo < 2.15 ? 1 : 0; // 111A: kremowy pas między zielonymi (zielony od 0,15 m pod oknami)
@@ -1901,7 +2392,7 @@
 				return yo > 1.28 && yo < 1.76 ? 1 : 0; // towarowa
 			};
 			const glass = matS('#0a0f14', { roughness: 0.12, metalness: 0.05, envMapIntensity: 0.55 });
-			const bodyMats = [paint(st.paint), paint(st.stripe), paint(st.band), matS(st.roof, { roughness: 0.55, metalness: 0.3 }), this.cabGlass, this.sideGlass, this.hiddenMat];
+			const bodyMats = [paint(st.paint), paint(st.stripe), paint(st.band), matS(st.roof, { roughness: 0.55, metalness: 0.3, panels: true }), this.cabGlass, this.sideGlass, this.hiddenMat, paint(st.trim || st.stripe)];
 			const bodyGeo = loftBody(len, H, noseF, noseR, st, livery, 0, cuts);
 			const body = add(new T.Mesh(bodyGeo, bodyMats));
 			body.userData.ownGeometry = true;
@@ -1914,14 +2405,25 @@
 			add(box(2.5, 0.35, Math.max(1, len - 2 * bogieOff - wb - 1.4), under, 0, 0.88, 0));
 			add(box(2.7, 0.12, len - 0.6, under, 0, BOTTOM - 0.02, 0));
 			const wR = st.wR ?? (kind === 'loco' ? 0.55 : kind === 'ezt' ? 0.47 : kind === 'cargo' ? 0.53 : 0.45);
-			for (const bz of [-hl + bogieOff, hl - bogieOff]) this.bogie(group, add, bz, wb, wR, kind === 'loco' || kind === 'cargo' ? 'loco' : kind === 'ezt' ? 'ezt' : 'coach', st.axles || 2);
+			/* wózki Jakobsa (człony przegubowe, spec.art): wózek pod czołem z kabiną i wspólny pod przegubem – na tylnym
+			   końcu członu, w połowie odstępu do następnego (przedni koniec członu opiera się na wózku poprzedniego) */
+			const bzs = spec && spec.art ? [noseF ? -hl + bogieOff : null, noseR ? hl - bogieOff : hl + t.gap / 2].filter((z) => z !== null) : [-hl + bogieOff, hl - bogieOff];
+			for (const bz of bzs) this.bogie(group, add, bz, wb, wR, kind === 'loco' || kind === 'cargo' ? 'loco' : kind === 'ezt' ? 'ezt' : 'coach', st.axles || 2);
 			const span = len - 2 * bogieOff - 4.5;
 			if (span > 2 && kind === 'coach') this.coachUnderframe(add, span, i);
+			else if (span > 2 && kind === 'ezt') this.emuUnderframe(add, span, st);
 			else if (span > 2) {
 				for (let k = 0; k < 4; k++) {
 					const z = -span / 2 + ((k + 0.5) * span) / 4;
 					const w = 1.6 + hash(this.seed + i * 3 + k) * 0.6;
 					add(box(w, 0.55, span / 4 - 0.5, mat(k % 2 ? '#34383c' : '#2c3034'), 0, 0.62, z));
+				}
+			}
+			if (kind === 'loco' && span > 2) {
+				// gniazda podnośników pod ostojnicą przy końcach i przewody w rurach osłonowych między wózkami
+				for (const sx of [-1, 1]) {
+					for (const e of [-1, 1]) add(box(0.32, 0.14, 0.32, under, sx * 1.15, BOTTOM - 0.14, e * (hl - 1.0)));
+					add(fine(turned(CYL, mat('#1e2022'), sx * 1.2, 0.84, 0, 0.06, span, 1)));
 				}
 			}
 
@@ -1931,7 +2433,7 @@
 			const seal = mat('#141414');
 			for (const z of doorZ) {
 				for (const side of [1, -1]) {
-					const nL = kind === 'ezt' ? 2 : 1, lw = DOOR_W / nL;
+					const nL = st.doorLeaves || (kind === 'ezt' ? 2 : 1), lw = DOOR_W / nL;
 					const leaves = [];
 					for (let k = 0; k < nL; k++) {
 						const leaf = new T.Group();
@@ -1942,6 +2444,9 @@
 						leaf.add(box(0.06, 0.15, lw - 0.02, doorMat, 0, 1.025, 0));
 						for (const sz of [-1, 1]) leaf.add(box(0.06, 0.7, st2 - 0.01, doorMat, 0, 0.6, sz * (lw / 2 - st2 / 2)));
 						leaf.add(box(0.03, 0.7, ww, this.sideGlass, 0, 0.6, 0));
+						// klamka przy krawędzi zamykającej
+						const hz = nL === 2 ? (k === 0 ? 1 : -1) * (lw / 2 - 0.1) : (z > 0 ? 1 : -1) * (lw / 2 - 0.12);
+						leaf.add(boxU(0.03, 0.22, 0.03, matS('#c9ccd0', { metalness: 0.85, roughness: 0.3 }), side * 0.045, -0.15, hz));
 						const z0 = z + (nL === 2 ? (k === 0 ? -lw / 2 : lw / 2) : 0);
 						leaf.position.set(side * (HALF + 0.035), 2.2, z0);
 						leaf.traverse((o) => { o.castShadow = shadows; o.receiveShadow = true; });
@@ -1961,7 +2466,7 @@
 					} else add(box(0.3, 0.06, 1.3, mat('#555a5f'), side * (HALF + 0.1), 1.02, z));
 					const railM = matS('#c9ccd0', { metalness: 0.85, roughness: 0.3 });
 					for (const dz of [-1, 1]) {
-						const hr = new T.Mesh(GEO.cyl, railM);
+						const hr = new T.Mesh(CYL, railM);
 						hr.scale.set(0.035, 1.25, 0.035);
 						hr.position.set(side * (HALF + 0.09), 2.05, z + dz * (DOOR_W / 2 + 0.1));
 						add(hr);
@@ -1984,7 +2489,7 @@
 					}
 					for (const sx of [-1, 1]) {
 						for (const dz of [-0.45, 0.45]) {
-							const h = new T.Mesh(GEO.cyl, rail);
+							const h = new T.Mesh(CYL, rail);
 							h.scale.set(0.05, 1.5, 0.05);
 							h.position.set(sx * (HALF + 0.1), 2.2, dzc + dz);
 							group.add(h);
@@ -1997,7 +2502,7 @@
 					if (!on) continue;
 					for (const sx of [-1, 1]) add(box(0.06, 0.25, 0.18, mat('#1e1e1e'), sx * (HALF + 0.08), 3.05, sgn * (hl - st.nose - 0.15)));
 					for (const sx of [-0.35, 0.35]) {
-						const horn = new T.Mesh(GEO.cyl, rail);
+						const horn = new T.Mesh(CYL, rail);
 						horn.scale.set(0.12, 0.45, 0.12);
 						horn.rotation.x = Math.PI / 2;
 						horn.position.set(sx, H + 0.12, sgn * (hl - st.nose - 0.6));
@@ -2050,26 +2555,36 @@
 					if (st.diesel) {
 						const fanM = mat('#26292c'), rimM = matS('#55595e', { metalness: 0.6, roughness: 0.4 });
 						for (const z of [-len * 0.18, len * 0.02, len * 0.2]) {
-							const fan = new T.Mesh(GEO.cyl, rimM);
+							const fan = new T.Mesh(CYL, rimM);
 							fan.scale.set(1.25, 0.16, 1.25);
 							fan.position.set(0, H + 0.04, z);
 							add(fan);
-							const g2 = new T.Mesh(GEO.cyl, fanM);
+							const g2 = new T.Mesh(CYL, fanM);
 							g2.scale.set(1.1, 0.04, 1.1);
 							g2.position.set(0, H + 0.13, z);
 							add(g2);
+							// krata nad wirnikiem (pręty docięte do okręgu)
+							for (let k = -4; k <= 4; k++) add(fine(box(0.025, 0.025, 1.15 * Math.sqrt(1 - (k / 4.6) ** 2), rimM, k * 0.12, H + 0.17, z)));
 						}
 						add(box(0.5, 0.45, 0.7, mat('#2b2d30'), 0.35, H + 0.2, -len * 0.08));
 					}
 					for (let z = -len * 0.22; !st.diesel && z <= len * 0.22 + 1e-6; z += len * 0.11) {
-						const c3 = new T.Mesh(GEO.cyl, ins);
-						c3.scale.set(0.1, 0.24, 0.1);
-						c3.position.set(0.45, H + 0.12, z);
+						const c3 = new T.Mesh(INSUL_GEO, ins);
+						c3.scale.set(0.075, 0.24, 0.075);
+						c3.position.set(0.62, H - 0.02, z);
 						add(c3);
+						add(fine(box(0.09, 0.05, 0.12, matS('#8d9196', { metalness: 0.7, roughness: 0.4 }), 0.62, H + 0.235, z))); // okucie z zaciskiem szyny
 					}
 					if (!st.diesel) {
-						add(box(0.06, 0.06, len * 0.46, cu, 0.45, H + 0.26, 0));
-						add(box(0.6, 0.04, len * 0.3, mat('#3a3d41'), -0.35, H + 0.03, 0));
+						add(turned(CYL, cu, 0.62, H + 0.25, 0, 0.055, len * 0.46, 1));
+						// pomost dachowy z poprzecznym ryflowaniem – między skrzynią oporników a pantografami
+						const walk = mat('#3a3d41'), wl = len * 0.22 - 2.6;
+						for (const e of [-1, 1]) {
+							if (wl < 0.5) break;
+							const wz = e * (2.3 + wl / 2);
+							add(box(0.6, 0.04, wl, walk, -0.3, H + 0.02, wz));
+							for (let z = wz - wl / 2 + 0.05; z < wz + wl / 2; z += 0.1) add(fine(box(0.56, 0.018, 0.022, walk, -0.3, H + 0.048, z)));
+						}
 					}
 					// duży biały numer na burtach (na ciemnym dole, pod jasną górą) i napis PKP przy końcu
 					const num = (spec && spec.num) || `${st.prefix || 'EU07'}-${100 + Math.floor(hash(this.seed * 5.1) * 400)}`;
@@ -2116,11 +2631,12 @@
 					}
 				}
 				// wyświetlacze kierunkowe nad drzwiami
+				this.curSt = st;
 				this.interior(group, kind, len, zIn0, zIn1, doorZ, wins, DOOR_W, i);
 			}
 
 			// dach: rynny nad burtami
-			const roofMat = matS(st.roof, { roughness: 0.55, metalness: 0.3 });
+			const roofMat = matS(st.roof, { roughness: 0.55, metalness: 0.3, panels: true });
 			const gutterLen = len - (noseF ? st.nose + 0.4 : 0.3) - (noseR ? st.nose + 0.4 : 0.3);
 			const gutterZ = ((noseF ? st.nose + 0.4 : 0.3) - (noseR ? st.nose + 0.4 : 0.3)) / 2;
 			for (const sx of [-1, 1]) add(box(0.06, 0.05, gutterLen, kind !== 'cargo' ? roofMat : paint(st.paint), sx * (kind !== 'cargo' ? 1.44 : 1.455), kind !== 'cargo' ? 3.46 : 3.4, gutterZ)); // w kolorze górnej części pudła (111A – dachu)
@@ -2145,7 +2661,7 @@
 					const zc = e * (hl - 3.2);
 					add(box(1.9, 0.32, 3.0, roofMat, 0, H - 0.02, zc));
 					add(box(1.7, 0.04, 2.8, mat('#30353a'), 0, H + 0.15, zc));
-					const fan = new T.Mesh(GEO.cyl, mat('#202326'));
+					const fan = new T.Mesh(CYL, mat('#202326'));
 					fan.scale.set(0.8, 0.06, 0.8);
 					fan.position.set(0, H + 0.17, zc + e * 0.6);
 					add(fan);
@@ -2153,7 +2669,7 @@
 				// 111A: wywietrzniki „torpedowe” w dwóch rzędach
 				for (let z = -hl + 1.6; !st.ac && z < hl - 1.4; z += 2.35) {
 					for (const sx of [-0.52, 0.52]) {
-						const v = new T.Mesh(GEO.cyl, roofMat);
+						const v = new T.Mesh(CYL, roofMat);
 						v.scale.set(0.22, 0.62, 0.22);
 						v.rotation.x = Math.PI / 2;
 						v.position.set(sx, H - 0.04, z + (sx > 0 ? 1.1 : 0));
@@ -2188,15 +2704,16 @@
 				}
 			} else if (kind === 'ezt') {
 				// EN57: numer pojazdu na burtach przy kabinie (wagony ra/rb) albo pośrodku (s)
-				const num = `${(spec && spec.num) || `${st.prefix || 'EN57'}-${1000 + Math.floor(hash(this.seed * 3.3) * 999)}`}${noseF || noseR ? (noseF ? 'ra' : 'rb') : 's'}`;
-				const nm = new T.MeshStandardMaterial({ map: sideTextTexture(num, st.paint, '#f2f2f2', 256, 64, 36), roughness: 0.5, transparent: true, alphaTest: 0.3 });
+				const num = `${(spec && spec.num) || `${st.prefix || 'EN57'}-${1000 + Math.floor(hash(this.seed * 3.3) * 999)}`}${st.modern ? '' : noseF || noseR ? (noseF ? 'ra' : 'rb') : 's'}`;
+				// nowoczesne EZT: ciemny numer na jasnym pudle, nad pasem pod oknami
+				const nm = new T.MeshStandardMaterial({ map: sideTextTexture(num, st.paint, st.modern ? '#24292e' : '#f2f2f2', 256, 64, 36), roughness: 0.5, transparent: true, alphaTest: 0.3 });
 				nm.userData.shared = false;
 				this.ownMats.push(nm);
 				for (const sx of [-1, 1]) {
 					const pl = new T.Mesh(new T.PlaneGeometry(1.3, 0.32), nm);
 					pl.userData.ownGeometry = true;
 					pl.rotation.y = sx * Math.PI / 2;
-					pl.position.set(sx * (HALF + 0.012), 1.75, noseF ? -hl + st.nose + 2.2 : noseR ? hl - st.nose - 2.2 : 0);
+					pl.position.set(sx * (HALF + 0.012), st.modern ? 1.98 : 1.75, noseF ? -hl + st.nose + 2.2 : noseR ? hl - st.nose - 2.2 : st.modern ? hl - 2.0 : 0);
 					group.add(pl);
 				}
 				// przetłoczenia (poziome żebra) na dolnej, granatowej części burt – poza drzwiami
@@ -2206,7 +2723,7 @@
 				let cur = za;
 				for (const dz of doorZ.slice().sort((x, y) => x - y)) { if (dz - DOOR_W / 2 - 0.12 > cur) segs.push([cur, dz - DOOR_W / 2 - 0.12]); cur = dz + DOOR_W / 2 + 0.12; }
 				if (zb > cur) segs.push([cur, zb]);
-				for (const sx of [-1, 1]) for (const y of [1.42, 1.66, 1.9]) for (const [a, b] of segs) add(box(0.035, 0.05, b - a, paint(st.paint), sx * (xAt(y) + 0.012), y, (a + b) / 2));
+				if (!st.modern) for (const sx of [-1, 1]) for (const y of [1.42, 1.66, 1.9]) for (const [a, b] of segs) add(box(0.035, 0.05, b - a, paint(st.paint), sx * (xAt(y) + 0.012), y, (a + b) / 2));
 			}
 			const grille = mat('#30353a');
 			if (kind === 'ezt' || kind === 'coach') {
@@ -2214,27 +2731,49 @@
 				const panto = t.pantographs ? t.pantographs.includes(i) : false;
 				for (let z = -hl + (noseF ? st.nose + 2.5 : 2.5); !st.ac && z < hl - (noseR ? st.nose + 2 : 2); z += kind === 'ezt' ? 3.2 : 4) { // Z1 (klimatyzowane) – bez grzybków
 					if (panto && Math.abs(z) > len * 0.12) continue;
-					const v = new T.Mesh(GEO.cyl, grille);
-					v.scale.set(0.42, 0.2, 0.42);
-					v.position.set(0, H + 0.07, z);
+					const v = new T.Mesh(VENT_GEO, roofMat);
+					v.scale.set(0.25, 0.3, 0.25);
+					v.position.set(0, H - 0.04, z);
 					add(v);
-					const cap = new T.Mesh(GEO.sphere, roofMat);
-					cap.scale.set(0.5, 0.14, 0.5);
-					cap.position.set(0, H + 0.2, z);
-					add(cap);
 				}
-				if (panto) {
+				if (kind === 'ezt' && st.modern) {
+					// nowoczesne EZT: klimatyzator (płaska obudowa z kratką i wentylatorem) na członach bez pantografu – na
+					// członach z pantografem osłona aparatury dachowej
+					const zc = panto ? 0 : noseF ? -hl + st.nose + 3.2 : noseR ? hl - st.nose - 3.2 : 0;
+					add(box(1.9, 0.34, panto ? 2.2 : 3.2, roofMat, 0, H - 0.02, zc));
+					add(box(1.7, 0.04, panto ? 2.0 : 3.0, grille, 0, H + 0.16, zc));
+					for (let z = zc - (panto ? 0.95 : 1.45); z <= zc + (panto ? 0.95 : 1.45) + 1e-6; z += 0.12) add(fine(box(1.62, 0.02, 0.025, roofMat, 0, H + 0.185, z)));
+					const fan = new T.Mesh(CYL, mat('#202326'));
+					fan.scale.set(0.8, 0.06, 0.8);
+					fan.position.set(0, H + 0.18, zc + 0.6);
+					add(fan);
+				} else if (panto) {
 					// EN57: skrzynie oporników i przewody między pantografami
 					for (const s of [-1, 1]) {
 						add(box(0.9, 0.32, 2.4, mat('#3b3f44'), s * 0.6, H + 0.1, 0));
 						add(box(0.85, 0.04, 2.3, grille, s * 0.6, H + 0.28, 0));
+						for (let z = -1.1; z <= 1.1 + 1e-6; z += 0.14) add(fine(box(0.8, 0.02, 0.025, mat('#3b3f44'), s * 0.6, H + 0.305, z)));
 					}
-					add(box(0.07, 0.07, len * 0.62, mat('#b87333'), 0, H + 0.3, 0));
+					// szyna WN na izolatorach między pantografami
+					add(turned(CYL, mat('#b87333'), 0, H + 0.31, 0, 0.06, len * 0.62, 1));
+					const insM = matS('#d8cfbf', { roughness: 0.35 });
+					for (let z = -len * 0.28; z <= len * 0.28 + 1e-6; z += len * 0.14) {
+						const c3 = new T.Mesh(INSUL_GEO, insM);
+						c3.scale.set(0.06, 0.27, 0.06);
+						c3.position.set(0, H + 0.02, z);
+						add(c3);
+					}
 				}
-			} else {
-				add(box(1.7, 0.35, 4.2, roofMat, 0, H + 0.12, 0));
-				add(box(1.5, 0.04, 3.8, grille, 0, H + 0.3, 0));
-				if (!st.diesel) add(box(0.07, 0.07, len * 0.6, mat('#b87333'), 0.9, H + 0.28, 0)); // przewód WN (elektrowozy)
+			} else if (!st.diesel) {
+				// skrzynia oporników rozruchowych (elektrowozy; spalinowozy mają w tym miejscu wentylatory): żaluzje wzdłuż
+				// boków, na wierzchu krata nad ciemnym wnętrzem; skrzynia przesunięta, obok szyna WN na izolatorach
+				const bw = kind === 'loco' && !st.diesel ? 1.3 : 1.7, bx = kind === 'loco' && !st.diesel ? -0.3 : 0;
+				add(box(bw, 0.35, 4.2, roofMat, bx, H + 0.12, 0));
+				add(box(bw - 0.2, 0.04, 3.8, grille, bx, H + 0.3, 0));
+				for (const sx of [-1, 1]) for (const y of [0.03, 0.11, 0.19]) add(fine(box(0.025, 0.03, 3.9, grille, bx + sx * (bw / 2 + 0.01), H + y, 0)));
+				for (let z = -1.85; z <= 1.85 + 1e-6; z += 0.15) add(fine(box(bw - 0.2, 0.02, 0.025, roofMat, bx, H + 0.33, z)));
+				for (const x of [-0.33, 0, 0.33]) add(fine(box(0.025, 0.02, 3.8, roofMat, bx + x * (bw - 0.2), H + 0.335, 0)));
+				if (kind !== 'loco') add(turned(CYL, mat('#b87333'), 0.9, H + 0.28, 0, 0.06, len * 0.6, 1)); // przewód WN
 			}
 
 			// przejście międzywagonowe (miech)
@@ -2259,6 +2798,7 @@
 					add(box(0.5, 0.6, 0.02, matS('#26323b', { roughness: 0.08, metalness: 0.3 }), 0, 2.95, z0 + e * 0.045)); // szyba (ciemna – za nią przejście)
 					for (const y of [2.64, 3.26]) add(box(0.56, 0.04, 0.03, metal, 0, y, z0 + e * 0.05));
 					add(box(0.04, 0.2, 0.05, metal, 0.36, 2.35, z0 + e * 0.06));
+					this.endDetails(add, z0, e);
 				}
 			}
 			// zderzaki między wagonami klasycznymi
@@ -2316,7 +2856,7 @@
 				}
 			}
 
-			mergeStatic(group, new Set([body]));
+			this.finish(group, new Set([body]));
 			return { group, len, doorZ, kind, st, H, bodyGeo, cab: noseF, room };
 		}
 
@@ -2385,7 +2925,8 @@
 			if (sills.length) parts(sills, M.seatFrame);
 			if (curtains.length) parts(curtains, M.curtain);
 			// chodnik w przejściu (EZT – między ławą 2- i 3-osobową, 111A – w korytarzu)
-			const ax = kind === 'ezt' ? -0.11 : kind === 'coach' ? -0.96 : 0;
+			const s4 = !!(this.curSt && this.curSt.seats4); // nowoczesne EZT: fotele 2 + 2, przejście w osi
+			const ax = kind === 'ezt' && !s4 ? -0.11 : kind === 'coach' ? -0.96 : 0;
 			parts([[kind === 'coach' ? 0.7 : 0.55, 0.01, L - 0.3, ax, FLOOR + 0.025, zc]], M.carpet);
 			parts([[2.8, 0.04, L, 0, CEIL, zc]], M.ceil);
 			parts([[0.22, 0.03, L - 0.4, -0.62, CEIL - 0.03, zc], [0.22, 0.03, L - 0.4, 0.62, CEIL - 0.03, zc]], M.lamp);
@@ -2428,7 +2969,7 @@
 			}
 			// fotele w zestawach naprzeciw siebie (EN57: ławy 2 + 3), pasażerowie
 			const zones = kind === 'coach' ? [] : minus(z0 + 0.15, z1 - 0.15, doors.map(([a, b]) => [a - 0.6, b + 0.6]));
-			const seatX = kind === 'ezt' ? [-1.04, -0.6, 0.38, 0.78, 1.16] : [-0.98, -0.5, 0.5, 0.98];
+			const seatX = kind === 'ezt' && !s4 ? [-1.04, -0.6, 0.38, 0.78, 1.16] : [-0.98, -0.5, 0.5, 0.98];
 			let r = 0;
 			for (const [a, b] of zones) {
 				const rows = Math.floor((b - a) / 0.95);
@@ -2501,7 +3042,7 @@
 			for (const bz of [-hl + 2.6, hl - 2.6]) this.bogie(group, add, bz, 1.8, WHEEL_R, 'coach');
 			const bufMat = matS('#2a2a2a', { metalness: 0.6, roughness: 0.4 });
 			for (const sgn of [-1, 1]) for (const x of [-0.88, 0.88]) {
-				const b = new T.Mesh(GEO.cyl, bufMat);
+				const b = new T.Mesh(CYL, bufMat);
 				b.scale.set(0.28, 0.5, 0.28);
 				b.rotation.x = Math.PI / 2;
 				b.position.set(x, 1.15, sgn * (hl + 0.2));
@@ -2527,6 +3068,8 @@
 				wheel: matS('#3b3a38', { metalness: 0.6, roughness: 0.5 }), roof: matS('#8a8f93', { roughness: 0.6, metalness: 0.2 }),
 			};
 			for (const [geo, mk, x, y, z, sx, sy, sz, col, rot] of freightParts(ti, len, seed, color, false)) {
+				// zderzaki z listy części (proste walce) – w modelu szczegółowym zastąpione pełnymi (buffers)
+				if (this.detail && geo === 'cyl' && mk === 'steel' && rot === 'x' && Math.abs(Math.abs(x) - 0.88) < 1e-6) continue;
 				const m = new T.Mesh(GEO[geo], mk === 'body' ? matS(col, { roughness: 0.75, metalness: 0.15 }) : M[mk]);
 				m.scale.set(sx, sy, sz);
 				if (rot === 'x') m.rotation.x = Math.PI / 2;
@@ -2535,9 +3078,37 @@
 				m.position.set(x, y, z);
 				add(m);
 			}
+			/* model szczegółowy (skład gracza): zderzaki toczone, sprzęg śrubowy, przewody hamulcowe, stopnie manewrowe
+			   i uchwyty na końcach, hamulec zespolony i ręczny; składy mijane – proste zderzaki z listy części (szybka
+			   budowa w czasie jazdy) */
+			if (this.detail) {
+				const wall = ft.id !== 'Sgns';
+				for (const e of [-1, 1]) {
+					this.buffers(add, e * (hl - 0.6), e, 'coach');
+					this.endDetails(add, e * (hl - 0.3), e, wall);
+				}
+				/* hamulec zespolony pod ostojnicą: cylinder hamulcowy, zbiornik pomocniczy z obejmami, zawór rozrządczy,
+				   cięgła do wózków; hamulec ręczny – koło z boku ostojnicy przy jednym końcu */
+				const band = mat('#1a1a1a');
+				add(turned(CYL, M.dark, -0.45, 0.76, -0.6, 0.36, 0.55, 1));
+				add(turned(CYL, M.dark, 0.45, 0.72, 0.5, 0.5, 0.9, 1));
+				for (const dz of [0.15, 0.85]) add(fine(turned(CYL, band, 0.45, 0.72, dz, 0.52, 0.05, 1)));
+				add(box(0.3, 0.3, 0.25, M.dark, 0, 0.82, -1.3));
+				add(fine(box(0.04, 0.04, 2 * (hl - 2.6) - 2.2, M.steel, -0.45, 0.6, 0)));
+				const hw = new T.Group();
+				hw.position.set(-1.5, 1.05, hl - 1.1);
+				hw.rotation.z = Math.PI / 2;
+				const ring = new T.Mesh(RING_GEO, M.steel);
+				ring.scale.setScalar(0.22);
+				hw.add(ring);
+				for (const a of [0, Math.PI / 3, -Math.PI / 3]) { const sp = boxU(0.42, 0.025, 0.025, M.steel, 0, 0, 0); sp.rotation.y = a; hw.add(sp); }
+				hw.traverse((o) => { o.castShadow = shadows; o.receiveShadow = true; });
+				group.add(fine(hw));
+				add(fine(box(0.12, 0.04, 0.04, M.steel, -1.44, 1.05, hl - 1.1)));
+			}
 			// tarcze końca pociągu na ostatnim wagonie
 			if (i === this.train.cars.length - 1) for (const x of [-0.9, 0.9]) group.add(box(0.3, 0.3, 0.05, this.tailMat, x, 1.6, len / 2 + 0.02));
-			mergeStatic(group, new Set());
+			this.finish(group, new Set());
 			return { group, len, doorZ: [] };
 		}
 
@@ -2589,15 +3160,34 @@
 			if (this.wiperMode === 1) this.wWait = 0;
 			return this.wiperMode;
 		}
-		updateWipers(dt) {
+		updateWipers(dt, v = 0) {
 			const U = this.glassU;
 			if (!U) return;
+			/* krople na szybach bocznych: kierunek jazdy (oś −z pierwszego wagonu w świecie), przesunięcie wzoru –
+			   do tyłu z prędkością zależną od pędu powietrza (od ok. 15 km/h), w dół grawitacyjnie (wolno, szybciej na
+			   postoju); przy prędkości krople rozciągnięte w smugi */
+			const g0 = this.cars[0] && this.cars[0].group;
+			if (g0) {
+				g0.updateWorldMatrix(true, false);
+				const e = g0.matrixWorld.elements;
+				U.uFwd.value.set(-e[8], -e[9], -e[10]).normalize();
+				U.uOrg.value.set(e[12], e[13], e[14]);
+			}
+			const sp = Math.abs(v), air = Math.max(0, sp - 4);
+			U.uFlow.value.x = (U.uFlow.value.x + Math.min(0.6, air * 0.012) * dt) % 1000;
+			U.uFlow.value.y = (U.uFlow.value.y + (sp < 4 ? 0.02 : 0.008) * dt) % 1000;
+			U.uStretch.value = 1 / (1 + Math.min(2, air * 0.06));
 			const sets = this.wiperSets.filter((w) => w.car === 0 && w.sgn === -1).slice(0, 2);
 			const W = this.weather || {}, rain = W.rain || 0, snow = W.snow || 0;
 			const dW = rain * 0.22 * dt - (rain < 0.02 ? 0.015 * dt : 0), dS = snow * 0.05 * dt - (snow < 0.02 ? 0.006 * dt : 0);
 			const clamp = (x, m) => Math.max(0, Math.min(m, x));
 			U.uWG.value = clamp(U.uWG.value + dW, 4);
 			U.uSG.value = clamp(U.uSG.value + dS, 3);
+			// ślad na obrysie przetartego pola: rośnie, gdy wycieraczki zgarniają wodę albo śnieg (każdy ruch pióra),
+			// schnie / topnieje powoli, gdy opad ustaje
+			const sweeping = this.wiperMode > 0 || this.wPh > 0;
+			U.uWR.value = clamp(U.uWR.value + (sweeping && rain > 0.02 ? (0.6 + rain) * 0.5 * dt : rain < 0.02 ? -0.01 * dt : 0), 3.2);
+			U.uSR.value = clamp(U.uSR.value + (sweeping && snow > 0.02 ? (0.4 + snow) * 0.35 * dt : snow < 0.02 ? -0.004 * dt : 0), 3);
 			for (let k = 0; k < 24; k++) { U.uWA.value[k] = clamp(U.uWA.value[k] + dW, 4); U.uSA.value[k] = clamp(U.uSA.value[k] + dS, 3); }
 			// ruch: f – położenie w cyklu (0 spoczynek … 1 drugi koniec), kąt każdej wycieraczki od a0 do a1
 			const period = [1.5, 1.5, 1.5, 0.95][this.wiperMode];
@@ -2611,14 +3201,26 @@
 			}
 			this.wAng = 0.5 * (1 - Math.cos(2 * Math.PI * this.wPh));
 			this.wSpeed = (Math.abs(this.wAng - prev) / Math.max(1e-3, dt)) * 0.9;
-			const lo = Math.min(prev, this.wAng), hi = Math.max(prev, this.wAng);
+			/* długie pióra, które w spoczynku leżą jedno na drugim i w ruchu by się przecinały: dolna wycieraczka (wLag.i)
+			   rusza z opóźnieniem i wraca wcześniej – jej ruch w części cyklu [d, 1 − d] górnej (zawsze pod nią, jak w
+			   prawdziwych układach z zachodzącymi piórami); także przy pracy przerywanej i dokańczaniu ruchu */
+			if (this.wLag === undefined && sets.length === 2 && this.wInit) this.wLag = this.wiperLag(sets);
+			this.wInit = true;
+			const lagD = this.wLag ? this.wLag.d : 0;
+			const phLag = lagD > 0 ? Math.max(0, Math.min(1, (this.wPh - lagD) / (1 - 2 * lagD))) : this.wPh;
+			if (!this.wAngs) this.wAngs = [0, 0];
+			const prevs = this.wAngs.slice();
+			const lagI = this.wLag ? this.wLag.i : -1;
+			this.wAngs = [0, 1].map((i) => (i === lagI ? 0.5 * (1 - Math.cos(2 * Math.PI * phLag)) : this.wAng));
+			if (lagI >= 0 && phLag > 0) this.wSpeed = Math.max(this.wSpeed, (Math.abs(this.wAngs[lagI] - prevs[lagI]) / Math.max(1e-3, dt)) * 0.9);
 			const w0 = sets[0];
 			U.uWL.value = w0 ? w0.r + 0.03 : 0;
 			U.uWD.value = w0 ? w0.dy : 0;
-			U.uA0.value = w0 ? w0.a0 : 0;
-			U.uSweep.value = w0 ? w0.a1 - w0.a0 : 1;
+			// kąt spoczynku i zakres pracy każdej wycieraczki osobno (górna z dwóch zachodzących piór – wyżej)
+			for (let i = 0; i < 2; i++) { const w = sets[i] || w0; U.uA0.value[i] = w ? w.a0 : 0; U.uSweep.value[i] = w ? w.a1 - w.a0 : 1; }
 			sets.forEach((w, i) => {
-				w.R.rotation.z = w.s * (w.a0 + (w.a1 - w.a0) * this.wAng);
+				const ang = this.wAngs[i], lo = Math.min(prevs[i], ang), hi = Math.max(prevs[i], ang);
+				w.R.rotation.z = w.s * (w.a0 + (w.a1 - w.a0) * ang);
 				w.G.updateWorldMatrix(true, false);
 				const e = w.G.matrixWorld.elements;
 				U.uWP.value[i].set(e[12], e[13], e[14]);
@@ -2631,6 +3233,49 @@
 				}
 			});
 			if (sets.length === 1) { U.uWP.value[1].copy(U.uWP.value[0]); U.uWU.value[1].copy(U.uWU.value[0]); U.uWV.value[1].copy(U.uWV.value[0]); U.uWS.value[1] = U.uWS.value[0]; }
+		}
+
+		/* czy pióra dwóch wycieraczek przecinają się przy ruchu w tej samej fazie (rzut na płaszczyznę szyby pierwszej):
+		   pióro – odcinek od 0,1 m do r od osi, przesunięty o dy w bok (jak w cieniowaniu mokrej szyby); pióra leżące
+		   w spoczynku jedno na drugim się nie liczą. Wynik: null – bez kolizji, inaczej { i – dolna wycieraczka, d –
+		   jej opóźnienie przy ruszaniu i wyprzedzenie przy powrocie (ułamek cyklu) }: najmniejsze bez kolizji. */
+		wiperLag(sets) {
+			const fr = sets.map((w) => {
+				w.G.updateWorldMatrix(true, false);
+				const e = w.G.matrixWorld.elements;
+				return { P: new T.Vector3(e[12], e[13], e[14]), U: new T.Vector3(e[0], e[1], e[2]).normalize(), V: new T.Vector3(e[4], e[5], e[6]).normalize(), w };
+			});
+			const U0 = fr[0].U, V0 = fr[0].V, P0 = fr[0].P;
+			const seg = (k, f) => {
+				const { P, U, V, w } = fr[k], a = w.a0 + (w.a1 - w.a0) * f;
+				const D = U.clone().multiplyScalar(w.s * Math.cos(a)).add(V.clone().multiplyScalar(Math.sin(a)));
+				const N = U.clone().multiplyScalar(w.s * Math.cos(a + Math.PI / 2)).add(V.clone().multiplyScalar(Math.sin(a + Math.PI / 2)));
+				return [0.1, w.r].map((t) => { const p = P.clone().addScaledVector(D, t).addScaledVector(N, w.dy).sub(P0); return [p.dot(U0), p.dot(V0)]; });
+			};
+			const hit = (A, B) => {
+				const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+				const d1 = cr(B[0], B[1], A[0]), d2 = cr(B[0], B[1], A[1]), d3 = cr(A[0], A[1], B[0]), d4 = cr(A[0], A[1], B[1]);
+				if (d1 * d2 < 0 && d3 * d4 < 0) return true;
+				// odstęp końców poniżej 4 cm – też kolizja (grubość pióra)
+				const dist = (p, a, b) => { const ux = b[0] - a[0], uy = b[1] - a[1], L2 = ux * ux + uy * uy || 1e-9, t = Math.max(0, Math.min(1, ((p[0] - a[0]) * ux + (p[1] - a[1]) * uy) / L2)); return Math.hypot(p[0] - a[0] - ux * t, p[1] - a[1] - uy * t); };
+				return Math.min(dist(A[0], B[0], B[1]), dist(A[1], B[0], B[1]), dist(B[0], A[0], A[1]), dist(B[1], A[0], A[1])) < 0.04;
+			};
+			const ang = (ph) => 0.5 * (1 - Math.cos(2 * Math.PI * Math.max(0, ph)));
+			if (fr[0].P.distanceTo(fr[1].P) < 0.05) return null; // ta sama oś (jedna wycieraczka liczona dwa razy)
+			const collides = (i, d) => {
+				for (let q = 1; q < 200; q++) {
+					const ph = q / 200, pl = d > 0 ? Math.max(0, Math.min(1, (ph - d) / (1 - 2 * d))) : ph;
+					const f0 = i === 0 ? ang(pl) : ang(ph), f1 = i === 1 ? ang(pl) : ang(ph);
+					if (f0 < 0.03 && f1 < 0.03) continue; // obie w spoczynku – leżą jedna na drugiej
+					if (hit(seg(0, f0), seg(1, f1))) return true;
+				}
+				return false;
+			};
+			if (!collides(-1, 0)) return null;
+			// najpierw dolna (w spoczynku pod drugą – addWiper)
+			const order = sets[0].lower ? [0, 1] : sets[1].lower ? [1, 0] : [1, 0];
+			for (let d = 0.04; d <= 0.3; d += 0.02) for (const i of order) if (!collides(i, d)) return { i, d };
+			return { i: order[0], d: 0.2 };
 		}
 
 		// położenie ramion podniesionych pantografów (0 – opuszczony, 1 – przy przewodzie)
@@ -2653,7 +3298,7 @@
 		update(sim, dark, dt) {
 			this.place(sim.route, sim.st.pos, 1, 0);
 			if (this.player && sim.panto) this.setPanto(sim.panto.h);
-			if (this.player) this.updateWipers(dt);
+			if (this.player) this.updateWipers(dt, sim.st.v);
 			// drzwi: otwieranie ok. 1,3 s, zamykanie ok. 1,6 s
 			const target = sim.doorsOpen ? 1 : 0;
 			// strona peronu najbliższej stacji (zmiana tylko przy zamkniętych drzwiach)

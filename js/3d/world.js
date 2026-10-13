@@ -24,6 +24,7 @@
 	const tp = {};
 	const M4 = new T.Matrix4(), M4B = new T.Matrix4(), V3 = new T.Vector3(), V3B = new T.Vector3(), S3 = new T.Vector3(), Q0 = new T.Quaternion(), Q1 = new T.Quaternion();
 	const SECOND = -4.6; // oś drugiego toru
+	const NO_BRIDGES = [];
 
 	class World {
 		constructor(scene) {
@@ -224,11 +225,11 @@
 			normals.repeat.set(30, 2);
 			World.M = {
 				terrain: patch(new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }), 'ground'),
-				ballast: patch(new T.MeshStandardMaterial({ color: '#948b7e', roughness: 0.95 }), 'gravel'),
+				ballast: patch(new T.MeshStandardMaterial({ color: '#8f8c85', roughness: 0.95 }), 'gravel'),
 				rail: matS('#c3c9cf', { metalness: 0.85, roughness: 0.28 }),
 				sleeper: matS('#9b988f', { roughness: 0.9, surf: 'concrete' }),
 				clip: matS('#2b2d30', { roughness: 0.6, metalness: 0.5 }),
-				railSide: matS('#6e4b35', { roughness: 0.8, metalness: 0.35 }),
+				railSide: matS('#54402f', { roughness: 0.82, metalness: 0.3 }), // boki szyn: ciemna rdza (jaskrawo pomarańczowe w słońcu wyglądały jak pomalowane)
 				grass: patch(new T.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, vertexColors: true, side: T.DoubleSide }), 'grass'),
 				flower: mat('#ffffff'),
 				personBody: World.personMat(new T.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: 0.9, metalness: 0, envMapIntensity: 0.35 })),
@@ -261,6 +262,7 @@
 		}
 
 		clear() {
+			this.abortJob();
 			for (const ch of this.chunks.values()) this.dropChunk(ch);
 			this.chunks.clear();
 			this.zones = [];
@@ -287,7 +289,7 @@
 		   (tory i drogi przechodzące pod torem schodzą razem z terenem). */
 		dip(s, dd, full) {
 			let d = 0;
-			for (const b of this.route.bridges) {
+			for (const b of this.dipBridges(s)) {
 				const via = b.kind === 'viaduct', D0 = via ? 6.5 : 10;
 				// głębokość: z pomiaru terenu (NMT) albo typowa (wiadukt 6,5 m, dolina rzeki 10 m)
 				const D = this.env && this.bridgeDepth ? this.bridgeDepth(b, D0) : D0;
@@ -328,6 +330,10 @@
 						v = depth * (1 - smoothstep(c.hw, c.hw + 1.5 * depth + 0.3, q));
 					}
 				} else {
+					// most nad wodą na trasie z pomiarem NMT (bez mostów – prawdziwe dno doliny i koryto): bez sztucznej doliny;
+					// dawniej wykop na głębokość najgłębszego miejsca wzdłuż całego obiektu – długi most (np. przez Wisłę)
+					// kopał 10+ m dół także pod lądowym końcem z ulicami i budynkami (Toruń Miasto)
+					if (this.env && this.env.dem && this.env.dem.lidar) continue;
 					if (out > 50) continue;
 					v = D * (1 - smoothstep(0, 50, out)) * (dd === undefined ? 1 : 1 - smoothstep(30, 70, Math.abs(dd)));
 				}
@@ -339,6 +345,51 @@
 				d = Math.max(d, v);
 			}
 			return d;
+		}
+
+		/* Mosty, których obniżenie terenu (dip) może sięgać s – kubełki co 50 m. dip liczy się dziesiątki tysięcy razy
+		   na kawałek (każdy punkt terenu) – dawniej za każdym razem po wszystkich mostach trasy. Zasięg z tych samych
+		   warunków co w dip (zapas), poza nim dip dałby 0. */
+		dipBridges(s) {
+			let ix = this.dipIdx;
+			if (!ix || ix.route !== this.route || ix.env !== this.env) {
+				ix = this.dipIdx = { route: this.route, env: this.env, map: new Map() };
+				for (const b of this.route.bridges) {
+					const r = this.dipRange(b);
+					if (!r) continue;
+					for (let k = Math.floor(r[0] / 50); k <= Math.floor(r[1] / 50); k++) {
+						if (!ix.map.has(k)) ix.map.set(k, []);
+						ix.map.get(k).push(b);
+					}
+				}
+			}
+			return ix.map.get(Math.floor(s / 50)) || NO_BRIDGES;
+		}
+
+		// zakres s, w którym dip mostu b może być niezerowy (null – nigdzie)
+		dipRange(b) {
+			const via = b.kind === 'viaduct', D0 = via ? 6.5 : 10;
+			if (!this.env) { const ext = via ? 22 : 30; return [b.from - ext, b.to + ext]; }
+			if (!via) {
+				if (this.env.dem && this.env.dem.lidar) return null;
+				const sp = this.bridgeSpan(b);
+				return [sp[0] - 50, sp[1] + 50];
+			}
+			const c = this.bridgeCorridor ? this.bridgeCorridor(b) : null;
+			if (!c) return null;
+			const D = this.bridgeDepth ? this.bridgeDepth(b, D0) : D0;
+			if (c.paths) {
+				// punkty wykopu brane z kubełków ±14 m (po 8 m) – zasięg do ok. 22 m od punktu
+				let lo = Infinity, hi = -Infinity;
+				for (const pts of c.paths.buckets.values()) for (const p of pts) { lo = Math.min(lo, p[0]); hi = Math.max(hi, p[0]); }
+				lo -= 30;
+				hi += 30;
+				// drogi: |t| ≤ 104, odległość w poprzek ≤ hw + 1,5·D (s – s drogi = t·ca + q·sa)
+				for (const rc of c.roads || []) { const e = 104 + rc.hw + 1.5 * D + 1; lo = Math.min(lo, rc.s - e); hi = Math.max(hi, rc.s + e); }
+				return lo <= hi ? [lo, hi] : null;
+			}
+			const e = Math.max(14, Math.abs(c.t0 || 0), Math.abs(c.t1 || 0)) + 100 + c.hw + 13;
+			return [c.s - e, c.s + e];
 		}
 
 		// tor równoległy na koronie nasypu na odcinku przęsła – też na moście (w danych bywa bez oznaczenia mostu)
@@ -396,7 +447,9 @@
 			}
 			for (const c of this.route.crossings) {
 				const a = Math.abs(s - c.pos);
-				if (a < 45) f = Math.max(f, 1 - smoothstep(12, 45, a));
+				// trasa rzeczywista: tylko przy torze (droga przez przejazd idzie po terenie z pomiaru) – dawniej pas 90 m
+				// spłaszczony do poziomu toru w poprzek całej mapy (na pagórkach uskoki terenu po kilkanaście metrów)
+				if (a < 45) f = Math.max(f, (1 - smoothstep(12, 45, a)) * (this.env ? 1 - smoothstep(14, 34, Math.abs(d)) : 1));
 			}
 			return f;
 		}
@@ -480,6 +533,14 @@
 		// wstęga wzdłuż toru: kolumny d (odsunięcia), wiersze co ds metrów
 		// shiftFn(s) – przesunięcie całej wstęgi w bok (rozjazdy, bocznice); yfn dostaje też odsunięcie względne
 		ribbon(s0, s1, ds, cols, yfn, colorFn, rowFn, shiftFn, matFn) {
+			const g = this.ribbonRows(s0, s1, ds, cols, yfn, colorFn, rowFn, shiftFn, matFn);
+			let r;
+			while (!(r = g.next()).done);
+			return r.value;
+		}
+
+		// ribbon krokami (wiersz na krok) – siatka terenu kawałka to kilka tysięcy węzłów (budowa w kilku klatkach)
+		*ribbonRows(s0, s1, ds, cols, yfn, colorFn, rowFn, shiftFn, matFn) {
 			const rows = Math.max(2, Math.ceil((s1 - s0) / ds) + 1);
 			const pos = new Float32Array(rows * cols.length * 3);
 			const col = colorFn ? new Float32Array(rows * cols.length * 3) : null;
@@ -512,6 +573,7 @@
 					}
 					k += 3;
 				}
+				yield;
 			}
 			const idx = [];
 			const n = cols.length;
@@ -653,20 +715,59 @@
 		}
 
 		// ---------- budowa kawałka ----------
+		// cały kawałek naraz
 		buildChunk(c) {
+			const job = this.chunkJob(c);
+			while (!job.gen.next().done);
+			return { group: job.group, dyn: job.dyn };
+		}
+
+		// budowa kawałka krokami (gen.next() – kolejny krok; po ostatnim grupa jest w scenie)
+		chunkJob(c) {
+			const job = { c, group: new T.Group(), dyn: [] };
+			job.gen = this.chunkSteps(c, job.group, job.dyn);
+			return job;
+		}
+
+		// przerwana budowa (kawałek już niepotrzebny, zmiana trasy) – zwolnienie tego, co powstało
+		abortJob() {
+			const job = this.job;
+			if (!job) return;
+			this.job = null;
+			job.gen.return();
+			this.envLampSink = this.envDeckSink = null;
+			this.dropChunk(job);
+		}
+
+		*chunkSteps(c, group, dyn) {
 			const r = this.route;
 			const s0 = c * C, s1 = s0 + C;
-			const group = new T.Group();
-			const dyn = [];
 			const inRange = (s) => s >= s0 && s < s1;
 
 			const M = World.materials();
+			/* kolumny siatki terenu: przy wkopach drogowych gęściej (envTerrainCols); na granicy z sąsiednim kawałkiem
+			   o innych kolumnach – wysokości z kolumn wspólnych (bez szczelin między kawałkami) */
+			// maski dróg (teren przy jezdniach) tego kawałka i sąsiednich – krokami, zanim zażąda ich siatka terenu
+			if (this.env && this.envRoadMaskSteps) for (let cc = c - 1; cc <= c + 1; cc++) yield* this.envRoadMaskSteps(cc);
+			const cols = this.envTerrainCols ? this.envTerrainCols(c) : TERRAIN_D;
+			const mY = (s, d) => (this.meshTerrainY ? this.meshTerrainY(s, d) : this.terrainY(s, d));
+			const edgeY = (s, d, other) => {
+				if (other === cols || other.includes(d)) return mY(s, d);
+				const com = cols.filter((x) => other.includes(x));
+				let j = 0;
+				while (j < com.length - 2 && com[j + 1] < d) j++;
+				const a = com[j], b = com[j + 1], t = (d - a) / (b - a || 1);
+				return mY(s, a) + (mY(s, b) - mY(s, a)) * t;
+			};
+			const colsA = cols === TERRAIN_D ? null : this.envTerrainCols(c - 1), colsB = cols === TERRAIN_D ? null : this.envTerrainCols(c + 1);
+			const tY = (s, d) => (colsA && s === s0 ? edgeY(s, d, colsA) : colsB && s === s1 ? edgeY(s, d, colsB) : mY(s, d));
 			const terrain = new T.Mesh(
-				this.ribbon(s0, s1, 4, TERRAIN_D, (s, d) => this.terrainY(s, d), (s, d, y) => this.terrainColor(s, d, y), (s, d) => this.rowWeights(s, d), null, (s, d) => this.terrainMat(s, d)),
+				yield* this.ribbonRows(s0, s1, 4, cols, tY, (s, d, y) => this.terrainColor(s, d, y), (s, d) => this.rowWeights(s, d), null, (s, d) => this.terrainMat(s, d)),
 				M.terrain,
 			);
 			terrain.receiveShadow = true;
 			group.add(terrain);
+			yield;
 
 			// podsypka: korona, ramiona i skarpy (ziarno kamieni w shaderze)
 			const bal = (d) => {
@@ -696,7 +797,9 @@
 			const nSl = Math.floor(C / sleeperStep);
 			const tracks = r.double && !this.env ? [0, SECOND] : [0];
 			const sleepers = new T.InstancedMesh(GEO.sleeper, M.sleeper, nSl * tracks.length);
-			const clips = new T.InstancedMesh(GEO.box, M.clip, nSl * tracks.length * 4);
+			const clips = new T.InstancedMesh(GEO.railClip, M.clip, nSl * tracks.length * 4);
+			// podkłady: lekko różne odcienie betonu (wiek, zabrudzenie smarem)
+			const shade = new T.Color();
 			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
 			let nc = 0;
 			tracks.forEach((td, ti) => {
@@ -706,23 +809,35 @@
 					q.setFromAxisAngle(up, -tp.heading);
 					m4.compose(p3.set(tp.x, tp.y - 0.27, tp.z), q, sc.set(2.6, 0.2, 0.26));
 					sleepers.setMatrixAt(ti * nSl + i, m4);
+					const hs = hash(s * 1.37 + ti * 7.1);
+					sleepers.setColorAt(ti * nSl + i, shade.setScalar(hs < 0.08 ? 0.72 : 0.9 + hash(s * 2.11 + ti) * 0.16));
 					const cx = Math.cos(tp.heading), cz = Math.sin(tp.heading);
+					// przytwierdzenia po obu stronach stopki szyny, łapką do szyny (za szyną – obrócone)
 					for (const off of [-0.75 - 0.11, -0.75 + 0.11, 0.75 - 0.11, 0.75 + 0.11]) {
-						m4.compose(p3.set(tp.x + cx * off, tp.y - 0.155, tp.z + cz * off), q, sc.set(0.1, 0.07, 0.16));
+						const flip = off > Math.sign(off) * 0.75;
+						q.setFromAxisAngle(up, -tp.heading + (flip ? Math.PI : 0));
+						m4.compose(p3.set(tp.x + cx * off, tp.y - 0.135, tp.z + cz * off), q, sc.set(1, 1, 1));
 						clips.setMatrixAt(nc++, m4);
 					}
 				}
 			});
 			sleepers.receiveShadow = clips.receiveShadow = true;
 			group.add(sleepers, clips);
+			yield;
 
-			if (r.electrified) this.buildCatenary(group, s0, s1); // linia zelektryfikowana – niezależnie od pociągu
+			// sieć trakcyjna – cecha linii, nie pociągu; trasa rzeczywista: zawsze (sieć nad torami z mapy wg ich danych,
+			// nad torem pociągu – na odcinkach z siecią)
+			if (r.electrified || this.env || (r.wire && r.wire.length)) this.buildCatenary(group, s0, s1);
 			if (!this.env) this.buildPastures(group, dyn, c, s0);
-			this.buildTrees(group, c, s0, s1);
-			this.buildGrass(group, c, s0, s1);
+			yield;
+			yield* this.buildTrees(group, c, s0, s1);
+			yield;
+			yield* this.buildGrass(group, c, s0, s1);
 			this.buildPosts(group, s0, s1);
-			if (this.env) this.buildEnvChunk(group, c, dyn);
+			yield;
+			if (this.env) yield* this.buildEnvChunk(group, c, dyn);
 			else this.buildHouses(group, c, s0, s1);
+			yield;
 
 			r.stations.forEach((st, i) => { if (inRange((st.platformStart + st.platformEnd) / 2)) this.buildStation(group, dyn, st, i); });
 			r.signals.forEach((sig, i) => { if (inRange(sig.pos)) this.buildSignal(group, dyn, sig, i); });
@@ -740,7 +855,6 @@
 
 			if (this.haloSize) group.traverse((o) => { if (o.userData.lampHalo) o.scale.set(this.haloSize, this.haloSize, 1); });
 			this.scene.add(group);
-			return { group, dyn };
 		}
 
 		buildCatenary(group, s0, s1) {
@@ -827,7 +941,8 @@
 
 		// Drzewa kilku gatunków (świerk, sosna, dąb, brzoza, topola), krzewy i dalekie masy lasu.
 		// Korony z kilku brył z cieniowaniem w kolorach wierzchołków; każde drzewo ma własny odcień (instancja).
-		buildTrees(group, c, s0, s1) {
+		// generatory drzew i trawy (krok co kilkadziesiąt / tysiąc sztuk) – zob. chunkSteps
+		*buildTrees(group, c, s0, s1) {
 			const M = World.materials(), G = World.G.trees;
 			const dens = this.density;
 			const N = Math.round(230 * dens * (this.env ? 2.4 : 1));
@@ -854,6 +969,7 @@
 				m.count++;
 			};
 			for (let i = 0; i < N; i++) {
+				if ((i & 63) === 63) yield;
 				const seed = c * 1000 + i;
 				const s = s0 + hash(seed) * C;
 				const side = hash(seed + 0.31) < 0.5 ? -1 : 1;
@@ -969,7 +1085,7 @@
 		}
 
 		// Kępy trawy i kwiaty na łąkach przy torze (gęsto blisko, rzadziej dalej); nie na polach, piasku i drogach.
-		buildGrass(group, c, s0, s1) {
+		*buildGrass(group, c, s0, s1) {
 			const M = World.materials(), G = World.G.grass;
 			const N = Math.round(11000 * this.density);
 			const tufts = new T.InstancedMesh(G.geo, M.grass, N);
@@ -978,6 +1094,7 @@
 			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
 			const FL = [[1, 1, 1], [1, 0.85, 0.2], [0.75, 0.45, 0.95], [0.95, 0.3, 0.3], [0.45, 0.6, 1]];
 			for (let i = 0; i < N; i++) {
+				if (i % 1000 === 999) yield;
 				const seed = c * 9173 + i * 0.731;
 				const s = s0 + hash(seed) * C;
 				const side = hash(seed + 0.3) < 0.5 ? -1 : 1;
@@ -1116,7 +1233,17 @@
 			let sides;
 			if (PL) {
 				const sg = PL.side, c = sg * (PL.edge + PL.width / 2);
-				sides = [{ c, edge: sg * PL.edge, line: sg * (PL.edge + 0.45), back: PL.island ? c : sg * (PL.edge + PL.width), sgn: sg, width: PL.width, island: !!PL.island }];
+				/* tor z mapy tuż za tylną krawędzią (0,8–3 m od niej, na ponad połowie długości) – peron w praktyce wyspowy, choć
+				   w danych bez tej cechy: wyposażenie i latarnie w osi peronu (dawniej przy tylnej krawędzi – przy torze, np. Orzesze) */
+				let island = !!PL.island;
+				if (!island && this.env && this.envTracksAt) {
+					let n = 0, hit = 0;
+					for (let s = st.platformStart + 10; s < st.platformEnd - 10; s += 10, n++) {
+						if (this.envTracksAt(s).some((t) => { const x = t.d * sg - (PL.edge + PL.width); return x > 0.8 && x < 3; })) hit++;
+					}
+					island = n > 0 && hit > n / 2;
+				}
+				sides = [{ c, edge: sg * PL.edge, line: sg * (PL.edge + 0.45), back: island ? c : sg * (PL.edge + PL.width), sgn: sg, width: PL.width, island }];
 			} else {
 				sides = [{ c: 4.15, edge: 2.15, line: 2.6, back: 6.1, sgn: 1, width: 4.4 }];
 				if (dbl && !this.env) sides.push({ c: -8.75, edge: -6.75, line: -7.2, back: -10.7, sgn: -1, width: 4.4 });
@@ -1151,12 +1278,33 @@
 				zs.forEach((z, k) => {
 					if (underRoof(z)) return;
 					lamps.push(this.platformLamp(g, lampX(z), z, P.sgn));
-					if (k % 2 === 1) this.hangSign(g, this.platformTexture(P.sgn > 0 ? 1 : 2), 0.6, 0.42, sxAt(z), 3.05, z, 4.35);
+					// pod wysięgnikiem (łuk 0,2–0,7 m od słupa, ok. 4,5 m nad główką szyny): zawiesia do rury wysięgnika
+					if (k % 2 === 1) this.hangSign(g, this.platformTexture(P.sgn > 0 ? 1 : 2), 0.6, 0.42, lampX(z) - P.sgn * 0.45, 3.05, z, 4.47);
 					if (k % 3 === 0) this.speaker(g, lampX(z), 3.7, z, P.sgn);
 				});
 				if (big) {
-					dyn.push(this.platformClock(g, sxAt(shZ), 3.05, shZ, 3.7));
-					this.hangSign(g, this.platformTexture(P.sgn > 0 ? 1 : 2), 0.6, 0.42, sxAt(shZ + shL * 0.3), 3.15, shZ + shL * 0.3, 3.7);
+					/* zegar i tablica z numerem peronu: podwieszone pod wiatą z gry; przy zadaszeniu z mapy – pod nim (najbliższe
+					   miejsce peronu pod dachem, zawiesie do spodu dachu), bez dachu – na słupie. Dawniej zawsze w miejscu wiaty
+					   z gry i do wysokości 3,7 m – przy dachu z mapy w innym miejscu albo wyżej wisiały w powietrzu. */
+					const dyG = PL && typeof PL.h === 'number' ? PL.h - 0.76 : 0;
+					const mount = (z0, x0) => {
+						if (!hasReal) return { z: z0, top: 3.7 };
+						for (let dz = 0; dz < len; dz += 2) {
+							for (const z of dz ? [z0 - dz, z0 + dz] : [z0]) {
+								if (Math.abs(z) > len / 2 - 3) continue;
+								const x = typeof x0 === 'function' ? x0(z) : x0, y = this.envRoofUnder(mid - z, x);
+								if (y !== undefined) return { z, top: y - dyG };
+							}
+						}
+						return null;
+					};
+					const post = (x, z, top) => g.add(box(0.1, top - 0.77, 0.1, steel, x, (top + 0.77) / 2, z));
+					const mc = mount(shZ, sxAt);
+					if (mc) dyn.push(this.platformClock(g, sxAt(mc.z), 3.05, mc.z, mc.top));
+					else { post(sxAt(shZ), shZ, 2.64); dyn.push(this.platformClock(g, sxAt(shZ), 3.05, shZ, 3.46)); }
+					const ms = mount(shZ + shL * 0.3, sxAt);
+					if (ms && (!mc || Math.abs(ms.z - mc.z) > 3)) this.hangSign(g, this.platformTexture(P.sgn > 0 ? 1 : 2), 0.6, 0.42, sxAt(ms.z), 3.15, ms.z, ms.top);
+					else if (!ms) { post(sxAt(shZ + shL * 0.3), shZ + shL * 0.3, 2.94); this.hangSign(g, this.platformTexture(P.sgn > 0 ? 1 : 2), 0.6, 0.42, sxAt(shZ + shL * 0.3), 3.15, shZ + shL * 0.3, 3.37); }
 				}
 				// tablice z nazwą
 				const nz = [-len * 0.38, len * 0.38], tz = [];
@@ -1211,7 +1359,7 @@
 			const bz = -(len / 2 - 22);
 			const realB = this.env && big ? this.envStationBuilding(i) : null;
 			// dworzec z gry po stronie peronu (przy peronie wyspowym – brak, przy lewym – obrócony)
-			const genB = big && !realB && !(PL && PL.island);
+			const genB = big && !realB && !(PL && P0.island);
 			if (genB) {
 				const sub = new T.Group();
 				sub.userData.rigid = true; // budynek w całości (bez wyginania)
@@ -1303,12 +1451,13 @@
 				const ex = P0.edge + P0.sgn * 2.05;
 				for (const dx of [-0.5, 0.5]) g.add(box(0.06, 2.45, 0.06, steel, ex + dx, 2.0, ez));
 				g.add(box(1.1, 0.05, 0.06, steel, ex, 3.22, ez));
-				this.hangSign(g, this.exitTexture(), 0.9, 0.3, ex, 2.98, ez);
+				this.hangSign(g, this.exitTexture(), 0.9, 0.3, ex, 2.98, ez, 3.2);
 			}
+			const grid = this.stationGrid(g, len);
 			this.bendGroup(g, mid, new Set([W, A, I, S, Sp].flatMap((P) => [P.bodies, P.heads])));
 			// peron z pomiaru: inna wysokość niż 0,76 m – cała stacja (peron, wyposażenie, pasażerowie) o różnicę
 			if (PL && typeof PL.h === 'number' && Math.abs(PL.h - 0.76) > 0.01) g.position.y = PL.h - 0.76;
-			dyn.push({ type: 'station', index: i, st, g, glows, lamps, W, A, I, S, Sp, exit, len, sgn: P0.sgn, edgeX: P0.edge, bend: mid, init: false, lastT: null, boarding: false });
+			dyn.push({ type: 'station', index: i, st, g, glows, lamps, W, A, I, S, Sp, exit, len, sgn: P0.sgn, edgeX: P0.edge, bend: mid, init: false, lastT: null, boarding: false, grid, width: P0.width });
 			group.add(g);
 
 			if (big && !this.env) this.buildStationTracks(group, dyn, st); // trasa rzeczywista: tory stacyjne z mapy
@@ -1649,9 +1798,10 @@
 				p.position.set(x, y, z + side * 0.035);
 				g.add(p);
 			}
-			// zawiesia do wysięgnika / dachu
+			// zawiesia do wysięgnika / dachu – na krawędziach tablicy w jej płaszczyźnie (tablica w poprzek peronu, wzdłuż
+			// wysięgnika; dawniej przed i za tablicą – obok wysięgnika, w powietrzu)
 			const top = hangTo || y + h / 2 + 0.25, hl = top - (y + h / 2);
-			for (const dz of [-w * 0.35, w * 0.35]) g.add(box(0.025, hl, 0.025, frame, x, y + h / 2 + hl / 2, z + dz));
+			for (const dx of [-w * 0.35, w * 0.35]) g.add(box(0.025, hl, 0.025, frame, x + dx, y + h / 2 + hl / 2, z));
 		}
 
 		platformTexture(n) {
@@ -2026,14 +2176,7 @@
 			g.add(box(0.06, 2.3, sl - 0.4, M.glass, xw, 2.1, sz));
 			for (const y of [0.98, 3.25]) g.add(box(0.08, 0.07, sl - 0.4, frame, xw, y, sz));
 			for (let z = sz - sl / 2 + 0.2; z <= sz + sl / 2 - 0.2 + 1e-6; z += (sl - 0.4) / Math.round((sl - 0.4) / 1.6)) g.add(box(0.08, 2.3, 0.06, frame, xw, 2.1, z));
-			// ściany boczne (osłona od wiatru)
-			for (const e of [-1, 1]) {
-				const z = sz + e * (sl / 2 - 0.2);
-				const w = 1.6, xc = xw - sg * w / 2;
-				g.add(box(w, 2.3, 0.05, M.glass, xc, 2.1, z));
-				for (const y of [0.98, 3.25]) g.add(box(w, 0.07, 0.07, frame, xc, y, z));
-				g.add(box(0.07, 2.3, 0.07, frame, xw - sg * w, 2.1, z));
-			}
+			// boki wiaty otwarte (bez szklanych ścian bocznych – wyglądały jak wolno stojące puste ramy)
 			return lights;
 		}
 
@@ -2461,14 +2604,37 @@
 			const h = R.heightAt(this.route, s);
 			const ad = this.eff(d);
 			if (ad < 3.4) return h - 0.14;
+			// trasa rzeczywista: przy torze – poziom torowiska, dalej nawierzchnia (jak jezdnie z mapy)
+			if (this.env && this.surfY) { const t = smoothstep(3.4, 7, ad); return (h - 0.14) * (1 - t) + (this.surfY(s, d) + 0.1) * t; }
 			const t = smoothstep(3.4, 7, ad);
 			return (h - 0.14) * (1 - t) + (this.terrainY(s, d) + 0.08) * t;
 		}
 
 		buildCrossing(group, dyn, cr) {
 			const pts = [], idx = [];
+			// trasa rzeczywista: prawdziwa ulica z mapy przez przejazd (envCrossingPath); jezdnia z gry tylko na łączniku
+			// i w pasie, w którym ulica z mapy przy przejeździe nie jest rysowana
+			const path = this.env && this.envCrossingPath ? this.envCrossingPath(cr) : null;
+			if (path) {
+				const half = Math.max(2.8, path.w / 2);
+				const rows = [];
+				for (let u = 0; u <= path.L; u += 2) {
+					const [s, d] = path.at(u);
+					const inSkip = (Math.abs(s - cr.pos) < 12.5 && Math.abs(d) < 40.5) || (u >= path.link[0] - 2 && u <= path.link[1] + 2);
+					if (!inSkip) { rows.push(null); continue; }
+					const [s2, d2] = path.at(Math.min(path.L, u + 0.5)), [s1, d1] = path.at(Math.max(0, u - 0.5));
+					const L = Math.hypot(s2 - s1, d2 - d1) || 1, ns = -(d2 - d1) / L, nd = (s2 - s1) / L;
+					rows.push([-half, half].map((o) => { const ss = s + ns * o, dd = d + nd * o; R.sidePoint(this.route, ss, dd, tp); return [tp.x, this.roadY(ss, dd), tp.z]; }));
+				}
+				rows.forEach((r2, j) => {
+					if (!r2 || !rows[j - 1]) return;
+					const b0 = pts.length / 3;
+					pts.push(...rows[j - 1][0], ...rows[j - 1][1], ...r2[0], ...r2[1]);
+					idx.push(b0, b0 + 2, b0 + 1, b0 + 1, b0 + 2, b0 + 3);
+				});
+			}
 			const ds = [];
-			for (let d = -150; d <= 150; d += 5) ds.push(d);
+			if (!path) for (let d = -150; d <= 150; d += 5) ds.push(d);
 			ds.forEach((d, j) => {
 				for (const off of [-3.2, 3.2]) {
 					R.sidePoint(this.route, cr.pos + off, d, tp);
@@ -2488,10 +2654,47 @@
 			group.add(road);
 
 			const lights = [], glows = [];
-			for (const [off, side] of [[-5, this.route.double ? SECOND - 5.6 : -5.6], [5, 5.6]]) {
+			/* Pas torów przejazdu: wszystkie tory, które przecina droga – tor pociągu, drugi tor z gry i tory z mapy
+			   (wcześniej tylko tor pociągu: przy kilku torach sygnalizatory stały między torami albo tuż przy szynach,
+			   a auta zatrzymywały się na sąsiednich torach). zLo / zHi – granice pasu (oś skrajnego toru ± 3,2 m). */
+			const trackD = [0];
+			if (this.route.double && !this.env) trackD.push(SECOND);
+			if (this.env && this.envTracksAt) for (const t of this.envTracksAt(cr.pos)) if (Math.abs(t.d) < 40) trackD.push(t.d);
+			const zLo = Math.min(...trackD) - 3.2, zHi = Math.max(...trackD) + 3.2;
+			// sygnalizator 3 m przed pasem torów (ok. 5,5 m od najbliższej szyny), linia zatrzymania aut przy nim
+			const SIG = 3, STOP = SIG + 2.6;
+			// odległość punktu (s, d) od najbliższej szyny (tor pociągu, drugi tor z gry, tory z mapy)
+			const railDist = (ss, dd) => {
+				let m = Math.min(Math.abs(dd), this.route.double && !this.env ? Math.abs(dd - SECOND) : Infinity);
+				if (this.env && this.envTracksAt) for (const t of this.envTracksAt(ss)) m = Math.min(m, Math.abs(dd - t.d));
+				return m - 0.75;
+			};
+			/* trasa rzeczywista: sygnalizator przy prawdziwej ulicy (envCrossingPath) – przed pasem torów tej ulicy
+			   (path.zone), z boku jezdni (po prawej dla nadjeżdżających) i przodem do aut jadących po niej. Przy ulicy
+			   ukośnej do toru kilka metrów wzdłuż drogi to mało w poprzek toru – sygnalizator przesuwany od torów, aż
+			   stoi co najmniej 3,5 m od najbliższej szyny (jezdnia w tym miejscu – 3 m); u – miejsce na ulicy (linia
+			   zatrzymania aut przed nim) */
+			const placeAt = (side) => {
+				if (!path) return null;
+				const u0 = side < 0 ? path.zone[0] : path.zone[1], du = side < 0 ? -1 : 1;
+				let out = null;
+				for (let k = SIG; k <= 45; k += 0.5) {
+					const u = Math.max(0, Math.min(path.L, u0 + du * k));
+					const [s0, d0] = path.at(u), [sa, da] = path.at(Math.max(0, u - 1)), [sb, db] = path.at(Math.min(path.L, u + 1));
+					// kierunek nadjeżdżania (ku torowi): po stronie d < 0 – rosnące u, po drugiej – malejące
+					const a = side < 0 ? Math.atan2(db - da, sb - sa) : Math.atan2(da - db, sa - sb);
+					const off = Math.max(5, path.w / 2 + 1.8);
+					out = { s: s0 + Math.cos(a + Math.PI / 2) * off, d: d0 + Math.sin(a + Math.PI / 2) * off, a, u };
+					if ((railDist(s0, d0) >= 3 && railDist(out.s, out.d) >= 3.5) || u === 0 || u === path.L) break;
+				}
+				return out;
+			};
+			const sigs = [placeAt(-1), placeAt(1)];
+			for (const [off, side, pa] of [[-5, zLo - SIG, sigs[0]], [5, zHi + SIG, sigs[1]]]) {
 				const g = new T.Group();
-				this.place(g, cr.pos + off, side);
-				g.position.y = this.roadY(cr.pos + off, side);
+				const ps = pa ? pa.s : cr.pos + off, pd = pa ? pa.d : side;
+				this.place(g, ps, pd);
+				g.position.y = this.roadY(ps, pd);
 				g.add(box(0.12, 3.2, 0.12, mat('#777777'), 0, 1.6, 0));
 				// krzyż św. Andrzeja: białe ramiona (ok. 1,3 m) z czerwonym obramowaniem
 				for (const a of [0.62, -0.62]) {
@@ -2523,8 +2726,8 @@
 					g.add(gl);
 					glows.push(gl);
 				}
-				// znak i lampy przodem do nadjeżdżających aut (droga biegnie w poprzek toru)
-				g.rotateY(side < 0 ? -Math.PI / 2 : Math.PI / 2);
+				// znak i lampy przodem do nadjeżdżających aut (droga biegnie w poprzek toru; przy ulicy z mapy – wg jej kierunku)
+				g.rotateY(pa ? -pa.a : side < 0 ? -Math.PI / 2 : Math.PI / 2);
 				group.add(g);
 			}
 			const cars = [];
@@ -2532,9 +2735,16 @@
 				const car = this.carModel(cr.pos + k * 1.7);
 				group.add(car);
 				const dir = k % 2 ? -1 : 1;
-				cars.push({ obj: car, dir, p: -dir * (20 + k * 60), speed: 11 + hash(cr.pos + k * 3) * 5, stop: dir > 0 ? (this.route.double ? -12.5 : -7.5) : 7.5 });
+				// stop – środek auta na linii zatrzymania (współrzędna d drogi w poprzek toru), exit – za pasem torów
+				cars.push({ obj: car, dir, p: dir > 0 ? zLo - 20 - k * 60 : zHi + 20 + k * 60, speed: 11 + hash(cr.pos + k * 3) * 5, stop: dir > 0 ? zLo - STOP : zHi + STOP, exit: dir > 0 ? zHi + 3 : zLo - 3 });
+				if (path) {
+					// po ulicy z mapy: w – droga przebyta w kierunku jazdy; zatrzymanie 2,6 m przed sygnalizatorem
+					const z0 = dir > 0 ? path.zone[0] : path.L - path.zone[1], z1 = dir > 0 ? path.zone[1] : path.L - path.zone[0];
+					const sigW = dir > 0 ? sigs[0].u : path.L - sigs[1].u;
+					Object.assign(cars[k], { w: Math.max(0, Math.min(z0, sigW) - 25 - k * 30), stopW: sigW - 2.6, entryW: Math.max(sigW - 2.6 + 0.5, z0 - 2.2), exitW: z1 + 3 });
+				}
 			}
-			dyn.push({ type: 'crossing', cr, lights, glows, cars });
+			dyn.push({ type: 'crossing', cr, lights, glows, cars, path });
 		}
 
 		/* Wiadukt nad ulicą (trasy rzeczywiste): betonowe przęsło z gzymsami i balustradami, przyczółki ze
@@ -2629,8 +2839,26 @@
 			const dbl = this.route.double && !this.env;
 			const cx = dbl ? SECOND / 2 : 0, wide = dbl ? 10 : 5.4;
 			for (let i = 0; i <= spans; i++) {
-				const z = len / 2 - i * sl;
-				g.add(box(i === 0 || i === spans ? 6 : 3.4, 11, wide - 0.4, stone, cx, -6.4, z).rotateY(0));
+				let z = len / 2 - i * sl;
+				const pw = i === 0 || i === spans ? 6 : 3.4;
+				// trasa rzeczywista: filar nie na ulicy z mapy pod mostem – przesunięty wzdłuż mostu (do 15 m), inaczej
+				// pominięty (koniec długiego mostu nad ulicami – filar stawał w poprzek jezdni)
+				if (this.env) {
+					const blocked = (zz) => {
+						const s = mid - zz;
+						for (let o = -pw / 2 - 1.5; o <= pw / 2 + 1.5; o += 1) for (const dd of [-wide / 2, 0, wide / 2]) {
+							if ((this.onRoad && this.onRoad(s + o, cx + dd)) || (this.roadLevel && this.roadLevel(s + o, cx + dd) !== undefined)) return true;
+						}
+						return false;
+					};
+					if (blocked(z)) {
+						let nz = null;
+						for (let o = 1; o <= 15 && nz === null; o++) for (const sg of [1, -1]) if (nz === null && Math.abs(z + sg * o) <= len / 2 && !blocked(z + sg * o)) nz = z + sg * o;
+						if (nz === null) continue;
+						z = nz;
+					}
+				}
+				g.add(box(pw, 11, wide - 0.4, stone, cx, -6.4, z).rotateY(0));
 			}
 			g.add(box(wide, 0.6, len, mat('#4c5257'), cx, -0.75, 0));
 			const panels = 6;
@@ -2775,6 +3003,7 @@
 					this.chunks.delete(c);
 				}
 			}
+			if (this.job && (this.job.c < c0 - 1 || this.job.c > c1 + 1)) this.abortJob();
 			const cMin = Math.floor(-500 / C), cMax = Math.floor((this.route.length + 300) / C);
 			const fc = Math.floor(front / C);
 			const order = [];
@@ -2787,15 +3016,39 @@
 				for (let c = fc; c <= c1; c++) order.push(c);
 				for (let c = fc - 1; c >= c0; c--) order.push(c);
 			}
-			let built = 0;
-			for (const c of order) {
-				if (c < cMin || c > cMax || this.chunks.has(c)) continue;
-				this.chunks.set(c, this.buildChunk(c));
-				if (!this.warm && ++built >= 2) break;
+			/* Budowa kawałków krokami w limicie czasu na klatkę, najpierw przy pociągu (−200…+600 m). Kawałek trasy
+			   rzeczywistej to 0,1–0,5 s obliczeń – dawniej cały w jednej klatce (przy każdym doczytaniu krawędzi mapy
+			   FPS spadał o połowę). Do sceny trafia dopiero gotowy kawałek. Zwykle ok. 3 ms na klatkę (dalekie kawałki
+			   dobudowują się w tle); budowa nie nadąża (brakuje kawałka bliżej niż 900 m) – 8 ms; brak kawałka przy
+			   pociągu (wczytywanie, zmiana trasy, skok kamery) albo fast (ekran wczytywania) – 40 ms. */
+			const nearLo = Math.floor((front - 200) / C), nearHi = Math.floor((front + 600) / C);
+			const isNear = (c) => c >= nearLo && c <= nearHi;
+			const queue = order.filter(isNear).concat(order.filter((c) => !isNear(c)));
+			const todo = () => queue.find((c) => c >= cMin && c <= cMax && !this.chunks.has(c) && !(this.job && this.job.c === c));
+			// brakuje kawałka przy pociągu, a budujemy daleki – najpierw ten przy pociągu
+			if (this.job && !isNear(this.job.c)) { const n = todo(); if (n !== undefined && isNear(n)) this.abortJob(); }
+			const next = this.job ? this.job.c : todo();
+			let budget = 3;
+			if (this.fast || this.warm || (next !== undefined && isNear(next))) budget = 40;
+			else if (next !== undefined && Math.abs(next * C + C / 2 - front) < 900) budget = 8;
+			const t0 = performance.now();
+			while (performance.now() - t0 < budget) {
+				if (!this.job) {
+					const c = todo();
+					if (c === undefined) break;
+					this.job = this.chunkJob(c);
+				}
+				if (this.job.gen.next().done) {
+					this.chunks.set(this.job.c, { group: this.job.group, dyn: this.job.dyn });
+					this.job = null;
+				}
 			}
 			this.warm = false;
-			// kawałki wokół pociągu (kamery) jeszcze do zbudowania – ekran wczytywania czeka, aż będzie 0
-			this.pending = order.filter((c) => c >= cMin && c <= cMax && !this.chunks.has(c)).length;
+			// kawałki wokół pociągu (kamery) jeszcze do zbudowania – ekran wczytywania czeka, aż będzie 0; pendingNear –
+			// tylko te przy pociągu (okienko wczytywania po wyborze mapy)
+			const left = order.filter((c) => c >= cMin && c <= cMax && !this.chunks.has(c));
+			this.pending = left.length;
+			this.pendingNear = left.filter((c) => c >= nearLo && c <= nearHi).length;
 			if (World.M) {
 				this.updateLamps(dark, haze || 0);
 				World.M.litWin.emissiveIntensity = dark > 0.25 ? 0.9 * dark : 0;
@@ -2811,6 +3064,64 @@
 		}
 
 		// Pasażerowie na peronie: czekający idą do najbliższych drzwi i wsiadają, wysiadający idą do wyjścia.
+		/* Przeszkody na peronie dla pasażerów: obrysy (w rzucie) brył stacji na wysokości człowieka – ławki, kosze,
+		   latarnie, słupy tablic i wiat, gabloty, ściany, budynek – w siatce oczek 0,2 m, powiększone o promień
+		   człowieka. Bez płyt peronu (poniżej 0,95 m), dachów i tablic podwieszonych (powyżej 2,4 m) i pasażerów. */
+		stationGrid(g, len) {
+			g.updateMatrixWorld(true);
+			const bx = new T.Box3(), boxes = [];
+			for (const o of g.children) {
+				if (o.isInstancedMesh || o.isSprite || o.isPoints || o.isLight || (!o.isMesh && !o.isGroup)) continue;
+				bx.setFromObject(o);
+				if (bx.isEmpty() || bx.min.y > 2.4 || bx.max.y < 0.95) continue;
+				boxes.push([bx.min.x, bx.min.z, bx.max.x, bx.max.z]);
+			}
+			const C2 = 0.2, R0 = 0.22, x0 = -30, z0 = -len / 2 - 15, nx = Math.ceil(60 / C2), nz = Math.ceil((len + 30) / C2);
+			const cells = new Uint8Array(nx * nz);
+			for (const [ax, az, bx2, bz] of boxes) {
+				const i0 = Math.max(0, Math.floor((ax - R0 - x0) / C2)), i1 = Math.min(nx - 1, Math.floor((bx2 + R0 - x0) / C2));
+				const j0 = Math.max(0, Math.floor((az - R0 - z0) / C2)), j1 = Math.min(nz - 1, Math.floor((bz + R0 - z0) / C2));
+				for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) cells[j * nx + i] = 1;
+			}
+			return {
+				// wolne miejsce (poza siatką – wolne)
+				free: (x, z) => {
+					const i = Math.floor((x - x0) / C2), j = Math.floor((z - z0) / C2);
+					return i < 0 || j < 0 || i >= nx || j >= nz || !cells[j * nx + i];
+				},
+			};
+		}
+
+		/* Krok pieszego p ku celowi (tx, tz) o długość step z omijaniem przeszkód (siatka stacji) i innych osób (others):
+		   kierunek do celu, a gdy zajęty – odchylenia na przemian, najpierw w stronę ostatniego wyboru (bez wahania);
+		   ostatnie 1,2 m do celu bez omijania (miejsce w kolejce, drzwi – tuż przy innych); zablokowany ponad 1,5 s
+		   przeciska się. Zwraca true po dojściu. */
+		stepWalker(p, tx, tz, step, dts, G, others) {
+			const dx = tx - p.x, dz = tz - p.z, L = Math.hypot(dx, dz);
+			if (L <= Math.max(step, 0.12)) { p.x = tx; p.z = tz; p.stuck = 0; return true; }
+			if (step <= 0) return false;
+			const ux = dx / L, uz = dz / L, near = L < 1.2, sd = p.side || 1;
+			for (const a of [0, 0.45 * sd, -0.45 * sd, 0.9 * sd, -0.9 * sd, 1.4 * sd, -1.4 * sd, 1.9 * sd, -1.9 * sd]) {
+				const c = Math.cos(a), sn = Math.sin(a), vx = ux * c - uz * sn, vz = ux * sn + uz * c;
+				const nx = p.x + vx * step, nz = p.z + vz * step, lx = p.x + vx * 0.4, lz = p.z + vz * 0.4;
+				if (!near && G && (!G.free(nx, nz) || !G.free(lx, lz))) continue;
+				let hit = false;
+				if (!near) for (const o of others) {
+					if (o === p) continue;
+					const dn = Math.hypot(o.x - lx, o.z - lz);
+					// blokuje tylko ktoś, do kogo się zbliżamy (oddalanie się zawsze wolno – bez zakleszczeń)
+					if (dn < 0.45 && dn < Math.hypot(o.x - p.x, o.z - p.z)) { hit = true; break; }
+				}
+				if (hit) continue;
+				if (a) p.side = Math.sign(a);
+				p.x = nx; p.z = nz; p.stuck = 0;
+				return false;
+			}
+			p.stuck = (p.stuck || 0) + dts;
+			if (p.stuck > 1.5) { p.x += ux * step; p.z += uz * step; }
+			return false;
+		}
+
 		updatePassengers(d, sim) {
 			// nowa symulacja (np. po pociągu pokazowym w menu) – stan stacji od nowa
 			if (d.sim !== sim) { d.sim = sim; d.init = false; d.boarding = false; d.lastT = null; d.doorQ = null; }
@@ -2827,6 +3138,21 @@
 				const departed = ss.state === 'departed' || ss.state === 'missed';
 				W.list.forEach((p, k) => { p.state = k < n && !gone && !departed ? 'wait' : 'off'; });
 				for (const P of [W, A, I, S, Sp]) P.bodies.count = P.heads.count = P.list.length; // tylko ustawione osoby
+				/* czekający i spacerujący nie stoją w ławkach, latarniach ani w innych osobach: przesunięcie do najbliższego
+				   wolnego miejsca (spirala do 3 m) */
+				const placed = S.list.slice();
+				for (const p of W.list.concat(Sp.list)) {
+					if (p.state === 'off') continue;
+					const ok = (x, z) => (!d.grid || d.grid.free(x, z)) && placed.every((o) => Math.hypot(o.x - x, o.z - z) > 0.55);
+					if (!ok(p.x, p.z)) {
+						search: for (let r = 0.3; r <= 3; r += 0.3) for (let k = 0; k < 12; k++) {
+							const a = (k / 12) * Math.PI * 2, x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r;
+							if ((x - d.edgeX) * d.sgn > 0.6 && (x - d.edgeX) * d.sgn < d.width - 0.4 && ok(x, z)) { p.x = x; p.z = z; break search; }
+						}
+					}
+					if (p.tx !== undefined && Sp.list.includes(p)) p.tx = p.x; // tor spaceru – nowe położenie w poprzek
+					placed.push(p);
+				}
 			}
 			/* Wymiana pasażerów przy drzwiach (czas symulacji t):
 			   – po otwarciu drzwi (ok. 1,4 s) najpierw wysiadają: kolejno co ok. 1,5 s na drzwi, ze stopnia wagonu
@@ -2886,18 +3212,20 @@
 				if (d.doorQ) for (const Dq of d.doorQ) Dq.n = 0;
 			}
 			const sm = (a, b, x) => { const u = Math.max(0, Math.min(1, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+			// osoby na peronie (do omijania): stojący, siedzący, idący – bez tych w wagonie i na stopniu
+			const others = [];
+			for (const P of [W, A, I, S, Sp]) for (const p of P.list) if (p.state !== 'off' && p.state !== 'inside' && p.state !== 'step' && p.state !== 'out') others.push(p);
 			for (const P of [W, A]) {
 				for (const p of P.list) {
 					const st0 = p.state;
 					if (st0 === 'off' || st0 === 'wait') continue;
 					dirty = true;
 					if (st0 === 'walk' || st0 === 'board') {
-						const dx = p.tx - p.x, dz = p.tz - p.z, L = Math.hypot(dx, dz), step = p.spd * dts * (st0 === 'board' ? 0.8 : 1);
-						if (L <= Math.max(step, 0.12)) {
-							p.x = p.tx; p.z = p.tz;
+						const step = p.spd * dts * (st0 === 'board' ? 0.8 : 1);
+						if (this.stepWalker(p, p.tx, p.tz, step, dts, d.grid, others)) {
 							if (st0 === 'board') { p.state = 'step'; p.st = 0; }
 							else p.state = p.next === 'queue' ? 'queue' : 'off';
-						} else { p.x += (dx / L) * step; p.z += (dz / L) * step; }
+						}
 					} else if (st0 === 'queue') {
 						const Dq = p.door;
 						if (boarding && Dq && t >= Dq.free) {
@@ -2932,11 +3260,12 @@
 					if (p.wait <= 0) { p.state = 'stroll'; p.tz = (Math.random() - 0.5) * 2 * p.zr; }
 					continue;
 				}
-				const dz = p.tz - p.z, step = p.spd * dts;
-				if (Math.abs(dz) <= Math.max(step, 0.2)) {
+				// tor spaceru – p.tx (w poprzek peronu); przeszkody i ludzi omija, potem wraca na swój tor
+				const step = p.spd * dts;
+				if (Math.abs(p.tz - p.z) <= 0.25 || this.stepWalker(p, p.tx, p.tz, step, dts, d.grid, others)) {
 					if (Math.random() < 0.5) { p.state = 'pause'; p.wait = 3 + Math.random() * 8; }
 					else p.tz = (Math.random() - 0.5) * 2 * p.zr;
-				} else p.z += Math.sign(dz) * step;
+				}
 			}
 			if (!dirty) return;
 			for (const P of [W, A, I, S, Sp]) {
@@ -3014,8 +3343,21 @@
 
 		updateStreet(d, dt) {
 			if (d.type === 'traffic') {
+				/* auta jednym pasem w danym kierunku: odstęp od auta przed sobą (wcześniej szybsze przejeżdżało przez
+				   wolniejsze), odległość wzdłuż ulicy z zawinięciem jej końców */
+				const span = d.sB - d.sA;
 				for (const c of d.cars) {
-					c.s += c.dir * c.speed * dt;
+					if (c.v === undefined) c.v = c.speed;
+					let vmax = c.speed;
+					for (const o of d.cars) {
+						if (o === c || o.dir !== c.dir) continue;
+						const gap = ((((o.s - c.s) * c.dir) % span) + span) % span;
+						if (gap < 30) vmax = Math.min(vmax, o.v !== undefined ? o.v + Math.max(0, gap - 7) * 0.8 : c.speed, Math.sqrt(2 * 4 * Math.max(0, gap - 6.5)));
+					}
+					c.v = vmax > c.v ? Math.min(vmax, c.v + 2.5 * dt) : Math.max(vmax, c.v - 8 * dt);
+				}
+				for (const c of d.cars) {
+					c.s += c.dir * c.v * dt;
 					if (c.s > d.sB) c.s = d.sA;
 					if (c.s < d.sA) c.s = d.sB;
 					R.sidePoint(this.route, c.s, c.d, tp);
@@ -3029,8 +3371,18 @@
 			d.list.forEach((p, k) => {
 				p.s += p.dir * p.spd * dt;
 				if (p.s > d.sB || p.s < d.sA) { p.dir = -p.dir; p.s = Math.max(d.sA, Math.min(d.sB, p.s)); }
-				R.sidePoint(this.route, p.s, p.d, tp);
-				const y = this.terrainY(p.s, p.d) + 0.1;
+				/* mijanie na chodniku: gdy ktoś idzie z naprzeciwka albo wolniej przed nami (do 2 m), zejście w bok
+				   (w prawo od kierunku marszu), potem powrót na środek chodnika */
+				let want = 0;
+				for (const o of d.list) {
+					if (o === p || Math.abs(o.d - p.d) > 1) continue;
+					const ahead = (o.s - p.s) * p.dir;
+					if (ahead > 0 && ahead < 2 && (o.dir !== p.dir || o.spd < p.spd)) { want = 0.45; break; }
+				}
+				p.off = (p.off || 0) + (want - (p.off || 0)) * Math.min(1, dt * 3);
+				const pd = p.d - p.dir * p.off;
+				R.sidePoint(this.route, p.s, pd, tp);
+				const y = this.terrainY(p.s, pd) + 0.1;
 				const bob = 0; // podskok i ruch kończyn – w shaderze (personMat)
 				Q1.setFromAxisAngle(up, -tp.heading + (p.dir > 0 ? 0 : Math.PI));
 				M4.compose(V3.set(tp.x, y - 0.1 + bob, tp.z), Q1, S3.set(1, 1, 1));
@@ -3080,20 +3432,67 @@
 				// sygnalizacja: pociąg gracza albo pociąg z przeciwka (jedzie w stronę malejącego kilometrażu)
 				const ot = this.otherTrain;
 				const active = (front > cr.pos - 800 && front - sim.L < cr.pos + 5) || (!!ot && ot.s < cr.pos + 800 && ot.s + ot.len > cr.pos - 5);
+				/* włączenie sygnalizacji: auto, które nie zdąży zatrzymać się przed linią (potrzebne opóźnienie ponad
+				   6 m/s²), przejeżdża (go) – reszta staje; wcześniej takie auto hamowało za linią i wpełzało na tory */
+				const rising = active && !d.was;
+				d.was = active;
 				d.lights.forEach((l, k) => {
 					const on = active && (k % 2) === blink;
 					l.material.color.setHex(on ? 0xff3020 : 0x3a1a1a);
 					if (on) l.material.color.multiplyScalar(4);
 					d.glows[k].material.opacity = on ? 0.9 : 0;
 				});
+				// trasa rzeczywista: auta po ulicy z mapy (w – droga przebyta w kierunku jazdy), prawym pasem
+				if (d.path) {
+					const P = d.path;
+					for (const car of d.cars) {
+						if (car.v === undefined) car.v = car.speed;
+						if (rising && car.w < car.entryW && (car.w > car.stopW || car.stopW - car.w < (car.v * car.v) / 12)) car.go = true;
+						if (car.go && (car.w > car.exitW || !active)) car.go = false;
+						let vmax = car.speed;
+						if (active && !car.go && car.w < car.entryW) vmax = car.w <= car.stopW ? Math.sqrt(2 * 4 * Math.max(0, car.stopW - car.w)) : 0;
+						for (const o of d.cars) {
+							if (o === car || o.dir !== car.dir) continue;
+							const gap = o.w - car.w;
+							if (gap > 0 && gap < 40) vmax = Math.min(vmax, Math.sqrt(2 * 4 * Math.max(0, gap - 6.5)));
+						}
+						car.v = vmax > car.v ? Math.min(vmax, car.v + 2.5 * dt) : Math.max(vmax, car.v - 8 * dt);
+						car.w += car.v * dt;
+						/* powrót na początek ulicy: przy włączonej sygnalizacji z prędkością, z której zdąży stanąć przed linią
+						   (krótka ulica – wcześniej auto wracało z pełną prędkością kilka metrów przed linią i wjeżdżało na
+						   tory); nie na auto stojące w kolejce przy początku ulicy – wtedy czeka ukryte */
+						if (car.w > P.L) {
+							const free = d.cars.every((o) => o === car || o.dir !== car.dir || o.w > 9);
+							if (free) {
+								car.w = 0;
+								car.v = active ? Math.min(car.speed, Math.sqrt(2 * 4 * Math.max(0, car.stopW))) : car.speed;
+								car.go = false;
+							} else { car.w = P.L + 1; car.v = 0; }
+						}
+						car.obj.visible = car.w <= P.L;
+						const u = car.dir > 0 ? car.w : P.L - car.w, u2 = Math.min(P.L, Math.max(0, u + car.dir * 1));
+						const [s, dd] = P.at(u), [sb, db] = P.at(u2);
+						const L = Math.hypot(sb - s, db - dd) || 1, ns = -(db - dd) / L, nd = (sb - s) / L;
+						// prawy pas: normalna w prawo od kierunku jazdy (w układzie s, d: (−Δd, Δs) to w lewo)
+						const ps = s - ns * 1.6, pd = dd - nd * 1.6;
+						R.sidePoint(this.route, ps, pd, tp);
+						const x0 = tp.x, z0 = tp.z;
+						car.obj.position.set(x0, this.roadY(ps, pd), z0);
+						R.sidePoint(this.route, sb - ns * 1.6, db - nd * 1.6, tp);
+						car.obj.rotation.y = Math.atan2(-(tp.x - x0), -(tp.z - z0));
+					}
+					return;
+				}
 				// u – położenie auta wzdłuż jego kierunku jazdy; linia zatrzymania i początek torowiska
 				for (const car of d.cars) {
 					if (car.v === undefined) car.v = car.speed;
 					const u = car.dir * car.p;
 					const stopU = car.dir * car.stop;
 					const entryU = stopU + 3.5; // przód auta wjeżdża na tory
+					if (rising && u < entryU && (u > stopU || stopU - u < (car.v * car.v) / 12)) car.go = true;
+					if (car.go && (u > car.dir * car.exit || !active)) car.go = false;
 					let vmax = car.speed;
-					if (active && u < entryU) {
+					if (active && !car.go && u < entryU) {
 						// przed linią – hamowanie do linii; za linią, ale przed torami – zatrzymanie od razu
 						vmax = u <= stopU ? Math.sqrt(2 * 4 * Math.max(0, stopU - u)) : 0;
 					}

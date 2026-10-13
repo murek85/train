@@ -1,6 +1,6 @@
 /* Dźwięki generowane w WebAudio – bez plików.
    Pociąg (głos wg serii – VOICE): silniki trakcyjne prądu stałego z przekładnią, wentylatory, styczniki
-   i przetwornica (EU07, EP09, ET22, EN57, EN71, ED72) albo silnik spalinowy z pulsami zapłonu (SM42, SU46,
+   i przetwornica (EU07, EP09, ET22, EN57, EN71, ED72; Elfy i ED250 – falownik zamiast styczników) albo silnik spalinowy z pulsami zapłonu (SM42, SU46,
    dwusuwowy ST44), luzy zderzaków przy ruszaniu i hamowaniu, toczenie kół (szum zależny od prędkości), stukot na złączach szyn (po dwa uderzenia
    na wózek), pisk obręczy na ciasnych łukach, tarcie i pisk hamulców, syk luzowania, sprężarka na postoju,
    dwutonowa syrena z formantami tuby. Otoczenie: wiatr z porywami i szelest liści, deszcz z kroplami
@@ -26,7 +26,14 @@
 		EN57: { kind: 'dc', horn: [440, 554], gear: 44, blow: 0.45, conv: 1, heavy: 0.8, emu: true },
 		EN71: { kind: 'dc', horn: [440, 554], gear: 44, blow: 0.5, conv: 1, heavy: 0.9, emu: true },
 		ED72: { kind: 'dc', horn: [415, 523], gear: 41, blow: 0.5, conv: 1, heavy: 0.9, emu: true },
-	};
+			// nowoczesne EZT z silnikami asynchronicznymi (ac – falownik IGBT: ton nośnej rosnący przy ruszaniu, bez styczników)
+			ED250: { kind: 'dc', ac: true, horn: [466, 587], gear: 30, blow: 0.35, conv: 0.4, heavy: 0.8, emu: true },
+			EN96: { kind: 'dc', ac: true, horn: [494, 622], gear: 36, blow: 0.3, conv: 0.4, heavy: 0.65, emu: true },
+			EN62: { kind: 'dc', ac: true, horn: [494, 622], gear: 36, blow: 0.3, conv: 0.4, heavy: 0.7, emu: true },
+			EN76: { kind: 'dc', ac: true, horn: [494, 622], gear: 36, blow: 0.3, conv: 0.4, heavy: 0.75, emu: true },
+			'48WE': { kind: 'dc', ac: true, horn: [494, 622], gear: 36, blow: 0.3, conv: 0.4, heavy: 0.75, emu: true },
+			'27WE': { kind: 'dc', ac: true, horn: [494, 622], gear: 36, blow: 0.3, conv: 0.4, heavy: 0.8, emu: true },
+		};
 
 	class TrainAudio {
 		constructor() {
@@ -356,8 +363,14 @@
 			const t = sim.train;
 			let off = 0;
 			this.bogies = [];
-			t.cars.forEach((len) => {
-				this.bogies.push(off + len * 0.13, off + len * 0.87);
+			t.cars.forEach((len, k) => {
+				// człony przegubowe (Elf): wózki pod czołami i wspólne pod przegubami
+				const sp = t.specs && t.specs[k], j = sp && sp.art ? k % t.unitCars : -1;
+				if (j < 0) this.bogies.push(off + len * 0.13, off + len * 0.87);
+				else {
+					if (j === 0) this.bogies.push(off + len * 0.13);
+					this.bogies.push(j === t.unitCars - 1 ? off + len * 0.87 : off + len + t.gap / 2);
+				}
 				off += len + t.gap;
 			});
 			this.lastJoint = this.bogies.map((o) => Math.floor((sim.st.pos - o) / JOINT));
@@ -522,10 +535,11 @@
 				const base = 40 + v * V.gear * 0.5;
 				this.set(this.motor[0].frequency, base);
 				this.set(this.motor[1].frequency, base * 2);
-				this.set(this.motor[2].frequency, base * 3.01);
+				// falownik (ac): nośna „śpiewa” w górę przy ruszaniu (do ok. 45 km/h), potem stały ton
+				this.set(this.motor[2].frequency, V.ac ? 520 + Math.min(v, 12.5) * 70 : base * 3.01);
 				this.motorMix[0].gain.value = 0.35;
 				this.motorMix[1].gain.value = 0.45;
-				this.motorMix[2].gain.value = 0.25;
+				this.motorMix[2].gain.value = V.ac ? 0.3 * Math.min(1, tr * 2) : 0.25;
 				this.set(this.motorG.gain, moving ? (0.003 + tr * 0.028 * Math.min(1, 0.3 + v / 15)) * V.heavy * tun : 0);
 				this.set(this.gear.frequency, 120 + v * V.gear);
 				this.set(this.gearG.gain, moving ? Math.min(0.016, (v / 30) * 0.016) * (0.35 + tr) * V.heavy : 0);
@@ -535,7 +549,7 @@
 				this.set(this.convG.gain, live ? 0.008 * V.conv * (cab ? 1.2 : 0.8) : 0, live ? 0.6 : 1.2);
 				this.set(this.conv[0].frequency, 100 + Math.sin(now * 0.7) * 0.6);
 				// styczniki: przy każdej zmianie pozycji nastawnika kilka kliknięć (rozruch oporowy)
-				if (sim.lever !== this.prevLever) {
+				if (!V.ac && sim.lever !== this.prevLever) {
 					const n = Math.min(4, Math.abs(sim.lever - this.prevLever) + (sim.lever > 0 ? 1 : 0));
 					for (let q = 0; q < n; q++) this.contactor(now + 0.04 + q * (0.05 + Math.random() * 0.07), (cab ? 0.09 : 0.04) * (0.7 + Math.random() * 0.3));
 				}

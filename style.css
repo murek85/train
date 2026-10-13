@@ -512,6 +512,18 @@ button.back { padding: 6px 12px; }
 .gen-log .ok { color: #6be08a; }
 #gen-result .route { cursor: default; margin-bottom: 8px; }
 .gen-list { display: flex; flex-direction: column; gap: 6px; }
+/* okienko wczytywania trasy po wyborze mapy (przygotowanie, rozkład, budowa świata podglądu) */
+.route-loading { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(6, 9, 14, 0.55); cursor: progress; } /* zasłania i blokuje menu pod spodem */
+.route-loading.hidden { display: none; }
+.rl-box { min-width: 300px; padding: 12px 16px 14px; border-radius: 12px; background: rgba(14, 18, 26, 0.94); border: 1px solid rgba(245, 166, 35, 0.45); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); color: #e6ebf2; }
+.rl-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.rl-title { margin-top: 4px; font-size: 15px; font-weight: 700; color: var(--amber); }
+.rl-step { margin-top: 2px; font-size: 12px; color: var(--muted); }
+.rl-bar { margin-top: 9px; height: 5px; border-radius: 3px; background: #232b38; overflow: hidden; }
+.rl-bar i { display: block; height: 100%; width: 0; background: var(--amber); transition: width 0.25s ease; }
+.rl-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(245, 166, 35, 0.3); border-top-color: var(--amber); animation: rl-spin 0.8s linear infinite; }
+@keyframes rl-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .rl-spin { animation: none; } }
 /* import i eksport tras */
 .gen-io { display: flex; gap: 8px; margin: 0 0 8px; }
 .gen-io { align-items: center; }
@@ -755,3 +767,39 @@ body.drop-routes::after { content: 'Upuść pliki tras (.trasa, .json, .js), aby
 #units-box .cars-row b { min-width: 150px; }
 .cars-row { display: flex; align-items: center; gap: 12px; }
 .cars-row b { text-align: right; color: var(--text); }
+
+/* zapisane gry: 5 miejsc (menu główne – wczytywanie, pauza – zapis i wczytywanie) */
+.save-list { display: flex; flex-direction: column; gap: 8px; }
+.save-slot { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: #141a24; border: 1px solid #222b38; }
+.save-slot > i { font-style: normal; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-2); color: var(--muted); font-size: 13px; font-weight: 700; }
+.save-slot.used > i { background: #3a2a0c; color: var(--amber); }
+.save-slot .sd { min-width: 0; }
+.save-slot .sd b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.save-slot .sd span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.save-slot .sd span.err { color: #ff8a7a; }
+.save-slot.empty .sd b { color: var(--muted); font-weight: 400; }
+.save-slot.auto { border-style: dashed; margin-bottom: 4px; }
+.save-slot.auto.used > i { background: #12324a; color: var(--blue); }
+.save-slot .sb { display: flex; gap: 6px; }
+.save-slot .sb button { padding: 5px 11px; font-size: 13px; }
+/* „Na pewno?” – jednakowo na każdym przycisku (także pomarańczowym „Nadpisz”): czerwone tło, biały tekst */
+.save-slot .sb button.confirm, .save-slot .sb button.confirm:hover { background: #8e1d18; border-color: #c0392b; color: #fff; font-weight: 600; }
+.save-slot .sb button.confirm:hover { background: #a8231d; }
+.save-msg:empty { display: none; }
+.save-msg { margin-top: 10px; }
+.save-msg .ok { color: #6be08a; }
+.save-msg .err { color: #ff6b5e; }
+@media (max-width: 520px) {
+	.save-slot { grid-template-columns: 26px 1fr; }
+	.save-slot .sb { grid-column: 1 / -1; justify-content: flex-end; }
+}
+
+/* Co nowego */
+#scr-news { max-width: 640px; }
+.news-list { max-height: 62vh; overflow-y: auto; padding-right: 6px; }
+.news-ver { margin-bottom: 18px; }
+.news-ver h3 { margin: 0 0 6px; }
+.news-ver h3 small { opacity: 0.6; font-weight: normal; margin-left: 6px; }
+.news-ver h4 { margin: 10px 0 4px; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.75; }
+.news-ver ul { margin: 0; padding-left: 20px; }
+.news-ver li { margin: 3px 0; line-height: 1.4; }

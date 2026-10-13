@@ -112,3 +112,42 @@ for (const [routeIdx, cfg] of [[0, { train: 'ic', cars: 4 }], [0, { train: 'ezt'
 		for (const r of sim.records.filter((x) => !x.through)) assert.ok(r.delay <= 30, `${r.station}: opóźnienie ${r.delay}`);
 	});
 }
+
+test('zapis gry: jazda odtworzona z zapisu biegnie tak samo jak oryginał', () => {
+	const route = routes[0];
+	const tt = buildTimetable(route);
+	const a = new Sim(route, { timetable: tt });
+	for (let i = 0; i < 6000 && a.status === 'running'; i++) { autopilot(a); a.update(0.05); }
+	assert.equal(a.status, 'running');
+	assert.ok(a.next > 0 || a.st.pos > route.stations[0].pos + 100, 'pociąg ruszył');
+	const snap = JSON.parse(JSON.stringify(a.snapshot())); // jak przez localStorage
+	const b = Sim.restore(route, { timetable: tt }, snap);
+	assert.deepEqual(b.snapshot(), a.snapshot());
+	for (let i = 0; i < 4000; i++) {
+		autopilot(a); a.update(0.05);
+		autopilot(b); b.update(0.05);
+	}
+	assert.deepEqual(b.snapshot(), a.snapshot());
+	assert.equal(b.score(), a.score());
+});
+
+test('zapis gry: zapis z innej trasy jest odrzucany', () => {
+	const a = new Sim(routes[0], { timetable: buildTimetable(routes[0]) });
+	const other = routes.find((r) => r.signals.length !== routes[0].signals.length || r.stations.length !== routes[0].stations.length);
+	assert.ok(other, 'potrzebna trasa o innym układzie');
+	assert.throws(() => Sim.restore(other, { timetable: buildTimetable(other) }, a.snapshot()), /nie pasuje/);
+	assert.throws(() => Sim.restore(routes[0], {}, Object.assign(a.snapshot(), { v: 99 })), /wersja/);
+});
+
+test('zapis gry: odjazd ze stacji zgłasza zdarzenie „departed” (autozapis)', () => {
+	const route = routes[0];
+	const sim = new Sim(route, { timetable: buildTimetable(route) });
+	const departed = [];
+	for (let i = 0; i < 300000 && sim.status === 'running'; i++) {
+		autopilot(sim); sim.update(0.05);
+		for (const e of sim.events) if (e.type === 'departed') departed.push(e.index);
+		sim.events.length = 0;
+	}
+	const stops = route.stations.map((s, i) => i).filter((i) => route.stations[i].stop && !route.stations[i].terminus); // także stacja początkowa
+	assert.deepEqual(departed, stops);
+});

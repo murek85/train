@@ -35,46 +35,65 @@
 		return out;
 	}
 
-	// bryła z lekko poszarpaną powierzchnią (liście nie są gładką kulą)
+	// szum wartości 3D (gładki) – kępy liści na powierzchni korony
+	function n3(x, y, z) {
+		const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), xf = x - xi, yf = y - yi, zf = z - zi;
+		const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf), w = zf * zf * (3 - 2 * zf);
+		const h = (i, j, k) => hash((xi + i) * 57.31 + (yi + j) * 113.97 + (zi + k) * 271.13);
+		const l = (a2, b2, t) => a2 + (b2 - a2) * t;
+		return l(l(l(h(0, 0, 0), h(1, 0, 0), u), l(h(0, 1, 0), h(1, 1, 0), u), v), l(l(h(0, 0, 1), h(1, 0, 1), u), l(h(0, 1, 1), h(1, 1, 1), u), v), w);
+	}
+	/* bryła kępy liści: kula z gładkimi wybrzuszeniami (szum 3D – wcześniej losowe przesunięcia każdego wierzchołka
+	   dawały kolczastą powierzchnię), spód spłaszczony jak w prawdziwych koronach; normalne gładkie jak elipsoidy,
+	   lekko pochylone zgodnie z wybrzuszeniami (miękkie światło, widoczne kępy) */
 	function lumpy(radius, detail, seed, squash) {
 		const g = new T.IcosahedronGeometry(radius, detail);
-		const p = g.attributes.position;
+		const p = g.attributes.position, sq = squash || 1, f = 2.2 / radius, o = seed * 0.37;
+		const nrm = new Float32Array(p.count * 3);
 		for (let i = 0; i < p.count; i++) {
 			const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-			const k = 1 + (hash(Math.round(x * 31) * 7.1 + Math.round(y * 31) * 3.3 + Math.round(z * 31) * 1.7 + seed) - 0.5) * 0.28;
-			p.setXYZ(i, x * k, y * k * (squash || 1), z * k);
-		}
-		// normalne gładkie jak elipsoidy (geometria bez indeksów dawała płaskie ścianki); lekko zaburzone
-		const sq = squash || 1, nrm = new Float32Array(p.count * 3);
-		for (let i = 0; i < p.count; i++) {
-			const x = p.getX(i), y = p.getY(i) / (sq * sq), z = p.getZ(i);
-			const j = hash(Math.round(x * 17) * 5.3 + Math.round(y * 17) * 2.1 + Math.round(z * 17) * 9.7 + seed) - 0.5;
-			const nx = x + j * 0.25 * radius, ny = y, nz = z - j * 0.25 * radius, l = Math.hypot(nx, ny, nz) || 1;
-			nrm[i * 3] = nx / l; nrm[i * 3 + 1] = ny / l; nrm[i * 3 + 2] = nz / l;
+			const nz = n3(x * f + o, y * f + o * 1.3, z * f - o) * 0.7 + n3(x * f * 2.3 - o, y * f * 2.3, z * f * 2.3 + o) * 0.3;
+			const k = 0.82 + nz * 0.36;
+			const yb = y < 0 ? y * 0.78 : y; // spłaszczony spód
+			p.setXYZ(i, x * k, yb * k * sq, z * k);
+			// normalna elipsoidy pochylona ku wybrzuszeniu (różnica szumu wzdłuż kierunku poziomego)
+			const e = 0.18 * radius, dn = n3((x + e) * f + o, y * f + o * 1.3, z * f - o) - n3(x * f + o, y * f + o * 1.3, (z + e) * f - o);
+			const nx = x + dn * 0.6 * radius, ny = y / (sq * sq), nz2 = z - dn * 0.6 * radius, l = Math.hypot(nx, ny, nz2) || 1;
+			nrm[i * 3] = nx / l; nrm[i * 3 + 1] = ny / l; nrm[i * 3 + 2] = nz2 / l;
 		}
 		g.setAttribute('normal', new T.BufferAttribute(nrm, 3));
 		return g;
 	}
 
-	// cieniowanie korony: ciemno u dołu i w środku, jasno na górze i na brzegach (bez kierunku słońca)
+	/* cieniowanie korony: ciemno u dołu i w środku, jasno na górze i na brzegach (bez kierunku słońca); kępy liści
+	   różnią się jasnością i odcieniem (część żółtawa, część niebieskawa) – korona nie jest jednolitą bryłą */
 	const leafShade = (cy, r) => (x, y, z) => {
 		const h = Math.max(0, Math.min(1, (y - cy + r) / (2 * r)));
 		const edge = Math.min(1, Math.hypot(x, z) / r);
-		const k = 0.55 + 0.35 * h + 0.2 * edge;
-		return [k, k, k];
+		const j = hash(Math.round(x * 9) * 3.1 + Math.round(y * 9) * 7.3 + Math.round(z * 9) * 1.9);
+		const k = (0.42 + 0.42 * h + 0.24 * edge) * (0.9 + 0.2 * j);
+		const t = (hash(Math.round(x * 4) * 5.7 + Math.round(y * 4) * 2.3 + Math.round(z * 4) * 8.9) - 0.5) * 0.12;
+		return [k * (1 + t), k, k * (1 - t)];
 	};
 
 	function buildTrees() {
-		// liściaste: korona z kilku płatów (geometria w jednostkach: wysokość korony ok. 1)
+		/* liściaste: korona (geometria w jednostkach: wysokość korony ok. 1) – rdzeń, n kęp na różnych wysokościach
+		   (wyżej i niżej bliżej osi – kształt jaja, nie kuli) i n drobnych kępek na obrzeżu, które rozbijają sylwetkę;
+		   drobne kępki z mniej dokładnej bryły (ok. 1000 trójkątów na koronę) */
 		const leafy = (n, seed, spread, squash, vy = 0.42) => {
 			const parts = [];
+			const lobe = (r, det, ox, oy, oz, sd) => parts.push({ geo: lumpy(r, det, sd, squash).translate(ox, oy, oz), color: leafShade(0, 0.55) });
+			lobe(0.34, 1, 0, 0.06, 0, seed);
 			for (let k = 0; k < n; k++) {
-				const a = (k / n) * Math.PI * 2 + hash(seed + k) * 0.8;
-				const r = (k === 0 ? 0.34 : 0.24 + hash(seed * 2 + k) * 0.13) * (n > 6 ? 1.0 : 1.08);
-				const ox = k === 0 ? 0 : Math.cos(a) * spread, oz = k === 0 ? 0 : Math.sin(a) * spread;
-				const oy = k === 0 ? 0.08 : (hash(seed * 3 + k) - 0.4) * vy;
-				const g = lumpy(r, 1, seed + k * 13, squash).translate(ox, oy, oz);
-				parts.push({ geo: g, color: leafShade(0, 0.55) });
+				const a = k * 2.39996 + hash(seed + k) * 0.6, h = hash(seed * 3 + k);
+				const oy = (h - 0.45) * vy * 1.5;
+				const rad = spread * (0.75 + 0.5 * hash(seed * 5 + k)) * (1 - Math.min(0.6, Math.abs(oy) * 0.9));
+				lobe(0.17 + hash(seed * 2 + k) * 0.15, 1, Math.cos(a) * rad, oy, Math.sin(a) * rad, seed + k * 13);
+			}
+			for (let k = 0; k < n; k++) {
+				const a = k * 2.39996 + 1.2 + hash(seed * 7 + k) * 0.8, h = hash(seed * 11 + k);
+				const oy = (h - 0.4) * vy * 1.7, rad = spread * (1.25 + 0.3 * hash(seed * 13 + k)) * (1 - Math.min(0.55, Math.abs(oy) * 0.8));
+				lobe(0.09 + hash(seed * 17 + k) * 0.07, 0, Math.cos(a) * rad, oy, Math.sin(a) * rad, seed + k * 29 + 5);
 			}
 			return merge(parts);
 		};
@@ -376,11 +395,12 @@
 	// losowy typ nadwozia: hatchback, sedan, kombi, dostawczy
 	const carKind = (seed) => { const h = hash(seed + 3); return h < 0.42 ? 0 : h < 0.67 ? 2 : h < 0.85 ? 3 : 1; };
 	const carMats = {};
-	// samochód osobowy (przód = +z), długość ok. 4,2 m
+	// samochód osobowy (przód = +z), długość ok. 4,2 m; materiał jak taboru (wariant 'train') – śnieg i krople we
+	// współrzędnych auta, jadą razem z nim
 	function carModel(seed, shadows) {
 		const car = new T.Group();
 		const color = CAR_COLORS[Math.floor(hash(seed) * CAR_COLORS.length)];
-		const paint = carMats[color] || (carMats[color] = NS.util.patch(new T.MeshPhysicalMaterial({ color, vertexColors: true, roughness: 0.35, metalness: 0.4, clearcoat: 0.9, clearcoatRoughness: 0.12 }), 'lit'));
+		const paint = carMats[color] || (carMats[color] = NS.util.patch(new T.MeshPhysicalMaterial({ color, vertexColors: true, roughness: 0.35, metalness: 0.4, clearcoat: 0.9, clearcoatRoughness: 0.12 }), 'train', { grime: 0.05 }));
 		const m = new T.Mesh(carGeo(carKind(seed)), paint);
 		m.castShadow = shadows;
 		car.add(m);

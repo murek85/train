@@ -661,10 +661,38 @@
 			}
 			return best;
 		};
-		// rzut punktu na przebieg: s (bez przesunięcia), d (w prawo dodatnie)
+		/* rzut punktu na przebieg: s (bez przesunięcia), d (w prawo dodatnie). Kierunek osi płynny – interpolowany między
+		   wierzchołkami jak w grze (R.sidePoint: odsunięcie wzdłuż normalnej do kierunku w s); s – miejsce, w którym odcinek
+		   do punktu jest prostopadły do tego kierunku. Dawniej rzut na najbliższy odcinek łamanej: daleko od toru, po
+		   zewnętrznej stronie łuku, punkty z „wachlarza” przy wierzchołku dostawały to samo s (wierzchołek co 10 m) – po
+		   odtworzeniu w grze drogi i obrysy miały zęby. */
+		const tan = (k) => {
+			const a = pts[Math.max(0, k - 1)], b = pts[Math.min(n - 1, k + 1)], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+			return [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+		};
 		const project = (x, y, hint) => {
 			const k = nearestK(x, y, hint);
 			if (k < 0) return null;
+			// g(u) – składowa wektora do punktu wzdłuż płynnego kierunku; zmiana znaku na odcinku – tam leży rzut
+			const at = (k0, u) => {
+				const a = pts[k0], b = pts[k0 + 1], ta = tan(k0), tb = tan(k0 + 1);
+				const ax = a[0] + (b[0] - a[0]) * u, ay = a[1] + (b[1] - a[1]) * u;
+				let tx = ta[0] + (tb[0] - ta[0]) * u, ty = ta[1] + (tb[1] - ta[1]) * u;
+				const tl = Math.hypot(tx, ty) || 1;
+				tx /= tl; ty /= tl;
+				return { g: (x - ax) * tx + (y - ay) * ty, d: (x - ax) * ty - (y - ay) * tx };
+			};
+			for (const k0 of [k - 1, k]) {
+				if (k0 < 0 || k0 + 1 >= n) continue;
+				let lo = 0, hi = 1, glo = at(k0, 0).g;
+				if (glo < 0 || at(k0, 1).g > 0) continue;
+				for (let it = 0; it < 22; it++) {
+					const mid = (lo + hi) / 2, gm = at(k0, mid).g;
+					if ((gm >= 0) === (glo >= 0)) { lo = mid; glo = gm; } else hi = mid;
+				}
+				const u = (lo + hi) / 2;
+				return { s: (k0 + u) * ENV_STEP, d: at(k0, u).d, k };
+			}
 			let bs = k * ENV_STEP, bd = 0, ba = Infinity;
 			for (const k0 of [k - 1, k]) {
 				if (k0 < 0 || k0 + 1 >= n) continue;
@@ -1548,23 +1576,52 @@
 		return { side: sg, edge: 1.7, width: Math.round(Math.min(10, gap - 3.4) * 10) / 10, s0: Math.round(s0), s1: Math.round(s1), island: true, inferred: true };
 	}
 
+	/* peron stacji z mapy: obrys przylegający do toru przebiegu w miejscu zatrzymania. Przekroje poprzeczne co 5 m
+	   (przecięcia boków obrysu z linią s = const; peron jako linia – ±2 m): krawędź przy torze 1,2–3,6 m od osi; zasięg –
+	   ciągły odcinek takich przekrojów wokół miejsca zatrzymania, szerokość – mediana przekrojów. Wygrywa najdłuższy
+	   zasięg (dawniej: najbliższy punkt i długość całego obrysu – peron przy odchodzącej linii, tylko końcem przy naszym
+	   torze, wygrywał z peronem wyspowym przy torze, np. Toruń Wschodni) */
 	function platformLayout(env, pos, defLen, halt) {
 		let best = null;
 		(env.p || []).forEach((row, pi) => {
-			const n = (row.length - 1) / 2;
-			let s0 = Infinity, s1 = -Infinity, dMin = Infinity, dMax = -Infinity;
-			for (let k = 0; k < n; k++) {
-				const s2 = row[1 + k * 2], d2 = row[2 + k * 2], half = row[0] === 0 ? 2 : 0;
-				s0 = Math.min(s0, s2); s1 = Math.max(s1, s2);
-				dMin = Math.min(dMin, d2 - half); dMax = Math.max(dMax, d2 + half);
-			}
-			if (dMin < 0 && dMax > 0) return;
-			const side = dMin > 0 ? 1 : -1;
-			const edge = side > 0 ? dMin : -dMax, far = side > 0 ? dMax : -dMin;
-			if (edge < 1.2 || edge > 3.6 || pos < s0 + 25 || pos > s1 + 30) return;
-			const len = s1 - s0;
-			if (len < 60) return;
-			if (!best || len > best.s1 - best.s0) best = { side, edge: Math.round(edge * 10) / 10, width: Math.round(Math.max(3.5, Math.min(14, far - edge)) * 10) / 10, s0: Math.round(s0), s1: Math.round(Math.max(s1, pos + 5)), pi };
+			const n = (row.length - 1) / 2, line = row[0] === 0;
+			const pt = (k) => [row[1 + k * 2], row[2 + k * 2]];
+			let s0 = Infinity, s1 = -Infinity;
+			for (let k = 0; k < n; k++) { s0 = Math.min(s0, pt(k)[0]); s1 = Math.max(s1, pt(k)[0]); }
+			if (pos < s0 - 30 || pos > s1 + 30) return;
+			// przekrój w s: [dMin, dMax] albo null
+			const xsec = (s) => {
+				let lo = Infinity, hi = -Infinity;
+				const m = line ? n - 1 : n;
+				for (let k = 0; k < m; k++) {
+					const a = pt(k), b = pt((k + 1) % n);
+					if ((a[0] - s) * (b[0] - s) > 0 || a[0] === b[0]) continue;
+					const d = a[1] + ((b[1] - a[1]) * (s - a[0])) / (b[0] - a[0]);
+					lo = Math.min(lo, d - (line ? 2 : 0));
+					hi = Math.max(hi, d + (line ? 2 : 0));
+				}
+				return lo <= hi ? [lo, hi] : null;
+			};
+			const ok = (s, side) => {
+				const x = xsec(s);
+				if (!x || (x[0] < 0 && x[1] > 0)) return null;
+				if ((x[0] > 0 ? 1 : -1) !== side) return null;
+				const edge = side > 0 ? x[0] : -x[1], far = side > 0 ? x[1] : -x[0];
+				return edge >= 1.2 && edge <= 3.6 ? { edge, w: far - edge } : null;
+			};
+			// strona i przekrój przy miejscu zatrzymania (czoło pociągu – peron głównie za nim)
+			const sp = Math.max(s0 + 1, Math.min(s1 - 1, pos - 10));
+			const x0 = xsec(sp);
+			if (!x0 || (x0[0] < 0 && x0[1] > 0)) return;
+			const side = x0[0] > 0 ? 1 : -1;
+			if (!ok(sp, side)) return;
+			const edges = [], widths = [];
+			let a = sp, b = sp;
+			for (let s = sp; s >= s0; s -= 5) { const q = ok(s, side); if (!q) break; a = s; edges.push(q.edge); widths.push(q.w); }
+			for (let s = sp + 5; s <= s1; s += 5) { const q = ok(s, side); if (!q) break; b = s; edges.push(q.edge); widths.push(q.w); }
+			if (b - a < 60) return;
+			const med = (v) => { const c = v.slice().sort((x, y) => x - y); return c[c.length >> 1]; };
+			if (!best || b - a > best.s1 - best.s0) best = { side, edge: Math.round(med(edges) * 10) / 10, width: Math.round(Math.max(3.5, Math.min(14, med(widths))) * 10) / 10, s0: Math.round(a), s1: Math.round(Math.max(b, pos + 5)), pi };
 		});
 		if (!best) return inferPlatform(env, pos, defLen, halt);
 		// wyspowy: za dalszą krawędzią, 1,2–3,6 m dalej, biegnie inny tor z mapy
@@ -1800,7 +1857,17 @@
 		const project = (p, maxD) => {
 			let bi = -1, bd = maxD;
 			for (let k = 0; k < pts.length; k++) { const d = dist2(p, pts[k]); if (d < bd) { bd = d; bi = k; } }
-			return bi < 0 ? null : bi * STEP;
+			if (bi < 0) return null;
+			// dokładnie: rzut na sąsiednie odcinki (dawniej najbliższy punkt – co 10 m)
+			let bs = bi * STEP, bd2 = Infinity;
+			for (const k of [bi - 1, bi]) {
+				if (k < 0 || k + 1 >= pts.length) continue;
+				const a = pts[k], b = pts[k + 1], ux = b[0] - a[0], uy = b[1] - a[1], L2 = ux * ux + uy * uy || 1e-9;
+				const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * ux + (p[1] - a[1]) * uy) / L2));
+				const dd = Math.hypot(p[0] - (a[0] + ux * t), p[1] - (a[1] + uy * t));
+				if (dd < bd2) { bd2 = dd; bs = (k + t) * STEP; }
+			}
+			return bs;
 		};
 
 		// ---------- oś toru w grze i krzywizna (1/R, + w prawo) ----------
@@ -1878,6 +1945,31 @@
 		}
 		// od tej chwili przebieg = oś toru w grze (stacje, semafory, otoczenie, profil rzutujemy na nią)
 		for (let k = 0; k < n; k++) pts[k] = C[k];
+		/* kilometraż węzłów przebiegu w układzie osi w grze: rzut każdego węzła łamanej z mapy na oś C (dokładnie, nie
+		   co 10 m). Dawniej długość wzdłuż surowej łamanej (rawS) – jest dłuższa od wygładzonej osi (zygzaki punktów,
+		   przejścia przez rozjazdy na stacjach), różnica narastała do kilkunastu metrów: przejazdy, semafory, W4
+		   (miejsca zatrzymania), mosty, ograniczenia i sieć trakcyjna leżały obok ulic, peronów i torów z mapy
+		   (rzutowanych na oś). Od tej chwili rawS, nodeS i edgeAt są w układzie osi. */
+		{
+			let kPrev = 0, sPrev = 0;
+			for (let i = 0; i < raw.length; i++) {
+				const p = raw[i];
+				let best = null;
+				const kHint = Math.max(kPrev, Math.round(rawS[i] / STEP) - 40);
+				for (let k = Math.max(0, kPrev - 3); k <= Math.min(n - 2, Math.max(kHint, kPrev) + 60); k++) {
+					const a = C[k], b = C[k + 1], ux = b[0] - a[0], uy = b[1] - a[1], L2 = ux * ux + uy * uy || 1e-9;
+					const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * ux + (p[1] - a[1]) * uy) / L2));
+					const dd = Math.hypot(p[0] - (a[0] + ux * t), p[1] - (a[1] + uy * t));
+					if (!best || dd < best.dd - 1e-6) best = { dd, k, s: (k + t) * STEP };
+				}
+				const s = best ? Math.max(sPrev, best.s) : sPrev;
+				if (best) kPrev = best.k;
+				rawS[i] = s;
+				sPrev = s;
+			}
+			nodeS.clear();
+			path.nodes.forEach((id, i) => { if (!nodeS.has(id)) nodeS.set(id, rawS[i]); });
+		}
 
 		// ---------- stacje ----------
 		const forwardSignal = (id, s) => {
@@ -2501,6 +2593,19 @@
 				for (const e of path.edges) { all += e.L; if (/^(contact_line|yes|rail)$/.test(e.w.tags.electrified || '')) el += e.L; }
 				return all ? el / all > 0.5 : true;
 			})(),
+			/* odcinki przebiegu z siecią trakcyjną [od, do] (km trasy): sieć nad torem pociągu tylko tam (np. zelektryfikowany
+			   wjazd do węzła na linii spalinowej); przerwy w danych do 300 m łączone, odcinki krótsze niż 300 m pomijane */
+			wire: (() => {
+				const out = [];
+				let run = null, gap = 0;
+				for (let s2 = 0; s2 <= endS; s2 += 25) {
+					const on = /^(contact_line|yes|rail)$/.test(edgeAt(s2).w.tags.electrified || '');
+					if (on) { if (!run) run = [s2, s2]; run[1] = s2; gap = 0; }
+					else if (run && (gap += 25) > 300) { if (run[1] - run[0] >= 300) out.push(run); run = null; gap = 0; }
+				}
+				if (run && run[1] - run[0] >= 300) out.push(run);
+				return out.map(([a, b]) => [S(a === 0 ? -400 : a), S(b >= endS - 25 ? endS + 400 : b)]);
+			})(),
 			line: opts.line || null,
 			source: SOURCE,
 			stations: route.map((st, i) => {
@@ -2604,6 +2709,19 @@
 				P.s1 = s1 - s0 >= 80 ? Math.round(Math.max(s1, q.o.pos + 5)) : old.s1;
 				if (F.filter((z) => z.island).length > 0.5 * F.length) P.island = true;
 				if (old.pi !== undefined && old.side === side) P.pi = old.pi;
+				else if (env && env.p && P.s0 !== undefined) {
+					/* pomiar wskazał drugą stronę niż obrys wybrany z mapy (np. dwa obrysy przy stacji – peron i drugi po
+					   przeciwnej stronie): obrys z mapy po stronie z pomiaru, pokrywający się z peronem na co najmniej 60% */
+					let bestPi, bestOv = 0;
+					env.p.forEach((row, pi) => {
+						let a = Infinity, b = -Infinity, dm = 0, m = 0;
+						for (let k = 1; k + 1 < row.length; k += 2) { a = Math.min(a, row[k]); b = Math.max(b, row[k]); dm += row[k + 1]; m++; }
+						if (!m || Math.sign(dm) !== side) return;
+						const ov = Math.min(b, P.s1) - Math.max(a, P.s0);
+						if (ov > 0.6 * (P.s1 - P.s0) && ov > bestOv) { bestOv = ov; bestPi = pi; }
+					});
+					if (bestPi !== undefined) P.pi = bestPi;
+				}
 				q.o.platform = P;
 				log(`Peron ${q.o.name}: ${side > 0 ? 'z prawej' : 'z lewej'}${P.island ? ', wyspowy' : ''}, krawędź ${P.edge} m od osi, szerokość ${P.width} m, wysokość ${hh} m (pomiar ${med((z) => z.h).toFixed(2)} m; ${F.length}/${n} przekrojów, szyna ${corr >= 0 ? '+' : ''}${corr.toFixed(2)} m względem niwelety)${old.side && old.side !== side ? ' – inna strona niż z danych' : ''}.`);
 			}

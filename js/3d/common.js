@@ -117,7 +117,8 @@
 	// ---- wspólne uniformy shaderów ----
 	// uTime – czas, uWind – siła wiatru (0…1.5), uWet – zmoczenie powierzchni (0…1, schnie powoli),
 	// uSnow – pokrywa śnieżna (0…1, narasta i topnieje powoli), uRain – bieżąca siła deszczu (0…1)
-	const U = { uTime: { value: 0 }, uWind: { value: 0.4 }, uWet: { value: 0 }, uSnow: { value: 0 }, uRain: { value: 0 } };
+	// uWear – mnożnik zabrudzenia taboru (0 – czysty, 1 – zwykła eksploatacja)
+	const U = { uTime: { value: 0 }, uWind: { value: 0.4 }, uWet: { value: 0 }, uSnow: { value: 0 }, uRain: { value: 0 }, uWear: { value: 1 } };
 
 	const NOISE_GLSL = `
 		float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -153,28 +154,48 @@
 		}`;
 
 	/* Pogoda na powierzchniach (wszystkie materiały na zewnątrz): mokre – ciemniejsze i błyszczące, w czasie
-	   deszczu strużki spływające po pionowych ścianach; śnieg osiada na powierzchniach skierowanych w górę
-	   (najpierw płatami, potem wszędzie), z delikatnym połyskiem. wN – normalna w świecie. */
-	const WEATHER_GLSL = (wetK, snowK) => `
+	   deszczu strużki spływające po pionowych ścianach i krople na poziomych (perełki z połyskiem); śnieg osiada na
+	   powierzchniach skierowanych w górę (najpierw płatami, potem wszędzie), z delikatnym połyskiem i iskrzeniem
+	   kryształków z bliska. wN – normalna w świecie. P – współrzędne wzoru: świata (vWorldP) dla obiektów
+	   nieruchomych, pojazdu (vLocP) dla taboru – wzór śniegu i kropel jedzie razem z pociągiem, zamiast przesuwać
+	   się po dachu. */
+	const WEATHER_GLSL = (wetK, snowK, P = 'vWorldP') => `
 		{
+			vec3 wP = ${P};
 			float up = wN.y;
+			float wpx = length(fwidth(wP));
 			float wet = uWet * ${wetK.toFixed(2)};
 			diffuseColor.rgb *= 1.0 - 0.3 * wet;
 			#ifdef STANDARD
 			roughnessFactor = mix(roughnessFactor, max(0.06, roughnessFactor * 0.3), wet);
 			#endif
 			if (uRain > 0.01 && abs(up) < 0.55) {
-				vec2 sp = vec2((vWorldP.x + vWorldP.z) * 2.6, vWorldP.y * 0.35 + uTime * 1.6);
+				vec2 sp = vec2((wP.x + wP.z) * 2.6, wP.y * 0.35 + uTime * 1.6);
 				float streak = smoothstep(0.72, 0.95, gNoise(vec2(sp.x, sp.y)) * gNoise(vec2(sp.x * 0.5 + 9.0, 0.0)) * 1.6);
 				diffuseColor.rgb *= 1.0 - 0.16 * streak * uRain;
 				#ifdef STANDARD
 				roughnessFactor = mix(roughnessFactor, 0.05, streak * uRain);
 				#endif
 			}
-			float sn = gNoise(vWorldP.xz * 0.3) * 0.55 + gNoise(vWorldP.xz * 1.7) * 0.3 + gNoise(vWorldP.xz * 6.5) * 0.15;
+			/* krople na powierzchniach poziomych: drobne perełki (ciemniejsze, gładkie), gasną w oddali; jedna kropla na
+			   oczko siatki, cała w oczku (bez szukania w sąsiednich – pętla 3 × 3 w każdym materiale wydłużała
+			   kompilację shaderów do kilkunastu sekund) */
+			if (wet > 0.05 && up > 0.6) {
+				vec2 dq = wP.xz * 14.0, di = floor(dq), dfr = fract(dq) - 0.5;
+				vec2 dc = (vec2(gHash(di), gHash(di + 7.1)) - 0.5) * 0.4;
+				float dr = length(dfr - dc) / (0.12 + 0.12 * gHash(di + 3.3));
+				float drop = (1.0 - smoothstep(0.7, 1.0, dr)) * step(0.45, gHash(di + 5.7)) * (1.0 - smoothstep(0.01, 0.03, wpx)) * wet;
+				diffuseColor.rgb *= 1.0 - 0.25 * drop;
+				#ifdef STANDARD
+				roughnessFactor = mix(roughnessFactor, 0.02, drop);
+				#endif
+			}
+			float sn = gNoise(wP.xz * 0.3) * 0.55 + gNoise(wP.xz * 1.7) * 0.3 + gNoise(wP.xz * 6.5) * 0.15;
 			float th = 1.05 - uSnow * 1.15;
 			float snowMask = smoothstep(0.3, 0.75, up) * smoothstep(th - 0.07, th + 0.07, sn) * min(1.0, uSnow * 3.0) * ${snowK.toFixed(2)};
-			vec3 snowC = mix(vec3(0.74, 0.8, 0.9), vec3(0.97, 0.98, 1.0), 0.55 + 0.45 * gNoise(vWorldP.xz * 3.0));
+			vec3 snowC = mix(vec3(0.74, 0.8, 0.9), vec3(0.97, 0.98, 1.0), 0.55 + 0.45 * gNoise(wP.xz * 3.0));
+			// kryształki: pojedyncze jaśniejsze punkty z bliska
+			snowC += vec3(0.25) * step(0.992, gHash(floor(wP.xz * 45.0))) * (1.0 - smoothstep(0.01, 0.025, wpx));
 			snowC = mix(diffuseColor.rgb * 0.6 + vec3(0.3, 0.32, 0.36), snowC, smoothstep(0.0, 0.6, snowMask));
 			diffuseColor.rgb = mix(diffuseColor.rgb, snowC, smoothstep(0.0, 0.3, snowMask));
 			#ifdef STANDARD
@@ -226,20 +247,32 @@
 		// kałuże: na płaskich miejscach, gdy ziemia jest mokra
 		puddle = smoothstep(0.62, 0.78, gNoise(wp * 0.06) * 0.7 + gNoise(wp * 0.25) * 0.3 + uWet * 0.12) * smoothstep(0.25, 0.6, uWet) * (1.0 - mw.y * 0.8);`;
 
+	/* Podsypka: tłuczeń w dwóch skalach (ok. 5 i 9 cm) – kamienie różnej jasności, szczeliny między nimi
+	   ciemniejsze, ale nie czarne (wcześniej jedna skala z czarnymi fugami wyglądała jak bruk); szary granit z ciepłymi
+	   i chłodnymi kamieniami, rzadziej rdzawe; plamy rdzy z hamulców i wypłukanego pyłu. Mikrorzeźba w metrach
+	   (kamienie wystają o kilka cm). Drobne wzory gasną, gdy są mniejsze od piksela. */
 	const GRAVEL_GLSL = `
 		vec2 wp = vWorldP.xz;
-		float near = 1.0 - smoothstep(30.0, 140.0, length(vViewPosition));
-		vec3 st = gStones(wp * 7.5);
-		near *= 1.0 - smoothstep(0.04, 0.12, length(fwidth(wp)) * 7.5 * 0.3);
-		float edge = smoothstep(0.0, 0.18, st.y - st.x);
-		vec3 tint = mix(vec3(0.88, 0.87, 0.85), vec3(1.04, 1.0, 0.95), st.z);
-		tint = mix(tint, vec3(0.86, 0.78, 0.7), step(0.88, st.z) * 0.5);
-		// dalej, gdy kamienie są mniejsze niż piksel: plamista faktura tłucznia zamiast gładkiej szarości
 		float pxg = length(fwidth(wp));
-		float farT = mix(0.5, gNoise(wp * 2.3), 1.0 - smoothstep(0.1, 0.3, pxg * 2.3)) * 0.6 + gNoise(wp * 0.55) * 0.4;
-		vec3 farC = vec3(0.8 + 0.3 * farT) * mix(vec3(1.0), vec3(1.05, 0.97, 0.9), smoothstep(0.6, 0.8, gNoise(wp * 0.21 + 5.0)) * 0.6);
-		diffuseColor.rgb *= mix(farC, tint * (0.68 + 0.32 * edge), near) * (0.88 + 0.18 * gNoise(wp * 0.7));
-		gH = (1.0 - st.x) * edge * near;`;
+		vec3 sa = gStones(wp * 11.0), sb = gStones(mat2(0.8, -0.6, 0.6, 0.8) * wp * 6.5 + 17.0);
+		float fa = 1.0 - smoothstep(0.02, 0.07, pxg * 11.0 * 0.3), fb = 1.0 - smoothstep(0.02, 0.07, pxg * 6.5 * 0.3);
+		float ea = smoothstep(0.0, 0.22, sa.y - sa.x), eb = smoothstep(0.0, 0.28, sb.y - sb.x);
+		float stA = (0.8 + 0.38 * sa.z) * mix(0.62, 1.0, ea);
+		float stB = (0.82 + 0.32 * sb.z) * mix(0.66, 1.0, eb);
+		float stone = mix(1.0, stA, fa) * mix(1.0, mix(1.0, stB, 0.55), fb);
+		vec3 tint = mix(vec3(0.93, 0.94, 0.97), vec3(1.06, 1.0, 0.92), sb.z);
+		tint = mix(tint, vec3(0.98, 0.84, 0.72), step(0.9, sa.z) * 0.55 * fa);
+		// w oddali (kamienie mniejsze od piksela): plamista szarość zamiast gładkiej
+		float farT = gNoise(wp * 2.3) * 0.6 + gNoise(wp * 0.55) * 0.4;
+		vec3 farC = vec3(0.86 + 0.24 * farT);
+		diffuseColor.rgb *= mix(farC, tint * stone, max(fa, 0.35));
+		float m1 = gFbm(wp * 0.3);
+		diffuseColor.rgb *= 0.88 + 0.22 * m1;
+		// plamy rdzy (pył z hamulców, przy szynach i na łukach) i jaśniejszego, wypłukanego pyłu
+		diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.8, 0.66, 0.54), smoothstep(0.58, 0.82, gFbm(wp * 0.16 + 3.0)) * 0.5);
+		diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.6, 0.56), smoothstep(0.65, 0.85, gNoise(wp * 0.45 + 9.0)) * 0.18);
+		gH = ((1.0 - sa.x) * ea * fa * 0.5 + (1.0 - sb.x) * eb * fb * 0.8) * 0.035;
+		gRough = 0.03 * (sa.z - 0.5);`;
 
 	/* Wspólne dla nawierzchni: normalna geometryczna w świecie (z pochodnych – działa bez atrybutów), skala
 	   piksela (wzory drobniejsze niż piksel gasną – bez migotania w oddali). */
@@ -274,6 +307,17 @@
 		// asfalt jaśniejszy i neutralny (ciemnogranatowy wyglądał jak mokry), kruszywo i drobne nierówności
 		float mid = mix(0.5, gNoise(mat2(0.8, -0.6, 0.6, 0.8) * wp * 5.0), AAK(5.0));
 		vec3 asC = mix(c0, vec3(dot(c0, vec3(0.333))), 0.6) * 1.5 * (0.8 + 0.36 * m1 + 0.1 * m2) * (0.86 + 0.28 * speck) * (0.93 + 0.14 * mid);
+		/* koleiny i brud przy krawędziach (drogi z mapy – vLat: odsunięcie od osi jezdni, połowa szerokości, liczba
+		   pasów): ślady kół w każdym pasie ciemniejsze i wygładzone, przy krawężnikach osad; w deszczu woda w koleinach */
+		float rut = 0.0, edgeD = 0.0;
+		if (vLat.z > 0.5) {
+			float lw = 2.0 * vLat.y / vLat.z, pos = vLat.x + vLat.y;
+			float lc = pos - (floor(pos / lw) + 0.5) * lw;
+			rut = (1.0 - smoothstep(0.06, 0.3, abs(abs(lc) - min(0.85, lw * 0.27)))) * (0.65 + 0.35 * gNoise(wp * 0.35 + 4.0));
+			edgeD = (1.0 - smoothstep(0.0, 0.6, vLat.y - abs(vLat.x))) * (0.6 + 0.4 * m1);
+		}
+		asC *= 1.0 - 0.28 * rut - 0.22 * edgeD;
+		asC = mix(asC, asC * vec3(1.02, 0.97, 0.9), edgeD * 0.5);
 		asC = mix(asC, asC * vec3(0.78, 0.8, 0.84), patchA);
 		asC *= 1.0 - 0.45 * crack;
 		// kostka: przesunięte rzędy prostokątów 0,2 × 0,1 m wzdłuż osi świata, fugi ciemniejsze
@@ -291,7 +335,8 @@
 		// wysokości mikrorzeźby w metrach (kilka milimetrów)
 		gH = (speck * 0.004 * asph * aaF - crack * 0.006) + jm * pave * AAK(22.0) * fl * 0.008;
 		puddle = smoothstep(0.66, 0.8, gNoise(wp * 0.09) * 0.7 + gNoise(wp * 0.4) * 0.3 + uWet * 0.1) * smoothstep(0.3, 0.7, uWet) * (asph + pave * 0.5) * fl;
-		gRough = -0.08 * mark + 0.05 * (m2 - 0.5);`;
+		puddle = max(puddle, (rut * 0.75 + edgeD * 0.6) * smoothstep(0.35, 0.8, uWet) * asph * fl * (0.5 + 0.5 * gNoise(wp * 0.6)));
+		gRough = -0.08 * mark + 0.05 * (m2 - 0.5) - 0.12 * rut * asph;`;
 
 	/* Beton peronów i pomostów: plamy, drobne ziarno, rzadkie rysy, ciemniejsze zacieki. */
 	const CONCRETE_GLSL = `${SURF_HEAD}
@@ -325,6 +370,61 @@
 		diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.12, 1.08, 0.78), smoothstep(0.62, 0.86, leafN) * 0.45 * laa);
 		gH = leafN * 0.05 * laa;`;
 
+	/* Tabor (wariant 'train'): patyna eksploatacyjna, spoiny i falowanie blach, nity, okluzja z wierzchołków.
+	   Atrybut aWear (wypiekany przy budowie modelu, train.js bakeWear): x – zasłonięcie otoczenia (0…1), y – 1, gdy
+	   position to współrzędne wagonu (y – wysokość nad główką szyny, z – wzdłuż wagonu); bez atrybutu (0, 0) – część
+	   ruchoma (koła, drzwi, pantograf): tylko zabrudzenie bazowe materiału. Wszystko w układzie wagonu – wzór jedzie
+	   z pociągiem. */
+	const TRAIN_GLSL = (grime, panels) => `
+		float wearG = 0.0, wearAO = 1.0 - clamp(vWear.x, 0.0, 1.0);
+		{
+			vec3 lp = vLocP, ln = normalize(vLocN);
+			float pxw = length(fwidth(lp));
+			float n1 = gFbm(vec2(lp.z * 0.7 + lp.x * 0.45, lp.y * 1.1) + 3.0);
+			float g = ${grime.toFixed(3)} * (0.55 + 0.9 * n1);
+			if (vWear.y > 0.5) {
+				// kurz i smar od wózków (wyżej rzadziej, nierówna granica), zacieki spod okien i z dachu, sadza na dachu
+				float low = 1.0 - smoothstep(0.7, 1.9 + 0.5 * n1, lp.y);
+				float n2 = gNoise(vec2((lp.z + lp.x * 0.7) * 4.5, lp.y * 0.3));
+				float streak = smoothstep(0.5, 0.9, n2) * smoothstep(1.3, 3.3, lp.y) * (1.0 - abs(ln.y));
+				float roof = smoothstep(3.4, 3.85, lp.y) * smoothstep(0.15, 0.7, ln.y);
+				g = max(g, low * (0.45 + 0.55 * n1) + streak * 0.2 + roof * (0.25 + 0.5 * n1));
+			}
+			wearG = clamp(g * uWear, 0.0, 1.0);
+			vec3 dirtC = vec3(0.2, 0.17, 0.135) * (0.7 + 0.6 * n1);
+			diffuseColor.rgb = mix(diffuseColor.rgb, dirtC, wearG * 0.6);
+			${panels ? `
+			// burty: falowanie blach między wręgami (co 0,9 m – odbicia nieba lekko falują), pionowe spoiny co 2,7 m,
+			// rząd nitów nad ostojnicą; drobne wzory gasną, gdy są mniejsze od piksela
+			if (vWear.y > 0.5 && abs(ln.x) > 0.75 && lp.y > 1.1 && lp.y < 3.5) {
+				float fine = 1.0 - smoothstep(0.012, 0.04, pxw);
+				float wy = smoothstep(1.15, 1.4, lp.y) * (1.0 - smoothstep(3.2, 3.45, lp.y));
+				float wav = sin(fract(lp.z / 0.9) * 3.14159) * (0.5 + 0.5 * gNoise(vec2(lp.z * 0.8, lp.y * 1.6)));
+				float sd = abs(fract(lp.z / 2.7 + 0.5) - 0.5) * 2.7;
+				float seam = (1.0 - smoothstep(0.003, 0.003 + 1.2 * pxw, sd)) * fine * wy;
+				float rv = 1.0 - smoothstep(0.009, 0.016, length(vec2((fract(lp.z / 0.16) - 0.5) * 0.16, lp.y - 1.2)));
+				gH += wav * 0.004 * wy - seam * 0.002 + rv * fine * 0.003;
+				diffuseColor.rgb *= 1.0 - 0.3 * seam;
+			}
+			// dach: poprzeczne żebra łączące arkusze blachy co 1,2 m (z góry – z kamery za pociągiem – najlepiej
+			// widoczne), przy żebrach więcej osadu
+			if (vWear.y > 0.5 && ln.y > 0.3 && lp.y > 3.3) {
+				float fine = 1.0 - smoothstep(0.015, 0.05, pxw);
+				float sd = abs(fract(lp.z / 1.2 + 0.5) - 0.5) * 1.2;
+				float rib = 1.0 - smoothstep(0.012, 0.012 + 1.5 * pxw, sd);
+				gH += rib * 0.005 * fine;
+				diffuseColor.rgb *= 1.0 - 0.18 * (1.0 - smoothstep(0.0, 0.12, sd)) * (0.4 + 0.6 * n1);
+			}` : ''}
+		}`;
+	const TRAIN_LIGHT_GLSL = `
+		{
+			// okluzja: światło otoczenia i odbicia w zagłębieniach, trochę także bezpośrednie (kontakt części)
+			reflectedLight.indirectDiffuse *= wearAO;
+			reflectedLight.indirectSpecular *= wearAO * wearAO;
+			reflectedLight.directDiffuse *= mix(1.0, wearAO, 0.35);
+			reflectedLight.directSpecular *= mix(1.0, wearAO, 0.5);
+		}`;
+
 	// mikrorzeźba: wysokość gH zgina normalną (pochodne ekranowe)
 	const BUMP_GLSL = (amp) => `
 		{
@@ -340,17 +440,41 @@
 	   - 'wind'   : roślinność – kołysanie na wietrze (instancje) + pogoda,
 	   - 'ground' : teren – trawa / piasek / ziemia (aMat), rzędy upraw (aRow), mikrorzeźba, kałuże, pogoda,
 	   - 'gravel' : podsypka – kamienie, mikrorzeźba, pogoda,
+	   - 'train'  : jak 'lit' + patyna, spoiny, nity i okluzja taboru (TRAIN_GLSL; opt.grime – zabrudzenie bazowe,
+	                opt.panels – spoiny i falowanie blach burt),
 	   - 'clean'  : cienie chmur, bez pogody (woda, szyby),
 	   - 'indoor' : bez chmur i pogody (wnętrza). */
 	const allMaterials = [];
-	function patch(material, variant) {
+	function patch(material, variant, opt = {}) {
 		allMaterials.push(material);
-		material.customProgramCacheKey = () => 'train2-' + variant;
+		const train = variant === 'train', grime = opt.grime ?? 0.12, panels = !!opt.panels;
+		material.customProgramCacheKey = () => 'train2-' + variant + (train ? `-${grime}-${panels ? 1 : 0}` : '');
 		material.onBeforeCompile = (shader) => {
 			if (variant !== 'indoor' && NS.cloudShade) NS.cloudShade(T, shader);
 			Object.assign(shader.uniforms, U);
 			if (variant === 'indoor' || variant === 'clean') return;
 			const ground = variant === 'ground', gravel = variant === 'gravel';
+			if (train) {
+				shader.vertexShader = shader.vertexShader
+					.replace('#include <common>', `#include <common>
+					attribute vec2 aWear; varying vec2 vWear; varying vec3 vLocP; varying vec3 vLocN;`)
+					.replace('#include <begin_vertex>', `#include <begin_vertex>
+					vLocP = transformed; vLocN = objectNormal; vWear = aWear;`);
+				shader.fragmentShader = shader.fragmentShader
+					.replace('#include <common>', `#include <common>
+					uniform float uWear; varying vec2 vWear; varying vec3 vLocP; varying vec3 vLocN;`)
+					.replace('#include <aomap_fragment>', `#include <aomap_fragment>
+					${TRAIN_LIGHT_GLSL}`)
+					.replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+					#ifdef USE_CLEARCOAT
+					material.clearcoat *= 1.0 - 0.85 * wearG;
+					#endif`)
+					// lakier: bezbarwna powłoka też faluje na blachach
+					.replace('#include <clearcoat_normal_fragment_maps>', `#include <clearcoat_normal_fragment_maps>
+					#ifdef USE_CLEARCOAT
+					clearcoatNormal = normal;
+					#endif`);
+			}
 			const surf = variant === 'road' ? ROAD_GLSL : variant === 'concrete' ? CONCRETE_GLSL : variant === 'dirt' ? DIRT_GLSL : '';
 			const veg = variant === 'wind' || variant === 'grass';
 			const wind = veg ? `
@@ -367,7 +491,8 @@
 				.replace('#include <common>', `#include <common>
 				uniform float uTime; uniform float uWind; uniform float uSnow;
 				varying vec3 vWorldP;
-				${ground ? 'attribute vec2 aRow; varying vec2 vRow; attribute vec3 aMat; varying vec3 vMat;' : ''}`)
+				${ground ? 'attribute vec2 aRow; varying vec2 vRow; attribute vec3 aMat; varying vec3 vMat;' : ''}
+				${variant === 'road' ? 'attribute vec3 aLat; varying vec3 vLat;' : ''}`)
 				.replace('#include <begin_vertex>', `#include <begin_vertex>
 				${wind}`)
 				.replace('#include <project_vertex>', `#include <project_vertex>
@@ -378,23 +503,35 @@
 					#endif
 					vWorldP = (modelMatrix * wpos).xyz;
 				}
-				${ground ? 'vRow = aRow; vMat = aMat;' : ''}`);
+				${ground ? 'vRow = aRow; vMat = aMat;' : ''}
+				${variant === 'road' ? 'vLat = aLat;' : ''}`);
 			shader.fragmentShader = shader.fragmentShader
 				.replace('#include <common>', `#include <common>
 				uniform float uWet; uniform float uSnow; uniform float uRain; uniform float uTime;
 				varying vec3 vWorldP;
 				${ground ? 'varying vec2 vRow; varying vec3 vMat;' : ''}
+				${variant === 'road' ? 'varying vec3 vLat;' : ''}
 				${NOISE_GLSL}`)
 				.replace('#include <color_fragment>', `#include <color_fragment>
 				float gH = 0.0, puddle = 0.0, gSand = 0.0, gRough = 0.0; // gRough – zmiana chropowatości (stosowana niżej)
-				${ground ? GROUND_GLSL : gravel ? GRAVEL_GLSL : variant === 'wind' ? LEAF_GLSL : surf}`)
+				${ground ? GROUND_GLSL : gravel ? GRAVEL_GLSL : variant === 'wind' ? LEAF_GLSL : train ? TRAIN_GLSL(grime, panels) : surf}`)
 				.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-				${ground ? BUMP_GLSL(1.4) : gravel ? BUMP_GLSL(2.6) : surf ? BUMP_GLSL(variant === 'road' ? 1.2 : 0.9) : variant === 'wind' ? BUMP_GLSL(1.0) : ''}
+				${ground ? BUMP_GLSL(1.4) : gravel ? BUMP_GLSL(1.6) : surf ? BUMP_GLSL(variant === 'road' ? 1.2 : 0.9) : variant === 'wind' ? BUMP_GLSL(1.0) : train && panels ? BUMP_GLSL(1.0) : ''}
 				vec3 wN = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+				${variant === 'wind' ? `
+				// korony: brzegi bryły (patrząc stycznie) jaśniejsze i żółtozielone – prześwitujące liście, miękka sylwetka
+				{
+					float rim = pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.0);
+					diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.3, 1.32, 0.9) + vec3(0.015, 0.025, 0.0), rim * 0.6);
+				}` : ''}
 				#ifdef STANDARD
-				roughnessFactor = mix(clamp(roughnessFactor + gRough, 0.3, 1.0), 0.97, gSand);
+				${train ? `
+				// tabor: brud matowy (bez dolnej granicy 0,3 – chrom i lakier zostają błyszczące)
+				roughnessFactor = clamp(mix(roughnessFactor, 0.88, wearG), 0.04, 1.0);
+				metalnessFactor = mix(metalnessFactor, metalnessFactor * 0.35, wearG);` : `
+				roughnessFactor = mix(clamp(roughnessFactor + gRough, 0.3, 1.0), 0.97, gSand);`}
 				#endif
-				${WEATHER_GLSL(ground || gravel || variant === 'road' || variant === 'concrete' ? 1.0 : veg ? 0.6 : 0.75, variant === 'grass' ? 0.0 : variant === 'wind' ? 0.75 : 1.0)}
+				${WEATHER_GLSL(ground || gravel || variant === 'road' || variant === 'concrete' ? 1.0 : veg ? 0.6 : 0.75, variant === 'grass' ? 0.0 : variant === 'wind' ? 0.75 : 1.0, train ? 'vLocP' : 'vWorldP')}
 				${ground || variant === 'road' ? `
 				// kałuże: ciemne, gładkie jak lustro, z kręgami od kropli
 				{
@@ -416,14 +553,18 @@
 	// ---- współdzielone materiały i bryły ----
 	// mat() – matowe powierzchnie (PBR, żeby mokre błyszczały); { indoor: true } – wnętrza bez pogody
 	const mats = new Map();
+	// { train: g } – materiał taboru (wariant 'train', g – zabrudzenie bazowe; panels – spoiny, nity, żebra dachu)
 	function mat(color, extra) {
 		const key = 'M' + color + JSON.stringify(extra || {});
 		if (!mats.has(key)) {
 			const ex = Object.assign({}, extra || {});
-			const indoor = ex.indoor, surf = ex.surf;
+			const indoor = ex.indoor, surf = ex.surf, train = ex.train, panels = ex.panels;
 			delete ex.indoor;
 			delete ex.surf;
-			mats.set(key, patch(new T.MeshStandardMaterial(Object.assign({ color, roughness: 0.86, metalness: 0, envMapIntensity: 0.35 }, ex)), indoor ? 'indoor' : surf || 'lit'));
+			delete ex.train;
+			delete ex.panels;
+			const variant = indoor ? 'indoor' : surf || (train !== undefined ? 'train' : 'lit');
+			mats.set(key, patch(new T.MeshStandardMaterial(Object.assign({ color, roughness: 0.86, metalness: 0, envMapIntensity: 0.35 }, ex)), variant, { grime: train, panels }));
 		}
 		return mats.get(key);
 	}
@@ -433,11 +574,14 @@
 		if (!mats.has(key)) {
 			const ex = Object.assign({}, extra || {});
 			// surf: 'road' | 'concrete' | 'dirt' – proceduralna nawierzchnia (tylko obiekty nieruchome)
-			const variant = ex.indoor ? 'indoor' : ex.clean ? 'clean' : ex.surf || 'lit';
+			const variant = ex.indoor ? 'indoor' : ex.clean ? 'clean' : ex.surf || (ex.train !== undefined ? 'train' : 'lit');
+			const train = ex.train, panels = ex.panels;
 			delete ex.indoor;
 			delete ex.clean;
 			delete ex.surf;
-			mats.set(key, patch(new T.MeshStandardMaterial(Object.assign({ color, roughness: 0.6, metalness: 0 }, ex)), variant));
+			delete ex.train;
+			delete ex.panels;
+			mats.set(key, patch(new T.MeshStandardMaterial(Object.assign({ color, roughness: 0.6, metalness: 0 }, ex)), variant, { grime: train, panels }));
 		}
 		return mats.get(key);
 	}
@@ -475,6 +619,23 @@
 		const g = new T.BufferGeometry();
 		g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
 		g.computeVertexNormals();
+		return g;
+	})());
+
+	/* Przytwierdzenie szyny (jak SB / Vossloh, wymiary w m, x – w poprzek toru, środek przy stopce szyny): płyta
+	   żebrowa, łapka sprężysta w kształcie „ω” (dwa ramiona i grzbiet) i śruba; bryły złączone, ok. 70 trójkątów. */
+	GEO.railClip = shared((() => {
+		const parts = [[0.1, 0.022, 0.18, 0, -0.024, 0], [0.03, 0.03, 0.15, -0.03, -0.004, 0], [0.075, 0.018, 0.02, 0.005, 0.006, -0.045], [0.075, 0.018, 0.02, 0.005, 0.006, 0.045], [0.02, 0.022, 0.11, 0.035, 0.012, 0], [0.026, 0.04, 0.026, -0.005, 0.02, 0]];
+		const pos = [], nor = [];
+		for (const [w, h, d, x, y, z] of parts) {
+			const g = new T.BoxGeometry(w, h, d).translate(x, y, z).toNonIndexed();
+			pos.push(...g.attributes.position.array);
+			nor.push(...g.attributes.normal.array);
+			g.dispose();
+		}
+		const g = new T.BufferGeometry();
+		g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+		g.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
 		return g;
 	})());
 

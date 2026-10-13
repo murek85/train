@@ -113,6 +113,7 @@
 		}
 		buildMenu();
 		if (!$('scr-gen').classList.contains('hidden')) buildGenScreen();
+		if (!$('saves').classList.contains('hidden')) buildSaves(); // zapisy na trasach z generatora – już dostępne
 	}
 	function forgetRoute(id) {
 		const i = defs.findIndex((d) => d.id === id && d.custom);
@@ -212,12 +213,7 @@
 				<p>${esc(d.desc)}</p>
 				<div class="meta">${((d.stations[d.stations.length - 1].pos + 35) / 1000).toFixed(1)} km · ${d.stations.length} stacji (${stops} postojów) · perony ${d.platformLength} m · odjazd ${fmtClock(depClock(d)).slice(0, 5)}${el}</div>
 				${d.source ? `<div class="src">${esc(d.source)}</div>` : ''}`;
-			b.addEventListener('click', () => {
-				selected = d.id;
-				save('route', selected);
-				buildMenu();
-				startDemo();
-			});
+			b.addEventListener('click', () => { if (d.id !== selected) selectRoute(d.id); });
 			list.appendChild(b);
 		}
 		buildCondTab();
@@ -246,7 +242,7 @@
 		save('singleTab', name);
 		document.querySelectorAll('#single-tabs button').forEach((b) => b.classList.toggle('sel', b.dataset.tab === name));
 		for (const t of ['map', 'train', 'cond', 'help']) $('tab-' + t).classList.toggle('hidden', t !== name);
-		updatePreview();
+		showPreview();
 	}
 
 	/* ---------- zakładka „Pociąg”: rodzaj składu, lokomotywa / zespół, malowania, wagony, skład ----------
@@ -260,16 +256,22 @@
 	const swatch = (v) => { const c = (v && v.sw) || ['#777', '#999', '#555']; return `<span class="chip">${c.map((x) => `<i style="background:${x}"></i>`).join('')}</span>`; };
 	// rodzaj składu z konfiguracji (sama lokomotywa – rodzaj bieżący, o ile nie EZT)
 	const modeOf = (c) => (c.emu ? 'emu' : c.cars && c.cars[0] && S[c.cars[0].t] ? (S[c.cars[0].t].kind === 'wagon' ? 'freight' : 'pass') : trainMode === 'emu' ? 'pass' : trainMode);
+	// nowy skład: przebudowa menu i podglądu 3D, potem pociąg w tle – z okienkiem wczytywania (menuBusy)
 	function setCfg(c, rebuildDemo = true) {
 		trainCfg = c;
 		modeCfgs[modeOf(c)] = c;
 		save('trainCfg', c);
 		save('trainCfgs', modeCfgs);
-		buildMenu();
-		if (rebuildDemo) demoSoon();
+		if (!rebuildDemo || !selected) { buildMenu(); return; }
+		menuBusy('Zmiana składu', routeById(selected).train.name, buildMenu);
 	}
 	let demoT = 0;
-	function demoSoon() { clearTimeout(demoT); demoT = setTimeout(startDemo, 350); }
+	// podgląd 3D z okienkiem wczytywania, gdy trzeba zbudować model (pierwsze otwarcie zakładki „Pociąg”)
+	function showPreview() {
+		const need = mode === 'menu' && screen === 'single' && singleTab === 'train' && !!selected && (!preview || previewKey !== routeById(selected).configKey);
+		if (need) menuBusy('Podgląd składu', routeById(selected).train.name, updatePreview, false);
+		else updatePreview();
+	}
 	function defaultFor(mode) {
 		const m = modeCfgs[mode];
 		if (m && (mode === 'emu' ? S[m.emu] : S[m.loco])) return m;
@@ -419,6 +421,7 @@
 		if (trainMode === 'freight') notes.push(`Skład towarowy do ${Math.round(limit)} m – jedzie bez postojów, zatrzymanie na stacji końcowej.`);
 		else notes.push(`Perony tej trasy: ${def.platformLength} m – skład do ${Math.round(limit)} m.`);
 		if (!emu && ratio < 4.5 && c.cars.length) notes.push(`Słaba moc na tę masę (${ratio.toFixed(1)} kW/t) – długie rozpędzanie.`);
+		if (emu && route.trainLength > limit) notes.push(`${lead.name} (${Math.round(route.trainLength)} m) nie mieści się przy peronach – część składu stanie poza nimi.`);
 		hint(notes.join(' '), false);
 		$('stock-desc') && ($('stock-desc').textContent = lead.desc);
 		updatePreview();
@@ -630,13 +633,11 @@
 		return done;
 	}
 
+	// trasa z generatora: przejście do gry jednoosobowej z okienkiem wczytywania (jak przy wyborze trasy w menu)
 	function pickRoute(id) {
-		selected = id;
-		save('route', selected);
 		trainCfg = cfgFor(defById(id));
-		buildMenu();
 		menuScreen('single');
-		startDemo();
+		selectRoute(id);
 	}
 	async function runGenerator() {
 		if (genBusy) return;
@@ -675,6 +676,91 @@
 		}
 	}
 
+	/* Wybór mapy z okienkiem wczytywania: przygotowanie trasy, rozkład jazdy (przejazd automatem) i budowa świata
+	   podglądu idą etapami z odświeżeniem okna między nimi (bez zamrożenia menu); pasek – postęp doczytywania
+	   kawałków świata. Kolejny wybór przerywa poprzedni. */
+	let loadSeq = 0;
+	// następna klatka (odświeżenie okienka) – albo najwyżej 120 ms, gdy okno jest ukryte i klatki stoją
+	const nextFrame = () => new Promise((res) => {
+		let done = false;
+		const go = () => { if (!done) { done = true; setTimeout(res, 0); } };
+		requestAnimationFrame(go);
+		setTimeout(go, 120);
+	});
+	// head – nagłówek okienka (domyślnie „Wczytywanie trasy”; zmiana składu i warunków – własny)
+	function routeLoading(step, frac, title, head) {
+		const box = $('route-loading');
+		if (step === null) { box.classList.add('hidden'); return; }
+		box.classList.remove('hidden');
+		if (title !== undefined) { $('rl-title').textContent = title; $('rl-head').textContent = head || 'Wczytywanie trasy'; }
+		$('rl-step').textContent = step;
+		$('rl-fill').style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
+	}
+	async function selectRoute(id) {
+		const seq = ++loadSeq, def = defById(id);
+		const live = () => seq === loadSeq && mode === 'menu';
+		// przerwane (inny wybór albo start gry) – okienko znika, chyba że wyświetla je już nowszy wybór
+		const quit = () => { if (seq === loadSeq) routeLoading(null); };
+		selected = id;
+		save('route', selected);
+		routeLoading('Przygotowanie trasy…', 0.05, def.title);
+		await nextFrame();
+		if (!live()) return quit();
+		buildMenu();
+		routeLoading('Rozkład jazdy…', 0.25);
+		await nextFrame();
+		if (!live()) return quit();
+		timetable(routeById(id));
+		routeLoading('Budowa świata…', 0.45);
+		await nextFrame();
+		if (!live()) return quit();
+		startDemo();
+		await worldNear(live, 0.45);
+		if (seq !== loadSeq) return;
+		routeLoading('Gotowe', 1);
+		setTimeout(() => { if (seq === loadSeq) routeLoading(null); }, 250);
+	}
+	// doczytywanie kawałków świata podglądu przy pociągu (najwyżej ok. 20 s – potem okienko i tak znika); pasek od f0 do 1
+	async function worldNear(live, f0) {
+		let total = 0;
+		for (let k = 0; k < 1200 && live(); k++) {
+			await nextFrame();
+			// czekamy na kawałki przy pociągu (dalsze dobudowują się po jednym na klatkę już po zamknięciu okienka)
+			const p = renderer.world ? renderer.world.pendingNear || 0 : 0;
+			total = Math.max(total, p);
+			if (k > 2 && p === 0) break;
+			if (total) routeLoading(`Budowa świata… (${total - p} z ${total})`, f0 + (1 - f0) * (1 - p / total));
+		}
+	}
+	/* Zmiana w menu „Gra jednoosobowa” (skład, warunki, pierwsze otwarcie podglądu): okienko jak przy wyborze trasy,
+	   blokujące menu na czas przebudowy – najpierw okienko się rysuje, potem praca etapami z odświeżeniem między nimi:
+	   work() (lista, podsumowanie, model podglądu 3D), pierwsze rysowanie podglądu (kompilacja shaderów), pociąg
+	   w tle (demo: model w scenie, świat) – gdy demo. Kolejna zmiana (albo wybór trasy) przerywa poprzednią. */
+	async function menuBusy(head, title, work, demo = true) {
+		const seq = ++loadSeq;
+		const live = () => seq === loadSeq && mode === 'menu';
+		const quit = () => { if (seq === loadSeq) routeLoading(null); };
+		clearTimeout(demoT);
+		routeLoading('Przygotowanie…', 0.1, title, head);
+		await nextFrame();
+		if (!live()) return quit();
+		work();
+		routeLoading('Podgląd…', 0.35);
+		await nextFrame();
+		await nextFrame();
+		if (!live()) return quit();
+		if (demo) {
+			routeLoading('Pociąg w tle…', 0.6);
+			await nextFrame();
+			if (!live()) return quit();
+			startDemo();
+			await worldNear(live, 0.6);
+			if (!live()) return quit();
+		}
+		routeLoading('Gotowe', 1);
+		setTimeout(() => { if (seq === loadSeq) routeLoading(null); }, 150);
+	}
+
 	function startDemo() {
 		// bez tras: menu bez podglądu jazdy w tle
 		if (!defs.length || !selected) { demo = null; return; }
@@ -687,7 +773,7 @@
 	}
 
 	function showOverlay(id) {
-		for (const o of ['menu', 'pause', 'end', 'settings']) $(o).classList.toggle('hidden', o !== id);
+		for (const o of ['menu', 'pause', 'end', 'settings', 'saves']) $(o).classList.toggle('hidden', o !== id);
 	}
 
 	// ekrany menu głównego: 'main' | 'single'
@@ -697,7 +783,8 @@
 		$('scr-main').classList.toggle('hidden', name !== 'main');
 		$('scr-single').classList.toggle('hidden', name !== 'single');
 		$('scr-gen').classList.toggle('hidden', name !== 'gen');
-		updatePreview();
+		$('scr-news').classList.toggle('hidden', name !== 'news');
+		showPreview();
 	}
 
 	// ustawienia otwierane z menu albo z pauzy – „Wróć” prowadzi tam, skąd przyszliśmy
@@ -733,12 +820,142 @@
 		save('opt.fps', $('set-fps').checked);
 	}
 
+	// ---------- zapisane gry: autozapis i 5 miejsc w localStorage (maszynista.save.auto, save.1 … save.5) ----------
+	const SLOT_IDS = ['auto', 1, 2, 3, 4, 5], SAVE_V = 1;
+	let savesFrom = 'menu';
+	const readSave = (n) => load('save.' + n, null);
+	// odcisk trasy: zapis z trasy wygenerowanej od tego czasu ponownie (inne stacje, semafory, długość) jest odrzucany
+	const routeSig = (r) => [r.stations.length, r.signals.length, r.crossings.length, Math.round(r.length)].join('|');
+	function saveProblem(d) {
+		if (!d || d.v !== SAVE_V || !d.sim) return 'Zapis w nieznanym formacie.';
+		if (!defs.some((x) => x.id === d.route)) return 'Tej trasy nie ma w grze (usunięta albo jeszcze się wczytuje).';
+		return null;
+	}
+	function savesMsg(text, kind) {
+		$('saves-msg').innerHTML = text ? `<span class="${kind}">${esc(text)}</span>` : '';
+	}
+	function openSaves(from) {
+		savesFrom = from;
+		savesMsg('');
+		buildSaves();
+		showOverlay('saves');
+	}
+	function closeSaves() {
+		if (savesFrom === 'pause') buildPause();
+		showOverlay(savesFrom);
+	}
+	// przycisk z potwierdzeniem (nadpisanie, usunięcie, porzucenie bieżącej jazdy): pierwsze kliknięcie – „Na pewno?”
+	function slotBtn(text, fn, confirm, cls) {
+		const b = document.createElement('button');
+		b.textContent = text;
+		if (cls) b.className = cls;
+		let armed = 0;
+		b.addEventListener('click', () => {
+			if (confirm && !armed) {
+				b.textContent = 'Na pewno?';
+				b.classList.add('confirm');
+				armed = setTimeout(() => { armed = 0; b.textContent = text; b.classList.remove('confirm'); }, 3000);
+				return;
+			}
+			clearTimeout(armed);
+			fn();
+		});
+		return b;
+	}
+	function buildSaves() {
+		const canSave = savesFrom === 'pause' && !!sim && sim.status === 'running';
+		$('saves-title').textContent = canSave ? 'Zapisz / wczytaj grę' : 'Wczytaj grę';
+		$('saves-hint').textContent = (canSave
+			? 'Zapis obejmuje stan jazdy: miejsce na trasie, prędkość, nastawnik, drzwi, pantograf, rozkład, punkty i kary, pogodę i porę dnia.'
+			: 'Wybierz zapis, aby jechać dalej od zapisanego miejsca.') + ' Autozapis – przy każdym odjeździe ze stacji, wyjściu do menu i zamknięciu gry.';
+		const list = $('save-list');
+		list.innerHTML = '';
+		for (const id of SLOT_IDS) {
+			const auto = id === 'auto', d = readSave(id), why = d && saveProblem(d);
+			const el = document.createElement('div');
+			el.className = 'save-slot ' + (d ? 'used' : 'empty') + (auto ? ' auto' : '');
+			const icon = auto ? '<i title="Autozapis">A</i>' : `<i>${id}</i>`;
+			if (d) {
+				const when = new Date(d.saved).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' });
+				const km = Number(d.km || 0).toFixed(2).replace('.', ',');
+				el.innerHTML = `${icon}<div class="sd"><b>${auto ? 'Autozapis: ' : ''}${esc(d.title)} · ${esc(d.train)}</b><span>km ${km} · godz. ${fmtClock(d.clock || 0).slice(0, 5)} · ${Number(d.score) || 0} pkt${d.next ? ' · dalej: ' + esc(d.next) : ''}</span><span${why ? ' class="err"' : ''}>${why ? esc(why) : 'zapisano ' + esc(when)}</span></div><div class="sb"></div>`;
+			} else el.innerHTML = `${icon}<div class="sd"><b>${auto ? 'Autozapis – pusty' : 'Puste miejsce'}</b></div><div class="sb"></div>`;
+			const sb = el.querySelector('.sb');
+			// autozapis robi tylko gra – bez ręcznego zapisu w to miejsce
+			if (canSave && !auto) sb.appendChild(slotBtn(d ? 'Nadpisz' : 'Zapisz', () => saveGame(id), !!d, 'primary'));
+			if (d) {
+				const ld = slotBtn('Wczytaj', () => loadGame(id), canSave, canSave ? '' : 'primary');
+				ld.disabled = !!why;
+				if (canSave) ld.title = 'Bieżąca jazda bez zapisu przepadnie';
+				sb.appendChild(ld);
+				sb.appendChild(slotBtn('Usuń', () => {
+					try { localStorage.removeItem('maszynista.save.' + id); } catch (e) { /* brak dostępu */ }
+					buildSaves();
+					savesMsg(auto ? 'Usunięto autozapis.' : `Usunięto zapis z miejsca ${id}.`, 'ok');
+				}, true));
+			}
+			list.appendChild(el);
+		}
+	}
+	// zapis bieżącej jazdy w miejscu id ('auto' albo 1…5); false – brak jazdy albo brak miejsca w pamięci
+	function writeSave(id) {
+		if (!sim || sim.status !== 'running') return false;
+		const r = sim.route, nx = r.stations[sim.next];
+		const data = {
+			v: SAVE_V, saved: Date.now(),
+			route: r.id, title: r.title, train: r.train.name, cfg: r.config, cfgKey: r.configKey, sig: routeSig(r),
+			startClock: r.startClock, weather: $('opt-weather').value, ca: !!sim.opts.czuwak, assist: !!renderer.assist, timeScale,
+			timetable: sim.timetable,
+			km: sim.st.pos / 1000, clock: sim.clock(), score: sim.score(), next: nx ? nx.name : null,
+			sim: sim.snapshot(),
+		};
+		try { localStorage.setItem('maszynista.save.' + id, JSON.stringify(data)); } catch (e) { return false; }
+		return true;
+	}
+	function autoSave() {
+		if (mode !== 'loading') writeSave('auto'); // w czasie wczytywania jazda jeszcze nie ruszyła – zostaje poprzedni autozapis
+	}
+	function saveGame(id) {
+		if (!sim || sim.status !== 'running') { savesMsg('Zapis jest możliwy tylko w czasie jazdy.', 'err'); return; }
+		if (!writeSave(id)) { savesMsg('Nie udało się zapisać – brak miejsca w pamięci przeglądarki albo brak dostępu.', 'err'); return; }
+		buildSaves();
+		savesMsg(`Zapisano grę w miejscu ${id}.`, 'ok');
+	}
+	function loadGame(n) {
+		const d = readSave(n), why = saveProblem(d);
+		if (why) { savesMsg(why, 'err'); return; }
+		const prevCfg = trainCfg;
+		trainCfg = d.cfg;
+		try {
+			const route = routeFor(defById(d.route));
+			if (route.configKey !== d.cfgKey || routeSig(route) !== d.sig || !Array.isArray(d.timetable) || d.timetable.length !== route.stations.length) {
+				throw new Error('trasa albo skład zmieniły się od zapisu.');
+			}
+			Sim.restore(route, { timetable: d.timetable }, d.sim); // próba – błąd zostaje w tym oknie, bez przerywania gry
+		} catch (e) {
+			trainCfg = prevCfg;
+			savesMsg('Nie można wczytać zapisu: ' + e.message, 'err');
+			return;
+		}
+		// zapis staje się bieżącym wyborem w menu (trasa, skład, warunki)
+		selected = d.route;
+		trainMode = modeOf(trainCfg);
+		save('route', selected);
+		$('opt-ca').checked = d.ca;
+		$('opt-assist').checked = d.assist;
+		$('opt-weather').value = $('pause-weather').value = d.weather || 'auto';
+		pauseFromFree = false;
+		audio.silence();
+		startGame(d);
+	}
+
 	function quitApp() {
 		if (window.desktop && window.desktop.quit) window.desktop.quit();
 		else window.close();
 	}
 
 	function toMenu() {
+		if (sim) autoSave(); // przerwana jazda (z pauzy) – do autozapisu; po końcu trasy zapis się nie zmienia
 		exitFree();
 		mode = 'menu';
 		renderer.inputEnabled = false;
@@ -759,19 +976,21 @@
 	/* Start jazdy z ekranem wczytywania (js/screens.js): ekran z trasą i składem, po dwóch klatkach (ekran zdąży się
 	   narysować) budowa jazdy (beginGame), potem tryb „loading” – świat wokół pociągu dobudowuje się, symulacja stoi;
 	   gdy nie ma już kawałków do zbudowania (i minęło kilka klatek na kompilację shaderów) – jazda (finishLoading). */
-	let loadingScreen = null, loadingFrames = 0;
-	function startGame() {
+	let loadingScreen = null, loadingFrames = 0, resumed = false;
+	// snap – zapis gry (loadGame): jazda od zapisanego miejsca zamiast od początku trasy
+	function startGame(snap) {
+		if (!(snap && snap.sim)) snap = null;
 		if (!defs.length || !selected) { menuScreen('gen'); buildGenScreen(); return; } // bez tras – do generatora
 		if (mode === 'loading') return;
 		const def = defById(selected), route = routeById(selected), t = route.train;
-		const dep = depClock(def), h = Math.floor(dep / 3600) % 24;
+		const dep = snap ? snap.clock : depClock(def), h = Math.floor(dep / 3600) % 24;
 		const wsel = $('opt-weather');
 		const kind = route.freight ? 'POCIĄG TOWAROWY' : (route.name.split(' ')[0] || 'Pociąg').toUpperCase();
 		const km = ((def.stations[def.stations.length - 1].pos - def.stations[0].pos) / 1000).toFixed(1).replace('.', ',');
 		loadingScreen = window.TrainScreens ? window.TrainScreens.loading({
 			eyebrow: `${kind} · ${def.real ? 'TRASA RZECZYWISTA' : 'TRASA'}`,
 			title: route.title,
-			sub: `${t.name} · odjazd ${fmtClock(dep).slice(0, 5)} · ${wsel.options[wsel.selectedIndex].text} · ${km} km`,
+			sub: `${t.name} · ${snap ? 'zapis z godz.' : 'odjazd'} ${fmtClock(dep).slice(0, 5)} · ${wsel.options[wsel.selectedIndex].text} · ${km} km`,
 			night: h < 5 || h >= 21 ? 0.9 : h < 7 || h >= 19 ? 0.5 : 0.12,
 		}) : null;
 		mode = 'loading';
@@ -779,7 +998,7 @@
 		sim = null;
 		requestAnimationFrame(() => requestAnimationFrame(() => {
 			try {
-				beginGame();
+				beginGame(snap);
 			} catch (e) {
 				if (loadingScreen) loadingScreen.close();
 				loadingScreen = null;
@@ -793,19 +1012,25 @@
 		renderer.inputEnabled = true;
 		const route = sim.route;
 		const rname = route.freight ? route.name.replace(/^(Osobowy|Pospieszny|Pociąg)\b/i, 'Towarowy') : route.name;
-		hud.toast(`${rname}: ${route.title}. Odjazd o ${fmtClock(route.startClock + route.originWait)}.`, 'info');
-		hud.toast('Gdy semafor zmieni się na zielony, przesuń nastawnik w górę (↑).', 'info');
+		if (resumed) hud.toast(`${rname}: ${route.title}. Wczytano zapis – jazda od km ${(sim.st.pos / 1000).toFixed(2).replace('.', ',')}, godz. ${fmtClock(sim.clock()).slice(0, 5)}.`, 'info');
+		else {
+			hud.toast(`${rname}: ${route.title}. Odjazd o ${fmtClock(route.startClock + route.originWait)}.`, 'info');
+			hud.toast('Gdy semafor zmieni się na zielony, przesuń nastawnik w górę (↑).', 'info');
+		}
 		hud.toast('Kamera: przeciągnij myszą lub ←/→, kółko – oddalenie, V – tryb kamery, C – widok domyślny.', 'info');
 		if (loadingScreen) loadingScreen.done();
 		loadingScreen = null;
 	}
-	function beginGame() {
+	function beginGame(snap) {
 		exitFree();
 		document.querySelector('.controls [data-act=wipers]')?.classList.remove('on');
 		const route = routeById(selected);
 		applyClock(route);
+		if (snap) route.startClock = snap.startClock; // godzina z zapisu (także przestawiona w pauzie)
 		save('trainCfg', trainCfg);
-		sim = new Sim(route, { czuwak: $('opt-ca').checked, timetable: timetable(route) });
+		const opts = { czuwak: $('opt-ca').checked, timetable: snap ? snap.timetable : timetable(route) };
+		sim = snap ? Sim.restore(route, opts, snap.sim) : new Sim(route, opts);
+		resumed = !!snap;
 		save('opt.ca', $('opt-ca').checked);
 		save('opt.assist', $('opt-assist').checked);
 		renderer.assist = $('opt-assist').checked;
@@ -817,7 +1042,7 @@
 		hud.setup(sim);
 		audio.ensure();
 		audio.reset(sim);
-		timeScale = 1;
+		timeScale = snap ? snap.timeScale || 1 : 1;
 		mode = 'loading'; // jazda rusza po dobudowaniu świata (frame → finishLoading)
 		updatePreview();
 	}
@@ -1032,6 +1257,8 @@
 			fpsN = 0;
 			fpsT = 0;
 		}
+		// ekran wczytywania: kawałki świata budowane bez limitu czasu na klatkę (World.update)
+		if (renderer.world) renderer.world.fast = mode === 'loading';
 		if (mode === 'loading') {
 			// wczytywanie: świat buduje się w draw (symulacja stoi), ekran wczytywania przykrywa scenę
 			$('fps').classList.add('menu-off');
@@ -1073,6 +1300,7 @@
 					else if (e.type === 'dismiss') hud.dismiss(e.key);
 					else if (e.type === 'sound') audio.play(e.name);
 					else if (e.type === 'arc' && renderer.trainModel && renderer.trainModel.arcBurst) renderer.trainModel.arcBurst();
+					else if (e.type === 'departed') autoSave();
 				}
 				sim.events.length = 0;
 				if (mode === 'play' && sim.status !== 'running') {
@@ -1140,6 +1368,12 @@
 	};
 
 	document.addEventListener('keydown', (e) => {
+		// wczytywanie trasy po wyborze mapy – menu zablokowane (także Enter / Esc)
+		if (!$('route-loading').classList.contains('hidden')) { e.preventDefault(); return; }
+		if (!$('saves').classList.contains('hidden')) {
+			if (e.code === 'Escape') { e.preventDefault(); closeSaves(); }
+			return;
+		}
 		if (!$('settings').classList.contains('hidden')) {
 			if (e.code === 'Escape') closeSettings();
 			return;
@@ -1220,7 +1454,7 @@
 		b.addEventListener('click', (e) => e.preventDefault());
 	});
 
-	$('btn-start').addEventListener('click', startGame);
+	$('btn-start').addEventListener('click', () => startGame());
 	$('ca-left').addEventListener('click', () => moveCar(-1));
 	$('ca-right').addEventListener('click', () => moveCar(1));
 	$('ca-del').addEventListener('click', detachCar);
@@ -1241,19 +1475,23 @@
 	document.querySelectorAll('[data-free-tab]').forEach((b) => b.addEventListener('click', () => freeTab(b.dataset.freeTab)));
 	window.addEventListener('blur', () => { for (const k in freeKeysDown) delete freeKeysDown[k]; });
 	$('btn-quit').addEventListener('click', toMenu);
-	$('btn-again').addEventListener('click', startGame);
+	$('btn-again').addEventListener('click', () => startGame());
 	$('btn-menu').addEventListener('click', toMenu);
 	$('opt-ca').checked = load('opt.ca', true);
 	$('opt-quality').value = load('opt.quality', 'medium');
 	$('opt-weather').value = $('pause-weather').value = load('opt.weather', 'auto');
 	$('opt-quality').addEventListener('change', () => { applyGraphics(mode === 'menu' ? undefined : 'pause'); if (mode === 'menu') startDemo(); });
-	$('opt-weather').addEventListener('change', () => { applyGraphics(); startDemo(); buildMenu(); });
+	const weatherName = () => { const s = $('opt-weather'); return s.options[s.selectedIndex].text; };
+	$('opt-weather').addEventListener('change', () => menuBusy('Zmiana warunków', 'Pogoda: ' + weatherName(), () => { applyGraphics(); buildMenu(); }));
 	$('pause-weather').addEventListener('change', () => { applyGraphics('pause'); buildPause(); });
 	// pora dnia: w menu – godzina odjazdu (przebudowa podglądu), w pauzie – przestawienie bieżącej godziny
 	$('opt-time').value = $('pause-time').value = load('opt.time', 'auto');
 	$('opt-time-custom').value = $('pause-time-custom').value = load('opt.timeCustom', '21:30');
 	timeChoice();
-	for (const id of ['opt-time', 'opt-time-custom']) $(id).addEventListener('change', () => { timeChoice(); buildMenu(); startDemo(); });
+	for (const id of ['opt-time', 'opt-time-custom']) $(id).addEventListener('change', () => {
+		const sec = timeChoice();
+		menuBusy('Zmiana warunków', 'Pora dnia: ' + (sec === null ? 'jak w scenariuszu' : fmtClock(sec).slice(0, 5)), buildMenu);
+	});
 	for (const id of ['pause-time', 'pause-time-custom']) $(id).addEventListener('change', () => {
 		const sec = timeChoice('pause');
 		if (!sim) { buildPause(); return; }
@@ -1282,7 +1520,9 @@
 		selCar = 0;
 		setCfg(defaultFor(trainMode));
 	}));
-	$('opt-units').addEventListener('input', () => setCfg(Object.assign({}, cfgFor(defById(selected)), { n: Number($('opt-units').value) }), true));
+	// liczba zespołów: w czasie przeciągania suwaka tylko opis, po puszczeniu – nowy skład (okienko wczytywania)
+	$('opt-units').addEventListener('input', () => { const n = Number($('opt-units').value); $('opt-units-val').textContent = `${n} ${plural(n, 'zespół', 'zespoły', 'zespołów')}`; });
+	$('opt-units').addEventListener('change', () => setCfg(Object.assign({}, cfgFor(defById(selected)), { n: Number($('opt-units').value) })));
 	for (const id of ['opt-ca', 'opt-assist']) $(id).addEventListener('change', buildMenu);
 	showTab(singleTab);
 	// menu główne
@@ -1318,10 +1558,26 @@
 		});
 	}
 	$('gen-back').addEventListener('click', () => menuScreen('main'));
+	// „Co nowego” – historia wersji z js/news.js (najnowsza na górze)
+	function buildNews() {
+		const list = $('news-list');
+		list.innerHTML = '';
+		for (const v of window.TrainNews || []) {
+			const sec = document.createElement('section');
+			sec.className = 'news-ver';
+			sec.innerHTML = `<h3>Wersja ${esc(v.version)} <small>${esc(v.date)}</small></h3>` + v.groups.map(([g, items]) => `<h4>${esc(g)}</h4><ul>${items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`).join('');
+			list.appendChild(sec);
+		}
+	}
+	$('btn-news').addEventListener('click', () => { buildNews(); menuScreen('news'); });
+	$('news-back').addEventListener('click', () => menuScreen('main'));
 	$('gen-run').addEventListener('click', runGenerator);
 	for (const id of ['gen-from', 'gen-to', 'gen-line']) $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') runGenerator(); e.stopPropagation(); });
 	$('btn-settings').addEventListener('click', () => openSettings('menu'));
 	$('btn-pause-settings').addEventListener('click', () => openSettings('pause'));
+	$('btn-load').addEventListener('click', () => openSaves('menu'));
+	$('btn-saves').addEventListener('click', () => openSaves('pause'));
+	$('saves-back').addEventListener('click', closeSaves);
 	$('settings-back').addEventListener('click', closeSettings);
 	// wyjście tylko w aplikacji desktopowej (Electron)
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
@@ -1330,6 +1586,8 @@
 	$('version').textContent = 'wersja 0.2.0';
 	$('opt-assist').checked = load('opt.assist', true);
 	document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') togglePause(); });
+	// zamknięcie karty albo okna aplikacji w czasie jazdy – autozapis
+	window.addEventListener('pagehide', () => { if (sim) autoSave(); });
 
 	// podgląd stanu z konsoli przeglądarki (diagnostyka)
 	window.maszynista = { get sim() { return sim || demo; }, renderer, get preview() { return preview; }, setTrain: (c, sel = 0) => { selCar = sel; setCfg(c); } };

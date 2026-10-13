@@ -1,5 +1,6 @@
 /* Pogoda (tylko wygląd – nie zmienia rozgrywki): zachmurzenie i cienie chmur, mgła, deszcz, śnieg,
-   mokra i zaśnieżona nawierzchnia, siła wiatru dla drzew. Opady to cząstki wokół kamery, liczone w shaderze. */
+   mokra i zaśnieżona nawierzchnia, siła wiatru dla drzew. Opady to cząstki wokół kamery, liczone w shaderze;
+   nie pada wewnątrz wagonów najbliżej kamery (setCars) ani w tunelu w widoku z kabiny (shelterTarget). */
 (function () {
 	'use strict';
 	const T = window.THREE;
@@ -42,6 +43,8 @@
 	   wirujące na wietrze (ograniczony rozmiar przy samej kamerze). uLight – jasność otoczenia (noc ciemniejsza). */
 	const VS = `
 		uniform float uT; uniform vec3 uCenter; uniform vec3 uBox; uniform float uSpeed; uniform vec2 uDrift; uniform float uLen; uniform float uSize; uniform float uSnow; uniform float uWindK;
+		// bryły wagonów najbliżej kamery (świat → układ wagonu, połowa wymiarów): wewnątrz pojazdu nie pada
+		uniform mat4 uCar[8]; uniform vec3 uCarH[8]; uniform int uCars;
 		attribute float aEnd; attribute float aSeed;
 		varying float vA; varying float vS;
 		void main() {
@@ -57,6 +60,13 @@
 				p.xz += vec2(sin(a) + 0.5 * sin(a * 2.3 + 1.7), cos(a * 0.8) + 0.5 * cos(a * 1.9)) * (0.6 + uWindK * 1.4);
 			}
 			vec3 w = uCenter + mod(p - uCenter + hb, uBox) - hb;
+			float inside = 0.0;
+			for (int i = 0; i < 8; i++) {
+				if (i >= uCars) break;
+				vec3 l = (uCar[i] * vec4(w, 1.0)).xyz;
+				l.y -= uCarH[i].y;
+				if (all(lessThan(abs(l), uCarH[i]))) inside = 1.0;
+			}
 			// druga końcówka kreski deszczu: wyżej i pod wiatr (smuga ruchu), długość zależna od kropli
 			w += vec3(-drift.x, uSpeed, -drift.y) * (0.025 + 0.035 * aSeed) * aEnd * uLen;
 			vec4 mv = modelViewMatrix * vec4(w, 1.0);
@@ -66,7 +76,7 @@
 			vec3 q = abs(w - uCenter) / hb;
 			vA = (1.0 - smoothstep(0.7, 1.0, max(q.x, q.z))) * (1.0 - smoothstep(0.85, 1.0, q.y));
 			// tuż przy kamerze zanikają (nie zasłaniają widoku dużymi plamami)
-			vA *= smoothstep(1.2, 4.0, depth) * (0.55 + 0.45 * fract(aSeed * 37.0));
+			vA *= smoothstep(1.2, 4.0, depth) * (0.55 + 0.45 * fract(aSeed * 37.0)) * (1.0 - inside);
 			vS = aSeed;
 		}`;
 
@@ -99,6 +109,12 @@
 			this.box = new T.Vector3(90, 90, 90);
 			this.center = new T.Vector3();
 			this.nearCenter = new T.Vector3();
+			// wagony, w których nie pada (setCars), i zadaszenie (tunel: 1 – opad niewidoczny)
+			this.carM = Array.from({ length: 8 }, () => new T.Matrix4());
+			this.carH = Array.from({ length: 8 }, () => new T.Vector3());
+			this.nCars = 0;
+			this.shelter = 0;
+			this.shelterTarget = 0;
 			this.build(1);
 		}
 
@@ -109,18 +125,21 @@
 					uT: { value: 0 }, uCenter: { value: new T.Vector3() }, uBox: { value: new T.Vector3(90, 90, 90) }, uSpeed: { value: speed }, uDrift: { value: new T.Vector2(snow ? 0.7 : 2.6, snow ? 0.35 : 1.3) },
 					uLen: { value: snow ? 0 : 1 }, uSize: { value: snow ? 4.2 : 1 }, uSnow: { value: snow ? 1 : 0 }, uWindK: { value: 0.5 },
 					uColor: { value: new T.Color(snow ? '#ffffff' : '#d4dee9') }, uOpacity: { value: 0 }, uLight: { value: 1 },
+					uCar: { value: this.carM }, uCarH: { value: this.carH }, uCars: { value: 0 },
 				},
 				vertexShader: VS,
 				fragmentShader: `uniform vec3 uColor; uniform float uOpacity; uniform float uSnow; uniform float uLight; varying float vA; varying float vS;
 					void main() {
 						float a = uOpacity * vA;
+						if (a < 0.002) discard;
 						if (uSnow > 0.5) {
 							vec2 c = gl_PointCoord - 0.5;
 							float r = length(c);
 							// płatek: miękki krążek z jaśniejszym środkiem
 							a *= smoothstep(0.5, 0.2, r) * (0.7 + 0.3 * smoothstep(0.25, 0.0, r));
 						}
-						gl_FragColor = vec4(uColor * uLight, a);
+						// krople i płatki różnej jasności (część łapie światło, część jest w cieniu)
+						gl_FragColor = vec4(uColor * uLight * (0.75 + 0.5 * vS), a);
 					}`,
 				transparent: true,
 				depthWrite: false,
@@ -171,6 +190,18 @@
 			if (instant) Object.assign(this.cur, this.target);
 		}
 
+		/* Pojazdy, w których nie pada: cars – wagony ({ group, len, H }), wybierane najbliższe kamery (do 8); macierze
+		   odwrotne co klatkę (pociąg jedzie). */
+		setCars(cars, camera) {
+			const list = (cars || []).filter((c) => c && c.group).map((c) => ({ c, d: c.group.position.distanceToSquared(camera) })).sort((a, b) => a.d - b.d).slice(0, 8);
+			list.forEach(({ c }, i) => {
+				c.group.updateMatrixWorld();
+				this.carM[i].copy(c.group.matrixWorld).invert();
+				this.carH[i].set(1.5, (c.H || 4.3) / 2 + 0.1, c.len / 2 + 0.05);
+			});
+			this.nCars = list.length;
+		}
+
 		// camera – pozycja kamery, focus – punkt, na który patrzy (środek kadru na ziemi)
 		update(dt, camera, focus) {
 			this.time += dt;
@@ -189,10 +220,13 @@
 			this.cur.snowGround += (sg - this.cur.snowGround) * Math.min(1, dt * (sg > this.cur.snowGround ? 0.06 : 0.02));
 			// nawierzchnia moknie i schnie wolniej niż pada
 			this.cur.wet += (this.target.wet - this.cur.wet) * Math.min(1, dt * 0.08);
+			// tunel: opad gaśnie w ciągu ok. 0,5 s po wjeździe, wraca po wyjeździe
+			this.shelter += (this.shelterTarget - this.shelter) * Math.min(1, dt * 3);
+			const open = 1 - this.shelter;
 			// warstwa przy kamerze: gęste krople przelatujące tuż przed obiektywem
 			this.nearCenter.copy(camera);
 			const nearBox = new T.Vector3(36, 30, 36);
-			for (const [m, a, ctr, bx] of [[this.rain, this.cur.rain * 0.32, this.center, this.box], [this.rainNear, this.cur.rain * 0.28, this.nearCenter, nearBox], [this.snow, this.cur.snow * 0.95, this.center, this.box]]) {
+			for (const [m, a, ctr, bx] of [[this.rain, this.cur.rain * 0.32 * open, this.center, this.box], [this.rainNear, this.cur.rain * 0.28 * open, this.nearCenter, nearBox], [this.snow, this.cur.snow * 0.95 * open, this.center, this.box]]) {
 				const u = m.material.uniforms;
 				u.uT.value = this.time;
 				u.uCenter.value.copy(ctr);
@@ -200,6 +234,7 @@
 				u.uOpacity.value = a;
 				u.uWindK.value = this.cur.wind;
 				u.uLight.value = this.light;
+				u.uCars.value = this.nCars;
 				m.visible = a > 0.01;
 			}
 			const su = this.splash.material.uniforms;
@@ -207,9 +242,9 @@
 			su.uCenter.value.set(focus.x, 0, focus.z);
 			su.uR.value = Math.min(60, 18 + dist * 0.35);
 			su.uGround.value = focus.y - 0.3;
-			su.uOpacity.value = this.cur.rain * 0.8;
+			su.uOpacity.value = this.cur.rain * 0.8 * open;
 			su.uLight.value = this.light;
-			this.splash.visible = this.cur.rain > 0.05;
+			this.splash.visible = this.cur.rain * open > 0.05;
 			return this.cur;
 		}
 	}

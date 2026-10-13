@@ -123,6 +123,9 @@ function createPost3D(THREE, renderer) {
 			vec3 P = viewPos(vUv);
 			vec3 N = normalize(cross(dFdx(P), dFdy(P)));
 			if (N.z < 0.0) N = -N;
+			// Seen almost edge-on (wide flat ground from a low camera) the samples drop under the neighbouring
+			// pixels of the same surface and darken it falsely: there the occlusion fades out.
+			float facing = abs(dot(N, normalize(-P)));
 			// Samples in the half-sphere over the surface (turned by a per-pixel angle), nearer ones more often;
 			// a sample is hidden when the visible surface at its place on the screen lies in front of it.
 			float a0 = hash(gl_FragCoord.xy) * 6.2831853, occ = 0.0;
@@ -140,10 +143,12 @@ function createPost3D(THREE, renderer) {
 				vec2 uv = c.xy / c.w * 0.5 + 0.5;
 				float sz = viewPos(uv).z;
 				float range = smoothstep(0.0, 1.0, radius / max(abs(P.z - sz), 1e-3));
-				occ += step(Q.z + radius * 0.04, sz) * range;
+				// self-occlusion bias grows with distance (coarser depth far away)
+				occ += step(Q.z + radius * 0.04 - P.z * 0.003, sz) * range;
 			}
 			// Far away the depth is too coarse: the occlusion fades out.
 			occ *= 1.0 - smoothstep(fade * 0.6, fade, -P.z);
+			occ *= smoothstep(0.06, 0.28, facing);
 			gl_FragColor = vec4(vec3(pow(clamp(1.0 - strength * occ / 16.0, 0.0, 1.0), 1.5)), 1.0);
 		}`,
 		{ tDepth: { value: null }, projInv: { value: new THREE.Matrix4() }, proj: { value: new THREE.Matrix4() }, radius: { value: 26 }, strength: { value: 1.6 }, fade: { value: 3000 } },

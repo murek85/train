@@ -119,17 +119,33 @@
 		<div class="free-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / strzałki – ruch · <kbd>Q</kbd>/<kbd>E</kbd> – w dół / w górę · <kbd>Shift</kbd> – szybciej · przeciągnij myszą – rozglądanie · kółko – wysokość · <kbd>P</kbd> – pauza (pora dnia, pogoda) · <kbd>F</kbd> / <kbd>Esc</kbd> – powrót do jazdy</div>
 	</div>
 
+	<div id="route-loading" class="route-loading hidden" role="status" aria-live="polite">
+		<div class="rl-box">
+			<div class="rl-head"><span class="rl-spin"></span><b id="rl-head">Wczytywanie trasy</b></div>
+			<div class="rl-title" id="rl-title"></div>
+			<div class="rl-step" id="rl-step"></div>
+			<div class="rl-bar"><i id="rl-fill"></i></div>
+		</div>
+	</div>
+
 	<div id="menu" class="overlay">
 		<div class="panel menu-main" id="scr-main">
 			<h1>Maszynista</h1>
 			<p class="tagline">Prosty symulator pociągu: ruszaj, hamuj, zatrzymuj się przy peronie i trzymaj się rozkładu.</p>
 			<nav class="menu-buttons">
 				<button id="btn-single" class="primary big">Gra jednoosobowa</button>
+				<button id="btn-load" class="big">Wczytaj grę</button>
 				<button id="btn-gen" class="big">Generator tras</button>
 				<button id="btn-settings" class="big">Ustawienia</button>
+				<button id="btn-news" class="big">Co nowego</button>
 				<button id="btn-exit" class="big hidden">Wyjście</button>
 			</nav>
 			<p class="version" id="version"></p>
+		</div>
+
+		<div class="panel hidden" id="scr-news">
+			<div class="panel-head"><button class="back" id="news-back">← Wróć</button><h2>Co nowego</h2></div>
+			<div class="news-list" id="news-list"></div>
 		</div>
 
 		<div class="panel wide hidden" id="scr-gen">
@@ -314,9 +330,19 @@
 			<button id="btn-resume" class="primary pause-resume">Wznów (Esc)</button>
 			<div class="pause-actions">
 				<button id="btn-free">Swobodna kamera (F)</button>
+				<button id="btn-saves">Zapisz / wczytaj grę</button>
 				<button id="btn-pause-settings">Ustawienia</button>
 				<button id="btn-quit">Wróć do menu</button>
 			</div>
+		</div>
+	</div>
+
+	<div id="saves" class="overlay hidden">
+		<div class="panel">
+			<div class="panel-head"><button class="back" id="saves-back">← Wróć</button><h2 id="saves-title">Zapisane gry</h2></div>
+			<p class="hint" id="saves-hint"></p>
+			<div class="save-list" id="save-list"></div>
+			<p class="hint save-msg" id="saves-msg"></p>
 		</div>
 	</div>
 
@@ -361,6 +387,7 @@
 	<script src="js/3d/scene.js"></script>
 	<script src="js/3d/freecam.js"></script>
 	<script src="js/hud.js"></script>
+	<script src="js/news.js"></script>
 	<script src="js/main.js"></script>
 </body>
 </html>

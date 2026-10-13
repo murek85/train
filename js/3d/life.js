@@ -69,7 +69,7 @@
 			const many = (n, ids) => Array.from({ length: n }, () => { const t = pick(ids); return { t, v: vr(t) }; });
 			let train;
 			if (kind === 'freight') train = NS.TrainModel.freightTrain(Math.random() * 1000);
-			else if (kind === 'ezt') { const u = pick(['EN57', 'EN57', 'EN71', 'ED72']); train = R.makeConsist({ emu: u, ev: vr(u), n: u === 'EN57' ? 1 + Math.floor(Math.random() * 2) : 1 }); }
+			else if (kind === 'ezt') { const u = pick(['EN57', 'EN57', 'EN71', 'ED72', 'EN76', 'EN62', 'EN96', '48WE', '27WE', 'ED250']); train = R.makeConsist({ emu: u, ev: vr(u), n: u === 'EN57' || u === 'EN96' ? 1 + Math.floor(Math.random() * 2) : 1 }); }
 			else if (kind === 'ic') { const l = pick(['EU07', 'EU07', 'EP09']); train = R.makeConsist({ loco: l, lv: vr(l), cars: l === 'EP09' ? many(6, ['A9', 'B10', 'B10']) : many(5, ['111A', '111A', '120A']) }); }
 			else { const l = pick(['SM42', 'SM42', 'SU46']); train = R.makeConsist({ loco: l, lv: vr(l), cars: l === 'SM42' ? many(3, ['Bdhpumn']) : many(4, ['111A', '120A']) }); }
 			const s = sim.st.pos + 1300 + Math.random() * 300;

@@ -140,6 +140,61 @@
 				{ id: 'ir', name: 'interREGIO – szaro-granatowy', num: 'ED72A-004', sw: ['#d9dadb', '#d7262e', '#1b2a5a'], c: { paint: '#1b2a5a', stripe: '#d9dadb', band: '#d9dadb', door: '#d7262e', roof: '#9aa0a6' } },
 			],
 		},
+		/* Nowoczesne zespoły (model 'elf' / 'ed250' w train.js): czoło opływowe, sprzęg Scharfenberga, pantografy
+		   jednoramienne. articulated – wózki Jakobsa między członami (Elf: Bo'2'2'Bo' itd.); aero – mnożnik oporu
+		   powietrza (opływowe czoło). Dane wg Wikipedii; 48WE (Elf 2) – długość z doniesień (> 90 m), moc i masa
+		   przybliżone; długości członów dobrane tak, by cały skład (z odstępami 0,9 m) miał długość rzeczywistą. Malowania przybliżone wg zdjęć: paint – czoło i dół, stripe – pas okien, band – pudło,
+		   trim – cienki pas pod oknami. */
+		ED250: {
+			kind: 'emu', name: 'ED250', full: 'Elektryczny zespół trakcyjny ED250 „Pendolino”', model: 'ed250', cars: [27.4, 25.4, 25.4, 25.4, 25.4, 25.4, 27.4], panto: [3, 4], mass: 410, power: 5500, force: 210, vmax: 200, electric: true, height: 3.9, maxUnits: 1, aero: 0.6,
+			desc: 'Alstom Pendolino – siedem wagonów, 5,5 MW, w Polsce 200 km/h. Express Intercity Premium.',
+			variants: [
+				{ id: 'eip', name: 'PKP Intercity (EIP) – biały z granatowym dołem i niebieskim pasem', num: 'ED250-001', sw: ['#eceeef', '#2f6fb2', '#1c2f5e'], c: { paint: '#1c2f5e', stripe: '#24292e', band: '#eceeef', trim: '#2f6fb2', door: '#eceeef', apron: '#1c2f5e' } },
+				{ id: 'ic', name: 'PKP Intercity – biało-srebrny z grafitowym dołem', num: 'ED250-012', sw: ['#eceeef', '#2a2e33', '#3b4046'] },
+			],
+		},
+		EN96: {
+			kind: 'emu', name: 'EN96', full: 'Elektryczny zespół trakcyjny EN96 (Pesa Elf 34WE)', model: 'elf', cars: [20.9, 20.9], panto: 1, mass: 83, power: 1600, force: 130, vmax: 160, electric: true, height: 3.95, maxUnits: 3, articulated: true, aero: 0.8,
+			desc: 'Dwuczłonowy Elf (Bo\'2\'Bo\') – niska podłoga, 1600 kW, 160 km/h. Lekki i żwawy na liniach lokalnych.',
+			variants: [
+				{ id: 'polregio', name: 'Polregio – biało-czerwony z granatem', num: 'EN96-004', sw: ['#eceeef', '#1b2a4a', '#e8461e'], c: { paint: '#e8461e', stripe: '#1b2a4a', band: '#eceeef', trim: '#1b2a4a', door: '#e8461e' } },
+				{ id: 'ks', name: 'Koleje Śląskie – biało-żółty z czerwonym', num: '34WEa-002', sw: ['#f2f2f2', '#e30613', '#ffcc00'] },
+			],
+		},
+		EN62: {
+			kind: 'emu', name: 'EN62', full: 'Elektryczny zespół trakcyjny EN62 (Pesa Elf 21WE)', model: 'elf', cars: [20.4, 16.35, 20.4], panto: 1, mass: 107, power: 1600, force: 140, vmax: 160, electric: true, height: 3.95, maxUnits: 3, articulated: true, aero: 0.8,
+			desc: 'Trzyczłonowy Elf (Bo\'2\'2\'Bo\'), 59 m – niska podłoga, 160 km/h. Typowy w ruchu regionalnym.',
+			variants: [
+				{ id: 'polregio', name: 'Polregio – biało-czerwony z granatem', num: 'EN62-001', sw: ['#eceeef', '#1b2a4a', '#e8461e'], c: { paint: '#e8461e', stripe: '#1b2a4a', band: '#eceeef', trim: '#1b2a4a', door: '#e8461e' } },
+				{ id: 'ks', name: 'Koleje Śląskie – biało-żółty z czerwonym', num: '21WEa-003', sw: ['#f2f2f2', '#e30613', '#ffcc00'] },
+			],
+		},
+		EN76: {
+			kind: 'emu', name: 'EN76', full: 'Elektryczny zespół trakcyjny EN76 (Pesa Elf 22WE)', model: 'elf', cars: [20.4, 15.9, 15.9, 20.4], panto: [1, 2], mass: 135, power: 2000, force: 180, vmax: 160, electric: true, height: 3.95, maxUnits: 2, articulated: true, aero: 0.8,
+			desc: 'Czteroczłonowy Elf (Bo\'2\'2\'2\'Bo\'), 75 m, 2000 kW – najliczniejszy Elf w Polsce.',
+			variants: [
+				{ id: 'ks', name: 'Koleje Śląskie – biało-żółty z czerwonym', num: 'EN76-008', sw: ['#f2f2f2', '#e30613', '#ffcc00'] },
+				{ id: 'km', name: 'Koleje Mazowieckie – biało-zielony z żółtym', num: 'EN76-030', sw: ['#f2f2f2', '#ffd100', '#00843d'], c: { paint: '#00843d', stripe: '#24292e', band: '#f2f2f2', trim: '#ffd100', door: '#ffd100' } },
+				{ id: 'polregio', name: 'Polregio – biało-czerwony z granatem', num: 'EN76-022', sw: ['#eceeef', '#1b2a4a', '#e8461e'], c: { paint: '#e8461e', stripe: '#1b2a4a', band: '#eceeef', trim: '#1b2a4a', door: '#e8461e' } },
+				{ id: 'kw', name: 'Koleje Wielkopolskie – biało-zielony', num: 'EN76-011', sw: ['#f2f2f2', '#24292e', '#3a9a3e'], c: { paint: '#3a9a3e', stripe: '#24292e', band: '#f2f2f2', trim: '#3a9a3e', door: '#3a9a3e' } },
+			],
+		},
+		'48WE': {
+			kind: 'emu', name: '48WE', full: 'Elektryczny zespół trakcyjny Pesa Elf 2 (48WE)', model: 'elf2', cars: [20.6, 16.1, 16.1, 16.1, 20.6], panto: [1, 3], mass: 165, power: 2000, force: 190, vmax: 160, electric: true, height: 3.95, maxUnits: 2, articulated: true, aero: 0.75,
+			desc: 'Pięcioczłonowy Elf 2, ponad 90 m i ok. 250 miejsc – nowsze, bardziej zaokrąglone czoło.',
+			variants: [
+				{ id: 'kd', name: 'Koleje Dolnośląskie – biało-żółty', num: '48WEc-021', sw: ['#f2f2f2', '#24292e', '#f6b800'], c: { paint: '#f6b800', stripe: '#24292e', band: '#f2f2f2', trim: '#f6b800', door: '#f6b800' } },
+				{ id: 'kw', name: 'Koleje Wielkopolskie – biało-zielony', num: '48WE-005', sw: ['#f2f2f2', '#24292e', '#3a9a3e'], c: { paint: '#3a9a3e', stripe: '#24292e', band: '#f2f2f2', trim: '#3a9a3e', door: '#3a9a3e' } },
+			],
+		},
+		'27WE': {
+			kind: 'emu', name: '27WE', full: 'Elektryczny zespół trakcyjny Pesa Elf 27WE', model: 'elf', cars: [19.8, 15.95, 15.95, 15.95, 15.95, 19.8], panto: [1, 4], mass: 190, power: 3200, force: 260, vmax: 160, electric: true, height: 3.95, maxUnits: 1, articulated: true, aero: 0.8,
+			desc: 'Sześcioczłonowy Elf (Bo\'2\'Bo\'2\'Bo\'2\'Bo\'), 108 m, osiem silników – 3200 kW. SKM Warszawa.',
+			variants: [
+				{ id: 'skm', name: 'SKM Warszawa – biało-czerwony z żółtym', num: '27WE-007', sw: ['#f2f2f2', '#ffcc00', '#d71920'], c: { paint: '#d71920', stripe: '#24292e', band: '#f2f2f2', trim: '#ffcc00', door: '#ffcc00' } },
+				{ id: 'ks', name: 'Koleje Śląskie – biało-żółty z czerwonym', num: '27WEb-004', sw: ['#f2f2f2', '#e30613', '#ffcc00'] },
+			],
+		},
 		// wagony towarowe (ft – indeks FREIGHT_TYPES w train.js), masa z ładunkiem
 		Eaos: { kind: 'wagon', name: 'Eaos', full: 'Węglarka Eaos', model: 'freight', ft: 0, len: 14.04, mass: 80, vmax: 100, height: 4.1, desc: 'Węglarka czteroosiowa – węgiel, kruszywo, złom.', variants: [{ id: 'std', name: 'różne kolory' }] },
 		Falns: { kind: 'wagon', name: 'Falns', full: 'Wagon samowyładowczy Falns', model: 'freight', ft: 1, len: 15.74, mass: 90, vmax: 100, height: 4.1, desc: 'Samowyładowczy do węgla – typowy na Śląsku.', variants: [{ id: 'std', name: 'różne kolory' }] },
@@ -159,13 +214,13 @@
 			const U = STOCK[cfg.emu], n = Math.max(1, Math.min(U.maxUnits || 3, cfg.n || 1)), v = variantOf(cfg.emu, cfg.ev);
 			const pantographs = [];
 			for (let u = 0; u < n; u++) {
-				U.cars.forEach((len, j) => { cars.push(len); specs.push({ id: cfg.emu, model: U.model, v: v.id, c: v.c || null, num: v.num, H: U.height, unit: u, j }); });
+				U.cars.forEach((len, j) => { cars.push(len); specs.push({ id: cfg.emu, model: U.model, v: v.id, c: v.c || null, num: v.num, H: U.height, unit: u, j, art: !!U.articulated }); });
 				for (const pc of [].concat(U.panto)) pantographs.push(u * U.cars.length + pc);
 			}
 			return {
 				name: `${U.name}, ${n} ${plural(n, 'zespół', 'zespoły', 'zespołów')}`, style: 'ezt', cars, specs, unitCars: U.cars.length, gap: 0.9, height: U.height,
 				mass: U.mass * 1000 * n, rotFactor: 1.1, maxPower: U.power * 1000 * n, maxForce: U.force * 1000 * n, vmax: U.vmax / 3.6,
-				serviceDecel: 0.8, emergencyDecel: 1.15, davisA: 2000 * n, davisB: 40 * n, davisC: 3.5 + 1.5 * n,
+				serviceDecel: 0.8, emergencyDecel: 1.15, davisA: 2000 * n, davisB: 40 * n, davisC: (3.5 + 1.5 * n) * (U.aero || 1),
 				electric: true, pantograph: [].concat(U.panto)[0], pantographs, freight: false, diesel: false, emu: true,
 			};
 		}
@@ -230,6 +285,8 @@
 	// domyślny skład trasy (jak w scenariuszu)
 	function defaultConfig(def) {
 		const t = def && def.train;
+		// linia bez sieci trakcyjnej – skład spalinowy (SM42 z piętrowymi), niezależnie od scenariusza
+		if (def && def.electrified === false) return legacyConfig('dd', 3);
 		return t === 'ic' ? legacyConfig('ic', 5) : t === 'dd' ? legacyConfig('dd', 3) : legacyConfig('ezt', 1);
 	}
 
@@ -240,6 +297,15 @@
 		let c = cfg && typeof cfg === 'object' ? cfg : null;
 		if (c && c.train && !c.emu && !c.loco) c = TRAIN_TYPES[c.train] ? legacyConfig(c.train, c.cars || TRAIN_TYPES[c.train].def) : null;
 		if (!c || !((STOCK[c.emu] && STOCK[c.emu].kind === 'emu') || (STOCK[c.loco] && STOCK[c.loco].kind === 'loco'))) c = defaultConfig(def);
+		// linia bez sieci trakcyjnej: zespół trakcyjny – skład domyślny (spalinowy), lokomotywa elektryczna – spalinowa
+		// (pasażerski SU46, towarowy ST44), wagony zostają
+		if (def && def.electrified === false) {
+			if (c.emu) c = defaultConfig(def);
+			else if (STOCK[c.loco].electric) {
+				const fr = (c.cars || []).some((x) => x && STOCK[x.t] && STOCK[x.t].kind === 'wagon');
+				c = Object.assign({}, c, { loco: fr ? 'ST44' : 'SU46', lv: undefined });
+			}
+		}
 		const pl = (def.fixes && def.fixes.platformLength) || def.platformLength;
 		if (c.emu) {
 			const U = STOCK[c.emu];
@@ -380,16 +446,31 @@
 			const pl = s.platform || null;
 			const platformEnd = pl ? Math.max(pl.s1, s.pos + 5) : s.pos + 15;
 			const terminus = i === def.stations.length - 1;
+			/* peron z mapy (env.p[pi]): początek modelu nie przed obrysem – zakres z wykazu PLK wydłużał peron od strony
+			   wjazdu nawet na rozjazdy (Toruń Wschodni: 100 m przed peronem); dłużej tylko, gdy skład się nie mieści */
+			let start = pl ? Math.min(pl.s0, platformEnd - 60) : platformEnd - def.platformLength;
+			const poly = pl && pl.pi !== undefined && def.env && def.env.p && def.env.p[pl.pi];
+			if (poly) {
+				let a = Infinity;
+				for (let k = 1; k < poly.length; k += 2) a = Math.min(a, poly[k]);
+				if (a > start) start = Math.min(a, platformEnd - 60, s.pos - trainLength - 2);
+			}
+			/* długi skład (np. ED250, dwa EN71): miejsce zatrzymania z danych bywa ponad 20 m przed końcem peronu – tył
+			   składu wystawał poza początek peronu („skład za krótki peron”) i automat stał w miejscu. Zatrzymanie dalej, do
+			   5 m przed końcem peronu; skład dłuższy niż peron – peron (model) wydłużony od strony wjazdu */
+			let pos = s.pos;
+			if (pos - trainLength - 3 < start) pos = Math.min(Math.max(pos, platformEnd - 5), start + trainLength + 3);
+			if (pos - trainLength - 3 < start) start = pos - trainLength - 3;
 			return {
 				platform: pl,
 				name: s.name,
-				pos: s.pos,
+				pos,
 				index: i,
 				// skład towarowy: bez postojów handlowych – zatrzymanie tylko na stacji końcowej
 				stop: s.stop !== false && (!train.freight || i === 0 || i === def.stations.length - 1),
 				type: s.type || 'station', // 'station' – dworzec z miasteczkiem, 'halt' – przystanek (tylko wygląd)
 				platformEnd,
-				platformStart: pl ? Math.min(pl.s0, platformEnd - 60) : platformEnd - def.platformLength,
+				platformStart: start,
 				starterPos: terminus ? null : s.pos + 50,
 				terminus,
 			};
@@ -442,6 +523,8 @@
 			// sieć trakcyjna – cecha linii, nie pociągu (SM42 jeździ też pod siecią): z opisu trasy, trasa rzeczywista bez
 			// tej informacji – zelektryfikowana, trasa testowa – jak pociąg
 			electrified: def.electrified !== undefined ? !!def.electrified : def.real ? true : !!train.electric,
+			// odcinki z siecią nad torem pociągu ([od, do]; trasy z generatora) – bez nich cała trasa wg electrified
+			wire: Array.isArray(def.wire) ? def.wire : null,
 			source: def.source || null,
 			startClock: def.startClock,
 			originWait: def.originWait,
