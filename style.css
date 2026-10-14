@@ -346,8 +346,15 @@ kbd {
 .row-opt.vol-opt input[type="range"] { width: 100%; }
 .row-opt.vol-opt span { text-align: right; }
 .mix-opt { padding-left: 14px; font-size: 13px; line-height: 1.25; }
+.row-opt.vol-opt select { width: 100%; min-width: 0; }
+#set-voice-test { padding: 3px 0; }
+#voice-opts.hidden, #voice-all-row.hidden { display: none; }
+.voice-status { margin: -2px 0 8px; font-size: 12px; min-height: 0; }
+.voice-status:empty { display: none; }
+.voice-status.err { color: #ff8a7a; }
 /* kilometraż pod zegarem */
 .trip-km { display: flex; align-items: baseline; gap: 8px; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; }
+.trip-km span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .trip-km b { font: 600 12.5px ui-monospace, Consolas, monospace; color: #e6ebf2; font-variant-numeric: tabular-nums; }
 .toast.fade { opacity: 0; transform: translateY(-6px); }
 .toast.fade.quick { transition: opacity 0.2s, transform 0.2s; }
@@ -522,7 +529,8 @@ body.radio-on #toasts { top: 112px; }
 .order-f { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: #4a463c; border-top: 1px dashed #9b9482; padding-top: 6px; }
 .order-ack { padding: 2px 9px; border-radius: 10px; background: #c62f2f; color: #fff; font: 700 11px system-ui, sans-serif; }
 .order.done .order-ack { background: #2f8a4c; }
-.order-chip { position: fixed; top: 12px; left: 230px; z-index: 6; padding: 4px 10px; border-radius: 6px; border: 1px solid #9b9482; background: #f3efe3; color: #1c1c1c; font: 700 12px Georgia, serif; cursor: pointer; }
+button.order-chip:hover { background: #fffaf0; border-color: #5f5848; color: #1c1c1c; } /* jasna jak kartka rozkazu (ogólne button:hover – ciemne tło) */
+.order-chip { margin-left: auto; flex-shrink: 0; padding: 1px 7px; border-radius: 5px; border: 1px solid #9b9482; background: #f3efe3; color: #1c1c1c; font: 700 11px Georgia, serif; cursor: pointer; pointer-events: auto; } /* w wierszu kilometrażu panelu rozkładu */
 body.radio-on .order:not(.hidden) ~ #toasts { top: 200px; }
 
 /* zadanie samouczka – na dole na środku, nad podpowiedzią */

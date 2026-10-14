@@ -479,6 +479,7 @@
 			add(scaleP);
 			this.lever = new T.Group();
 			this.lever.position.set(0.12, DESK + 0.055, deskBack - 0.3);
+			this.leverZ0 = deskBack - 0.3; // pozycja „0” – środek podziałki
 			const stick = new T.Mesh(CYL, chrome);
 			stick.scale.set(0.028, 0.26, 0.028);
 			stick.position.y = 0.13;
@@ -557,8 +558,13 @@
 			// nocą wnętrze oświetla tylko lampa sufitowa i ekrany – światło wypełniające słabnie
 			this.fill.intensity = 1.5 + 14 * day * day;
 			const st = sim.st;
-			// rączka nastawnika: napęd wg serii – pozycja jako ułamek zakresu (jazda do ok. 0,375 rad)
-			this.lever.rotation.x = -(sim.lever > 0 && sim.drive ? (sim.lever / sim.drive.max) * 5 : sim.lever) * 0.075;
+			/* rączka nastawnika przesuwa się w szczelinie – podstawa przy znaku bieżącej pozycji (podziałka co ok. 32 mm:
+			   0,38 m × 432/512 na 10 odstępów), z lekkim pochyleniem w stronę ruchu; napęd wg serii – pozycja jako ułamek
+			   zakresu jazdy. Dawniej dźwignia obracała się na osi w środku podziałki i gałka (24 cm wyżej) oglądana z fotela
+			   maszynisty wypadała nad sąsiednim znakiem – przy „0” wyglądało to na „H1”. */
+			const lp = sim.lever > 0 && sim.drive ? (sim.lever / sim.drive.max) * 5 : sim.lever;
+			this.lever.position.z = this.leverZ0 - lp * ((0.38 * 432) / 512 / 10);
+			this.lever.rotation.x = -lp * 0.025;
 			this.brakeHandle.rotation.y = -st.brake * 1.3;
 			const blink = Math.floor(sim.time * 3) % 2 === 0;
 			const set = (l, on) => l.m.color.copy(on ? l.on : l.off);

@@ -145,6 +145,19 @@
 			this.said = {};
 			this.faultWait = 0;
 			this.air = this.opts.brake === 'air' ? P.createAir(this.train) : null;
+			/* start z zahamowanym składem (jak na postoju): hamulec prosty – nastawnik na H1, zespolony – zawór na odcięciu
+			   po obniżeniu ciśnienia w przewodzie głównym do 4,6 bar (cylindry ok. 1 bar); przed ruszeniem – odhamowanie */
+			if (this.air) {
+				const a = this.air;
+				a.valve = 'lap';
+				a.pg = 4.6;
+				a.pipe.fill(4.6);
+				a.cyl.fill((P.PG_RUN - 4.6) * (P.C_MAX / 1.5));
+				this.st.brake = a.cyl[0] / P.C_MAX;
+			} else {
+				this.lever = -1;
+				this.st.brake = P.leverCommand(-1).brake;
+			}
 			this.drive = this.opts.drive === 'series' ? P.createDrive(this.train) : null;
 			/* przyczepność: piasecznica (t – piasek sypie się jeszcze t s, left – zapas, s), poślizg kół przy ruszaniu (slip),
 			   blokowanie kół przy hamowaniu (lock – czas, flat – płaskie miejsca już ukarane w tym hamowaniu); jesień – odcinki

@@ -855,15 +855,137 @@
 		if (how === 'off') return;
 		audio.play('chime');
 		hud.toast(text, 'announce');
+		if (how !== 'voice' || muted || mode !== 'play') return;
+		// po gongu (ok. 1,4 s); Piper – synteza od razu, odtworzenie nie wcześniej niż po gongu
+		if (voiceEngine() === 'piper') speakPiper(text, performance.now() + 1400);
+		else setTimeout(() => speak(text), 1400);
+	}
+	const voiceEngine = () => ($('set-voice-engine').value === 'piper' && window.TrainPiper && window.Worker ? 'piper' : 'system');
+	/* Piper (js/tts-piper.js): wybrany głos wczytywany (przy pierwszym użyciu – pobierany) w tle, z postępem w ustawieniach;
+	   do czasu wczytania zapowiedzi czyta głos systemu. Próbki odtwarza silnik dźwięku gry (audio.playVoice) – szyna
+	   „Głos zapowiedzi”; tempo – długość z syntezy, wysokość – szybkość odtwarzania (z kompensacją długości). */
+	let piperErr = null;
+	function piperLoad() {
+		const TP = window.TrainPiper, id = $('set-voice').value;
+		if (!TP || !id || TP.loaded === id || TP.loading === id) return TP && TP.loaded === id ? Promise.resolve() : null;
+		const name = (TP.VOICES.find((v) => v.id === id) || {}).name || id;
+		piperErr = null;
+		voiceStatus(`Piper: wczytywanie głosu ${name}…`);
+		const done = {};
+		return TP.load(id, (p) => {
+			done[p.what] = p;
+			const mb = (x) => Math.round(x / 1048576);
+			voiceStatus(`Piper: pobieranie ${p.what} – ${mb(p.loaded)}${p.total ? ' / ' + mb(p.total) : ''} MB (tylko za pierwszym razem)`);
+		}).then(() => {
+			voiceStatus(`Piper: głos ${name} gotowy.`);
+			fillVoices();
+		}, (e) => {
+			piperErr = e.message;
+			voiceStatus(`Piper: nie udało się wczytać głosu – ${e.message} Zapowiedzi czyta głos systemu.`, true);
+		});
+	}
+	function voiceStatus(text, err) {
+		const el = $('voice-status');
+		el.textContent = text || '';
+		el.classList.toggle('err', !!err);
+	}
+	async function speakPiper(text, at) {
+		const TP = window.TrainPiper, id = $('set-voice').value;
+		if (!TP || TP.loaded !== id) {
+			piperLoad();
+			setTimeout(() => speak(text), Math.max(0, at - performance.now())); // jeszcze nie gotowy – głos systemu
+			return;
+		}
+		const rate = Number($('set-voice-rate').value) || 1, pitch = Number($('set-voice-pitch').value) || 1;
+		try {
+			const r = await TP.synth(text, pitch / rate);
+			setTimeout(() => { if (!muted && $('set-announce').value === 'voice') audio.playVoice(r.pcm, r.sampleRate, pitch); }, Math.max(0, at - performance.now()));
+		} catch (e) {
+			console.warn('Piper:', e);
+			setTimeout(() => speak(text), Math.max(0, at - performance.now()));
+		}
+	}
+	/* synteza mowy: głos wybrany w ustawieniach (nazwa głosu systemu; brak – pierwszy polski), tempo, wysokość,
+	   głośność (ogólna × „Głos zapowiedzi”) */
+	function pickVoice() {
+		const sp = window.speechSynthesis, list = sp ? sp.getVoices() : [], name = $('set-voice').value;
+		return (name && list.find((x) => x.name === name)) || list.find((x) => /^pl/i.test(x.lang)) || null;
+	}
+	const speaking = new Set();
+	let speechCut = 0; // czas świadomego przerwania mowy (cancel) – wtedy bez dokańczania
+	function stopSpeech() {
+		speechCut = performance.now();
+		if (window.speechSynthesis) window.speechSynthesis.cancel();
+		audio.stopVoice();
+	}
+	/* tries – ile razy już dokańczano; przeglądarka bywa, że kończy wypowiedź przedwcześnie (Brave: przy kliknięciu
+	   i obracaniu kamery) – gdy gra jej nie przerywała, a zostało więcej niż jedno słowo, reszta czytana od ostatniego
+	   słowa (najwyżej 3 razy) */
+	function speak(text, tries = 0) {
 		const sp = window.speechSynthesis;
-		if (how !== 'voice' || muted || !sp || mode !== 'play') return;
+		if (!sp) return;
 		const u = new SpeechSynthesisUtterance(text);
-		u.lang = 'pl-PL';
-		const v = sp.getVoices().find((x) => /^pl/i.test(x.lang));
+		const v = pickVoice();
+		u.lang = v ? v.lang : 'pl-PL';
 		if (v) u.voice = v;
-		u.rate = 0.95;
+		u.rate = Number($('set-voice-rate').value) || 0.95;
+		u.pitch = Number($('set-voice-pitch').value) || 1;
 		u.volume = Math.min(1, (Number($('set-volume').value) / 100) * (Number($('set-mix-voice').value) / 100) * 1.2);
-		setTimeout(() => sp.speak(u), 1400); // po gongu
+		/* odwołanie do wypowiedzi do jej końca – w Chromium (przeglądarka, Electron) wypowiedź bez odwołania bywa zwalniana
+		   przez odśmiecanie pamięci w trakcie czytania i mowa urywa się (np. przy kliknięciu, gdy gra tworzy nowe obiekty) */
+		speaking.add(u);
+		let at = 0;
+		const t0 = performance.now();
+		u.onboundary = (e) => { at = e.charIndex; };
+		u.onend = u.onerror = (e) => {
+			speaking.delete(u);
+			if (speechCut > t0 || tries >= 3 || $('set-announce').value !== 'voice' || muted) return;
+			const rest = text.slice(at).trim();
+			// zostało więcej niż jedno słowo (przy zwykłym końcu ostatnie zdarzenie słowa wskazuje ostatnie słowo)
+			if (at > 0 && /\s/.test(rest)) {
+				console.info(`Synteza mowy: wypowiedź urwana (${e.type}${e.error ? ' ' + e.error : ''}) po ${at}/${text.length} znakach – dokańczam.`);
+				setTimeout(() => speak(rest, tries + 1), 150);
+			}
+		};
+		sp.speak(u);
+	}
+	// lista głosów systemu (polskie; z opcją – wszystkie); pierwsza pozycja – automatycznie (pierwszy polski)
+	function fillVoices() {
+		const sp = window.speechSynthesis, sel = $('set-voice');
+		const piper = voiceEngine() === 'piper';
+		$('voice-all-row').classList.toggle('hidden', piper);
+		if (piper) {
+			const TP = window.TrainPiper, want = load('opt.voice', {}).piper || TP.VOICES[0].id;
+			const fill = (have) => {
+				sel.innerHTML = '';
+				for (const v of TP.VOICES) {
+					const o = document.createElement('option');
+					o.value = v.id;
+					o.textContent = `${v.name}${have[v.id] ? '' : ` – do pobrania (${TP.SIZE_MB} MB)`}`;
+					sel.appendChild(o);
+				}
+				sel.value = TP.VOICES.some((v) => v.id === want) ? want : TP.VOICES[0].id;
+			};
+			fill({});
+			TP.cached().then(fill, () => {});
+			return;
+		}
+		if (!sp) { sel.innerHTML = '<option value="">synteza mowy niedostępna</option>'; return; }
+		const want = load('opt.voice', {}).name || sel.value || '';
+		const all = $('set-voice-all').checked;
+		const list = sp.getVoices().filter((x) => all || /^pl/i.test(x.lang) || x.name === want);
+		sel.innerHTML = '';
+		const auto = document.createElement('option');
+		auto.value = '';
+		auto.textContent = 'automatycznie (pierwszy polski)';
+		sel.appendChild(auto);
+		for (const v of list) {
+			const o = document.createElement('option');
+			o.value = v.name;
+			o.textContent = `${v.name.replace(/^Microsoft /, '').replace(/ - .*$/, '')} (${v.lang}${v.localService ? '' : ', online'})`;
+			sel.appendChild(o);
+		}
+		sel.value = list.some((x) => x.name === want) ? want : '';
 	}
 
 	const MIX_KEYS = ['train', 'horn', 'amb', 'sig', 'voice'];
@@ -895,7 +1017,17 @@
 		save('opt.render', opts);
 		save('opt.fps', $('set-fps').checked);
 		save('opt.announce', $('set-announce').value);
-		if ($('set-announce').value !== 'voice' && window.speechSynthesis) window.speechSynthesis.cancel();
+		if ($('set-announce').value !== 'voice') stopSpeech();
+		// głos zapowiedzi: ustawienia widoczne przy „gong, tekst i głos”
+		$('voice-opts').classList.toggle('hidden', $('set-announce').value !== 'voice');
+		const vr = $('set-voice-rate'), vp = $('set-voice-pitch');
+		vr.nextElementSibling.textContent = '×' + Number(vr.value).toFixed(2).replace('.', ',');
+		vp.nextElementSibling.textContent = Number(vp.value).toFixed(2).replace('.', ',');
+		const vprev = load('opt.voice', {}), piper = voiceEngine() === 'piper';
+		save('opt.voice', {
+			engine: $('set-voice-engine').value, name: piper ? vprev.name || '' : $('set-voice').value, piper: piper ? $('set-voice').value : vprev.piper,
+			all: $('set-voice-all').checked, rate: Number(vr.value), pitch: Number(vp.value),
+		});
 	}
 
 	// ---------- zapisane gry: autozapis i 5 miejsc w localStorage (maszynista.save.auto, save.1 … save.5) ----------
@@ -1105,7 +1237,7 @@
 		if (resumed) hud.toast(`${rname}: ${route.title}. Wczytano zapis – jazda od km ${(sim.st.pos / 1000).toFixed(2).replace('.', ',')}, godz. ${fmtClock(sim.clock()).slice(0, 5)}.`, 'info');
 		else {
 			hud.toast(`${rname}: ${route.title}. Odjazd o ${fmtClock(route.startClock + route.originWait)}.`, 'info');
-			hud.toast('Gdy semafor zmieni się na zielony, przesuń nastawnik w górę (↑).', 'info');
+			hud.toast(sim.air ? 'Skład zahamowany: zawór maszynisty na odcięciu. Gdy semafor zmieni się na zielony, odhamuj (Q) i przesuń nastawnik w górę (↑).' : 'Skład zahamowany: nastawnik na H1. Gdy semafor zmieni się na zielony, przesuń nastawnik w górę (↑) – przez 0 na jazdę.', 'info');
 		}
 		hud.toast('Kamera: przeciągnij myszą lub ←/→, kółko – oddalenie, V – tryb kamery, C – widok domyślny.', 'info');
 		if (scen && !resumed) hud.toast(`Scenariusz „${scen.title}”. Cele: ${(sim.scenario.goals() || []).join('; ') || 'ukończ jazdę'}.`, 'info');
@@ -1808,6 +1940,45 @@
 	$('set-autoq').addEventListener('click', () => { autoQ = { t: [] }; closeSettings(); hud.toast('Pomiar wydajności w menu (kilka sekund)…', 'info'); });
 	$('set-traffic-people').checked = load('opt.trafficPeople', false);
 	$('set-announce').value = load('opt.announce', 'text');
+	const voice0 = load('opt.voice', {});
+	$('set-voice-all').checked = !!voice0.all;
+	$('set-voice-engine').value = voice0.engine === 'piper' ? 'piper' : 'system';
+	$('set-voice-engine').addEventListener('change', () => {
+		voiceStatus('');
+		fillVoices();
+		applySettings();
+		if (voiceEngine() === 'piper') piperLoad();
+	});
+	$('set-voice-rate').value = voice0.rate || 0.95;
+	$('set-voice-pitch').value = voice0.pitch || 1;
+	fillVoices();
+	if (window.speechSynthesis) window.speechSynthesis.addEventListener('voiceschanged', fillVoices); // lista głosów wczytuje się z opóźnieniem
+	$('set-voice-all').addEventListener('change', () => { fillVoices(); applySettings(); });
+	for (const id of ['set-voice-rate', 'set-voice-pitch']) $(id).addEventListener('input', applySettings);
+	$('set-voice').addEventListener('change', () => { applySettings(); if (voiceEngine() === 'piper') piperLoad(); });
+	$('set-voice-test').addEventListener('click', async (e) => {
+		e.preventDefault();
+		const sample = 'Pociąg osobowy do stacji Katowice odjedzie z toru pierwszego przy peronie pierwszym. Prosimy zachować ostrożność.';
+		stopSpeech();
+		audio.ensure();
+		if (voiceEngine() === 'piper') {
+			// Piper: najpierw wczytanie głosu (przy pierwszym użyciu – pobranie), potem gong i zapowiedź
+			const TP = window.TrainPiper;
+			if (TP.loaded !== $('set-voice').value) { await piperLoad(); if (TP.loaded !== $('set-voice').value) return; }
+			audio.play('chime');
+			const rate = Number($('set-voice-rate').value) || 1, pitch = Number($('set-voice-pitch').value) || 1, t0 = performance.now();
+			try {
+				const r = await TP.synth(sample, pitch / rate);
+				setTimeout(() => audio.playVoice(r.pcm, r.sampleRate, pitch), Math.max(0, t0 + 1400 - performance.now()));
+			} catch (err) { voiceStatus('Piper: ' + err.message, true); }
+			return;
+		}
+		if (!window.speechSynthesis) return;
+		audio.play('chime');
+		setTimeout(() => speak(sample), 1400);
+	});
+	// Piper wybrany wcześniej – głos wczytywany od razu (z pamięci podręcznej), żeby pierwsza zapowiedź była nim czytana
+	if (voiceEngine() === 'piper' && $('set-announce').value === 'voice') piperLoad();
 	for (const id of ['set-sound', 'set-volume', 'set-scale', 'set-aa', 'set-shadows', 'set-fps', 'set-traffic-max', 'set-traffic-people', 'set-announce']) $(id).addEventListener(id === 'set-volume' ? 'input' : 'change', applySettings);
 	for (const k of MIX_KEYS) $('set-mix-' + k).addEventListener('input', applySettings);
 	applySettings();
@@ -1933,7 +2104,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.14.2';
+	$('version').textContent = 'wersja 0.15.0';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');

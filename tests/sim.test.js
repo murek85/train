@@ -337,10 +337,16 @@ test('przyczepność: pogoda, pora roku, liście, piasecznica; poślizg i płask
 test('hamulec dodatkowy lokomotywy: tylko lokomotywa, przy hamulcu zespolonym', () => {
 	const route = R.prepare(ROUTES[0], { loco: 'EU07', cars: [{ t: '111A' }, { t: '111A' }] });
 	const sim = new Sim(route, { czuwak: false, brake: 'air' });
+	// start z zahamowanym składem (zawór na odcięciu) – najpierw odhamowanie
+	assert.equal(sim.air.valve, 'lap');
+	assert.ok(sim.air.cyl[1] > 0.5);
+	sim.air.valve = 'run';
+	for (let i = 0; i < 600; i++) P.stepAir(sim.air, 0.05);
+	assert.ok(sim.air.cyl[1] < 0.01);
 	assert.equal(sim.locoBrake(1), 0.95);
 	sim.locoBrake(1);
 	for (let i = 0; i < 100; i++) P.stepAir(sim.air, 0.05);
-	assert.ok(sim.air.loco > 1.8 && sim.air.cyl[1] === 0, 'cylinder lokomotywy, wagony bez hamowania');
+	assert.ok(sim.air.loco > 1.8 && sim.air.cyl[1] < 0.01, 'cylinder lokomotywy, wagony bez hamowania');
 	assert.equal(sim.locoBrake(-1), 0.95);
 	const emu = new Sim(R.prepare(ROUTES[0], { emu: 'EN57', n: 1 }), { brake: 'air' });
 	assert.equal(emu.locoBrake(1), null);
@@ -368,4 +374,14 @@ test('ocena jazdy: automat – wysoko, szarpana jazda – niska płynność, pr�
 	const s3 = new Sim(route, { czuwak: false, timetable: tt });
 	s3.fail('test');
 	assert.equal(s3.rating().overall, 1);
+});
+
+test('start jazdy z zahamowanym składem: nastawnik na H1 (hamulec prosty), automat rusza i dojeżdża', () => {
+	const sim = new Sim(routes[0], { czuwak: false });
+	assert.equal(sim.lever, -1);
+	assert.ok(sim.st.brake > 0.2);
+	for (let i = 0; i < 200; i++) sim.update(0.05);
+	assert.equal(sim.st.v, 0); // stoi zahamowany
+	drive(sim);
+	assert.equal(sim.status, 'ended', sim.failReason);
 });

@@ -4,6 +4,39 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.15.0 – 14 października 2026
+
+### Głos zapowiedzi
+- Silnik mowy do wyboru (Ustawienia → Dźwięk → Zapowiedzi): głosy systemu albo **Piper** – naturalne głosy polskie
+  (Gosia, Darkman, MC Speech; modele VITS ONNX) liczone w osobnym wątku. Przy pierwszym użyciu pobierane i zapamiętywane
+  w pamięci przeglądarki: silnik ONNX Runtime Web i fonemizer eSpeak NG (ok. 30 MB, jednorazowo) oraz model głosu
+  (ok. 63 MB), z postępem w ustawieniach; potem bez internetu. Mowa odtwarzana przez silnik dźwięku gry (suwak „Głos
+  zapowiedzi”) – przeglądarka jej nie przerywa. Do czasu wczytania głosu czyta głos systemu.
+- Głosy systemu: wybór głosu (polskie, opcjonalnie wszystkie), odsłuch ▶, tempo 0,7–1,3 i wysokość 0,5–1,5;
+  zapowiedź przerwana przez przeglądarkę (Brave – przy kliknięciu) dokańczana od przerwanego słowa.
+
+### Jazda
+- Start z zahamowanym składem: hamulec prosty – nastawnik na H1, zespolony – zawór maszynisty na odcięciu (przewód
+  główny 4,6 bar); komunikat na starcie i samouczek mówią, jak ruszyć.
+- Kabina: dźwignia nastawnika przesuwa się w szczelinie – podstawa przy znaku bieżącej pozycji (dawniej obracała się
+  na osi w środku podziałki i z fotela maszynisty przy „0” wyglądała na „H1”).
+
+## 0.14.4 – 14 października 2026
+
+### Poprawki
+- Perony z mapy: wierzch dzielony na pasy co 4 m wzdłuż toru, boki zagęszczone – na łuku peron idzie za torem.
+  Dawniej długi bok obrysu (np. 170 m) był w świecie cięciwą łuku i płyta peronu przechodziła przez tor na drugą
+  stronę (Łaziska Górne na linii Rybnik – Katowice). To samo dla zadaszeń peronów z mapy.
+- Plakietka „Rozkazy: N”: po najechaniu myszą zostaje jasna (ogólny styl przycisków dawał ciemne tło i znikał napis).
+
+## 0.14.3 – 14 października 2026
+
+### Panel jazdy
+- Panel z rozkładem jazdy tej samej szerokości co panel z nastawnikiem (dopasowuje się, gdy ten zmienia szerokość –
+  napęd wg serii, hamulec zespolony, mniejszy ekran).
+- Rozkazy pisemne: po potwierdzeniu plakietka „Rozkazy: N” na końcu wiersza kilometrażu w panelu rozkładu (kliknięcie
+  albo `O` – ostatni rozkaz) zamiast przycisku nad panelem, który nachodził na zegar i punkty.
+
 ## 0.14.2 – 14 października 2026
 
 ### Menu

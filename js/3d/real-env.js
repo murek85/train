@@ -3767,18 +3767,25 @@
 			// pasy między punktami załamania profilu (płaskie trójkąty – widać spadki); przy kalenicach – szkło
 			const strips = brk ? brk.slice(0, -1).map((b0, i) => [b0[0], brk[i + 1][0]]) : [[-Infinity, Infinity]];
 			for (const [a, b] of strips) {
-				const poly = brk ? clip(clip(pts, (p) => p[1] - a), (p) => b - p[1]) : pts;
-				if (poly.length < 3) continue;
+				const band = brk ? clip(clip(pts, (p) => p[1] - a), (p) => b - p[1]) : pts;
+				if (band.length < 3) continue;
 				const mid2 = (a + b) / 2, isGlass = o.glass || (brk && ridges.some((rd) => Math.abs(rd - mid2) < 1.5));
-				const W3 = poly.map(([s, d]) => V(s, d, 0));
-				const ids = T.ShapeUtils.triangulateShape(W3.map((p) => new T.Vector2(p[0], p[2])), []);
-				for (const [i0, i1, i2] of ids) {
-					const A = W3[i0], B = W3[i1], Cc = W3[i2];
-					const up = ((Cc[2] - A[2]) * (B[0] - A[0]) - (Cc[0] - A[0]) * (B[2] - A[2])) < 0;
-					const [P1, P2, P3] = up ? [A, B, Cc] : [A, Cc, B];
-					(isGlass ? glassT : top).push(...P1, ...P2, ...P3);
-					// spód 0,25 m niżej, odwrócony (pod świetlikiem – bez spodu, widać niebo)
-					if (!isGlass) under.push(P1[0], P1[1] - 0.25, P1[2], P3[0], P3[1] - 0.25, P3[2], P2[0], P2[1] - 0.25, P2[2]);
+				// pas pocięty co 4 m wzdłuż toru – na łuku dach idzie za torem (długi bok nie jest cięciwą łuku)
+				let sa = Infinity, sb = -Infinity;
+				for (const q of band) { sa = Math.min(sa, q[0]); sb = Math.max(sb, q[0]); }
+				for (let x = sa; x < sb - 1e-6; x += 4) {
+					const poly = clip(clip(band, (q) => q[0] - x), (q) => Math.min(sb, x + 4) - q[0]);
+					if (poly.length < 3) continue;
+					const W3 = poly.map(([s, d]) => V(s, d, 0));
+					const ids = T.ShapeUtils.triangulateShape(W3.map((p) => new T.Vector2(p[0], p[2])), []);
+					for (const [i0, i1, i2] of ids) {
+						const A = W3[i0], B = W3[i1], Cc = W3[i2];
+						const up = ((Cc[2] - A[2]) * (B[0] - A[0]) - (Cc[0] - A[0]) * (B[2] - A[2])) < 0;
+						const [P1, P2, P3] = up ? [A, B, Cc] : [A, Cc, B];
+						(isGlass ? glassT : top).push(...P1, ...P2, ...P3);
+						// spód 0,25 m niżej, odwrócony (pod świetlikiem – bez spodu, widać niebo)
+						if (!isGlass) under.push(P1[0], P1[1] - 0.25, P1[2], P3[0], P3[1] - 0.25, P3[2], P2[0], P2[1] - 0.25, P2[2]);
+					}
 				}
 			}
 			// obrzeże (blenda) wzdłuż obrysu – boki dzielone co 2 m, żeby szły po profilu
@@ -3927,19 +3934,36 @@
 			return out;
 		};
 		const draw = (poly, yAt, cuts) => {
-			const W = poly.map(([s, d]) => {
+			const map = ([s, d]) => {
 				R.sidePoint(r, s, d, tp);
 				const y = yAt(s, d);
 				// ściana boczna do terenu (obniżony teren przy wiadukcie, nasyp) – peron nie wisi nad ziemią
 				return [tp.x, y + 0.77, tp.z, Math.min(y - 0.4, this.terrainY(s, d) - 0.3)];
-			});
-			const ids = T.ShapeUtils.triangulateShape(W.map((p) => new T.Vector2(p[0], p[2])), []);
-			for (const [a, b, c2] of ids) {
-				const A = W[a], B = W[b], Cc = W[c2];
-				const up = ((Cc[2] - A[2]) * (B[0] - A[0]) - (Cc[0] - A[0]) * (B[2] - A[2])) < 0;
-				if (up) top.p.push(A[0], A[1], A[2], B[0], B[1], B[2], Cc[0], Cc[1], Cc[2]);
-				else top.p.push(A[0], A[1], A[2], Cc[0], Cc[1], Cc[2], B[0], B[1], B[2]);
+			};
+			/* wierzch: obrys pocięty na pasy co 4 m wzdłuż toru i boki zagęszczone co 4 m – na łuku peron idzie za torem;
+			   dawniej wierzchołki tylko w punktach obrysu, a długi bok (np. 170 m) był w świecie cięciwą łuku i płyta
+			   przechodziła przez tor na drugą stronę (Łaziska Górne) */
+			let s0 = Infinity, s1 = -Infinity;
+			for (const p of poly) { s0 = Math.min(s0, p[0]); s1 = Math.max(s1, p[0]); }
+			for (let x = s0; x < s1 - 1e-6; x += 4) {
+				const x1 = Math.min(s1, x + 4);
+				const piece = clip(clip(poly, (p) => p[0] - x), (p) => x1 - p[0]);
+				if (piece.length < 3) continue;
+				const Wp = piece.map(map);
+				const ids = T.ShapeUtils.triangulateShape(Wp.map((p) => new T.Vector2(p[0], p[2])), []);
+				for (const [a, b, c2] of ids) {
+					const A = Wp[a], B = Wp[b], Cc = Wp[c2];
+					const up = ((Cc[2] - A[2]) * (B[0] - A[0]) - (Cc[0] - A[0]) * (B[2] - A[2])) < 0;
+					if (up) top.p.push(A[0], A[1], A[2], B[0], B[1], B[2], Cc[0], Cc[1], Cc[2]);
+					else top.p.push(A[0], A[1], A[2], Cc[0], Cc[1], Cc[2], B[0], B[1], B[2]);
+				}
 			}
+			const dense = [];
+			for (let k = 0; k < poly.length; k++) {
+				const a = poly[k], b = poly[(k + 1) % poly.length], m = Math.max(1, Math.ceil(Math.abs(b[0] - a[0]) / 4));
+				for (let q = 0; q < m; q++) dense.push([a[0] + ((b[0] - a[0]) * q) / m, a[1] + ((b[1] - a[1]) * q) / m]);
+			}
+			const W = dense.map(map);
 			// ściany boczne (krawędź peronu)
 			for (let k = 0; k < W.length; k++) {
 				const p = W[k], q = W[(k + 1) % W.length];

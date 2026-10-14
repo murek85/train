@@ -15,7 +15,7 @@
 		weather: 'clear',
 		tutorial: [
 			{ text: 'Witaj w kabinie! Trwa wymiana pasażerów. Poczekaj, aż drzwi się zamkną, a semafor odjazdowy zezwoli na jazdę (prawy panel: „Semafor”).', until: 'cleared:0' },
-			{ text: 'Semafor zezwala na jazdę. Przesuń nastawnik w górę – klawisz ↑ albo W (pozycje jazdy J1…J5).', until: 'leverUp' },
+			{ text: 'Semafor zezwala na jazdę. Skład stoi zahamowany (H1) – przesuń nastawnik w górę, przez 0 na jazdę – klawisz ↑ albo W (pozycje jazdy J1…J5).', until: 'leverUp' },
 			{ text: 'Rozpędź pociąg do 60 km/h. Obowiązujące ograniczenie prędkości widać w prawym panelu (czerwona tarcza) – nie przekraczaj go.', until: 'speed:60|near:1:1800' },
 			{ text: 'Ustaw nastawnik na 0 (klawisz 0) – pociąg potoczy się siłą rozpędu. Gdy zwolni, znów dodaj jazdy.', until: 'coast|near:1:1800' },
 			{ text: 'Syrena: przytrzymaj klawisz H. Przed przejazdami (tablica W6) to obowiązkowy sygnał „Baczność”.', until: 'horn|near:1:1800' },

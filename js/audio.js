@@ -43,7 +43,7 @@
 			this.muted = false;
 			this.volume = 0.8;
 			// miks: głośność grup (0…1) – pociąg, syreny, otoczenie, sygnały i komunikaty (gong, radio, czuwak, SHP)
-			this.mix = { train: 1, horn: 1, amb: 1, sig: 1 };
+			this.mix = { train: 1, horn: 1, amb: 1, sig: 1, voice: 1 };
 			this.bogies = [];
 			this.lastJoint = [];
 			this.prevBrake = 0;
@@ -85,7 +85,9 @@
 			/* szyna pociągu (z wysyłką na pogłos), szyna otoczenia (tłumiona w kabinie), syreny (na szynę pociągu),
 			   sygnały i komunikaty; każda grupa przez własną głośność z ustawień (mixG) */
 			const mixG = (k) => { const g = c.createGain(); g.gain.value = this.mix[k]; return g; };
-			this.mixG = { train: mixG('train'), horn: mixG('horn'), amb: mixG('amb'), sig: mixG('sig') };
+			this.mixG = { train: mixG('train'), horn: mixG('horn'), amb: mixG('amb'), sig: mixG('sig'), voice: mixG('voice') };
+			// głos zapowiedzi z syntezy Piper (próbki – playVoice)
+			this.mixG.voice.connect(this.master);
 			this.trainBus = c.createGain();
 			this.trainBus.connect(this.mixG.train);
 			this.mixG.train.connect(this.master);
@@ -1085,7 +1087,28 @@
 			this.volume = v;
 			if (this.master) this.set(this.master.gain, this.muted ? 0 : 0.75 * v, 0.05);
 		}
-		// głośność grup: { train, horn, amb, sig } (0…1)
+		/* zapowiedź z syntezy Piper: próbki mono (Float32Array) – kolejno (następna po końcu poprzedniej); rate – szybkość
+		   odtwarzania (wysokość głosu; tempo kompensuje długość z syntezy) */
+		playVoice(pcm, sampleRate, rate = 1) {
+			this.ensure();
+			if (!this.ctx) return;
+			const c = this.ctx, buf = c.createBuffer(1, pcm.length, sampleRate);
+			buf.copyToChannel(pcm, 0);
+			const s = c.createBufferSource();
+			s.buffer = buf;
+			s.playbackRate.value = rate;
+			s.connect(this.mixG.voice);
+			const at = Math.max(c.currentTime + 0.02, this.voiceEnd || 0);
+			s.start(at);
+			this.voiceEnd = at + buf.duration / rate;
+			(this.voices || (this.voices = new Set())).add(s);
+			s.onended = () => this.voices.delete(s);
+		}
+		stopVoice() {
+			for (const s of this.voices || []) { try { s.stop(); } catch (e) { /* już zatrzymany */ } }
+			this.voiceEnd = 0;
+		}
+		// głośność grup: { train, horn, amb, sig, voice } (0…1)
 		setMix(m) {
 			Object.assign(this.mix, m);
 			if (this.mixG) for (const k in this.mixG) this.set(this.mixG[k].gain, this.mix[k], 0.05);

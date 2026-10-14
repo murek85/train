@@ -4,6 +4,41 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.15.0',
+			date: '14 października 2026',
+			groups: [
+				['Głos zapowiedzi', [
+					'Nowy silnik mowy Piper: naturalne głosy polskie (Gosia, Darkman, MC Speech), pobierane przy pierwszym użyciu (ok. 63 MB na głos) i działające potem bez internetu; mowa nie urywa się przy kliknięciu ani obracaniu kamery.',
+					'Wybór głosu systemu (np. Adam, Paulina), odsłuch przykładowej zapowiedzi, tempo i wysokość mowy.',
+					'Przerwana przez przeglądarkę zapowiedź głosu systemu jest dokańczana od przerwanego słowa.',
+				]],
+				['Jazda', [
+					'Start z zahamowanym składem: nastawnik na H1, przy hamulcu zespolonym zawór na odcięciu.',
+					'Dźwignia nastawnika w kabinie przesuwa się w szczelinie i stoi dokładnie przy bieżącej pozycji (przy „0” nie wygląda już na „H1”).',
+				]],
+			],
+		},
+		{
+			version: '0.14.4',
+			date: '14 października 2026',
+			groups: [
+				['Poprawki', [
+					'Perony i ich zadaszenia z mapy na łukach idą za torem – długi peron nie przechodzi już przez tor na drugą stronę (np. Łaziska Górne).',
+					'Plakietka z rozkazami pisemnymi pozostaje czytelna po najechaniu myszą.',
+				]],
+			],
+		},
+		{
+			version: '0.14.3',
+			date: '14 października 2026',
+			groups: [
+				['Panel jazdy', [
+					'Panel z rozkładem jazdy tej samej szerokości co panel z nastawnikiem.',
+					'Przycisk z rozkazami pisemnymi przeniesiony do panelu rozkładu (wiersz kilometrażu) – nie zasłania już zegara i punktów.',
+				]],
+			],
+		},
+		{
 			version: '0.14.2',
 			date: '14 października 2026',
 			groups: [

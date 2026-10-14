@@ -234,7 +234,7 @@
 			if (o.acked) this.orderT = setTimeout(() => $('order').classList.add('hidden'), 5000);
 		}
 		orderChip(n) {
-			$('order-chip').textContent = `Rozkazy: ${n} (O)`;
+			$('order-chip').textContent = `Rozkazy: ${n}`;
 			$('order-chip').classList.toggle('hidden', !n);
 		}
 		orderHide() {

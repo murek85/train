@@ -26,7 +26,6 @@
 		<p id="order-text"></p>
 		<div class="order-f"><span id="order-from"></span><span class="order-ack" id="order-ack">Enter – potwierdzam odbiór</span></div>
 	</div>
-	<button id="order-chip" class="order-chip hidden" title="Rozkazy pisemne (O)"></button>
 	<!-- zadanie samouczka (instruktor) -->
 	<div id="task" class="task hidden"><div class="task-h"><b>Instruktor</b><span id="task-n"></span></div><p id="task-text"></p></div>
 	<div id="toasts"></div>
@@ -42,7 +41,7 @@
 				<div><label>Zegar</label><b id="i-clock">--:--:--</b><span id="i-delay"></span></div>
 				<div class="score"><label>Punkty</label><b id="i-score">0</b><span id="i-score-sub"></span></div>
 			</div>
-			<div class="trip-km" title="Kilometraż – położenie czoła pociągu od początku trasy"><b id="i-km">km 0,0</b><span id="i-km-sub"></span></div>
+			<div class="trip-km" title="Kilometraż – położenie czoła pociągu od początku trasy"><b id="i-km">km 0,0</b><span id="i-km-sub"></span><button id="order-chip" class="order-chip hidden" title="Rozkazy pisemne – pokaż ostatni (O)"></button></div>
 			<div class="trip-now"><label id="i-station-label">Następna stacja</label><b id="i-station">—</b><span id="i-station-sub"></span><span id="i-pax" class="pax"></span></div>
 			<div class="timeline" id="timeline"></div>
 		</div>
@@ -372,6 +371,15 @@
 				<label class="row-opt vol-opt mix-opt">Sygnały – gong, radiotelefon, czuwak, SHP, drzwi <input type="range" id="set-mix-sig" min="0" max="100" step="5"> <span></span></label>
 				<label class="row-opt vol-opt mix-opt">Głos zapowiedzi (synteza mowy) <input type="range" id="set-mix-voice" min="0" max="100" step="5"> <span></span></label>
 				<label class="row-opt">Zapowiedzi na stacjach i w pociągu <select id="set-announce"><option value="text">gong i tekst</option><option value="voice">gong, tekst i głos (synteza mowy)</option><option value="off">wyłączone</option></select></label>
+				<!-- głos zapowiedzi (synteza mowy): wybór głosu systemu, odsłuch, tempo i wysokość -->
+				<div id="voice-opts">
+					<label class="row-opt vol-opt mix-opt">Silnik mowy <select id="set-voice-engine"><option value="system">głosy systemu (przeglądarka)</option><option value="piper">Piper – naturalne głosy polskie (pobierane, ok. 63 MB)</option></select> <span></span></label>
+					<label class="row-opt vol-opt mix-opt">Głos <select id="set-voice"></select> <button id="set-voice-test" type="button" title="Odsłuchaj przykładową zapowiedź">▶</button></label>
+					<p class="hint mix-opt voice-status" id="voice-status"></p>
+					<label class="row-opt mix-opt" id="voice-all-row"><input type="checkbox" id="set-voice-all"> Pokaż także głosy w innych językach (źle czytają polskie nazwy)</label>
+					<label class="row-opt vol-opt mix-opt">Tempo mowy <input type="range" id="set-voice-rate" min="0.7" max="1.3" step="0.05"> <span></span></label>
+					<label class="row-opt vol-opt mix-opt">Wysokość głosu <input type="range" id="set-voice-pitch" min="0.5" max="1.5" step="0.05"> <span></span></label>
+				</div>
 			</section>
 			<section class="set">
 				<h3>Grafika</h3>
@@ -479,6 +487,7 @@
 	<script src="js/3d/freecam.js"></script>
 	<script src="js/hud.js"></script>
 	<script src="js/news.js"></script>
+	<script src="js/tts-piper.js"></script>
 	<script src="js/main.js"></script>
 </body>
 </html>
