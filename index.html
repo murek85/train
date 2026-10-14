@@ -4,6 +4,10 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Maszynista</title>
+	<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48 64x64 256x256">
+	<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+	<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+	<meta name="theme-color" content="#0d1118">
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,6 +17,18 @@
 	<canvas id="view"></canvas>
 	<canvas id="mini"></canvas>
 
+	<!-- radiotelefon: komunikat dyżurnego ruchu (Enter albo kliknięcie – „zrozumiałem”) -->
+	<div id="radio" class="radio hidden"><div class="radio-h"><i class="radio-ico"></i><b id="radio-from"></b><span class="radio-ack">Enter – zrozumiałem</span></div><p id="radio-text"></p></div>
+	<!-- rozkaz pisemny (Ir-1: „O”, „S”) – karta w kabinie; Enter / kliknięcie – potwierdzenie odbioru, O – pokaż / schowaj -->
+	<div id="order" class="order hidden">
+		<div class="order-h"><b id="order-title"></b><span id="order-no"></span></div>
+		<div class="order-meta" id="order-meta"></div>
+		<p id="order-text"></p>
+		<div class="order-f"><span id="order-from"></span><span class="order-ack" id="order-ack">Enter – potwierdzam odbiór</span></div>
+	</div>
+	<button id="order-chip" class="order-chip hidden" title="Rozkazy pisemne (O)"></button>
+	<!-- zadanie samouczka (instruktor) -->
+	<div id="task" class="task hidden"><div class="task-h"><b>Instruktor</b><span id="task-n"></span></div><p id="task-text"></p></div>
 	<div id="toasts"></div>
 	<div id="prompt" class="hidden"></div>
 	<button id="btn-pause" class="corner hidden" title="Pauza (Esc)">❚❚</button>
@@ -26,7 +42,8 @@
 				<div><label>Zegar</label><b id="i-clock">--:--:--</b><span id="i-delay"></span></div>
 				<div class="score"><label>Punkty</label><b id="i-score">0</b><span id="i-score-sub"></span></div>
 			</div>
-			<div class="trip-now"><label id="i-station-label">Następna stacja</label><b id="i-station">—</b><span id="i-station-sub"></span></div>
+			<div class="trip-km" title="Kilometraż – położenie czoła pociągu od początku trasy"><b id="i-km">km 0,000</b><span id="i-km-sub"></span></div>
+			<div class="trip-now"><label id="i-station-label">Następna stacja</label><b id="i-station">—</b><span id="i-station-sub"></span><span id="i-pax" class="pax"></span></div>
 			<div class="timeline" id="timeline"></div>
 		</div>
 
@@ -35,7 +52,7 @@
 			<div class="sig-box" id="sig-box">
 				<label>Semafor</label>
 				<div class="sig-row">
-					<div class="sig-head" id="i-signal-lamp"><i class="sl g"></i><i class="sl y"></i><i class="sl r"></i></div>
+					<div class="sig-head" id="i-signal-lamp"><i class="sl g"></i><i class="sl y"></i><i class="sl r"></i><i class="sl y2"></i><i class="sl w"></i><i class="sp"></i></div>
 					<div class="sig-info"><b id="i-signal">—</b><em id="i-signal-dist">—</em><span id="i-signal-sub"></span></div>
 				</div>
 				<div class="dist-bar"><i id="i-signal-bar"></i></div>
@@ -61,6 +78,19 @@
 			<div class="lever-box">
 				<div class="label">Nastawnik</div>
 				<div id="lever"></div>
+				<!-- napęd wg serii: pozycja nastawnika, prąd silników (obciążenie), oporniki / obroty -->
+				<div id="drive" class="drive hidden">
+					<b id="d-pos">0</b>
+					<div class="dbar" title="Prąd silników (obciążenie) – czerwony: ponad znamionowy"><i id="d-cur"></i></div>
+					<div class="dbar heat" title="Nagrzanie oporników rozruchowych / obroty silnika"><i id="d-heat"></i></div>
+					<span id="d-info"></span>
+				</div>
+				<!-- hamulec zespolony: zawór maszynisty (Q / A) i ciśnienia -->
+				<div id="valve" class="valve hidden" title="Zawór maszynisty: A – w stronę hamowania, Q – w stronę luzowania">
+					<div class="label">Zawór</div>
+					<div id="valve-pos"></div>
+					<div class="valve-p"><span>PG <b id="v-pg" class="num">5.0</b></span><span>C <b id="v-cyl" class="num">0.0</b></span></div>
+				</div>
 				<div class="effort">
 					<div class="bar" title="Siła pociągowa"><i id="eff-trac"></i></div>
 					<div class="bar brake" title="Ciśnienie w cylindrach hamulcowych"><i id="eff-brake"></i></div>
@@ -68,7 +98,10 @@
 			</div>
 			<div class="lamps">
 				<span id="l-ca" class="ind" title="Czuwak – potwierdź spacją">CA</span>
+				<span id="l-shp" class="ind hidden" title="SHP – przed semaforem potwierdź spacją">SHP</span>
 				<span id="l-doors" class="ind" title="Drzwi">DRZWI</span>
+				<span id="l-slip" class="ind" title="Poślizg kół">POŚL</span>
+				<span id="l-sand" class="ind" title="Piasecznica (X)">PIAS</span>
 				<span id="l-brake" class="ind" title="Hamulec">HAM</span>
 				<span id="l-time" class="ind on-blue" title="Przyspieszenie czasu (T)">×1</span>
 			</div>
@@ -78,16 +111,20 @@
 		<div class="hud-panel hud-controls">
 			<div class="controls">
 				<button data-act="up" title="Nastawnik w górę (↑ / W)">▲ Jazda</button>
-				<button data-act="down" title="Nastawnik w dół (↓ / S)">▼ Hamuj</button>
+				<button data-act="down" id="btn-down" title="Nastawnik w dół (↓ / S)">▼ Hamuj</button>
 				<button data-act="neutral" title="Pozycja zerowa (0)">0</button>
 				<button data-act="doors" title="Drzwi (D)">Drzwi</button>
 				<button data-act="horn" title="Syrena (H – przytrzymaj)">Syrena</button>
+				<button data-act="horn2" title="Syrena wysokotonowa (J – przytrzymaj)">Syrena 2</button>
 				<button data-act="ca" title="Czuwak (spacja)">CA</button>
 				<button data-act="cab" title="Fotel maszynisty – widok z kabiny (K)">Kabina</button>
 				<button data-act="camera" title="Tryb kamery (V)">Kamera</button>
 				<button data-act="time" title="Przyspieszenie czasu (T)">Czas ×</button>
 				<button data-act="panto" title="Pantograf: podnieś / opuść (U)">Pantograf</button>
+				<button data-act="sand" title="Piasecznica – piasek pod koła (X)">Piasek (X)</button>
 				<button data-act="wipers" title="Wycieraczki: wyłączone / przerywane / ciągłe / szybkie (R)">Wycieraczki</button>
+				<button data-act="valve-rel" class="air-only hidden" title="Zawór maszynisty w stronę luzowania (Q)">Luzuj (Q)</button>
+				<button data-act="valve-brake" class="air-only hidden" title="Zawór maszynisty w stronę hamowania (A)">Hamuj (A)</button>
 				<button data-act="emergency" class="danger" title="Hamowanie nagłe (E / Backspace)">NAGŁE</button>
 			</div>
 		</div>
@@ -134,13 +171,27 @@
 			<p class="tagline">Prosty symulator pociągu: ruszaj, hamuj, zatrzymuj się przy peronie i trzymaj się rozkładu.</p>
 			<nav class="menu-buttons">
 				<button id="btn-single" class="primary big">Gra jednoosobowa</button>
+				<button id="btn-scen" class="big">Scenariusze</button>
 				<button id="btn-load" class="big">Wczytaj grę</button>
 				<button id="btn-gen" class="big">Generator tras</button>
 				<button id="btn-settings" class="big">Ustawienia</button>
+				<button id="btn-hist" class="big">Historia jazd</button>
 				<button id="btn-news" class="big">Co nowego</button>
 				<button id="btn-exit" class="big hidden">Wyjście</button>
 			</nav>
 			<p class="version" id="version"></p>
+		</div>
+
+		<div class="panel wide hidden" id="scr-scen">
+			<div class="panel-head"><button class="back" id="scen-back">← Wróć</button><h2>Scenariusze</h2></div>
+			<p class="hint">Jazdy z celem: zdarzenia na trasie, polecenia dyżurnego ruchu i cele do spełnienia. Ukończenie – ★, każdy spełniony cel – kolejne gwiazdki. Na górze zadanie dnia (codziennie inne, u wszystkich takie samo), dalej samouczek i scenariusze.</p>
+			<div class="scen-list" id="scen-list"></div>
+		</div>
+
+		<div class="panel wide hidden" id="scr-hist">
+			<div class="panel-head"><button class="back" id="hist-back">← Wróć</button><h2>Historia jazd</h2></div>
+			<p class="hint">Ostatnie 30 ukończonych i przerwanych jazd z oceną (gwiazdki 1–5) w kategoriach. Najlepsza ocena dla trasy i składu – ★ przy nazwie.</p>
+			<div class="hist-list" id="hist-list"></div>
 		</div>
 
 		<div class="panel hidden" id="scr-news">
@@ -242,12 +293,26 @@
 				<div class="tiles" id="time-tiles"></div>
 				<select id="opt-time" class="hidden"><option value="auto">jak w scenariuszu</option><option value="05:20">świt (5:20)</option><option value="08:00">rano (8:00)</option><option value="12:00">południe (12:00)</option><option value="16:00">popołudnie (16:00)</option><option value="19:50">zachód słońca (19:50)</option><option value="23:00">noc (23:00)</option><option value="custom">własna godzina…</option></select>
 				<label class="row-opt custom-time">Własna godzina <input type="time" id="opt-time-custom" class="hidden" value="21:30"></label>
+				<h3>Pora roku</h3>
+				<label class="row-opt">Pora roku <select id="opt-season"><option value="spring">wiosna</option><option value="summer">lato</option><option value="autumn">jesień – liście na torach (śliskie szyny)</option><option value="winter">zima – słabsza przyczepność</option></select></label>
+				<h3>Ruch na linii</h3>
+				<label class="row-opt">Inne pociągi <input type="range" id="opt-traffic" min="0" max="3" step="1"> <b id="opt-traffic-val"></b></label>
+				<p class="hint">Pociągi przed Tobą i za Tobą jadą po Twoim torze – semafor pokazuje „stój”, gdy odstęp za nim jest zajęty. Przy punktualnej jeździe nie wchodzą Ci w drogę.</p>
+				<h3>Zdarzenia</h3>
+				<div class="options">
+					<label><input type="checkbox" id="opt-events"> Zdarzenia losowe – komunikaty dyżurnego ruchu, ograniczenia doraźne, wydłużone postoje, zanik napięcia w sieci, zmiana pogody</label>
+				</div>
 			</section>
 			<section class="tab hidden" id="tab-help">
 				<h3>Pomoc w jeździe</h3>
 				<div class="options">
 					<label><input type="checkbox" id="opt-ca" checked> Czuwak (CA) – co minutę potwierdź spacją</label>
 					<label><input type="checkbox" id="opt-assist" checked> Asystent hamowania – znacznik drogi hamowania</label>
+					<label><input type="checkbox" id="opt-traffic-pen"> Kara za zatrzymanie pociągu jadącego za Tobą (−10 pkt) – gdy Twoje opóźnienie zatrzyma go przed semaforem</label>
+					<label><input type="checkbox" id="opt-dispatch" checked> Rutynowe komunikaty dyżurnego ruchu – odjazd, pociąg na odstępie przed Tobą, przyjęcie na stację końcową</label>
+					<label><input type="checkbox" id="opt-shp"> SHP – 200 m przed semaforem lampka i sygnał: potwierdź spacją w ciągu 3,5 s, inaczej hamowanie nagłe</label>
+					<label class="row-opt">Napęd <select id="opt-drive"><option value="simple">prosty – nastawnik J1…J5</option><option value="series">wg serii – rozruch oporowy (EU07, EN57…), falownik (Elfy, ED250), spalinowy (SM42…)</option></select></label>
+					<label class="row-opt">Hamulec <select id="opt-brake"><option value="simple">prosty – nastawnik z pozycjami hamowania H1…H4</option><option value="air">zespolony – zawór maszynisty (Q / A), ciśnienia, fala hamowania</option></select></label>
 				</div>
 				<h3>Sterowanie</h3>
 				<div class="help-grid">
@@ -257,6 +322,7 @@
 					<div><kbd>E</kbd>/<kbd>Backspace</kbd> hamowanie nagłe</div>
 					<div><kbd>D</kbd> otwarcie drzwi na stacji</div>
 					<div><kbd>H</kbd> syrena (przytrzymaj)</div>
+					<div><kbd>J</kbd> syrena wysokotonowa (przytrzymaj)</div>
 					<div><kbd>U</kbd> pantograf: podnieś / opuść</div>
 					<div><kbd>R</kbd> wycieraczki</div>
 					<div><kbd>Spacja</kbd> potwierdzenie czuwaka</div>
@@ -273,9 +339,15 @@
 				<h3>Zasady</h3>
 				<ul class="rules">
 					<li>Zatrzymaj czoło pociągu przy tablicy <b>W4</b> (biała z czarnym paskiem) – im dokładniej, tym więcej punktów. Cały pociąg musi stać przy peronie.</li>
-					<li>Po zatrzymaniu naciśnij <kbd>D</kbd>. Drzwi zamkną się same, a semafor odjazdowy zmieni się na zielony w chwili odjazdu z rozkładu.</li>
+					<li>Po zatrzymaniu naciśnij <kbd>D</kbd>. Drzwi zamkną się same, a semafor odjazdowy zezwoli na jazdę w chwili odjazdu z rozkładu.</li>
+					<li>Hamulec zespolony (opcja niżej): nastawnik tylko jazda, hamowanie zaworem maszynisty – <kbd>A</kbd> w stronę hamowania (ciśnienie w przewodzie głównym spada), potem <kbd>Q</kbd> na odcięcie (hamulec trzyma); dalej <kbd>Q</kbd> – jazda (luzowanie) i napełnianie. Długi skład towarowy hamuje i luzuje wolno – hamuj wcześniej. Poniżej 4 bar w przewodzie jazda jest zablokowana.</li>
+					<li>Przyczepność: w deszczu, mgle i śniegu, zimą i na liściach (jesień) koła łatwiej wpadają w poślizg, a hamowanie jest słabsze. Piasecznica – <kbd>X</kbd>. Napęd wg serii (opcja niżej): w lokomotywach i EZT z rozruchem oporowym przechodź przez pozycje nastawnika stopniowo (prąd – pasek pod pozycją) i jedź na pozycjach ekonomicznych S12, R12, B1–B4; za szybko – przekaźnik nadmiarowy wyłączy wyłącznik szybki, za długo na oporach – przegrzanie. Hamulec dodatkowy lokomotywy: <kbd>Shift</kbd>+<kbd>A</kbd> / <kbd>Shift</kbd>+<kbd>Q</kbd>.</li>
+					<li>Rozkazy pisemne: „O” (ostrzeżenie, np. ograniczenie prędkości) dostajesz na stacji przed odjazdem, „S” (przejazd obok uszkodzonego semafora odstępowego, jazda ostrożna do 20 km/h) – przez radiotelefon, gdy stoisz przed semaforem. Potwierdź odbiór klawiszem <kbd>Enter</kbd>; <kbd>O</kbd> – pokaż ostatni rozkaz. Uszkodzony semafor wjazdowy lub wyjazdowy – dyżurny poda sygnał zastępczy (białe migające): jazda do 40 km/h do następnego semafora.</li>
+					<li>Ruch na linii („Warunki”): pociągi przed Tobą i za Tobą jadą po Twoim torze – semafor pokazuje „stój”, gdy odcinek za nim jest zajęty. Spóźniając się, możesz zatrzymać pociąg jadący za Tobą.</li>
+					<li>SHP (opcja niżej): 200 m przed semaforem zapala się lampka SHP – naciśnij spację w ciągu 3,5 s.</li>
+					<li>Komunikaty dyżurnego ruchu (radiotelefon, u góry ekranu) potwierdzaj klawiszem <kbd>Enter</kbd> – bez potwierdzenia −10 pkt. Polecenia dyżurnego (ograniczenie doraźne, wydłużony postój, zanik napięcia) obowiązują jak sygnały.</li>
 					<li>Skład towarowy jedzie bez postojów – zatrzymaj się dopiero na stacji końcowej (czołem przy W4) i naciśnij <kbd>D</kbd>.</li>
-					<li>Semafor: <span class="dot red"></span> stój, <span class="dot yellow"></span> następny semafor wskazuje „stój”, <span class="dot green"></span> wolna droga. Minięcie czerwonego kończy grę.</li>
+					<li>Semafory jak na PKP (instrukcja Ie-1). <span class="dot red"></span> czerwone – stój; minięcie kończy grę. Górne światło zapowiada następny semafor: <span class="dot green"></span> zielone – wolna droga, zielone migające – następny ogranicza do 100 km/h, <span class="dot yellow"></span> pomarańczowe migające – do 40 lub 60 km/h, pomarańczowe ciągłe – następny wskazuje „stój”. Dolne pomarańczowe światło – ograniczenie przy tym semaforze (przez rozjazdy): 40 km/h, z pasem pomarańczowym 60, z zielonym 100. W panelu semafora – oznaczenie sygnału (S1…S13a) i zapowiedź.</li>
 					<li>Żółte tablice to nowe ograniczenie prędkości, pomarańczowe trójkąty je zapowiadają. Ograniczenie obowiązuje, dopóki cały pociąg go nie minie.</li>
 					<li>Przed przejazdami (tablica <b>W6</b>) użyj syreny. Na końcowej stacji za peronem jest kozioł oporowy.</li>
 				</ul>
@@ -292,7 +364,14 @@
 			<section class="set">
 				<h3>Dźwięk</h3>
 				<label class="row-opt"><input type="checkbox" id="set-sound" checked> Dźwięk włączony <kbd>M</kbd></label>
-				<label class="row-opt">Głośność <input type="range" id="set-volume" min="0" max="100" step="5"> <span id="set-volume-val">80%</span></label>
+				<label class="row-opt vol-opt">Głośność ogólna <input type="range" id="set-volume" min="0" max="100" step="5"> <span id="set-volume-val">80%</span></label>
+				<!-- głośność grup dźwięków (względem ogólnej) -->
+				<label class="row-opt vol-opt mix-opt">Pociąg – silniki, toczenie, hamulce <input type="range" id="set-mix-train" min="0" max="100" step="5"> <span></span></label>
+				<label class="row-opt vol-opt mix-opt">Syreny <input type="range" id="set-mix-horn" min="0" max="100" step="5"> <span></span></label>
+				<label class="row-opt vol-opt mix-opt">Otoczenie – wiatr, deszcz, ptaki, miasto, inne pociągi, przejazdy <input type="range" id="set-mix-amb" min="0" max="100" step="5"> <span></span></label>
+				<label class="row-opt vol-opt mix-opt">Sygnały – gong, radiotelefon, czuwak, SHP, drzwi <input type="range" id="set-mix-sig" min="0" max="100" step="5"> <span></span></label>
+				<label class="row-opt vol-opt mix-opt">Głos zapowiedzi (synteza mowy) <input type="range" id="set-mix-voice" min="0" max="100" step="5"> <span></span></label>
+				<label class="row-opt">Zapowiedzi na stacjach i w pociągu <select id="set-announce"><option value="text">gong i tekst</option><option value="voice">gong, tekst i głos (synteza mowy)</option><option value="off">wyłączone</option></select></label>
 			</section>
 			<section class="set">
 				<h3>Grafika</h3>
@@ -304,6 +383,10 @@
 				<label class="row-opt">Rozdzielczość renderowania <select id="set-scale"><option value="0.5">50%</option><option value="0.67">67%</option><option value="0.85">85%</option><option value="1">100%</option></select></label>
 				<label class="row-opt"><input type="checkbox" id="set-aa" checked> Wygładzanie krawędzi (MSAA)</label>
 				<label class="row-opt"><input type="checkbox" id="set-shadows" checked> Cienie</label>
+				<label class="row-opt"><input type="checkbox" id="set-autodetail" checked> Automatyczne dopasowanie szczegółów – gdy w czasie jazdy długo spada płynność, zmniejsza się zasięg świata</label>
+				<button id="set-autoq" class="small">Dobierz jakość automatycznie</button>
+				<label class="row-opt">Pociągi tła rysowane jednocześnie – najwyżej <select id="set-traffic-max"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="8">8</option></select></label>
+				<label class="row-opt"><input type="checkbox" id="set-traffic-people"> Pociągi tła z maszynistą i pasażerami w oknach</label>
 				<label class="row-opt"><input type="checkbox" id="set-fps"> Licznik klatek na sekundę</label>
 				<p class="hint" id="gpu-info"></p>
 			</section>
@@ -351,6 +434,10 @@
 			<h2 id="end-title">Koniec trasy</h2>
 			<p id="end-reason"></p>
 			<div class="end-score"><span id="end-stars"></span><b id="end-points"></b></div>
+			<ul class="end-goals hidden" id="end-goals"></ul>
+			<!-- ocena jazdy: kategorie w gwiazdkach i wykres przejazdu (prędkość wobec dozwolonej) -->
+			<div class="end-rating" id="end-rating"></div>
+			<canvas id="end-chart" class="end-chart" width="720" height="180"></canvas>
 			<table id="end-table"></table>
 			<div id="end-penalties"></div>
 			<div class="row">
@@ -369,6 +456,10 @@
 	<script src="js/gen/sources.js"></script>
 	<script src="js/osm-route.js"></script>
 	<script src="js/sim.js"></script>
+	<script src="js/traffic.js"></script>
+	<script src="js/route-check.js"></script>
+	<script src="js/scenario.js"></script>
+	<script src="js/scenarios.js"></script>
 	<script src="js/audio.js"></script>
 	<script src="vendor/three.global.js"></script>
 	<script src="js/3d/sky.js"></script>

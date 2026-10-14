@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="36 36 440 440">
+	<!-- ten sam rysunek co tools/make-icon.js (favicon.ico, build/icon.png) – przy zmianie poprawić oba -->
+	<rect x="40.5" y="40.5" width="431" height="431" rx="87.5" fill="#161c26" stroke="#2c3646" stroke-width="9"/>
+	<path d="M126 404 H386 L394.3 414 H117.7 Z M107.7 426 H404.3 L412.7 436 H99.3 Z" fill="#2c3646"/>
+	<path d="M164 392 L124 440 M348 392 L388 440" stroke="#8f9bad" stroke-width="13"/>
+	<rect x="126" y="134" width="260" height="256" rx="46" fill="#ffb020"/>
+	<rect x="126" y="262" width="260" height="20" fill="#c77d0a"/>
+	<rect x="150" y="166" width="92" height="80" rx="12" fill="#0d1118"/>
+	<rect x="270" y="166" width="92" height="80" rx="12" fill="#0d1118"/>
+	<circle cx="190" cy="326" r="22" fill="#fff4d6"/>
+	<circle cx="322" cy="326" r="22" fill="#fff4d6"/>
+</svg>

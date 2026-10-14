@@ -72,7 +72,7 @@ function createWindow() {
 		show: false,
 		backgroundColor: '#0d1118',
 		title: 'Maszynista',
-		icon: path.join(ROOT, 'build', 'icon.png'),
+		icon: path.join(ROOT, process.platform === 'win32' ? 'favicon.ico' : 'icons/icon-256.png'), // build/ nie trafia do paczki
 		autoHideMenuBar: true,
 		webPreferences: {
 			preload: path.join(__dirname, 'preload.js'),

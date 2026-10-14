@@ -222,6 +222,7 @@
 				mass: U.mass * 1000 * n, rotFactor: 1.1, maxPower: U.power * 1000 * n, maxForce: U.force * 1000 * n, vmax: U.vmax / 3.6,
 				serviceDecel: 0.8, emergencyDecel: 1.15, davisA: 2000 * n, davisB: 40 * n, davisC: (3.5 + 1.5 * n) * (U.aero || 1),
 				electric: true, pantograph: [].concat(U.panto)[0], pantographs, freight: false, diesel: false, emu: true,
+				adhMass: U.mass * 1000 * n * 0.45, // masa na osiach napędnych (przyczepność): ok. 45 % zespołu
 			};
 		}
 		const lid = STOCK[cfg.loco] && STOCK[cfg.loco].kind === 'loco' ? cfg.loco : 'EU07', L = STOCK[lid], lv = variantOf(lid, cfg.lv);
@@ -248,6 +249,7 @@
 			mass: mass * 1000, rotFactor: 1.06, maxPower: L.power * 1000, maxForce: L.force * 1000, vmax: vmax / 3.6,
 			serviceDecel: freight ? 0.45 : 0.7, emergencyDecel: freight ? 0.8 : 1.05, davisA: A, davisB: B, davisC: C,
 			electric: !!L.electric, pantograph: 0, freight, diesel: !L.electric, emu: false,
+			adhMass: L.mass * 1000, // masa na osiach napędnych – lokomotywa
 		};
 	}
 
@@ -551,7 +553,65 @@
 			length: bufferPos + 200,
 		};
 		buildAlignment(route);
+		route.single = singleSections(route);
 		return route;
+	}
+
+	/* Odcinki jednotorowe trasy rzeczywistej (krzyżowania): miejsca bez toru biegnącego obok (3–45 m od osi,
+	   równolegle; tory z mapy env.t), próbki co 50 m. Mijanki (odcinki z drugim torem) krótsze niż 300 m nie liczą się
+	   (skład się nie zmieści) – sąsiednie odcinki jednotorowe łączą się; odcinki krótsze niż 500 m – pomijane.
+	   Zwraca [[od, do], …] (s, rosnąco) albo null (linia dwutorowa, trasa z gry). */
+	function singleSections(route) {
+		const rows = route.env && route.env.t;
+		if (!rows || !rows.length) return null;
+		const STEP = 50, n = Math.ceil(route.length / STEP) + 1;
+		const two = new Uint8Array(n);
+		for (const row of rows) {
+			if (row[0] & 4) continue; // tor nieużywany
+			for (let k = 0; 4 + k * 2 < row.length; k++) {
+				const sa = row[1 + k * 2], da = row[2 + k * 2], sb = row[3 + k * 2], db = row[4 + k * 2];
+				if (sa === sb || Math.abs(db - da) > 0.15 * Math.abs(sb - sa)) continue; // tor ukośny
+				const lo = Math.max(0, Math.ceil(Math.min(sa, sb) / STEP)), hi = Math.min(n - 1, Math.floor(Math.max(sa, sb) / STEP));
+				for (let i = lo; i <= hi; i++) {
+					const d = Math.abs(da + ((db - da) * (i * STEP - sa)) / (sb - sa));
+					if (d > 3 && d < 45) two[i] = 1;
+				}
+			}
+		}
+		let out = [], cur = null;
+		for (let i = 0; i < n; i++) {
+			if (!two[i]) { if (!cur) cur = [i * STEP, i * STEP]; cur[1] = i * STEP; } else if (cur) { out.push(cur); cur = null; }
+		}
+		if (cur) out.push(cur);
+		const merged = [];
+		for (const x of out) {
+			const last = merged[merged.length - 1];
+			if (last && x[0] - last[1] < 300) last[1] = x[1];
+			else merged.push(x.slice());
+		}
+		out = merged.filter((x) => x[1] - x[0] >= 500 && x[0] > 0 && x[1] < route.length - 250);
+		return out.length ? out : null;
+	}
+	// odcinek jednotorowy w miejscu s (indeks w route.single) albo −1
+	function singleAt(route, s) {
+		const L = route.single;
+		if (!L) return -1;
+		for (let k = 0; k < L.length; k++) if (s >= L[k][0] && s <= L[k][1]) return k;
+		return -1;
+	}
+	/* rysowanie pociągu z przeciwka na linii jednotorowej: 0 – na torze gracza (odcinek jednotorowy), 1 – na drugim
+	   torze (mijanka, linia dwutorowa); przejście na 60 m przy końcach odcinka (rozjazd) */
+	function laneWeight(route, s) {
+		const L = route.single;
+		if (!L) return 1;
+		let d = Infinity;
+		for (const [a, b] of L) {
+			if (s >= a && s <= b) return 0;
+			d = Math.min(d, Math.abs(s - a), Math.abs(s - b));
+		}
+		if (d >= 60) return 1;
+		const x = d / 60;
+		return x * x * (3 - 2 * x);
 	}
 
 	// ---- przebieg toru w planie: proste + łuki z krzywymi przejściowymi ----
@@ -646,5 +706,5 @@
 		return route.limits.find((l) => l.pos > x) || null;
 	}
 
-	return { STOCK, makeConsist, normConfig, configKey, consistLimit, legacyConfig, FREIGHT_MAX, TRAINS, TRAIN_TYPES, prepare, applyFixes, issueStatus, makeTrain, maxCars, defaultConfig, trainLengthOf, gradeAt, heightAt, limitAt, limitOver, nextLimitChange, curvatureAt, trackPoint, sidePoint };
+	return { STOCK, makeConsist, normConfig, configKey, consistLimit, legacyConfig, FREIGHT_MAX, TRAINS, TRAIN_TYPES, prepare, applyFixes, issueStatus, makeTrain, maxCars, defaultConfig, trainLengthOf, gradeAt, heightAt, limitAt, limitOver, nextLimitChange, curvatureAt, trackPoint, sidePoint, singleSections, singleAt, laneWeight };
 });

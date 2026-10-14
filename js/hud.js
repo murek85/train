@@ -3,7 +3,7 @@
 	'use strict';
 	const P = window.TrainPhysics;
 	const R = window.TrainRoutes;
-	const { fmtClock, fmtDelay } = window.TrainSim;
+	const { fmtClock, fmtDelay, SIGNALS, signalText } = window.TrainSim;
 
 	const $ = (id) => document.getElementById(id);
 
@@ -29,12 +29,34 @@
 				this.leverEls.push({ n, el: d });
 			}
 			this.cache = {};
+			// zawór maszynisty (hamulec zespolony): pozycje od napełniania do nagłego
+			this.valveEls = [];
+			for (const [v, t] of [['fill', 'Napełn.'], ['run', 'Jazda'], ['lap', 'Odcięcie'], ['brake', 'Hamow.'], ['emerg', 'Nagłe']]) {
+				const d = document.createElement('div');
+				d.textContent = t;
+				d.dataset.v = v;
+				if (v === 'emerg') d.className = 'e';
+				$('valve-pos').appendChild(d);
+				this.valveEls.push(d);
+			}
 		}
 
 		setup(sim) {
 			this.vmaxDial = Math.ceil(Math.round(sim.train.vmax * 3.6) / 20) * 20 + 20;
 			this.cache = {};
 			this.toasts.innerHTML = '';
+			// hamulec zespolony: nastawnik tylko jazda, obok zawór maszynisty
+			$('lever').classList.toggle('air', !!sim.air);
+			$('lever').classList.toggle('series', !!sim.drive);
+			$('drive').classList.toggle('hidden', !sim.drive);
+			$('valve').classList.toggle('hidden', !sim.air);
+			document.querySelectorAll('.controls .air-only').forEach((b) => b.classList.toggle('hidden', !sim.air));
+			$('btn-down').textContent = sim.air ? '▼ Jazda' : '▼ Hamuj';
+			$('l-shp').classList.toggle('hidden', !sim.opts.shp);
+			this.radioHide();
+			this.orderHide();
+			this.orderChip(sim.orders ? sim.orders.length : 0);
+			this.task(null);
 			this.buildTimeline(sim);
 		}
 
@@ -157,7 +179,7 @@
 			if (key) el.dataset.key = key;
 			clearTimeout(el._t1);
 			clearTimeout(el._t2);
-			const ms = kind === 'bad' ? 7000 : kind === 'warn' ? 6000 : 4000;
+			const ms = kind === 'bad' ? 7000 : kind === 'warn' ? 6000 : kind === 'announce' ? 9000 : 4000;
 			el._t1 = setTimeout(() => this.hideToast(el), ms);
 			while (this.toasts.children.length > 4) this.toasts.firstChild.remove();
 		}
@@ -168,6 +190,57 @@
 			el.classList.add('fade');
 			if (quick) el.classList.add('quick');
 			el._t2 = setTimeout(() => el.remove(), quick ? 220 : 600);
+		}
+
+		/* Radiotelefon: komunikat dyżurnego ruchu (from – nadawca); ack – czeka na potwierdzenie (Enter albo kliknięcie),
+		   bez potwierdzenia znika po 14 s, po potwierdzeniu – po 3 s */
+		radio(from, text, ack) {
+			$('radio-from').textContent = from;
+			$('radio-text').textContent = text;
+			$('radio').className = 'radio' + (ack ? ' ack' : '');
+			document.body.classList.add('radio-on');
+			clearTimeout(this.radioT);
+			if (!ack) this.radioT = setTimeout(() => this.radioHide(), 14000);
+		}
+		radioAck() {
+			$('radio').classList.remove('ack');
+			clearTimeout(this.radioT);
+			this.radioT = setTimeout(() => this.radioHide(), 3000);
+		}
+		radioHide() {
+			clearTimeout(this.radioT);
+			$('radio').classList.add('hidden');
+			document.body.classList.remove('radio-on');
+		}
+		/* rozkaz pisemny: karta z treścią (show – pokaż), po potwierdzeniu – zielone „potwierdzono”, karta znika po 5 s,
+		   zostaje przycisk z liczbą rozkazów (O – pokaż ostatni) */
+		order(o, clock) {
+			const names = { O: 'ROZKAZ PISEMNY „O”', S: 'ROZKAZ PISEMNY „S”' };
+			$('order-title').textContent = names[o.type] || 'ROZKAZ PISEMNY';
+			$('order-no').textContent = 'nr ' + o.no;
+			$('order-meta').textContent = `dla pociągu: ${o.train || ''}\nstacja: ${o.station || ''} · dnia ${new Date().toLocaleDateString('pl-PL')} · godz. ${clock}${o.via === 'radio' ? ' · przekazany przez radiotelefon' : ''}`;
+			$('order-text').textContent = o.text;
+			$('order-from').textContent = 'Dyżurny ruchu: ' + (o.station || '');
+			$('order-ack').textContent = o.acked ? 'potwierdzono odbiór' : 'Enter – potwierdzam odbiór';
+			$('order').className = 'order' + (o.acked ? ' done' : '');
+			clearTimeout(this.orderT);
+			if (o.acked) this.orderT = setTimeout(() => $('order').classList.add('hidden'), 5000);
+		}
+		orderChip(n) {
+			$('order-chip').textContent = `Rozkazy: ${n} (O)`;
+			$('order-chip').classList.toggle('hidden', !n);
+		}
+		orderHide() {
+			clearTimeout(this.orderT);
+			$('order').classList.add('hidden');
+		}
+
+		// zadanie samouczka (null – koniec samouczka)
+		task(t) {
+			if (!t || !t.text) { $('task').classList.add('hidden'); return; }
+			$('task-n').textContent = t.of ? `krok ${t.n} z ${t.of}` : '';
+			$('task-text').textContent = t.text;
+			$('task').classList.remove('hidden');
 		}
 
 		// chowa komunikat o stanie, który przestał obowiązywać (np. czuwak potwierdzony spacją)
@@ -181,6 +254,24 @@
 			this.drawSpeedo(kmh, sim.limit);
 
 			for (const { n, el } of this.leverEls) el.classList.toggle('active', n === sim.lever);
+			// napęd wg serii: pozycja, prąd silników, oporniki (oporowy) / obroty (spalinowy)
+			if (sim.drive) {
+				const d = sim.drive;
+				this.set('d-pos', sim.leverName());
+				this.set('d-pos', P.driveEcon(d, sim.lever) && sim.lever > 0 ? 'econ' : '', 'className');
+				this.setStyle('d-cur', 'width', Math.round(Math.min(1, d.I / 1.5) * 100) + '%');
+				this.set('d-cur', d.I > 1.15 ? 'over' : '', 'className');
+				this.setStyle('d-heat', 'width', Math.round(Math.min(1, d.kind === 'resistor' ? d.heat : d.kind === 'diesel' ? d.rpm : 0) * 100) + '%');
+				this.set('d-info', d.kind === 'resistor' ? (P.driveEcon(d, sim.lever) ? 'pozycja ekonomiczna' : 'na oporach') : d.kind === 'diesel' ? 'obroty silnika' : 'falownik');
+			}
+			// hamulec zespolony: pozycja zaworu maszynisty, ciśnienie w przewodzie głównym i w cylindrze
+			if (sim.air) {
+				const a = sim.air;
+				for (const el of this.valveEls) el.classList.toggle('active', el.dataset.v === a.valve);
+				this.set('v-pg', a.pg.toFixed(1));
+				this.set('v-cyl', Math.max(a.cyl[0], a.loco || 0).toFixed(1));
+				this.set('v-pg', 'num' + (a.pg < 4.0 ? ' low' : ''), 'className');
+			}
 			$('eff-trac').style.width = Math.round(st.traction * 100) + '%';
 			$('eff-brake').style.width = Math.round(st.brake * 100) + '%';
 
@@ -204,7 +295,7 @@
 					const dep = sim.plannedDep(ni);
 					this.set('i-station-label', s.terminus ? 'Stacja końcowa' : 'Postój');
 					this.set('i-station', s.name);
-					this.set('i-station-sub', s.terminus ? `${sim.ss[ni].waiting} pasażerów wysiada` : dep != null ? `odjazd ${fmtClock(route.startClock + dep)}` : 'odjazd po wymianie pasażerów');
+					this.set('i-station-sub', s.terminus ? (sim.pax.cap ? `${sim.ss[ni].alight} podróżnych wysiada` : 'koniec jazdy') : dep != null ? `odjazd ${fmtClock(route.startClock + dep)}` : 'odjazd po wymianie pasażerów');
 				} else {
 					const arr = sim.plannedArr(ni);
 					const dist = s.pos - front;
@@ -215,6 +306,13 @@
 				}
 			}
 
+			// pasażerowie: w pociągu / pojemność, na postoju – wymiana
+			const px = sim.pax;
+			if (px.cap) {
+				const q = sim.ss[ni], here = atStation && q && !s.terminus;
+				this.set('i-pax', here ? `wsiada ${q.board} · wysiada ${q.alight} · jedzie ${px.load}` : `w pociągu ${px.load} / ${px.cap} (${Math.round((px.load / px.cap) * 100)} %)`);
+			} else this.set('i-pax', '');
+
 			this.updateTimeline(sim, ni);
 
 			// ograniczenie: bieżące, następna zmiana (tarcza z odległością), przekroczenie, chwila na hamowanie
@@ -222,7 +320,7 @@
 			const over = kmh > sim.limit + 3;
 			this.set('i-limit', String(sim.limit));
 			this.set('i-limit-disc', 'limit-disc' + (over ? ' over' : ''), 'className');
-			const nl = R.nextLimitChange(route, front);
+			const nl = sim.nextLimitChange(front); // z ograniczeniami doraźnymi (scenariusz)
 			let limSub = '', limCls = '';
 			if (nl && nl.pos - front < 4000) {
 				const d = nl.pos - front, down = nl.speed < sim.limit;
@@ -245,15 +343,17 @@
 			const sig = sim.nextSignal();
 			if (sig) {
 				const d = sig.pos - front;
-				const brake = P.brakingEstimate(st.v, decel);
+				const brake = P.brakingEstimate(st.v, decel, sim.brakeLag());
 				const alarm = sig.aspect === 'red' && st.v > 0.5 && brake * 1.1 + 25 > d;
-				this.set('sig-box', `sig-box ${sig.aspect}${alarm ? ' alarm' : ''}`, 'className');
-				this.set('i-signal-lamp', 'sig-head ' + sig.aspect, 'className');
-				this.set('i-signal', { red: 'STÓJ', yellow: 'OSTROŻNIE', green: 'WOLNA' }[sig.aspect]);
+				this.set('sig-box', `sig-box ${sig.aspect}${window.TrainSim.SIGNALS[sig.code].own ? ' lim' : ''}${alarm ? ' alarm' : ''}`, 'className');
+				// głowica jak semafor (Ie-1): górne światło, miganie, dolne pomarańczowe, pas; napis – prędkość przy semaforze
+				const S = SIGNALS[sig.code], tx = signalText(sig.code);
+				this.set('i-signal-lamp', `sig-head ${{ red: 'r', yellow: 'y', green: 'g' }[S.top]}${S.flash ? ' f' : ''}${S.low ? ' y2' : ''}${S.pas ? ' p' + S.pas[0] : ''}${S.white ? ' w' : ''}`, 'className');
+				this.set('i-signal', tx.title);
 				this.set('i-signal-dist', fmtDist(d));
 				this.set('i-signal-sub', sig.type === 'starter' ? `odjazdowy ${sig.label || 'O' + (sig.station + 1)}` : `${{ entry: 'wjazdowy', intermediate: 'drogowskazowy' }[sig.kind] || 'odstępowy'} ${sig.label || ''}`.trim());
 				this.setStyle('i-signal-bar', 'width', Math.round(Math.max(0, Math.min(1, 1 - d / 1500)) * 100) + '%');
-				this.set('i-signal-hint', alarm ? 'HAMUJ!' : { red: 'zatrzymaj się przed nim', yellow: 'następny: STÓJ', green: 'droga wolna' }[sig.aspect]);
+				this.set('i-signal-hint', alarm ? 'HAMUJ!' : sig.permit === 'S' ? 'rozkaz „S” – jazda ostrożna do 20 km/h' : sig.fault && !sig.permit ? 'S1 · uszkodzony? – zatrzymaj się, czekaj na dyżurnego' : `${sig.code} · ${tx.next}`);
 			} else {
 				this.set('sig-box', 'sig-box', 'className');
 				this.set('i-signal-lamp', 'sig-head', 'className');
@@ -269,6 +369,11 @@
 			this.set('i-grade', g === 0 ? 'poziomo' : `${g > 0 ? '+' : ''}${g} ‰`);
 			this.setStyle('i-grade-ico', 'transform', `rotate(${-Math.max(-30, Math.min(30, g * 2.5))}deg)`);
 			this.set('i-accel', `a = ${st.a >= 0 ? '+' : ''}${st.a.toFixed(2)} m/s²`);
+			// kilometraż: położenie czoła pociągu od początku trasy (jak w swobodnej kamerze), długość i reszta do końca
+			const km = (m) => (m / 1000).toFixed(1).replace('.', ',');
+			const last = route.stations[route.stations.length - 1].pos;
+			this.set('i-km', 'km ' + (Math.max(0, front) / 1000).toFixed(3).replace('.', ','));
+			this.set('i-km-sub', `zostało ${km(Math.max(0, last - front))} z ${km(last)} km`);
 
 			this.set('i-score', String(sim.score()));
 			this.set('i-score-sub', `maks. ${sim.maxScore()}`);
@@ -277,6 +382,9 @@
 			const ca = $('l-ca');
 			ca.className = 'ind' + (sim.ca.alarm ? ' on-red blink' : sim.opts.czuwak && st.v > 0.5 && sim.ca.t > 50 ? ' on' : '');
 			$('l-doors').className = 'ind' + (sim.doorsOpen ? ' on' : '');
+			$('l-slip').className = 'ind' + (sim.slip || sim.lock.t > 0 ? ' on-red blink' : '');
+			$('l-sand').className = 'ind' + (sim.sand.t > 0 ? ' on' : '');
+			$('l-shp').className = 'ind' + (sim.shp.alarm ? ' on-red blink' : '') + (sim.opts.shp ? '' : ' hidden');
 			$('l-brake').className = 'ind' + (st.emergency && st.brake > 0.05 ? ' on-red' : st.brake > 0.05 ? ' on' : '');
 			this.set('l-time', '×' + timeScale);
 
@@ -286,6 +394,8 @@
 				this.prompt.classList.remove('hidden');
 				this.prompt.style.bottom = this.height() + 12 + 'px';
 			} else this.prompt.classList.add('hidden');
+			// zadanie samouczka nad podpowiedzią
+			$('task').style.bottom = this.height() + 60 + 'px';
 		}
 
 		drawSpeedo(kmh, limit) {

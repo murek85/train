@@ -3134,6 +3134,24 @@
 			for (const ws of this.wheelsets) ws.rotation.x = (-dir * frontS) / (ws.userData.r || WHEEL_R);
 		}
 
+		/* Pociąg tła / wagony na bocznicy: scalenie części każdego wagonu (bez animacji drzwi, pantografów, wycieraczek) –
+		   osobno zostają zestawy kołowe (obracają się – scalone wewnątrz) i poziomy szczegółów (LOD – scalone wewnątrz
+		   każdego poziomu). Tylko dla pociągów innych niż pociąg gracza. */
+		compact() {
+			if (this.player || this.compacted) return 0;
+			this.compacted = true;
+			const wheels = new Set(this.wheelsets);
+			let n = 0;
+			for (const car of this.cars) {
+				n += NS.util.mergeMeshes(car.group, (o) => wheels.has(o) || o.isLOD);
+				// wnętrza poziomów szczegółów (przełączane całe) – osobno
+				car.group.traverse((o) => { if (o.isLOD) for (const l of o.levels) n += NS.util.mergeMeshes(l.object); });
+			}
+			// zestawy kołowe obracają się w całości – części każdego scalone
+			for (const ws of this.wheelsets) n += NS.util.mergeMeshes(ws);
+			return n;
+		}
+
 		// pociąg obok: tylko położenie i światła
 		updateOther(route, frontS, dir, d, dark, yOff) {
 			this.place(route, frontS, dir, d, yOff);

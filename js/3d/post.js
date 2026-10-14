@@ -384,6 +384,11 @@ function createPost3D(THREE, renderer) {
 		get samples() {
 			return samples;
 		},
+		// bufor sceny (kompilacja shaderów z góry musi znać docelowy bufor – od niego zależy wariant programu)
+		get target() {
+			if (!sceneTarget) build();
+			return sceneTarget;
+		},
 		setSize(w, h, msaa = samples) {
 			w = Math.max(1, Math.round(w));
 			h = Math.max(1, Math.round(h));

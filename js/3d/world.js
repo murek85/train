@@ -15,7 +15,7 @@
 		const side = [3.4, 4.6, 5.6, 6.4, 7.2, 8.4, 10, 12.5, 15.5, 19, 23, 28, 34, 41, 49, 58, 68, 80, 94, 110, 130, 155, 185, 220, 260, 310, 370, 440, 520, 600];
 		return [...side.map((d) => -d).reverse(), 0, ...side];
 	})();
-	const ASPECT_COLOR = { green: 0x34d058, yellow: 0xffb020, red: 0xff3b30 };
+	const ASPECT_COLOR = { green: 0x34d058, yellow: 0xffb020, red: 0xff3b30, yellow2: 0xffb020, white: 0xf2f2ff };
 	const SKIN = ['#f1c9a5', '#e2b48f', '#c58c66', '#8d5a3b', '#f5d5b8'];
 	const PEOPLE = [0xc0392b, 0x2e86c1, 0x27ae60, 0x8e44ad, 0xd35400, 0x34495e, 0xe67e22, 0x16a085, 0xf1c40f];
 	const HOUSE_WALLS = ['#e8dcc4', '#d9b99b', '#c9d3d9', '#efe6b8', '#f2f0ea', '#cfb7a3'];
@@ -274,6 +274,7 @@
 			disposeTree(ch.group);
 			for (const d of ch.dyn) {
 				if (d.ownMat) d.ownMat.dispose();
+				if (d.tex) d.tex.dispose();
 				if (d.model) d.model.dispose();
 				if (d.zone) this.zones = this.zones.filter((z) => z !== d.zone);
 			}
@@ -822,6 +823,7 @@
 				}
 			});
 			sleepers.receiveShadow = clips.receiveShadow = true;
+			sleepers.userData.fine = clips.userData.fine = true;
 			group.add(sleepers, clips);
 			yield;
 
@@ -854,7 +856,206 @@
 			r.tunnels.forEach((t) => { if (inRange((t.from + t.to) / 2)) this.buildTunnel(group, dyn, t); });
 
 			if (this.haloSize) group.traverse((o) => { if (o.userData.lampHalo) o.scale.set(this.haloSize, this.haloSize, 1); });
+			yield;
+			yield* this.mergeStatic(group, dyn);
 			this.scene.add(group);
+		}
+
+		/* Scalanie nieruchomych siatek kawałka: siatki o tym samym materiale (i tych samych atrybutach, cieniach) łączone
+		   w jedną bryłę w układzie kawałka – jedno wywołanie rysowania zamiast setek (stacja: ok. 700 siatek → kilkadziesiąt).
+		   Pomijane: wszystko, do czego sięga dyn (lampy, zegary, auta, semafory, pasażerowie, wagony – z potomkami; stacja –
+		   bez grupy g, używanej tylko jako układ współrzędnych), instancje, sprite'y, materiały przezroczyste, siatki
+		   z userData lamp (power, drop, lampHalo, dark), renderOrder i LOD (grupy geometrii, np. ścian BoxGeometry, przy jednym
+		   materiale bez znaczenia – pomijane). Pozostałe obiekty nieruchome –
+		   bez przeliczania macierzy co klatkę (matrixAutoUpdate = false). */
+		*mergeStatic(group, dyn) {
+			if (World.opt.merge === false) { group.userData.lod = { trees: [], fine: [], casters: [] }; return; } // diagnostyka: bez scalania
+			const prot = new Set(), seen = new Set([group]);
+			const walk = (v, depth) => {
+				if (!v || typeof v !== 'object' || seen.has(v) || depth > 6) return;
+				seen.add(v);
+				if (v.isScene || v.isMaterial || v.isBufferGeometry || v.isTexture) return;
+				if (v.isObject3D) { v.traverse((o) => prot.add(o)); return; }
+				if (Array.isArray(v)) { for (const x of v) walk(x, depth + 1); return; }
+				if (ArrayBuffer.isView(v)) return;
+				for (const k in v) walk(v[k], depth + 1);
+			};
+			for (const d of dyn) for (const k in d) if (!(d.type === 'station' && k === 'g')) walk(d[k], 1);
+			const LAMP = ['power', 'drop', 'lampHalo', 'dark'];
+			group.updateMatrixWorld(true);
+			const inv = new T.Matrix4().copy(group.matrixWorld).invert();
+			const batches = new Map();
+			const movable = (o) => {
+				for (let p = o; p && p !== group; p = p.parent) if (p.isLOD || !p.visible) return true;
+				return false;
+			};
+			/* pozycja do scalenia: bryła g w układzie kawałka (macierz mw), col – kolor egzemplarza (mnoży kolory wierzchołków).
+			   Materiał zwykły (mat()/matS(): stały kolor, bez tekstury, nieprzezroczysty) – zastąpiony wspólnym z kolorem
+			   w wierzchołkach (vcMat): jedno wywołanie rysowania na rodzaj powierzchni zamiast na kolor; brakujący atrybut
+			   color – z koloru materiału */
+			const add = (o, g, mw, col) => {
+				let m = o.material;
+				const plain = m.userData.plain && m.isMeshStandardMaterial && !m.map && !m.vertexColors && !m.transparent && m.emissive.r + m.emissive.g + m.emissive.b === 0;
+				if (plain) {
+					const c = m.color.clone();
+					if (col) c.multiply(col);
+					col = c;
+					m = NS.util.vcMat(m);
+				}
+				const attrs = Object.keys(g.attributes);
+				if (plain && !attrs.includes('color')) attrs.push('color');
+				attrs.sort();
+				const sig = attrs.map((k) => { const at = g.attributes[k]; return at ? `${k}${at.itemSize}${at.normalized ? 'n' : ''}${at.array.constructor.name}${at.isInterleavedBufferAttribute ? 'i' : ''}` : `${k}3Float32Array`; }).join(',');
+				if (sig.includes('i,') || sig.endsWith('i')) return false;
+				const key = `${m.uuid}|${o.castShadow ? 1 : 0}${o.receiveShadow ? 1 : 0}|${sig}`;
+				let bt = batches.get(key);
+				if (!bt) batches.set(key, (bt = { m, attrs, list: [], cast: o.castShadow, recv: o.receiveShadow, own: false, vc: !!m.userData.vc }));
+				bt.list.push({ o, g, mw, col, plain });
+				if (o.userData.ownMaterial) bt.own = true;
+				return true;
+			};
+			const baked = new Set(), IM = new T.Matrix4(), IC = new T.Color();
+			group.traverse((o) => {
+				if (!o.isMesh || o.isSkinnedMesh || prot.has(o) || !o.visible) return;
+				const m = o.material, g = o.geometry;
+				if (Array.isArray(m) || m.transparent || o.renderOrder || !o.frustumCulled || o.customDepthMaterial || o.customDistanceMaterial) return;
+				if (g.morphAttributes.position || g.drawRange.count !== Infinity || !g.attributes.position || !g.attributes.normal) return;
+				if (LAMP.some((k) => o.userData[k] !== undefined) || movable(o)) return;
+				const mw = new T.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+				if (!o.isInstancedMesh) { add(o, g, mw, null); return; }
+				/* instancje z niewielu egzemplarzy (latarnie, słupki, znaki, wsporniki…) – wtopione w bryłę kawałka; bez koron
+				   (poziom szczegółów), drobnych detali (z daleka znikają) i materiałów z kołysaniem (faza z położenia egzemplarza);
+				   kolor egzemplarza tylko przy kolorach wierzchołków */
+				if (o.count > 64 || !o.count || o.userData.lo || o.userData.fine || /wind|grass/.test(m.customProgramCacheKey ? m.customProgramCacheKey() : '')) return;
+				if (o.instanceColor && !(g.attributes.color && m.vertexColors)) return;
+				let ok = true;
+				for (let i = 0; i < o.count && ok; i++) {
+					o.getMatrixAt(i, IM);
+					let col = null;
+					if (o.instanceColor) { o.getColorAt(i, IC); col = IC.clone(); }
+					ok = add(o, g, new T.Matrix4().multiplyMatrices(mw, IM), col);
+				}
+				if (ok) baked.add(o);
+			});
+			yield;
+			const N3 = new T.Matrix3(), v = new T.Vector3();
+			let n = 0;
+			for (const bt of batches.values()) {
+				// pojedyncza zwykła siatka – bez zmian (chyba że do wspólnego materiału z kolorem w wierzchołkach);
+				// pojedyncza instancja (jeden egzemplarz) – też wtapiana
+				if (bt.list.length < 2 && !bt.list[0].o.isInstancedMesh && !bt.vc) continue;
+				let nv = 0, ni = 0;
+				for (const { g } of bt.list) {
+					nv += g.attributes.position.count;
+					ni += g.index ? g.index.count : g.attributes.position.count;
+				}
+				const out = {}, proto = {};
+				for (const k of bt.attrs) {
+					const src = bt.list.find((x) => x.g.attributes[k]);
+					const at = src ? src.g.attributes[k] : null;
+					proto[k] = at ? { C: at.array.constructor, size: at.itemSize, norm: at.normalized } : { C: Float32Array, size: 3, norm: false };
+					out[k] = new proto[k].C(nv * proto[k].size);
+				}
+				const index = new (nv > 65535 ? Uint32Array : Uint16Array)(ni);
+				let vo = 0, io = 0;
+				for (const { o, g, mw, col, plain } of bt.list) {
+					const cnt = g.attributes.position.count;
+					N3.getNormalMatrix(mw);
+					const flip = mw.determinant() < 0;
+					for (const k of bt.attrs) {
+						const at = g.attributes[k], dst = out[k], sz = proto[k].size;
+						if (!at || (k === 'color' && plain)) {
+							// kolor z materiału (wspólny materiał z kolorem w wierzchołkach; kolory bryły materiał pomijał)
+							for (let i = 0; i < cnt; i++) { dst[(vo + i) * 3] = col.r; dst[(vo + i) * 3 + 1] = col.g; dst[(vo + i) * 3 + 2] = col.b; }
+							continue;
+						}
+						if (k === 'position' || k === 'normal') {
+							for (let i = 0; i < cnt; i++) {
+								v.set(at.getX(i), at.getY(i), at.getZ(i));
+								if (k === 'position') v.applyMatrix4(mw); else v.applyMatrix3(N3).normalize();
+								dst[(vo + i) * 3] = v.x; dst[(vo + i) * 3 + 1] = v.y; dst[(vo + i) * 3 + 2] = v.z;
+							}
+						} else if (k === 'color' && col) {
+							for (let i = 0; i < cnt; i++) {
+								dst[(vo + i) * sz] = at.getX(i) * col.r;
+								dst[(vo + i) * sz + 1] = at.getY(i) * col.g;
+								dst[(vo + i) * sz + 2] = at.getZ(i) * col.b;
+								if (sz === 4) dst[(vo + i) * sz + 3] = at.getW(i);
+							}
+						} else dst.set(at.array.subarray(0, cnt * sz), vo * sz);
+					}
+					const src = g.index ? g.index.array : null, tri = src ? g.index.count : cnt;
+					for (let i = 0; i < tri; i += 3) {
+						const a0 = src ? src[i] : i, a1 = src ? src[i + 1] : i + 1, a2 = src ? src[i + 2] : i + 2;
+						index[io++] = vo + a0;
+						index[io++] = vo + (flip ? a2 : a1);
+						index[io++] = vo + (flip ? a1 : a2);
+					}
+					vo += cnt;
+					if (o.parent) {
+						o.parent.remove(o);
+						if (o.isInstancedMesh) o.dispose();
+						if (!g.userData.shared) g.dispose();
+					}
+				}
+				const geo = new T.BufferGeometry();
+				for (const k of bt.attrs) geo.setAttribute(k, new T.BufferAttribute(out[k], proto[k].size, proto[k].norm));
+				geo.setIndex(new T.BufferAttribute(index, 1));
+				geo.computeBoundingBox();
+				geo.computeBoundingSphere();
+				const mesh = new T.Mesh(geo, bt.m);
+				mesh.castShadow = bt.cast;
+				mesh.receiveShadow = bt.recv;
+				if (bt.own) mesh.userData.ownMaterial = true;
+				group.add(mesh);
+				if (++n % 8 === 0) yield;
+			}
+			// puste grupy po scaleniu – usunięte; reszta nieruchoma (bez przeliczania macierzy co klatkę)
+			const empty = [];
+			group.traverse((o) => { if (o !== group && !o.isMesh && !o.isSprite && !o.isLight && !o.isPoints && !o.isLine && !prot.has(o) && !o.children.length) empty.push(o); });
+			for (const o of empty) o.parent.remove(o);
+			group.updateMatrixWorld(true);
+			group.traverse((o) => { if (o !== group && !prot.has(o) && !LAMP.some((k) => o.userData[k] !== undefined)) o.matrixAutoUpdate = false; });
+			/* poziomy szczegółów kawałka (World.update): trees – korony z bryłą dokładną i uproszczoną; fine – drobne instancje
+			   (userData.fine: podkłady, przytwierdzenia, trawa, kwiaty, trzciny), z daleka niewidoczne */
+			const lod = { trees: [], fine: [], casters: [] };
+			group.traverse((o) => {
+				if (o.isMesh && o.castShadow && !prot.has(o)) lod.casters.push(o);
+				if (!o.isInstancedMesh || prot.has(o)) return;
+				if (o.userData.lo) lod.trees.push(o);
+				else if (o.userData.fine) { lod.fine.push(o); o.castShadow = false; } // drobiazgi bez cienia
+			});
+			lod.casters = lod.casters.filter((o) => o.castShadow);
+			group.userData.lod = lod;
+		}
+
+		/* Poziom szczegółów kawałków wg odległości kamery od kawałka wzdłuż toru (s – kilometraż kamery): korony bliżej niż
+		   TREE_NEAR – bryła dokładna, dalej uproszczona; drobne instancje dalej niż FINE_FAR – niewidoczne (ułamek piksela). */
+		updateLod(s) {
+			if (World.opt.lod === false) return;
+			const R = Math.max(0.6, (this.detail || 1) * (this.detailDyn || 1));
+			const far = 230 * Math.max(1, this.density) * R, near = 170 * R, shadowFar = 450 * R;
+			for (const [c, ch] of this.chunks) {
+				const L = ch.group.userData.lod;
+				if (!L) continue;
+				const d = Math.max(0, c * C - s, s - (c + 1) * C);
+				const hi = d < near;
+				if (L.hi !== hi) {
+					L.hi = hi;
+					for (const m of L.trees) m.geometry = hi ? m.userData.hi : m.userData.lo;
+				}
+				const show = d < far;
+				if (L.show !== show) {
+					L.show = show;
+					for (const m of L.fine) m.visible = show;
+				}
+				// cienie: kawałki dalej niż shadowFar nie rzucają cienia (najdalsza kaskada – mniej brył do rysowania)
+				const cast = d < shadowFar;
+				if (L.cast !== cast) {
+					L.cast = cast;
+					for (const m of L.casters) m.castShadow = cast;
+				}
+			}
 		}
 
 		buildCatenary(group, s0, s1) {
@@ -959,7 +1160,13 @@
 			const poplars = inst(G.poplar, M.leaf, N);
 			const pines = inst(G.pine, M.leaf, N);
 			const bushes = inst(G.bush, M.bush, Math.round(110 * dens));
-			const blobs = inst(G.oak, M.leaf, Math.round((this.env ? 160 : 70) * dens));
+			// zwarte masy lasu (150–520 m od toru) – zawsze z bryły z daleka
+			const blobs = inst(World.opt.lod === false ? G.oak : G.lo.oak, M.leaf, Math.round((this.env ? 160 : 70) * dens));
+			// korony: bliżej kamery dokładna bryła, dalej uproszczona (World.update – przełączanie całych kawałków)
+			for (const [m, k] of [[spruces, 'spruce'], [oaks, 'oak'], [birches, 'birch'], [poplars, 'poplar'], [pines, 'pine'], [bushes, 'bush']]) {
+				m.userData.hi = G[k];
+				m.userData.lo = G.lo[k];
+			}
 			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
 			const put = (m, x, y, z, sx, sy, sz, color) => {
 				if (m.count >= m.instanceMatrix.count) return;
@@ -1091,6 +1298,7 @@
 			const tufts = new T.InstancedMesh(G.geo, M.grass, N);
 			const flowers = new T.InstancedMesh(G.flower, M.flower, Math.round(N * 0.08));
 			tufts.count = flowers.count = 0;
+			tufts.userData.fine = flowers.userData.fine = true;
 			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
 			const FL = [[1, 1, 1], [1, 0.85, 0.2], [0.75, 0.45, 0.95], [0.95, 0.3, 0.3], [0.45, 0.6, 1]];
 			for (let i = 0; i < N; i++) {
@@ -1305,6 +1513,13 @@
 					const ms = mount(shZ + shL * 0.3, sxAt);
 					if (ms && (!mc || Math.abs(ms.z - mc.z) > 3)) this.hangSign(g, this.platformTexture(P.sgn > 0 ? 1 : 2), 0.6, 0.42, sxAt(ms.z), 3.15, ms.z, ms.top);
 					else if (!ms) { post(sxAt(shZ + shL * 0.3), shZ + shL * 0.3, 2.94); this.hangSign(g, this.platformTexture(P.sgn > 0 ? 1 : 2), 0.6, 0.42, sxAt(shZ + shL * 0.3), 3.15, shZ + shL * 0.3, 3.37); }
+					// tablica odjazdów (elektroniczna, dwustronna): po drugiej stronie zegara
+					// (pod dachem z mapy – najbliższe miejsce co najmniej 3,5 m od zegara i tablicy peronowej; bez dachu – na słupie)
+					const bz = shZ - shL * 0.3, taken = [mc, ms].filter(Boolean).map((x) => x.z);
+					const free = (m) => m && taken.every((z) => Math.abs(m.z - z) > 3.5);
+					const mb = [bz, mc && mc.z - 4.5, mc && mc.z + 4.5, bz - 6].filter((z) => typeof z === 'number').map((z) => mount(z, sxAt)).find(free);
+					if (mb) dyn.push(this.departureBoard(g, st.index, sxAt(mb.z), 2.95, mb.z, mb.top));
+					else { post(sxAt(bz), bz, 2.58); dyn.push(this.departureBoard(g, st.index, sxAt(bz), 2.95, bz, 3.4)); }
 				}
 				// tablice z nazwą
 				const nz = [-len * 0.38, len * 0.38], tz = [];
@@ -1482,6 +1697,7 @@
 			// wagony na bocznicy
 			const wagons = new NS.TrainModel(this.scene, NS.TrainModel.OTHER.wagons, { player: false, shadows: this.shadows, seed: st.pos });
 			wagons.place(this.route, sEnd - 6, 1, -15);
+			wagons.compact();
 			dyn.push({ type: 'model', model: wagons });
 		}
 
@@ -1505,6 +1721,7 @@
 				sleepers.setMatrixAt(k, m4);
 			}
 			sleepers.receiveShadow = true;
+			sleepers.userData.fine = true;
 			group.add(sleepers);
 		}
 
@@ -1802,6 +2019,65 @@
 			// wysięgnika; dawniej przed i za tablicą – obok wysięgnika, w powietrzu)
 			const top = hangTo || y + h / 2 + 0.25, hl = top - (y + h / 2);
 			for (const dx of [-w * 0.35, w * 0.35]) g.add(box(0.025, hl, 0.025, frame, x + dx, y + h / 2 + hl / 2, z));
+		}
+
+		/* Tablica odjazdów: obraz z płótna (odświeżany w updateDyn, gdy pociąg jest blisko stacji – sim.departures),
+		   w ramie, zawieszona jak tablice peronowe (w poprzek peronu, czytelna wzdłuż niego) */
+		departureBoard(g, index, x, y, z, hangTo) {
+			const w = 1.7, h = 0.74;
+			const cv = document.createElement('canvas');
+			cv.width = 512;
+			cv.height = 224;
+			const tex = new T.CanvasTexture(cv);
+			tex.colorSpace = T.SRGBColorSpace;
+			tex.anisotropy = 4;
+			const m = NS.util.patch(new T.MeshStandardMaterial({ map: tex, roughness: 0.35, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.55 }), 'lit');
+			if (!World.boardGeo) { World.boardGeo = new T.PlaneGeometry(1, 1); World.boardGeo.userData.shared = true; }
+			const frame = matS('#2b3036', { roughness: 0.45, metalness: 0.5 });
+			g.add(box(0.1, h + 0.1, w + 0.1, frame, x, y, z).rotateY(Math.PI / 2));
+			const faces = [];
+			for (const side of [1, -1]) {
+				const p = new T.Mesh(World.boardGeo, m);
+				p.scale.set(w, h, 1);
+				p.rotation.y = side > 0 ? 0 : Math.PI;
+				p.position.set(x, y, z + side * 0.055);
+				g.add(p);
+				faces.push(p);
+			}
+			const top = hangTo || y + h / 2 + 0.25, hl = top - (y + h / 2);
+			for (const dx of [-w * 0.38, w * 0.38]) g.add(box(0.03, hl, 0.03, frame, x + dx, y + h / 2 + hl / 2, z));
+			return { type: 'board', index, faces, cv, tex, ownMat: m, next: 0 };
+		}
+		drawBoard(d, sim) {
+			const c = d.cv.getContext('2d'), W = d.cv.width, H = d.cv.height;
+			const hm = (t) => { const s = (((Math.floor(sim.route.startClock + t) % 86400) + 86400) % 86400); return String(Math.floor(s / 3600)).padStart(2, '0') + ':' + String(Math.floor((s % 3600) / 60)).padStart(2, '0'); };
+			c.fillStyle = '#0a1830';
+			c.fillRect(0, 0, W, H);
+			c.fillStyle = '#e9eef5';
+			c.font = 'bold 26px system-ui, sans-serif';
+			c.textBaseline = 'middle';
+			c.fillText('ODJAZDY', 16, 22);
+			c.textAlign = 'right';
+			c.fillText(hm(sim.time), W - 16, 22);
+			c.textAlign = 'left';
+			c.fillStyle = '#2d4a74';
+			c.fillRect(0, 42, W, 2);
+			const rows = sim.departures ? sim.departures(d.index, 4) : [];
+			c.font = '600 23px system-ui, sans-serif';
+			if (!rows.length) { c.fillStyle = '#8ea3bf'; c.fillText('brak odjazdów w ciągu 2 godzin', 16, 80); }
+			rows.forEach((r, k) => {
+				const yy = 70 + k * 42, late = Math.round((r.time - r.plan) / 60);
+				c.fillStyle = '#ffd25a';
+				c.fillText(hm(r.plan), 16, yy);
+				c.fillStyle = '#e9eef5';
+				let dest = r.dest;
+				while (c.measureText(dest).width > 250 && dest.length > 4) dest = dest.slice(0, -2) + '…';
+				c.fillText(dest, 96, yy);
+				c.fillStyle = '#8ea3bf';
+				c.fillText('tor ' + r.track, 362, yy);
+				if (late >= 2) { c.fillStyle = '#ff8a5a'; c.textAlign = 'right'; c.fillText('+' + late + ' min', W - 12, yy); c.textAlign = 'left'; }
+			});
+			d.tex.needsUpdate = true;
 		}
 
 		platformTexture(n) {
@@ -2543,16 +2819,47 @@
 			plate.scale.set(0.7, 0.16, 1);
 			plate.position.set(spot.gantry ? 1.6 : 0, spot.gantry ? hy - 1.25 : 2.6, 0.11);
 			g.add(plate);
-			// poświata przy świecącej lampie (położenie ustawiane przy zmianie sygnału)
+			/* pas świetlny pod głowicą (Ie-1: zielony – 100 km/h, pomarańczowy – 60 km/h przy semaforze): poziomy świecący
+			   pas w czarnej skrzynce z białą obwódką */
+			head.add(box(1.02, 0.3, 0.3, white, 0, -1.78, -0.12));
+			head.add(box(0.94, 0.22, 0.32, black, 0, -1.78, -0.11));
+			const pas = new T.Mesh(GEO.box, new T.MeshBasicMaterial({ color: 0x2a2a2a }));
+			pas.userData.ownMaterial = true;
+			pas.scale.set(0.78, 0.08, 0.02);
+			pas.position.set(0, -1.78, 0.06);
+			head.add(pas);
+			// poświaty przy świecących lampach: górnej (albo czerwonej) i dolnej pomarańczowej (położenie ustawiane przy zmianie)
 			const glow = sprite(glowTexture(), 2.2, 2.2, { additive: true, fog: false });
 			glow.position.set(0, 0, 0.5);
 			head.add(glow);
+			const glow2 = sprite(glowTexture(), 2.2, 2.2, { additive: true, fog: false });
+			glow2.position.set(0, lamps[3].position.y, 0.5);
+			head.add(glow2);
 			g.traverse((o) => { if (o.isMesh) { o.castShadow = this.shadows; o.receiveShadow = true; } });
-			dyn.push({ type: 'signal', index: idx, lamps, glow, aspect: null });
+			dyn.push({ type: 'signal', index: idx, lamps, glow, glow2, pas, key: null });
 			group.add(g);
 		}
 
 		// tablica przy torze na słupku, przodem do nadjeżdżającego pociągu; shape: 'sq' | 'tri'
+		/* Tablice ograniczeń doraźnych (scenariusz – sim.tempLimits): trójkątna zapowiedź 700 m przed odcinkiem, tarcza
+		   z prędkością na początku i tarcza z prędkością przywróconą za końcem odcinka. Stawiane w zbudowanych kawałkach
+		   (także po ich ponownej budowie – ch.temp: postawione tablice). */
+		syncTempBoards(sim) {
+			sim.tempLimits.forEach((t, k) => {
+				const after = R.limitAt(this.route, t.to + 1);
+				const boards = [[t.from - 700, 'tri', '#ff9f1c', t.speed], [t.from, 'sq', '#ffd23f', t.speed], [t.to + 5, 'sq', '#ffffff', after]];
+				boards.forEach(([pos, shape, col, v], j) => {
+					const ch = this.chunks.get(Math.floor(pos / C));
+					if (!ch || pos < 0) return;
+					const key = k * 3 + j;
+					if (!ch.temp) ch.temp = new Set();
+					if (ch.temp.has(key)) return;
+					ch.temp.add(key);
+					this.buildBoard(ch.group, pos, boardTexture(String(v), col, shape), shape);
+				});
+			});
+		}
+
 		buildBoard(group, s, tex, shape) {
 			// nie w miejscu słupa trakcyjnego (słupy co 60 m po tej samej stronie toru) – przesunięcie przed słup
 			if (this.route.electrified) {
@@ -2906,6 +3213,7 @@
 				reeds.setMatrixAt(n++, m4);
 			}
 			reeds.count = n;
+			reeds.userData.fine = true;
 			g.add(reeds);
 			this.bendGroup(g, mid);
 			group.add(g);
@@ -2996,7 +3304,9 @@
 			// swobodna kamera: świat wokół kamery (streamS – jej kilometraż), w obie strony po równo
 			const free = this.streamS !== null && this.streamS !== undefined;
 			const front = free ? this.streamS : sim.st.pos;
-			const c0 = Math.floor((front - (free ? 900 : BEHIND)) / C), c1 = Math.floor((front + (free ? 900 : AHEAD)) / C);
+			// zasięg świata: jakość (detail) × dopasowanie w grze (detailDyn – spadek FPS); najmniej 60 %
+			const R = Math.max(0.6, (this.detail || 1) * (this.detailDyn || 1));
+			const c0 = Math.floor((front - (free ? 900 : BEHIND * Math.min(1, R))) / C), c1 = Math.floor((front + (free ? 900 : AHEAD * R)) / C);
 			for (const [c, ch] of this.chunks) {
 				if (c < c0 - 1 || c > c1 + 1) {
 					this.dropChunk(ch);
@@ -3057,6 +3367,8 @@
 				World.M.normals.offset.y = (this.time * 0.011) % 1;
 			}
 
+			this.updateLod(free ? this.streamS : this.toTrack(this.viewPos.x, this.viewPos.z, front).s);
+			if (sim.tempLimits && sim.tempLimits.length) this.syncTempBoards(sim);
 			const blink = Math.floor(this.time / 0.45) % 2;
 			for (const ch of this.chunks.values()) {
 				for (const d of ch.dyn) this.updateDyn(d, sim, dt, dark, blink);
@@ -3397,19 +3709,34 @@
 		updateDyn(d, sim, dt, dark, blink) {
 			const front = sim.st.pos;
 			if (d.type === 'signal') {
-				const aspect = sim.signals[d.index].aspect;
-				if (aspect !== d.aspect) {
-					d.aspect = aspect;
+				/* sygnał wg Ie-1 (sim.js SIGNALS): górna lampa (zielona / pomarańczowa, ciągła albo migająca ok. 1 raz na
+				   sekundę) albo czerwona, dolna pomarańczowa i pas – przy ograniczeniu prędkości przy semaforze */
+				const sig = sim.signals[d.index], S = TrainSimSignals()[sig.code];
+				const phase = Math.floor(this.time / 0.5) % 2 === 0;
+				const flashOn = !S.flash || phase, whiteOn = !!S.white && phase; // sygnał zastępczy – białe migające
+				const key = sig.code + (flashOn ? '' : '-') + (whiteOn ? 'w' : '');
+				if (key !== d.key) {
+					d.key = key;
+					const top = S.top === 'red' ? 2 : S.top === 'yellow' ? 1 : 0;
+					const lit = new Set();
+					if (flashOn) lit.add(top);
+					if (S.low) lit.add(3);
+					if (whiteOn) lit.add(4);
 					// kolory ponad 1.0 świecą w bloomie
-					const on = { green: 0, yellow: 1, red: 2 }[aspect];
 					d.lamps.forEach((l, k) => {
-						l.material.color.setHex(k === on ? ASPECT_COLOR[aspect] : l.userData.dark);
-						if (k === on) l.material.color.multiplyScalar(4);
+						const name = ['green', 'yellow', 'red', 'yellow2', 'white'][k];
+						l.material.color.setHex(lit.has(k) ? ASPECT_COLOR[name] : l.userData.dark);
+						if (lit.has(k)) l.material.color.multiplyScalar(4);
 					});
-					d.glow.material.color.setHex(ASPECT_COLOR[aspect]).multiplyScalar(1.6);
-					d.glow.position.y = d.lamps[on].position.y;
+					d.glow.visible = flashOn;
+					d.glow.material.color.setHex(ASPECT_COLOR[S.top]).multiplyScalar(1.6);
+					d.glow.position.y = d.lamps[top].position.y;
+					d.glow2.visible = S.low;
+					d.glow2.material.color.setHex(ASPECT_COLOR.yellow2).multiplyScalar(1.6);
+					d.pas.material.color.setHex(S.pas ? ASPECT_COLOR[S.pas] : 0x2a2a2a);
+					if (S.pas) d.pas.material.color.multiplyScalar(3);
 				}
-				d.glow.material.opacity = 0.55 + dark * 0.45;
+				d.glow.material.opacity = d.glow2.material.opacity = 0.55 + dark * 0.45;
 			} else if (d.type === 'station') {
 				for (const g of d.glows) {
 					g.material.opacity = dark > 0.15 ? Math.min(1, dark * 1.3) : 0;
@@ -3423,15 +3750,23 @@
 					h.hour.rotation.z = -(t / 12) * Math.PI * 2;
 					h.minute.rotation.z = -(t % 1) * Math.PI * 2;
 				}
+			} else if (d.type === 'board') {
+				// tablica odjazdów: co 5 s, gdy pociąg jest w pobliżu stacji
+				const sp = sim.route.stations[d.index];
+				if (this.time >= d.next && sp && Math.abs(front - sp.pos) < 1500) { d.next = this.time + 5; this.drawBoard(d, sim); }
 			} else if (d.type === 'herd') {
 				this.updateHerd(d, dt);
 			} else if (d.type === 'traffic' || d.type === 'walkers') {
 				this.updateStreet(d, dt);
 			} else if (d.type === 'crossing') {
 				const cr = d.cr;
-				// sygnalizacja: pociąg gracza albo pociąg z przeciwka (jedzie w stronę malejącego kilometrażu)
+				// sygnalizacja: pociąg gracza albo inny pociąg – z przeciwka (malejący kilometraż) albo pociąg tła w kierunku
+				// gracza (ruch na linii: otherTrains – wszystkie pociągi tła, także nierysowane)
 				const ot = this.otherTrain;
-				const active = (front > cr.pos - 800 && front - sim.L < cr.pos + 5) || (!!ot && ot.s < cr.pos + 800 && ot.s + ot.len > cr.pos - 5);
+				// pociąg tła stojący przed przejazdem (np. czeka na krzyżowanie) nie zamyka rogatek – tylko w ruchu albo na przejeździe
+				const on = (t) => (t.dir > 0 ? t.s > cr.pos - 5 && t.s - t.len < cr.pos + 5 : t.s < cr.pos + 5 && t.s + t.len > cr.pos - 5);
+				const near = (t) => (t.dir > 0 ? t.s > cr.pos - 800 && t.s - t.len < cr.pos + 5 : t.s < cr.pos + 800 && t.s + t.len > cr.pos - 5) && (t.v === undefined || t.v > 0.5 || on(t));
+				const active = (front > cr.pos - 800 && front - sim.L < cr.pos + 5) || (this.otherTrains ? this.otherTrains.some(near) : !!ot && near({ dir: -1, s: ot.s, len: ot.len }));
 				/* włączenie sygnalizacji: auto, które nie zdąży zatrzymać się przed linią (potrzebne opóźnienie ponad
 				   6 m/s²), przejeżdża (go) – reszta staje; wcześniej takie auto hamowało za linią i wpełzało na tory */
 				const rising = active && !d.was;
@@ -3521,6 +3856,12 @@
 		}
 	}
 
+	// tabela sygnałów z symulacji (sim.js ładowany przed światem w przeglądarce)
+	const TrainSimSignals = () => window.TrainSim.SIGNALS;
+
+	// przełączniki diagnostyczne (porównanie wydajności; localStorage „maszynista.perfOpt”, np. {"merge":false} – od uruchomienia)
+	World.opt = { merge: true, lod: true };
+	try { Object.assign(World.opt, JSON.parse(localStorage.getItem('maszynista.perfOpt') || '{}')); } catch (e) { /* brak dostępu do localStorage */ }
 	NS.World = World;
 	World.TERRAIN_D = TERRAIN_D; // kolumny siatki terenu (odsunięcia od osi), wiersze co 4 m
 })();

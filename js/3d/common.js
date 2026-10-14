@@ -564,7 +564,12 @@
 			delete ex.train;
 			delete ex.panels;
 			const variant = indoor ? 'indoor' : surf || (train !== undefined ? 'train' : 'lit');
-			mats.set(key, patch(new T.MeshStandardMaterial(Object.assign({ color, roughness: 0.86, metalness: 0, envMapIntensity: 0.35 }, ex)), variant, { grime: train, panels }));
+			const m = patch(new T.MeshStandardMaterial(Object.assign({ color, roughness: 0.86, metalness: 0, envMapIntensity: 0.35 }, ex)), variant, { grime: train, panels });
+			// plain – stały kolor, bez zmian w czasie gry: World.mergeStatic może go zastąpić wspólnym materiałem z kolorem
+			// w wierzchołkach (variant – wariant łatki shadera)
+			m.userData.plain = train === undefined;
+			m.userData.variant = variant;
+			mats.set(key, m);
 		}
 		return mats.get(key);
 	}
@@ -581,9 +586,24 @@
 			delete ex.surf;
 			delete ex.train;
 			delete ex.panels;
-			mats.set(key, patch(new T.MeshStandardMaterial(Object.assign({ color, roughness: 0.6, metalness: 0 }, ex)), variant, { grime: train, panels }));
+			const m = patch(new T.MeshStandardMaterial(Object.assign({ color, roughness: 0.6, metalness: 0 }, ex)), variant, { grime: train, panels });
+			m.userData.plain = train === undefined;
+			m.userData.variant = variant;
+			mats.set(key, m);
 		}
 		return mats.get(key);
+	}
+	/* Wspólny materiał z kolorem w wierzchołkach zamiast wielu różniących się tylko kolorem (scalanie świata): te same
+	   parametry powierzchni i wariant łatki; kolor – atrybut color bryły */
+	const vcMats = new Map();
+	function vcMat(m) {
+		const key = [m.userData.variant, m.roughness, m.metalness, m.flatShading ? 1 : 0, m.side, m.envMapIntensity].join('|');
+		if (!vcMats.has(key)) {
+			const v = patch(new T.MeshStandardMaterial({ color: '#ffffff', roughness: m.roughness, metalness: m.metalness, flatShading: m.flatShading, side: m.side, envMapIntensity: m.envMapIntensity, vertexColors: true }), m.userData.variant);
+			v.userData.vc = true;
+			vcMats.set(key, v);
+		}
+		return vcMats.get(key);
 	}
 	function shared(geo) {
 		geo.userData.shared = true;
@@ -654,6 +674,75 @@
 		return m;
 	}
 
+	/* Scalanie siatek grupy (root) wg materiału, cieni i zestawu atrybutów – w układzie root; keep(o) – obiekt (z potomkami)
+	   zostaje osobno (ruchome części). Pomijane: instancje, sprite'y, materiały przezroczyste i tablice materiałów,
+	   ukryte, renderOrder. Oryginały usuwane (własne bryły zwalniane). Zwraca liczbę usuniętych siatek. */
+	function mergeMeshes(root, keep) {
+		root.updateMatrixWorld(true);
+		const inv = new T.Matrix4().copy(root.matrixWorld).invert();
+		const groups = new Map(), skip = new Set();
+		root.traverse((o) => { if (o !== root && keep && keep(o)) o.traverse((x) => skip.add(x)); });
+		root.traverse((o) => {
+			if (o === root || !o.isMesh || o.isInstancedMesh || skip.has(o) || !o.visible || o.renderOrder) return;
+			for (let p = o.parent; p && p !== root; p = p.parent) if (!p.visible || p.isLOD) return;
+			const m = o.material, g = o.geometry;
+			if (Array.isArray(m) || m.transparent || !g.attributes.position || !g.attributes.normal || g.morphAttributes.position) return;
+			const attrs = Object.keys(g.attributes).sort();
+			if (attrs.some((k) => g.attributes[k].isInterleavedBufferAttribute)) return;
+			const sig = attrs.map((k) => `${k}${g.attributes[k].itemSize}${g.attributes[k].array.constructor.name}`).join(',');
+			const key = `${m.uuid}|${o.castShadow ? 1 : 0}${o.receiveShadow ? 1 : 0}|${sig}`;
+			if (!groups.has(key)) groups.set(key, { m, attrs, list: [], cast: o.castShadow, recv: o.receiveShadow });
+			groups.get(key).list.push(o);
+		});
+		const M4 = new T.Matrix4(), N3 = new T.Matrix3(), v = new T.Vector3();
+		let removed = 0;
+		for (const b of groups.values()) {
+			if (b.list.length < 2) continue;
+			let nv = 0, ni = 0;
+			for (const o of b.list) { nv += o.geometry.attributes.position.count; ni += o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count; }
+			const out = {};
+			for (const k of b.attrs) { const a = b.list[0].geometry.attributes[k]; out[k] = new a.array.constructor(nv * a.itemSize); }
+			const index = new (nv > 65535 ? Uint32Array : Uint16Array)(ni);
+			let vo = 0, io = 0;
+			for (const o of b.list) {
+				const g = o.geometry, cnt = g.attributes.position.count;
+				M4.multiplyMatrices(inv, o.matrixWorld);
+				N3.getNormalMatrix(M4);
+				const flip = M4.determinant() < 0;
+				for (const k of b.attrs) {
+					const a = g.attributes[k], dst = out[k], sz = a.itemSize;
+					if (k === 'position' || k === 'normal') {
+						for (let i = 0; i < cnt; i++) {
+							v.set(a.getX(i), a.getY(i), a.getZ(i));
+							if (k === 'position') v.applyMatrix4(M4); else v.applyMatrix3(N3).normalize();
+							dst[(vo + i) * 3] = v.x; dst[(vo + i) * 3 + 1] = v.y; dst[(vo + i) * 3 + 2] = v.z;
+						}
+					} else dst.set(a.array.subarray(0, cnt * sz), vo * sz);
+				}
+				const src = g.index ? g.index.array : null, n = src ? g.index.count : cnt;
+				for (let i = 0; i < n; i += 3) {
+					const a0 = src ? src[i] : i, a1 = src ? src[i + 1] : i + 1, a2 = src ? src[i + 2] : i + 2;
+					index[io++] = vo + a0; index[io++] = vo + (flip ? a2 : a1); index[io++] = vo + (flip ? a1 : a2);
+				}
+				vo += cnt;
+				o.parent.remove(o);
+				if (!g.userData.shared && o.userData.ownGeometry !== false) g.dispose();
+				removed++;
+			}
+			const geo = new T.BufferGeometry();
+			for (const k of b.attrs) { const a = b.list[0].geometry.attributes[k]; geo.setAttribute(k, new T.BufferAttribute(out[k], a.itemSize, a.normalized)); }
+			geo.setIndex(new T.BufferAttribute(index, 1));
+			geo.computeBoundingSphere();
+			const mesh = new T.Mesh(geo, b.m);
+			mesh.castShadow = b.cast;
+			mesh.receiveShadow = b.recv;
+			mesh.userData.ownGeometry = true;
+			root.add(mesh);
+			removed--;
+		}
+		return removed;
+	}
+
 	function disposeTree(obj) {
 		obj.traverse((o) => {
 			if (o.geometry && !o.isSprite && !o.geometry.userData.shared) o.geometry.dispose();
@@ -661,5 +750,5 @@
 		});
 	}
 
-	NS.util = { hash, hash2, smoothstep, vnoise, glowTexture, labelTexture, boardTexture, sprite, mat, matS, patch, U, GEO, box, roof, disposeTree, canvasTexture, allMaterials };
+	NS.util = { hash, hash2, smoothstep, vnoise, glowTexture, labelTexture, boardTexture, sprite, mat, matS, vcMat, mergeMeshes, patch, U, GEO, box, roof, disposeTree, canvasTexture, allMaterials };
 })();

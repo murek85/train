@@ -34,12 +34,16 @@
 			'48WE': { kind: 'dc', ac: true, horn: [494, 622], gear: 36, blow: 0.3, conv: 0.4, heavy: 0.75, emu: true },
 			'27WE': { kind: 'dc', ac: true, horn: [494, 622], gear: 36, blow: 0.3, conv: 0.4, heavy: 0.8, emu: true },
 		};
+	// druga syrena (wysokotonowa): ton z głosu pojazdu (horn2) albo ok. 1,6 × wyższego tonu syreny, najwyżej 880 Hz
+	const horn2Of = (V) => V.horn2 || Math.min(880, Math.round(V.horn[1] * 1.6));
 
 	class TrainAudio {
 		constructor() {
 			this.ctx = null;
 			this.muted = false;
 			this.volume = 0.8;
+			// miks: głośność grup (0…1) – pociąg, syreny, otoczenie, sygnały i komunikaty (gong, radio, czuwak, SHP)
+			this.mix = { train: 1, horn: 1, amb: 1, sig: 1 };
 			this.bogies = [];
 			this.lastJoint = [];
 			this.prevBrake = 0;
@@ -78,15 +82,24 @@
 			this.verbG = c.createGain();
 			this.verbG.gain.value = 0;
 			this.verb.connect(this.verbG).connect(this.master);
-			// szyna pociągu (z wysyłką na pogłos) i szyna otoczenia (tłumiona w kabinie)
+			/* szyna pociągu (z wysyłką na pogłos), szyna otoczenia (tłumiona w kabinie), syreny (na szynę pociągu),
+			   sygnały i komunikaty; każda grupa przez własną głośność z ustawień (mixG) */
+			const mixG = (k) => { const g = c.createGain(); g.gain.value = this.mix[k]; return g; };
+			this.mixG = { train: mixG('train'), horn: mixG('horn'), amb: mixG('amb'), sig: mixG('sig') };
 			this.trainBus = c.createGain();
-			this.trainBus.connect(this.master);
-			this.trainBus.connect(this.verb);
+			this.trainBus.connect(this.mixG.train);
+			this.mixG.train.connect(this.master);
+			this.mixG.train.connect(this.verb);
 			this.ambF = c.createBiquadFilter();
 			this.ambF.type = 'lowpass';
 			this.ambF.frequency.value = 18000;
 			this.ambBus = c.createGain();
-			this.ambBus.connect(this.ambF).connect(this.master);
+			this.ambBus.connect(this.ambF).connect(this.mixG.amb).connect(this.master);
+			this.sigBus = c.createGain();
+			this.sigBus.connect(this.mixG.sig).connect(this.master);
+			// syreny: przez szynę pociągu (tłumienie w kabinie, pogłos w tunelu), z własną głośnością
+			this.hornBus = c.createGain();
+			this.hornBus.connect(this.mixG.horn).connect(this.trainBus);
 
 			const len = c.sampleRate * 3;
 			const buf = c.createBuffer(1, len, c.sampleRate);
@@ -210,34 +223,46 @@
 			this.blade = osc('triangle', 140, filter('lowpass', 700, 1, this.bladeG));
 			/* syrena: dwa tony (piła + prostokąt, lekko rozstrojone) przez łagodne przesterowanie i formanty tuby
 			   (rezonanse ok. 900 i 1900 Hz), do tego „chuchnięcie” powietrza przy otwarciu zaworu */
-			this.hornG = gain(T);
-			const hLp = filter('lowpass', 4200, 0.6, this.hornG);
-			const hPk2 = c.createBiquadFilter();
-			hPk2.type = 'peaking'; hPk2.frequency.value = 1900; hPk2.Q.value = 1.4; hPk2.gain.value = 5;
-			hPk2.connect(hLp);
-			const hPk1 = c.createBiquadFilter();
-			hPk1.type = 'peaking'; hPk1.frequency.value = 900; hPk1.Q.value = 1.1; hPk1.gain.value = 8;
-			hPk1.connect(hPk2);
-			const hHp = filter('highpass', 180, 0.7, hPk1);
-			const shaper = c.createWaveShaper();
-			const curve = new Float32Array(1024);
-			for (let i = 0; i < 1024; i++) { const x = (i / 1023) * 2 - 1; curve[i] = Math.tanh(2.4 * x) / Math.tanh(2.4); }
-			shaper.curve = curve;
-			shaper.connect(hHp);
-			const hIn = c.createGain();
-			hIn.gain.value = 0.55;
-			hIn.connect(shaper);
-			this.horn = [];
-			for (const f of [370, 466]) {
-				const a = c.createOscillator(), b = c.createOscillator(), ga = c.createGain(), gb = c.createGain();
-				a.type = 'sawtooth'; b.type = 'square';
-				a.frequency.value = f; b.frequency.value = f; b.detune.value = 4;
-				ga.gain.value = 0.6; gb.gain.value = 0.3;
-				a.connect(ga).connect(hIn); b.connect(gb).connect(hIn);
-				a.start(); b.start();
-				this.horn.push(a, b);
-			}
-			this.hornAirG = gain(T);
+			/* druga syrena (J): wysokotonowa – jeden wyższy ton (horn2 w głosie pojazdu albo ok. 1,6 × wyższego tonu
+			   syreny), węższa tuba (formanty wyżej) */
+			const hornChain = (out, pk1, pk2) => {
+				const hLp = filter('lowpass', 4200, 0.6, out);
+				const hPk2 = c.createBiquadFilter();
+				hPk2.type = 'peaking'; hPk2.frequency.value = pk2; hPk2.Q.value = 1.4; hPk2.gain.value = 5;
+				hPk2.connect(hLp);
+				const hPk1 = c.createBiquadFilter();
+				hPk1.type = 'peaking'; hPk1.frequency.value = pk1; hPk1.Q.value = 1.1; hPk1.gain.value = 8;
+				hPk1.connect(hPk2);
+				const hHp = filter('highpass', 180, 0.7, hPk1);
+				const shaper = c.createWaveShaper();
+				const curve = new Float32Array(1024);
+				for (let i = 0; i < 1024; i++) { const x = (i / 1023) * 2 - 1; curve[i] = Math.tanh(2.4 * x) / Math.tanh(2.4); }
+				shaper.curve = curve;
+				shaper.connect(hHp);
+				const hIn = c.createGain();
+				hIn.gain.value = 0.55;
+				hIn.connect(shaper);
+				return hIn;
+			};
+			const hornBank = (freqs, hIn) => {
+				const list = [];
+				for (const f of freqs) {
+					const a = c.createOscillator(), b = c.createOscillator(), ga = c.createGain(), gb = c.createGain();
+					a.type = 'sawtooth'; b.type = 'square';
+					a.frequency.value = f; b.frequency.value = f; b.detune.value = 4;
+					ga.gain.value = 0.6; gb.gain.value = 0.3;
+					a.connect(ga).connect(hIn); b.connect(gb).connect(hIn);
+					a.start(); b.start();
+					list.push(a, b);
+				}
+				return list;
+			};
+			const HB = this.hornBus;
+			this.hornG = gain(HB);
+			this.horn = hornBank([370, 466], hornChain(this.hornG, 900, 1900));
+			this.horn2G = gain(HB);
+			this.horn2 = hornBank([740], hornChain(this.horn2G, 1400, 2700));
+			this.hornAirG = gain(HB);
 			src(this.noiseBuf).connect(filter('bandpass', 1300, 0.8, this.hornAirG));
 			// wycieraczki: silniczek, szuranie pióra po szybie, pisk gumy na suchej szybie
 			this.wipMotG = gain(T);
@@ -247,7 +272,7 @@
 			this.wipSqG = gain(T);
 			this.wipSq = osc('sine', 950, this.wipSqG);
 			// brzęczyk czuwaka
-			this.caG = gain(this.master);
+			this.caG = gain(this.sigBus);
 			osc('square', 880, filter('lowpass', 2500, 0.7, this.caG));
 
 			// otoczenie: wiatr (szum różowy z porywami), deszcz (szum + krople), świerszcze, dzwonki przejazdu
@@ -381,9 +406,11 @@
 			const id = (t.specs && t.specs[0] && t.specs[0].id) || '';
 			this.voice = VOICE[id] || (t.diesel ? VOICE.SM42 : t.style === 'ezt' ? VOICE.EN57 : VOICE.EU07);
 			this.horn.forEach((o, k) => { o.frequency.value = this.voice.horn[k >> 1]; });
+			this.horn2.forEach((o) => { o.frequency.value = horn2Of(this.voice); });
 			this.prevLever = sim.lever;
 			this.prevV = sim.st.v;
 			this.hornWas = false;
+			this.horn2Was = false;
 			this.lastPos = sim.st.pos;
 			this.prevBrake = sim.st.brake;
 			// krzyżownice rozjazdów na stacjach z dwoma torami (jak w world.js: zjazdy przed i za peronem, wjazd na bocznicę)
@@ -485,8 +512,9 @@
 
 		silence() {
 			if (!this.ctx) return;
-			for (const g of [this.motorG, this.gearG, this.humG, this.fanG, this.rollG, this.rollHiG, this.flangeG, this.fricG, this.hissG, this.squealG, this.compG, this.hornG, this.caG, this.windG, this.rainG, this.rainLowG, this.cricketG, this.bellG, this.passG, this.passHiG, this.passMotorG, this.chugG, this.convG, this.bladeG, this.hornAirG, this.leafG, this.cityG, this.wipMotG, this.wipSwG, this.wipSqG]) this.set(g.gain, 0, 0.05);
+			for (const g of [this.motorG, this.gearG, this.humG, this.fanG, this.rollG, this.rollHiG, this.flangeG, this.fricG, this.hissG, this.squealG, this.compG, this.hornG, this.horn2G, this.caG, this.windG, this.rainG, this.rainLowG, this.cricketG, this.bellG, this.passG, this.passHiG, this.passMotorG, this.chugG, this.convG, this.bladeG, this.hornAirG, this.leafG, this.cityG, this.wipMotG, this.wipSwG, this.wipSqG]) this.set(g.gain, 0, 0.05);
 			this.hornWas = false;
+			this.horn2Was = false;
 		}
 
 		update(sim, dt) {
@@ -603,24 +631,26 @@
 
 			/* syrena: przy otwarciu zaworu ton podciąga się z ok. 90 % do pełnej wysokości (narastające ciśnienie)
 			   z dmuchnięciem powietrza, przy zamknięciu lekko opada i gaśnie */
-			const hornOn = sim.horn && sim.status === 'running';
-			if (hornOn !== this.hornWas) {
-				this.hornWas = hornOn;
-				this.horn.forEach((o, k) => {
-					const f = V.horn[k >> 1];
+			const run = sim.status === 'running';
+			const hornSw = (on, bank, G, freq, level) => {
+				bank.forEach((o, k) => {
+					const f = freq(k);
 					o.frequency.cancelScheduledValues(now);
 					o.frequency.setValueAtTime(o.frequency.value, now);
-					if (hornOn) { o.frequency.setValueAtTime(f * 0.9, now); o.frequency.linearRampToValueAtTime(f, now + 0.09); }
+					if (on) { o.frequency.setValueAtTime(f * 0.9, now); o.frequency.linearRampToValueAtTime(f, now + 0.09); }
 					else o.frequency.linearRampToValueAtTime(f * 0.96, now + 0.22);
 				});
-				this.hornG.gain.cancelScheduledValues(now);
-				this.hornG.gain.setTargetAtTime(hornOn ? 0.13 * V.heavy : 0, now, hornOn ? 0.035 : 0.07);
-				if (hornOn) {
+				G.gain.cancelScheduledValues(now);
+				G.gain.setTargetAtTime(on ? level : 0, now, on ? 0.035 : 0.07);
+				if (on) {
 					this.hornAirG.gain.cancelScheduledValues(now);
 					this.hornAirG.gain.setValueAtTime(0.06, now);
 					this.hornAirG.gain.setTargetAtTime(0.008, now + 0.05, 0.08);
-				} else this.set(this.hornAirG.gain, 0, 0.05);
-			}
+				} else if (!this.hornWas && !this.horn2Was) this.set(this.hornAirG.gain, 0, 0.05);
+			};
+			const hornOn = !!sim.horn && run, horn2On = !!sim.horn2 && run;
+			if (hornOn !== this.hornWas) { this.hornWas = hornOn; hornSw(hornOn, this.horn, this.hornG, (k) => V.horn[k >> 1], 0.13 * V.heavy); }
+			if (horn2On !== this.horn2Was) { this.horn2Was = horn2On; hornSw(horn2On, this.horn2, this.horn2G, () => horn2Of(V), 0.1 * V.heavy); }
 
 			// wycieraczki (stan z modelu: wipeOn – pracują, wipe – prędkość pióra, 0…ok. 1,6)
 			const wOn = !!E.wipeOn, wv = Math.min(1.6, E.wipe || 0), dry = E.rain < 0.08 && E.snow < 0.08;
@@ -952,7 +982,7 @@
 			g.gain.setValueAtTime(0.0001, start);
 			g.gain.exponentialRampToValueAtTime(vol, start + 0.02);
 			g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-			o.connect(g).connect(dest || this.master);
+			o.connect(g).connect(dest || this.sigBus);
 			o.start(start);
 			o.stop(start + dur + 0.05);
 		}
@@ -1027,6 +1057,18 @@
 				case 'click':
 					this.tone(1800, t, 0.04, 'square', 0.03);
 					break;
+				case 'shp':
+					// SHP: przerywany brzęczyk
+					for (let i = 0; i < 4; i++) this.tone(2100, t + i * 0.2, 0.1, 'square', 0.045);
+					break;
+				case 'radio':
+					// wywołanie radiotelefonu: trzy dwutonowe sygnały, potem szum otwartego kanału
+					for (let i = 0; i < 3; i++) {
+						this.tone(1180, t + i * 0.34, 0.14, 'square', 0.035);
+						this.tone(880, t + i * 0.34 + 0.15, 0.14, 'square', 0.035);
+					}
+					this.burst(t + 1.05, 0.35, 2600, 0.05, 'bandpass');
+					break;
 			}
 		}
 
@@ -1042,6 +1084,11 @@
 		setVolume(v) {
 			this.volume = v;
 			if (this.master) this.set(this.master.gain, this.muted ? 0 : 0.75 * v, 0.05);
+		}
+		// głośność grup: { train, horn, amb, sig } (0…1)
+		setMix(m) {
+			Object.assign(this.mix, m);
+			if (this.mixG) for (const k in this.mixG) this.set(this.mixG[k].gain, this.mix[k], 0.05);
 		}
 	}
 

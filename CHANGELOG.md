@@ -4,7 +4,198 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
-## Niewydane
+## 0.14.1 – 14 października 2026
+
+### Dźwięk
+- Głośność grup dźwięków w Ustawieniach (względem ogólnej): pociąg (silniki, toczenie, hamulce), syreny, otoczenie
+  (wiatr, deszcz, ptaki, miasto, inne pociągi, przejazdy), sygnały (gong, radiotelefon, czuwak, SHP, drzwi), głos
+  zapowiedzi; suwaki jednakowej szerokości, opisy zawijane.
+- Druga syrena – wysokotonowa (`J`, przycisk „Syrena 2”): jeden ton ok. 1,6 × wyższego tonu syreny (najwyżej
+  880 Hz), węższa tuba; zalicza sygnał „Baczność” przed przejazdem i cel „syrena” w scenariuszach.
+
+### Panel jazdy
+- Kilometraż pod zegarem: km czoła pociągu od początku trasy, ile zostało do stacji końcowej i długość trasy.
+- Komunikaty: cienka ramka dookoła w kolorze rodzaju komunikatu zamiast paska z lewej.
+
+## 0.14.0 – 14 października 2026
+
+Etap 10e planu rozwoju (C3). Etap 10 zakończony (10d – prawdziwy rozkład jazdy – pominięty).
+
+### Linie jednotorowe – krzyżowania
+- Odcinki jednotorowe wyznaczane z danych mapy (brak toru obok, mijanki krótsze niż 300 m i odcinki krótsze niż
+  500 m pomijane): Toruń Główny – Chełmża (mijanki w Łysomicach i Ostaszewie), Rybnik – Katowice (9 odcinków);
+  linie gliwickie – dwutorowe.
+- Pociąg z przeciwka wjeżdża na odcinek jednotorowy tylko wtedy, gdy nie ma na nim pociągu w Twoim kierunku,
+  mijanka za odcinkiem jest wolna i zdąży go zwolnić przed przyjazdem Twojego pociągu (wg rozkładu i największej
+  prędkości) oraz pociągów tła za Tobą – inaczej czeka na mijance na torze bocznym. Zawsze ustępuje pociąg tła.
+- Twój pociąg jedzie torem głównym; gdy odcinek zajmuje pociąg z przeciwka, semafor przed nim wskazuje „stój”
+  (komunikat dyżurnego o krzyżowaniu); dyżurny informuje też (opcja „Rutynowe komunikaty”), że pociąg z przeciwka
+  czeka na Ciebie.
+- Pociągi z przeciwka jadą jeden za drugim z odstępem, na liniach jednotorowych rzadziej (co 60 / 40 / 30 min).
+- Rysowanie: na odcinku jednotorowym po torze gracza, na mijance po torze bocznym, przejście przy rozjeździe.
+- Sygnalizacja przejazdu: pociąg tła stojący przed przejazdem nie zamyka rogatek.
+- Testy: brak spotkań na jednym torze i zakleszczeń (punktualny i spóźniony gracz, różne poziomy ruchu).
+
+## 0.13.0 – 14 października 2026
+
+Etap 10c planu rozwoju (C5).
+
+### Pasażerowie
+- Popyt na stacjach wg pory dnia (szczyt 6–9 i 14–18, noc) i rodzaju stacji (dworzec / przystanek) oraz czasu od
+  ostatniego pociągu osobowego w tym kierunku – osobowe pociągi tła zabierają czekających.
+- Obciążenie składu (pojemność z długości wagonów pasażerskich, ok. 4,5 osoby na metr), 75 kg na osobę w masie
+  składu; przy pełnym składzie część podróżnych zostaje na peronie (komunikat).
+- Czas postoju z wymiany: ok. 10 s + wsiadający i wysiadający przy ok. 1,2 osoby/s na wagon (od 60 % do
+  dwukrotności postoju rozkładowego); w panelu jazdy – wsiada, wysiada, w pociągu.
+
+### Zapowiedzi
+- Gong i tekst: na peronie (Twój pociąg przy peronie z godziną odjazdu, pociąg osobowy z przeciwka, przejazd bez
+  zatrzymania po torze drugim, zakończenie biegu) i w pociągu („Następna stacja…”).
+- Ustawienia → Dźwięk → „Zapowiedzi”: gong i tekst / z głosem (synteza mowy przeglądarki) / wyłączone.
+
+### Tablice odjazdów
+- Elektroniczna tablica na peronie każdego dworca: najbliższe odjazdy (Twój pociąg i osobowe pociągi tła, tor,
+  przewidywane opóźnienie), odświeżana, gdy pociąg jest w pobliżu.
+
+## 0.12.0 – 14 października 2026
+
+Etap 10b planu rozwoju (B5).
+
+### Zadanie dnia
+- Zadanie dnia (ekran „Scenariusze”, na górze): z daty losowane są trasa (spośród wbudowanych), skład pasujący do
+  linii, godzina odjazdu, pogoda, pora roku (wg miesiąca), zdarzenia na trasie i dwa cele – u wszystkich takie same.
+- Najlepszy wynik dnia (gwiazdki) i seria dni z rzędu z ukończonym zadaniem; zapis gry z zadaniem dnia wczytuje
+  zadanie z tej samej daty.
+
+## 0.11.0 – 14 października 2026
+
+Etap 10a planu rozwoju (A6).
+
+### Ocena jazdy
+- Ocena po jeździe w gwiazdkach 1–5 obok punktów: punktualność (średnie spóźnienie), zatrzymania przy W4,
+  płynność (szarpnięcia – zmiana przyspieszenia ponad 0,8 m/s³), komfort (przyspieszenie poprzeczne w łukach ponad
+  1 m/s² po wyrównaniu przechyłką, hamowanie ponad 1,2 m/s²), energia (wobec przejazdu automatu), bezpieczeństwo;
+  ocena ogólna – średnia.
+- Wykres przejazdu na ekranie końca: prędkość, dozwolona prędkość (z ograniczeniami doraźnymi), stacje, hamowania
+  nagłe.
+- „Historia jazd” w menu – ostatnie 30 jazd z ocenami i najlepszą oceną dla trasy i składu.
+
+## 0.10.0 – 14 października 2026
+
+Etap 9 planu rozwoju (D2 + D4 + D5) z odłożonymi optymalizacjami z etapu 1.
+
+### Wydajność
+- Wspólne materiały w świecie: elementy o tym samym rodzaju powierzchni, różniące się kolorem, rysowane razem
+  (kolor w wierzchołkach) – w kabinie ok. 12 ms zamiast ok. 20 ms na klatkę (Rybnik, deszcz, jakość średnia).
+- Modele pociągów tła i wagonów na bocznicach scalone (o połowę mniej elementów); modele pociągów tła przygotowane
+  na ekranie wczytywania i używane ponownie – bez przycięć przy pojawianiu się pociągu.
+- Cienie: najdalsza kaskada odświeżana co cztery klatki; kawałki świata dalej niż ok. 450 m i drobiazgi (podkłady,
+  trawa) bez cienia.
+- Zasięg szczegółów zależny od jakości (niska – ok. 80 %, wysoka – 115 %) z mgłą dopasowaną do zasięgu; automatyczny
+  dobór jakości przy pierwszym uruchomieniu (przycisk w Ustawieniach); dopasowanie zasięgu w czasie jazdy, gdy FPS
+  długo spada poniżej 28 (opcja, domyślnie włączona).
+
+### Generator tras
+- Kontrola trasy (`js/route-check.js`, `tools/route-check.js`, testy): pochylenia ponad 30 ‰, skoki wysokości, ciasne
+  łuki, W4 poza peronem, nakładające się perony, przejazd na peronie, semafory blisko siebie lub przejazdu, prędkości,
+  przejazd automatem; raport po wygenerowaniu trasy i przycisk „Kontrola” przy trasie.
+
+## 0.9.0 – 14 października 2026
+
+Etap 8 planu rozwoju (ROADMAP: A4 + A5).
+
+### Napędy wg serii i przyczepność
+- Opcja „Napęd wg serii”: rozruch oporowy (EU07, ET22, EN57… – pozycje szeregowe, równoległe, bocznikowanie;
+  przekaźnik nadmiarowy przy za szybkim rozruchu, przegrzewanie oporników), falownik (Elfy, ED250), spalinowy
+  (SM42, ST44, SU46 – obroty silnika); prąd silników w HUD i na amperomierzu.
+- Przyczepność zależna od pogody i pory roku (nowy wybór w „Warunkach”; jesień – liście na torach, zima – słabiej);
+  poślizg kół, blokowanie kół i płaskie miejsca, piasecznica (X).
+- Hamulec dodatkowy lokomotywy (Shift+A / Shift+Q) przy hamulcu zespolonym.
+
+## 0.8.0 – 14 października 2026
+
+Etap 6 (C4).
+
+### Dyżurny ruchu i rozkazy pisemne
+- Rozkaz pisemny „O” (ograniczenie prędkości) na stacji przed odjazdem – karta w kabinie, odjazd po potwierdzeniu
+  (Enter); klawisz O – ostatni rozkaz.
+- Uszkodzone semafory: przed odstępowym – rozkaz „S” przez radiotelefon (jazda ostrożna do 20 km/h), przed wjazdowym
+  i wyjazdowym – sygnał zastępczy Sz (białe migające, 40 km/h); ruszenie bez potwierdzenia rozkazu – hamowanie i kara.
+- Rutynowe komunikaty dyżurnego (odjazd, pociąg na odstępie przed Tobą, przyjęcie na stację) – opcja w „Pomocy”.
+- Nowy scenariusz „Awaria sterowania”; „Roboty na szlaku” z rozkazem „O”; usterki semaforów w zdarzeniach losowych.
+
+## 0.7.0 – 14 października 2026
+
+Etap 5 (C1 + C2).
+
+### Ruch na linii
+- Pociągi tła według rozkładu: przed Tobą i za Tobą na Twoim torze, z przeciwka na drugim torze; suwak „Ruch na
+  linii” w „Warunkach” (brak / mały / średni / duży).
+- Blokada liniowa: semafor „stój”, gdy odcinek za nim zajmuje inny pociąg – zamiast losowego „trzymania”.
+- Spóźnienie zatrzymuje pociąg jadący za Tobą: komunikat dyżurnego, liczba w podsumowaniu, opcjonalnie kara.
+- Przejazdy kolejowe reagują na wszystkie pociągi; na liniach bez sieci – składy spalinowe.
+- Ustawienia: limit pociągów tła rysowanych naraz, opcja „z maszynistą i pasażerami w oknach”.
+
+## 0.6.0 – 14 października 2026
+
+Etap 4 (A2 + A3).
+
+### Hamulec zespolony i SHP
+- Opcja „Hamulec zespolony”: zawór maszynisty (A / Q: napełnianie, jazda, odcięcie, hamowanie, nagłe), ciśnienie
+  w przewodzie głównym, fala hamowania wzdłuż składu, nastawa P i G (długi towarowy hamuje i luzuje wolno),
+  hamulec elektropneumatyczny w EZT, blokada jazdy poniżej 4 bar, odzysk energii w nowoczesnych EZT.
+- Zawór, ciśnienia w przewodzie i cylindrze w HUD, na manometrze i ekranie w kabinie; asystent hamowania
+  uwzględnia zwłokę hamulca.
+- SHP: elektromagnes 200 m przed semaforem – lampka i brzęczyk, potwierdzenie spacją w 3,5 s.
+- Tryb prosty (nastawnik z H1…H4) zostaje domyślny.
+
+## 0.5.0 – 14 października 2026
+
+Etap 3 (B1 + B2, zdarzenia losowe z B5).
+
+### Scenariusze
+- Nowy ekran „Scenariusze”: jazdy z celem, z gwiazdkami za ukończenie i spełnione cele (najlepszy wynik zapamiętany).
+- Samouczek „Pierwsza jazda” z instruktorem prowadzącym krok po kroku (ruszanie, prędkość, jazda z rozpędu,
+  syrena, czuwak, hamowanie do W4, drzwi).
+- Sześć scenariuszy: Poranny szczyt, Roboty na szlaku, Bez prądu, Mgła pod Toruniem, Towarowy w śniegu,
+  Oszczędna jazda.
+- Zdarzenia na trasie: ograniczenia doraźne z tablicami w świecie, wydłużone postoje, opóźniony odjazd, zanik
+  napięcia w sieci, zmiana pogody.
+- Radiotelefon: komunikaty dyżurnego ruchu z sygnałem wywołania, potwierdzane klawiszem Enter.
+- Zdarzenia losowe w jeździe swobodnej (zakładka „Warunki”) – na każdej trasie, także wygenerowanej.
+- Licznik energii pobranej na jazdę i hamowań nagłych (cele scenariuszy).
+
+## 0.4.0 – 14 października 2026
+
+Etap 2 (A1).
+
+### Sygnalizacja
+- Semafory podają sygnały jak na PKP (instrukcja Ie-1, S1–S13a): górne światło zielone albo pomarańczowe, ciągłe
+  albo migające, zapowiada następny semafor (wolna droga, do 100 km/h, do 40 lub 60 km/h, „stój”); dolne
+  pomarańczowe i pas świetlny – ograniczenie przy semaforze przez rozjazdy (40, 60 albo 100 km/h).
+- Model semafora z pasem świetlnym pod głowicą i drugą poświatą; światła migają.
+- Panel semafora w HUD: głowica z tymi samymi światłami, prędkość przy semaforze, oznaczenie sygnału i zapowiedź
+  następnego; oznaczenie sygnału na ekranie w kabinie. Opis sygnałów w zakładce „Pomoc”.
+
+### Ikona
+- Favicon na karcie przeglądarki: `favicon.ico` (16–256 px), wektorowy `icons/favicon.svg` i ikona dla ekranu
+  głównego (`icons/apple-touch-icon.png`) – ten sam rysunek co ikona aplikacji, generowane przez `npm run icon`.
+- Okno aplikacji desktopowej bierze ikonę z `favicon.ico` – wcześniej wskazywało `build/icon.png`, którego nie ma
+  w spakowanej aplikacji.
+
+## 0.3.0 – 13–14 października 2026
+
+Etap 1 (D0 + D1 + D3) oraz zmiany grafiki taboru, otoczenia i kabiny.
+
+### Wydajność
+- Nieruchome części świata scalane w kawałku według materiału (także obiekty z kilku egzemplarzy – latarnie,
+  słupki, znaki): ok. 40% mniej wywołań rysowania (Rybnik, kabina: 2443 → 1203), klatka ok. 20% krótsza.
+- Drzewa dalej niż ok. 170 m od kamery z lżejszej bryły (ok. 100 zamiast ok. 1000 trójkątów), zwarte masy lasu
+  zawsze; podkłady, przytwierdzenia, trawa, kwiaty i trzciny dalej niż ok. 230 m nie są rysowane.
+- Brak przycięć przy pierwszym wejściu do kabiny i zmianie widoku: shadery kompilowane, a tekstury i bryły
+  wysyłane do karty graficznej na ekranie wczytywania.
+- Nakładka diagnostyczna `F3` (FPS, czas klatki z podziałem, czas karty graficznej, wywołania, trójkąty, siatki)
+  i test wydajności z konsoli (`maszynista.bench()`).
 
 ### Grafika taboru
 - Patyna eksploatacyjna na pojazdach (kurz od wózków, zacieki, sadza na dachu), falowanie blach, spoiny i nity

@@ -43,9 +43,10 @@
 
 	// Ustawienia jakości: rozdzielczość, cienie, efekty po renderowaniu, gęstość roślinności, ilość opadu.
 	const QUALITY = {
-		low: { name: 'niska', pr: 1, shadow: 1024, post: false, bloom: false, ao: false, atmo: false, msaa: 0, density: 0.5, particles: 0.35 },
-		medium: { name: 'średnia', pr: 1.5, shadow: 2048, post: true, bloom: true, ao: false, atmo: false, msaa: 4, density: 0.8, particles: 0.7 },
-		high: { name: 'wysoka', pr: 2, shadow: 4096, post: true, bloom: true, ao: true, atmo: true, msaa: 4, density: 1.15, particles: 1 },
+		// range – zasięg szczegółów świata (kawałki przed pociągiem, drzewa i drobiazgi z bliska, cienie)
+		low: { name: 'niska', pr: 1, shadow: 1024, post: false, bloom: false, ao: false, atmo: false, msaa: 0, density: 0.5, particles: 0.35, range: 0.8 },
+		medium: { name: 'średnia', pr: 1.5, shadow: 2048, post: true, bloom: true, ao: false, atmo: false, msaa: 4, density: 0.8, particles: 0.7, range: 1 },
+		high: { name: 'wysoka', pr: 2, shadow: 4096, post: true, bloom: true, ao: true, atmo: true, msaa: 4, density: 1.15, particles: 1, range: 1.15 },
 	};
 	const ASPECT = { red: '#ff3b30', yellow: '#ffb020', green: '#34d058' };
 	const FOV = 45;
@@ -177,7 +178,154 @@
 			this.trans = null; // przejście między widokami: { p, q, t }
 			this.trackside = null; // stała kamera przy torze: { s, d }
 			this.inputEnabled = false;
+			this.perf = null; // nakładka diagnostyczna (F3)
 			this.bindInput();
+		}
+
+		/* Nakładka diagnostyczna (F3): FPS, czas klatki na procesorze z podziałem na części (pociąg i kamera, otoczenie,
+		   świat, ruch w tle, rysowanie), czas karty graficznej (EXT_disjoint_timer_query_webgl2, gdy dostępne), wywołania
+		   rysowania, trójkąty, siatki, programy cieniowania, kawałki świata. Średnie z ok. 0,5 s. */
+		togglePerf() {
+			if (this.perf) {
+				this.perf.el.remove();
+				this.gl.info.autoReset = true;
+				this.perf = null;
+				return false;
+			}
+			const el = document.createElement('div');
+			el.id = 'perf';
+			document.body.appendChild(el);
+			const gl = this.gl.getContext();
+			this.perf = { el, gl, ext: gl.getExtension('EXT_disjoint_timer_query_webgl2'), queries: [], sum: {}, n: 0, gpu: 0, gpuN: 0, t: performance.now(), last: null };
+			this.gl.info.autoReset = false;
+			return true;
+		}
+
+		perfFrame(part, ms) {
+			const P = this.perf;
+			P.sum[part] = (P.sum[part] || 0) + ms;
+		}
+
+		perfEnd(t0) {
+			const P = this.perf, now = performance.now(), info = this.gl.info;
+			this.perfFrame('klatka', now - t0);
+			P.sum.calls = (P.sum.calls || 0) + info.render.calls;
+			P.sum.tris = (P.sum.tris || 0) + info.render.triangles;
+			info.reset();
+			P.n++;
+			// wyniki zapytań czasu karty graficznej (dostępne po kilku klatkach)
+			const gl = P.gl;
+			while (P.queries.length && gl.getQueryParameter(P.queries[0], gl.QUERY_RESULT_AVAILABLE)) {
+				const q = P.queries.shift();
+				if (!gl.getParameter(P.ext.GPU_DISJOINT_EXT)) { P.gpu += gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6; P.gpuN++; }
+				gl.deleteQuery(q);
+			}
+			if (now - P.t < 500) return;
+			const k = 1 / P.n, f = (x) => (x * k).toFixed(1), S = P.sum;
+			let meshes = 0;
+			this.scene.traverseVisible((o) => { if (o.isMesh) meshes++; });
+			const fps = (P.n * 1000) / (now - P.t);
+			const row = (name, val, unit = '') => `${name.padEnd(11)}${String(val).padStart(6)}${unit ? ' ' + unit : ''}`;
+			P.el.textContent = [
+				row('FPS', fps.toFixed(0)),
+				row('klatka CPU', f(S.klatka), 'ms'),
+				...['pociąg', 'otoczenie', 'świat', 'ruch', 'rysowanie'].map((x) => row('  ' + x, f(S[x] || 0), 'ms')),
+				row('GPU', P.ext ? (P.gpuN ? (P.gpu / P.gpuN).toFixed(1) : '…') : '–', P.ext ? 'ms' : ''),
+				row('wywołania', Math.round(S.calls * k)),
+				row('trójkąty', (S.tris * k / 1e6).toFixed(2), 'mln'),
+				row('siatki', meshes),
+				row('programy', info.programs.length),
+				row('geometrie', info.memory.geometries),
+				row('kawałki', this.world.chunks.size) + (this.world.pending ? ` (+${this.world.pending})` : ''),
+			].join('\n');
+			P.sum = {}; P.n = 0; P.gpu = 0; P.gpuN = 0; P.t = now;
+		}
+
+		/* Kompilacja shaderów przed startem jazdy (ekran wczytywania): wszystkie obiekty sceny – także ukryte (kabina
+		   w widoku z zewnątrz, dalsze poziomy szczegółów) – bez tego program cieniowania kompiluje się przy pierwszym
+		   pokazaniu obiektu (przycięcie przy wejściu do kabiny). Równolegle (KHR_parallel_shader_compile), gdy dostępne;
+		   najwyżej 20 s. */
+		precompile() {
+			const hidden = [];
+			this.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+			let p;
+			// ten sam bufor docelowy co przy rysowaniu (z efektami – bufor sceny), inaczej powstaje inny wariant programu
+			const rt = this.gl.getRenderTarget();
+			this.gl.setRenderTarget(this.quality.post ? this.post.target : null);
+			try {
+				p = this.gl.compileAsync(this.scene, this.camera);
+			} catch (e) {
+				p = Promise.resolve();
+			}
+			this.gl.setRenderTarget(rt);
+			for (const o of hidden) o.visible = false;
+			return Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, 20000))]).then(() => this.warmUp());
+		}
+
+		/* Jedno rysowanie całej sceny (także obiektów ukrytych i poza kadrem) do bufora sceny: tekstury i bryły trafiają
+		   do karty graficznej na ekranie wczytywania, a nie przy pierwszym pokazaniu (przycięcie ok. 50–100 ms przy
+		   pierwszym wejściu do kabiny albo zmianie widoku). */
+		warmUp() {
+			const hidden = [], culled = [];
+			this.scene.traverse((o) => {
+				if (!o.visible) { hidden.push(o); o.visible = true; }
+				if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
+			});
+			const rt = this.gl.getRenderTarget(), shadows = this.gl.shadowMap.autoUpdate;
+			this.gl.shadowMap.autoUpdate = false;
+			try {
+				this.gl.setRenderTarget(this.quality.post ? this.post.target : null);
+				this.gl.render(this.scene, this.camera);
+			} catch (e) {
+				// rozgrzanie jest tylko przyspieszeniem – błąd nie blokuje startu
+			}
+			this.gl.setRenderTarget(rt);
+			this.gl.shadowMap.autoUpdate = shadows;
+			for (const o of hidden) o.visible = false;
+			for (const o of culled) o.frustumCulled = true;
+		}
+
+		/* Test wydajności (konsola: maszynista.bench()): bieżące miejsce trasy, widoki z kabiny i zza pociągu; dla każdego
+		   mediana czasu klatki z oczekiwaniem na kartę graficzną (ms; n klatek), sam czas procesora (cpu), najdłuższa
+		   klatka, wywołania, trójkąty i siatki. Symulacja stoi
+		   (dt = 0 poza pomiarem animacji). */
+		bench(sim, n = 20) {
+			const gl = this.gl, ctx = gl.getContext(), px = new Uint8Array(4);
+			const sync = () => ctx.readPixels(0, 0, 1, 1, ctx.RGBA, ctx.UNSIGNED_BYTE, px);
+			const keep = this.camMode, auto = gl.info.autoReset;
+			const view = (mode) => {
+				this.camMode = mode;
+				this.trans = null;
+				this.resetView();
+				this.camState.snap = true;
+				for (let i = 0; i < 4; i++) this.draw(sim, 0, 0);
+				const ts = [], cpu = [];
+				for (let i = 0; i < n; i++) {
+					sync();
+					const a = performance.now();
+					this.draw(sim, 1 / 60, 0);
+					const b = performance.now();
+					sync();
+					ts.push(performance.now() - a);
+					cpu.push(b - a);
+				}
+				ts.sort((a, b) => a - b);
+				cpu.sort((a, b) => a - b);
+				gl.info.autoReset = false;
+				gl.info.reset();
+				this.draw(sim, 0, 0);
+				let meshes = 0;
+				this.scene.traverseVisible((o) => { if (o.isMesh) meshes++; });
+				const r = { ms: +ts[n >> 1].toFixed(1), cpu: +cpu[n >> 1].toFixed(1), max: +ts[n - 1].toFixed(1), calls: gl.info.render.calls, tris: +(gl.info.render.triangles / 1e6).toFixed(2), meshes };
+				gl.info.reset();
+				gl.info.autoReset = auto;
+				return r;
+			};
+			const out = { trasa: sim.route.id, km: +(sim.st.pos / 1000).toFixed(2), bufor: `${ctx.drawingBufferWidth}×${ctx.drawingBufferHeight}`, jakość: this.quality.name, kabina: view('cab'), zaPociągiem: view('follow') };
+			this.camMode = keep;
+			this.resetView();
+			this.camState.snap = true;
+			return out;
 		}
 
 		cycleZoom() {
@@ -218,6 +366,7 @@
 				}
 			});
 			this.world.density = q.density;
+			this.world.detail = q.range;
 			this.world.shadows = q.shadow >= 2048;
 			this.weather.setQuality(q.particles);
 			this.size = { w: 0, h: 0 };
@@ -273,10 +422,37 @@
 			if (this.cab) this.cab.dispose();
 			this.cab = new NS.CabInterior(this.trainModel);
 			this.life.reset(sim.route, { shadows: this.quality.shadow >= 2048 });
-			// trasa rzeczywista: pociągi z przeciwka po prawdziwym torze z mapy (nie po torze z gry)
-			this.life.lane = this.world.env ? (s) => this.world.envLaneAt(s) : null;
-			// wysokość toru z mapy względem niwelety toru pociągu (teren, nasypy, wiadukty)
-			this.life.laneY = this.world.env ? (s) => this.world.envTrackY(s, this.world.envLaneAt(s), false, false) - R.heightAt(sim.route, s) : null;
+			this.life.prewarm(sim); // modele pociągów tła na ekranie wczytywania (pula)
+			/* trasa rzeczywista: pociągi z przeciwka po prawdziwym torze z mapy (nie po torze z gry); linia jednotorowa
+			   (route.single): na odcinku jednotorowym – po torze pociągu gracza, na mijance – po torze bocznym, przejście
+			   przy rozjeździe (R.laneWeight) */
+			const rt = sim.route, lane = (s) => this.world.envLaneAt(s);
+			const laneY = (s) => this.world.envTrackY(s, this.world.envLaneAt(s), false, false) - R.heightAt(rt, s);
+			this.life.laneRaw = this.life.laneRawY = null;
+			if (!this.world.env) this.life.lane = this.life.laneY = null;
+			else if (!rt.single) { this.life.lane = lane; this.life.laneY = laneY; }
+			else {
+				this.life.laneRaw = lane;
+				this.life.laneRawY = laneY;
+				/* mijanka bez toru z mapy wybranego dla pociągów z przeciwka (tor urwany, odstawione wagony): najbliższy
+				   wybrany tor do 300 m dalej albo 4,5 m od osi – pociąg czekający na krzyżowanie nie znika */
+				const near = (s) => {
+					for (let k = 25; k <= 300; k += 25) for (const x of [s - k, s + k]) { const d = lane(x); if (!Number.isNaN(d)) return d; }
+					return 4.5;
+				};
+				this.life.lane = (s) => {
+					const w = R.laneWeight(rt, s);
+					if (w <= 0) return 0;
+					const d = lane(s);
+					return (Number.isNaN(d) ? near(s) : d) * w;
+				};
+				this.life.laneY = (s) => {
+					const w = R.laneWeight(rt, s);
+					if (w <= 0) return 0;
+					const y = Number.isNaN(lane(s)) ? 0 : laneY(s);
+					return Number.isFinite(y) ? y * w : 0;
+				};
+			}
 			this.weather.set(this.weatherKey, sim.route.id, true);
 			this.camHeading = R.trackPoint(sim.route, sim.st.pos + 15).heading;
 			this.zoom = this.zoomLevels[this.zoomIdx];
@@ -330,8 +506,10 @@
 			const fog = this.scene.fog;
 			// o zmierzchu mgła chłodnieje (zamiast przejmować pomarańcz zachodu)
 			fog.color.copy(hor).lerp(zen, 0.45 * (1 - dayK)).lerp(gray, Math.min(1, 0.25 + W.haze));
-			fog.near = W.fogNear;
-			fog.far = W.fogFar;
+			// mniejszy zasięg świata (jakość niska, dopasowanie w grze) – mgła bliżej, bez pustki za ostatnim kawałkiem
+			const fr = Math.min(1, Math.max(0.6, (this.world.detail || 1) * (this.world.detailDyn || 1)) / 0.95);
+			fog.near = W.fogNear * fr;
+			fog.far = W.fogFar * fr;
 			this.gl.setClearColor(fog.color);
 			this.dark = Math.min(0.95, 1 - smoothstep(-0.1, 0.12, e) + W.haze * 0.3 + (1 - W.sun) * 0.12);
 
@@ -782,9 +960,11 @@
 				l.target.position.copy(c);
 				l.position.copy(c).addScaledVector(f, -D);
 				// dalsze kaskady odświeżane na zmianę (co drugą klatkę każda) – w klatce rysują się dwie mapy cieni
+				// najdalsza (szeroka, mało szczegółów) – co czwartą klatkę
 				if (i > 0) {
 					l.shadow.autoUpdate = false;
-					if (this.csmFrame % 2 === i % 2 || this.csmFrame < 3) l.shadow.needsUpdate = true;
+					const every = i === n - 1 && n > 2 ? 4 : 2;
+					if (this.csmFrame % every === i % every || this.csmFrame < 3) l.shadow.needsUpdate = true;
 				}
 			});
 			this.syncCascades();
@@ -794,27 +974,40 @@
 			const show = this.assist && sim.st.v > 0.5 && sim.status === 'running';
 			this.assistGroup.visible = show;
 			if (!show) return;
-			const d = P.brakingEstimate(sim.st.v, sim.train.serviceDecel);
+			const d = P.brakingEstimate(sim.st.v, sim.train.serviceDecel, sim.brakeLag());
 			const p = R.trackPoint(sim.route, sim.st.pos + d, this.tq);
 			this.assistGroup.position.set(p.x, p.y + 0.1, p.z);
 			this.assistGroup.rotation.y = -p.heading;
 		}
 
 		draw(sim, dt, hudH) {
+			const P = this.perf, t0 = P ? performance.now() : 0;
+			let t1 = t0;
+			const lap = P ? (part) => { const t = performance.now(); this.perfFrame(part, t - t1); t1 = t; } : null;
 			this.resize(hudH);
 			// pociąg ustawiany przed kamerą – kamera w kabinie nie może być o klatkę spóźniona
 			this.trainModel.weather = this.W; // deszcz i śnieg – częstsze łuki na pantografie
 			this.trainModel.update(sim, this.dark, dt);
 			this.updateCamera(sim, dt);
 			this.cab.update(sim, dt, this.dark);
+			if (P) lap('pociąg');
 			this.updateEnvironment(sim, dt);
+			if (P) lap('otoczenie');
 			this.world.trainDoors = sim.doorsOpen ? this.trainModel.doorPoints() : null;
 			this.world.viewPos.copy(this.camera.position);
 			this.world.otherTrain = this.life.other;
+			this.world.otherTrains = sim.traffic ? sim.traffic.active() : null;
 			const W = this.W || { haze: 0, snow: 0, rain: 0 };
 			this.world.update(sim, dt, this.dark, W.haze + W.snow * 0.6 + W.rain * 0.4);
+			if (P) lap('świat');
 			this.life.update(sim, dt, this.dark, this.focus, this.W || { rain: 0, snow: 0 });
 			this.updateAssist(sim);
+			if (P) lap('ruch');
+			let query = null;
+			if (P && P.ext && P.queries.length < 4) {
+				query = P.gl.createQuery();
+				P.gl.beginQuery(P.ext.TIME_ELAPSED_EXT, query);
+			}
 			const q = this.quality;
 			const exposure = 1 + 0.7 * (1 - this.dayK);
 			if (q.post) {
@@ -849,6 +1042,11 @@
 				this.gl.render(this.scene, this.camera);
 			}
 			this.drawMinimap(sim);
+			if (P) {
+				if (query) { P.gl.endQuery(P.ext.TIME_ELAPSED_EXT); P.queries.push(query); }
+				lap('rysowanie');
+				this.perfEnd(t0);
+			}
 		}
 
 		drawMinimap(sim) {

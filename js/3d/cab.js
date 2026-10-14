@@ -557,11 +557,13 @@
 			// nocą wnętrze oświetla tylko lampa sufitowa i ekrany – światło wypełniające słabnie
 			this.fill.intensity = 1.5 + 14 * day * day;
 			const st = sim.st;
-			this.lever.rotation.x = -sim.lever * 0.075;
+			// rączka nastawnika: napęd wg serii – pozycja jako ułamek zakresu (jazda do ok. 0,375 rad)
+			this.lever.rotation.x = -(sim.lever > 0 && sim.drive ? (sim.lever / sim.drive.max) * 5 : sim.lever) * 0.075;
 			this.brakeHandle.rotation.y = -st.brake * 1.3;
 			const blink = Math.floor(sim.time * 3) % 2 === 0;
 			const set = (l, on) => l.m.color.copy(on ? l.on : l.off);
-			set(this.lamps.ca, sim.ca.alarm ? blink : sim.opts.czuwak && st.v > 0.5 && sim.ca.t > 50);
+			// lampka czuwania – czuwak i SHP (ten sam przycisk)
+			set(this.lamps.ca, sim.ca.alarm || sim.shp.alarm ? blink : sim.opts.czuwak && st.v > 0.5 && sim.ca.t > 50);
 			set(this.lamps.doors, sim.doorsOpen);
 			set(this.lamps.brake, st.brake > 0.05);
 			set(this.lamps.power, sim.power); // napięcie w sieci (pantograf + wyłącznik szybki)
@@ -573,7 +575,8 @@
 			this.drawSpeedo(sim);
 			this.drawBrake(sim);
 			this.drawDial(this.volt, 'kV', 4, sim.train.electric === false ? 0 : 3.0 + Math.sin(sim.time * 0.3) * 0.08);
-			this.drawDial(this.amp, 'A', 1000, Math.abs(sim.st.traction) * 820 * Math.min(1, 0.3 + sim.st.v / 15));
+			// amperomierz: napęd wg serii – prąd silników z modelu napędu (1 = znamionowy ok. 560 A)
+			this.drawDial(this.amp, 'A', 1000, sim.drive ? Math.min(1000, sim.drive.I * 560) : Math.abs(sim.st.traction) * 820 * Math.min(1, 0.3 + sim.st.v / 15));
 		}
 
 		// mały zegar analogowy: tarcza z podziałką, opis jednostki, wskazówka
@@ -660,13 +663,16 @@
 				g.fillStyle = ASPECT[sig.aspect];
 				g.fill();
 				g.fillStyle = '#c9d1db';
+				// oznaczenie sygnału wg Ie-1 (S1…S13a) nad lampką
+				g.font = '700 17px ui-monospace, Consolas, monospace';
+				g.fillText(sig.code, 460, 56);
 				g.font = '600 18px system-ui, sans-serif';
 				const d = sig.pos - st.pos;
 				g.fillText(d < 1000 ? `${Math.round(d)} m` : `${(d / 1000).toFixed(1)} km`, 460, 135);
 			}
 			g.fillStyle = '#ffb020';
 			g.font = '700 22px ui-monospace, Consolas, monospace';
-			g.fillText(P.leverLabel(sim.lever), 460, 200);
+			g.fillText(sim.leverName(), 460, 200);
 			tex.needsUpdate = true;
 		}
 
@@ -687,7 +693,8 @@
 				g.textAlign = 'left';
 			};
 			row(30, 'Siła pociągowa', `${Math.round(st.traction * 100)} %`, '#34d058');
-			row(70, 'Hamulec', `${(st.brake * 3.8).toFixed(1)} bar`, st.brake > 0.05 ? '#ff6b5e' : null);
+			if (sim.air) row(70, 'Przewód / cylinder', `${sim.air.pg.toFixed(1)} / ${sim.air.cyl[0].toFixed(1)} bar`, sim.air.cyl[0] > 0.2 ? '#ff6b5e' : null);
+			else row(70, 'Hamulec', `${(st.brake * 3.8).toFixed(1)} bar`, st.brake > 0.05 ? '#ff6b5e' : null);
 			row(110, 'Drzwi', sim.doorsOpen ? 'OTWARTE' : 'zamknięte', sim.doorsOpen ? '#ffb020' : '#34d058');
 			row(150, 'Profil', `${window.TrainRoutes.gradeAt(sim.route, st.pos - sim.L / 2)} ‰`);
 			// czuwak: pasek do alarmu
@@ -756,7 +763,9 @@
 
 		drawBrake(sim) {
 			// czerwona – cylinder hamulcowy, biała – przewód główny
-			this.dial(this.brakeG, sim.st.brake * 3.8, 10, 2, 'bar', '#ff4b3e', 5 - sim.st.brake * 1.5);
+			// hamulec zespolony: ciśnienia z modelu powietrza (cylinder pierwszego pojazdu)
+			if (sim.air) this.dial(this.brakeG, sim.air.cyl[0], 10, 2, 'bar', '#ff4b3e', sim.air.pg);
+			else this.dial(this.brakeG, sim.st.brake * 3.8, 10, 2, 'bar', '#ff4b3e', 5 - sim.st.brake * 1.5);
 		}
 
 		// oko maszynisty w świecie (lekkie drgania przy jeździe)

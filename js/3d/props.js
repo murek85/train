@@ -80,17 +80,18 @@
 		/* liściaste: korona (geometria w jednostkach: wysokość korony ok. 1) – rdzeń, n kęp na różnych wysokościach
 		   (wyżej i niżej bliżej osi – kształt jaja, nie kuli) i n drobnych kępek na obrzeżu, które rozbijają sylwetkę;
 		   drobne kępki z mniej dokładnej bryły (ok. 1000 trójkątów na koronę) */
-		const leafy = (n, seed, spread, squash, vy = 0.42) => {
+		const leafy = (n, seed, spread, squash, vy = 0.42, lo = false) => {
 			const parts = [];
-			const lobe = (r, det, ox, oy, oz, sd) => parts.push({ geo: lumpy(r, det, sd, squash).translate(ox, oy, oz), color: leafShade(0, 0.55) });
-			lobe(0.34, 1, 0, 0.06, 0, seed);
-			for (let k = 0; k < n; k++) {
+			const lobe = (r, det, ox, oy, oz, sd) => parts.push({ geo: lumpy(r, lo ? 0 : det, sd, squash).translate(ox, oy, oz), color: leafShade(0, 0.55) });
+			lobe(lo ? 0.38 : 0.34, 1, 0, 0.06, 0, seed);
+			// wersja z daleka (lo): rdzeń i co druga kępa z bryły 20-ściennej, bez drobnych kępek – ok. 100 trójkątów
+			for (let k = 0; k < n; k += lo ? 2 : 1) {
 				const a = k * 2.39996 + hash(seed + k) * 0.6, h = hash(seed * 3 + k);
 				const oy = (h - 0.45) * vy * 1.5;
 				const rad = spread * (0.75 + 0.5 * hash(seed * 5 + k)) * (1 - Math.min(0.6, Math.abs(oy) * 0.9));
-				lobe(0.17 + hash(seed * 2 + k) * 0.15, 1, Math.cos(a) * rad, oy, Math.sin(a) * rad, seed + k * 13);
+				lobe((0.17 + hash(seed * 2 + k) * 0.15) * (lo ? 1.15 : 1), 1, Math.cos(a) * rad, oy, Math.sin(a) * rad, seed + k * 13);
 			}
-			for (let k = 0; k < n; k++) {
+			for (let k = 0; k < (lo ? 0 : n); k++) {
 				const a = k * 2.39996 + 1.2 + hash(seed * 7 + k) * 0.8, h = hash(seed * 11 + k);
 				const oy = (h - 0.4) * vy * 1.7, rad = spread * (1.25 + 0.3 * hash(seed * 13 + k)) * (1 - Math.min(0.55, Math.abs(oy) * 0.8));
 				lobe(0.09 + hash(seed * 17 + k) * 0.07, 0, Math.cos(a) * rad, oy, Math.sin(a) * rad, seed + k * 29 + 5);
@@ -98,19 +99,21 @@
 			return merge(parts);
 		};
 		// iglaste: kilka pięter postrzępionych stożków
-		const spruce = (() => {
+		// lo – wersja z daleka: 4 piętra po 8 boków (ok. 100 trójkątów zamiast ok. 900)
+		const spruceOf = (lo) => {
 			const parts = [];
 			// 7 pięter gałęzi: brzegi postrzępione (co drugi wierzchołek dalej i niżej – zwisające końce gałęzi)
-			const tiers = 7;
+			const tiers = lo ? 4 : 7;
 			for (let k = 0; k < tiers; k++) {
 				const t = k / tiers;
-				const r = 0.52 * (1 - t * 0.82), h = 0.27;
-				const g = new T.ConeGeometry(r, h, 16, 2, false).translate(0, -0.42 + t * 0.86, 0);
+				const r = 0.52 * (1 - t * 0.82), h = lo ? 0.4 : 0.27;
+				const y0 = -0.42 + t * 0.86 + (lo ? 0.06 : 0);
+				const g = new T.ConeGeometry(r, h, lo ? 8 : 16, lo ? 1 : 2, false).translate(0, y0, 0);
 				const p = g.attributes.position;
-				const yb = -0.42 + t * 0.86 - h / 2;
+				const yb = y0 - h / 2;
 				for (let i = 0; i < p.count; i++) {
 					const y = p.getY(i), a = Math.atan2(p.getZ(i), p.getX(i));
-					const tip = 0.5 + 0.5 * Math.cos(a * 8 + k * 1.3);
+					const tip = 0.5 + 0.5 * Math.cos(a * (lo ? 4 : 8) + k * 1.3);
 					const lev = (y - yb) / h; // 0 – dół piętra, 1 – czubek
 					if (lev < 0.99) {
 						const j = 1 + (tip - 0.5) * 0.32 * (1 - lev) + (hash(i * 3.7 + k) - 0.5) * 0.12;
@@ -121,7 +124,8 @@
 				parts.push({ geo: g, color: (x, y) => { const s = 0.5 + 0.5 * Math.max(0, Math.min(1, y + 0.5)) + 0.1 * Math.hypot(x, 0); return [s, s, s]; } });
 			}
 			return merge(parts);
-		})();
+		};
+		const spruce = spruceOf(false);
 		const trunk = new T.CylinderGeometry(0.32, 0.5, 1, 7);
 		trunk.userData.shared = true;
 		return {
@@ -132,6 +136,15 @@
 			bush: leafy(6, 2.2, 0.3, 0.75),
 			spruce,
 			trunk,
+			// z daleka (World: kawałki dalej od kamery, zwarte masy lasu)
+			lo: {
+				oak: leafy(9, 1.3, 0.34, 0.9, 0.42, true),
+				birch: leafy(8, 7.7, 0.22, 1.4, 0.42, true),
+				poplar: leafy(7, 4.4, 0.14, 2.6, 0.42, true),
+				pine: leafy(8, 9.1, 0.36, 0.45, 0.8, true),
+				bush: leafy(6, 2.2, 0.3, 0.75, 0.42, true),
+				spruce: spruceOf(true),
+			},
 		};
 	}
 

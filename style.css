@@ -174,18 +174,29 @@ kbd {
 .hud-signals .hint-line { min-height: 14px; }
 /* semafor: głowica (komora z daszkami) obok opisu */
 .sig-row { display: flex; align-items: center; gap: 9px; width: 100%; justify-content: center; }
-.sig-head { display: flex; flex-direction: column; gap: 4px; padding: 6px 5px; border-radius: 12px 12px 6px 6px; background: linear-gradient(#15181d, #0b0d10); border: 2px solid #2b3240; flex: none; }
-.sl { position: relative; width: 13px; height: 13px; border-radius: 50%; background: #22262c; display: block; box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.6); }
+.sig-head { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px 4px; border-radius: 12px 12px 6px 6px; background: linear-gradient(#15181d, #0b0d10); border: 2px solid #2b3240; flex: none; }
+.sl { position: relative; width: 11px; height: 11px; border-radius: 50%; background: #22262c; display: block; box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.6); }
+/* pas świetlny pod głowicą (Ie-1: zielony – 100 km/h, pomarańczowy – 60 km/h) */
+.sp { display: block; width: 15px; height: 3px; margin-top: 2px; border-radius: 1px; background: #22262c; }
 .sl::before { content: ''; position: absolute; left: -2px; right: -2px; top: -3px; height: 4px; border-radius: 3px 3px 0 0; background: #0b0d10; }
-.sig-head.green .sl.g { background: radial-gradient(circle at 40% 35%, #c8ffd6, var(--green) 55%); box-shadow: 0 0 12px var(--green); }
-.sig-head.yellow .sl.y { background: radial-gradient(circle at 40% 35%, #fff0c4, var(--amber) 55%); box-shadow: 0 0 12px var(--amber); }
-.sig-head.red .sl.r { background: radial-gradient(circle at 40% 35%, #ffd0cb, var(--red) 55%); box-shadow: 0 0 12px var(--red); }
+/* sygnał wg Ie-1: g / y – górne światło zielone / pomarańczowe, f – migające, r – czerwone, y2 – dolne pomarańczowe,
+   pg / py – pas zielony / pomarańczowy */
+.sig-head.g .sl.g { background: radial-gradient(circle at 40% 35%, #c8ffd6, var(--green) 55%); box-shadow: 0 0 10px var(--green); }
+.sig-head.y .sl.y, .sig-head.y2 .sl.y2 { background: radial-gradient(circle at 40% 35%, #fff0c4, var(--amber) 55%); box-shadow: 0 0 10px var(--amber); }
+.sig-head.r .sl.r { background: radial-gradient(circle at 40% 35%, #ffd0cb, var(--red) 55%); box-shadow: 0 0 10px var(--red); }
+.sig-head.f.g .sl.g, .sig-head.f.y .sl.y { animation: sig-flash 1s steps(1) infinite; }
+/* sygnał zastępczy: białe migające (obok czerwonego) */
+.sig-head.w .sl.w { background: radial-gradient(circle at 40% 35%, #ffffff, #dfe6ff 55%); box-shadow: 0 0 10px #ffffff; animation: sig-flash 1s steps(1) infinite; }
+.sig-head.pg .sp { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.sig-head.py .sp { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+@keyframes sig-flash { 50% { background: #22262c; box-shadow: none; } }
 .sig-info { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; text-align: left; line-height: 1.15; }
 .sig-info b { font-size: 13px; }
 .sig-info em { font: 700 17px/1.15 ui-monospace, Consolas, monospace; font-style: normal; color: #e6ebf2; }
 .sig-box.red .sig-info b { color: #ff6b5e; }
 .sig-box.yellow .sig-info b { color: var(--amber); }
 .sig-box.green .sig-info b { color: #6be08a; }
+.sig-box.lim .sig-info b { color: var(--amber); }
 /* pasek zbliżania (pełny = semafor tuż przed czołem) */
 .dist-bar { width: 100%; height: 5px; border-radius: 3px; background: #0b0f15; overflow: hidden; }
 .dist-bar i { display: block; height: 100%; width: 0; background: #6b7686; transition: width 0.2s linear; }
@@ -319,13 +330,25 @@ kbd {
 	padding: 7px 14px;
 	border-radius: 8px;
 	background: rgba(16, 22, 32, 0.9);
-	border-left: 4px solid var(--blue);
+	border: 1px solid var(--blue); /* cienka ramka w kolorze rodzaju komunikatu (jak komunikat radiowy) */
 	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 	transition: opacity 0.5s, transform 0.5s;
 }
 .toast.warn { border-color: var(--amber); }
 .toast.bad { border-color: var(--red); }
 .toast.good { border-color: var(--green); }
+.toast.announce { border-color: #5aa7ff; }
+.toast.announce::before { content: '📢 '; }
+.trip-now .pax { color: #9fb4cc; }
+/* ustawienia: suwaki głośności – jednakowej szerokości w jednej kolumnie, opis zawija się do następnej linii;
+   głośność grup wcięta pod głośnością ogólną */
+.row-opt.vol-opt { display: grid; grid-template-columns: minmax(0, 1fr) 240px 40px; gap: 4px 12px; }
+.row-opt.vol-opt input[type="range"] { width: 100%; }
+.row-opt.vol-opt span { text-align: right; }
+.mix-opt { padding-left: 14px; font-size: 13px; line-height: 1.25; }
+/* kilometraż pod zegarem */
+.trip-km { display: flex; align-items: baseline; gap: 8px; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; }
+.trip-km b { font: 600 12.5px ui-monospace, Consolas, monospace; color: #e6ebf2; font-variant-numeric: tabular-nums; }
 .toast.fade { opacity: 0; transform: translateY(-6px); }
 .toast.fade.quick { transition: opacity 0.2s, transform 0.2s; }
 .toast { pointer-events: auto; cursor: pointer; }
@@ -473,6 +496,117 @@ button.back { padding: 6px 12px; }
 	background: rgba(10, 14, 22, 0.75);
 	font: 600 12px ui-monospace, Consolas, monospace;
 	color: #6be08a;
+	pointer-events: none;
+}
+
+/* radiotelefon (komunikat dyżurnego ruchu) – u góry na środku; komunikaty gry przesuwają się wtedy niżej */
+.radio { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 6; width: min(600px, calc(100% - 32px)); padding: 8px 14px 10px; border-radius: 10px; background: rgba(14, 22, 30, 0.94); border: 1px solid #2f5a46; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); cursor: pointer; animation: radio-in 0.25s ease-out; }
+.radio.hidden { display: none; }
+.radio-h { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #8fd9ad; }
+.radio-h b { font-weight: 700; letter-spacing: 0.02em; }
+.radio-ico { width: 10px; height: 10px; border-radius: 50%; background: #34d058; box-shadow: 0 0 8px #34d058; }
+.radio-ack { margin-left: auto; display: none; padding: 1px 8px; border-radius: 9px; background: #ffb020; color: #1a1204; font-weight: 700; font-size: 11px; }
+.radio.ack .radio-ack { display: inline-block; animation: sig-flash 1s steps(1) infinite; }
+.radio.ack { border-color: #ffb020; }
+.radio p { margin: 5px 0 0; color: #e8edf3; font-size: 14px; line-height: 1.35; }
+@keyframes radio-in { from { opacity: 0; transform: translate(-50%, -8px); } }
+body.radio-on #toasts { top: 112px; }
+/* rozkaz pisemny: kartka (formularz) po lewej u góry; po potwierdzeniu – przycisk z numerem */
+.order { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 7; width: min(520px, calc(100% - 32px)); padding: 12px 16px; border-radius: 4px; background: #f3efe3; color: #1c1c1c; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); font-family: Georgia, 'Times New Roman', serif; cursor: pointer; }
+.order.hidden, .order-chip.hidden { display: none; }
+.order-h { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #9b9482; padding-bottom: 4px; }
+.order-h b { font-size: 17px; letter-spacing: 0.04em; }
+.order-meta { white-space: pre-line; font-size: 12.5px; color: #4a463c; margin-top: 5px; line-height: 1.4; }
+.order p { margin: 8px 0; font-size: 15px; line-height: 1.45; }
+.order-f { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: #4a463c; border-top: 1px dashed #9b9482; padding-top: 6px; }
+.order-ack { padding: 2px 9px; border-radius: 10px; background: #c62f2f; color: #fff; font: 700 11px system-ui, sans-serif; }
+.order.done .order-ack { background: #2f8a4c; }
+.order-chip { position: fixed; top: 12px; left: 230px; z-index: 6; padding: 4px 10px; border-radius: 6px; border: 1px solid #9b9482; background: #f3efe3; color: #1c1c1c; font: 700 12px Georgia, serif; cursor: pointer; }
+body.radio-on .order:not(.hidden) ~ #toasts { top: 200px; }
+
+/* zadanie samouczka – na dole na środku, nad podpowiedzią */
+.task { position: fixed; left: 50%; transform: translateX(-50%); bottom: 256px; z-index: 4; width: min(620px, calc(100% - 32px)); padding: 9px 14px 11px; border-radius: 10px; background: rgba(16, 20, 30, 0.93); border: 1px solid #5d6bd6; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); pointer-events: none; }
+.task.hidden { display: none; }
+.task-h { display: flex; justify-content: space-between; font-size: 12px; color: #a9b6ff; }
+.task p { margin: 4px 0 0; color: #eef1f6; font-size: 14px; line-height: 1.4; }
+/* scenariusze: lista w menu, cele na ekranie końca jazdy */
+.scen-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; max-height: 62vh; overflow-y: auto; padding-right: 4px; }
+.scen { display: flex; flex-direction: column; gap: 5px; padding: 12px 14px; border-radius: 10px; background: #151b24; border: 1px solid #2a3442; text-align: left; }
+.scen h3 { margin: 0; font-size: 16px; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.scen h3 .stars { color: var(--amber); letter-spacing: 1px; font-size: 14px; white-space: nowrap; }
+.scen h3 .stars .off { color: #3a4352; font-style: normal; }
+.scen .t { color: var(--amber); font-size: 12.5px; font-weight: 600; }
+.scen p { margin: 0; color: #c3cad5; font-size: 13px; line-height: 1.4; }
+.scen ul { margin: 2px 0 0; padding-left: 18px; color: #9aa6b6; font-size: 12px; }
+.scen .lvl { font-size: 11px; color: var(--muted); font-weight: 400; }
+.scen button { align-self: flex-start; margin-top: 4px; }
+.scen.daily { border-color: var(--amber); background: #1d1a12; }
+.end-goals { list-style: none; margin: 4px 0 10px; padding: 0; }
+.end-goals.hidden { display: none; }
+.end-goals li { padding: 3px 0; font-size: 14px; color: #c3cad5; }
+.end-goals li.ok::before { content: '✓ '; color: #6be08a; font-weight: 700; }
+.end-goals li.no::before { content: '✗ '; color: #ff6b5e; font-weight: 700; }
+
+/* napęd wg serii: pozycja nastawnika, prąd silników, oporniki / obroty */
+.drive { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 70px; }
+.drive.hidden { display: none; }
+.drive b { font: 700 20px ui-monospace, Consolas, monospace; color: #ffb020; }
+.drive b.econ { color: #6be08a; }
+.dbar { width: 64px; height: 6px; border-radius: 3px; background: #0b0f15; overflow: hidden; }
+.dbar i { display: block; height: 100%; width: 0; background: #3aa0ff; }
+.dbar i.over { background: #ff4b3e; }
+.dbar.heat i { background: #ff9f1c; }
+#d-info { font-size: 10px; color: #9aa6b6; text-align: center; }
+#lever.series { display: none; }
+
+/* hamulec zespolony: nastawnik bez pozycji hamowania, zawór maszynisty z ciśnieniami */
+#lever.air .b { display: none; }
+.valve { margin-top: 6px; }
+.valve.hidden { display: none; }
+#valve-pos { display: flex; flex-direction: column; gap: 1px; font: 600 10.5px ui-monospace, Consolas, monospace; }
+#valve-pos div { padding: 0 4px; border-radius: 3px; color: #7f8a99; }
+#valve-pos div.active { background: #ff6b5e; color: #1a0705; }
+#valve-pos div.e.active { background: #ff2a1f; color: #fff; }
+#valve-pos div[data-v="run"].active, #valve-pos div[data-v="fill"].active { background: #34d058; color: #06210f; }
+.valve-p { display: flex; gap: 8px; margin-top: 3px; font: 600 11px ui-monospace, Consolas, monospace; color: #9aa6b6; }
+.valve-p b { color: #e6ebf2; }
+.valve-p b.low { color: #ff6b5e; }
+
+/* kontrola trasy w Generatorze tras */
+.gen-check { margin: -2px 0 8px 26px; padding: 6px 10px; border-left: 2px solid #3a4658; font-size: 12.5px; }
+.gen-check.hidden { display: none; }
+.gc-ok { color: #6be08a; }
+.gc-sum { color: #c3cad5; font-weight: 600; margin-bottom: 3px; }
+.gc-item { color: #9aa6b6; padding: 2px 0; }
+.gc-item.warn { color: #ffb27a; }
+.gc-item small { display: block; color: #6f7a89; }
+
+/* ocena jazdy: kategorie, wykres przejazdu, historia */
+.end-rating { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 14px; margin: 6px 0 8px; }
+.end-rating .rc { display: flex; flex-direction: column; font-size: 12.5px; color: #9aa6b6; }
+.end-rating .rc b { color: #e6ebf2; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+.end-rating .rc b i { color: var(--amber); font-style: normal; letter-spacing: 1px; }
+.end-rating .rc b i em { color: #3a4352; font-style: normal; }
+.end-rating .rall { grid-column: 1 / -1; font-size: 14px; color: #e6ebf2; }
+.end-chart { display: block; width: 100%; height: auto; margin: 4px 0 10px; border-radius: 6px; background: #0d1219; }
+.hist-list { max-height: 62vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.hist-item { padding: 8px 12px; border-radius: 8px; background: #151b24; border: 1px solid #2a3442; font-size: 13px; color: #c3cad5; }
+.hist-item b { color: #e6ebf2; }
+.hist-item .st { color: var(--amber); letter-spacing: 1px; }
+.hist-item small { display: block; color: #8592a3; margin-top: 2px; }
+
+/* nakładka diagnostyczna (F3) */
+#perf {
+	position: fixed;
+	top: 92px;
+	right: 16px;
+	z-index: 30;
+	padding: 6px 10px;
+	border-radius: 6px;
+	background: rgba(10, 14, 22, 0.82);
+	font: 500 12px/1.35 ui-monospace, Consolas, monospace;
+	color: #cfe3f5;
+	white-space: pre;
 	pointer-events: none;
 }
 

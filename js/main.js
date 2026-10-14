@@ -3,6 +3,8 @@
 	'use strict';
 	const R = window.TrainRoutes;
 	const { Sim, autopilot, buildTimetable, fmtClock, fmtDelay } = window.TrainSim;
+	const SC = window.TrainScenario;
+	const SCENARIOS = window.TrainScenarios || [];
 
 	const $ = (id) => document.getElementById(id);
 	// trasy: wbudowane, rzeczywiste dołączone do gry (routes/*.js) i wygenerowane w menu (zapisane w przeglądarce)
@@ -28,6 +30,9 @@
 	if (trainCfg && trainCfg.train && !trainCfg.emu && !trainCfg.loco) trainCfg = R.legacyConfig(R.TRAIN_TYPES[trainCfg.train] ? trainCfg.train : 'ezt', trainCfg.cars || 1);
 	let sim = null;
 	let demo = null;
+	// scen – scenariusz z menu „Scenariusze” (null – jazda swobodna); rideEvents – zdarzenia losowe bieżącej jazdy (do
+	// zapisu gry); rideWeather – pogoda bieżącej jazdy (scenariusz, zmiana w czasie jazdy, pauza)
+	let scen = null, rideEvents = null, rideWeather = null, rideTraffic = null;
 	let timeScale = 1;
 	let endTimer = 0;
 	let last = performance.now();
@@ -141,13 +146,16 @@
 	function cfgFor(def) {
 		return R.normConfig(def, trainCfg);
 	}
-	function routeFor(def) {
-		const c = cfgFor(def);
+	function routeFor(def, cfg) {
+		const c = cfg ? R.normConfig(def, cfg) : cfgFor(def);
 		const key = `${def.id}|${R.configKey(c)}`;
 		if (!prepared[key]) prepared[key] = R.prepare(def, c);
 		return prepared[key];
 	}
 	function routeById(id) { return routeFor(defById(id)); }
+	// trasa bieżącej jazdy: scenariusz (jego trasa i skład) albo wybór z menu
+	function rideDef() { return scen ? defById(scen.route) : defById(selected); }
+	function rideRoute() { return scen ? routeFor(defById(scen.route), scen.train) : routeById(selected); }
 	function timetable(route) {
 		const key = `${route.id}|${route.configKey}`;
 		if (!timetables[key]) timetables[key] = buildTimetable(route);
@@ -231,8 +239,9 @@
 		$('summary').innerHTML = `<b>${esc(route.title)}</b> · ${esc(t.name)}${route.freight ? ' (towarowy)' : ''} · ${Math.round(route.trainLength)} m, ${Math.round(t.mass / 1000)} t · odjazd ${tName}, ${wName} · ~<b>${duration} min</b>${best !== null ? ` · rekord: <b>${best}</b>` : ''}`;
 		$('sum-map').textContent = def.title;
 		$('sum-train').textContent = t.name;
-		$('sum-cond').textContent = `${wName}, ${tName}`;
-		$('sum-help').textContent = [$('opt-ca').checked ? 'czuwak' : '', $('opt-assist').checked ? 'asystent' : ''].filter(Boolean).join(', ') || 'bez pomocy';
+		const tr = Number($('opt-traffic').value);
+		$('sum-cond').textContent = `${wName}, ${tName}${tr ? ', ruch ' + ['', 'mały', 'średni', 'duży'][tr] : ''}${$('opt-events').checked ? ', zdarzenia losowe' : ''}`;
+		$('sum-help').textContent = [$('opt-ca').checked ? 'czuwak' : '', $('opt-shp').checked ? 'SHP' : '', $('opt-assist').checked ? 'asystent' : '', $('opt-brake').value === 'air' ? 'hamulec zespolony' : '', $('opt-drive').value === 'series' ? 'napęd wg serii' : ''].filter(Boolean).join(', ') || 'bez pomocy';
 	}
 
 	// ---------- zakładki ekranu „Gra jednoosobowa” ----------
@@ -541,10 +550,34 @@
 			const del = document.createElement('button');
 			del.textContent = 'Usuń';
 			del.addEventListener('click', () => { forgetRoute(d.id); buildGenScreen(); buildMenu(); });
-			row.append(cb, info, play, del);
+			// kontrola trasy – raport pod wierszem (ponowne kliknięcie chowa)
+			const chk = document.createElement('button');
+			chk.textContent = 'Kontrola';
+			chk.title = 'Sprawdź trasę: pochylenia, skoki wysokości, łuki, perony, przejazdy, semafory, prędkości, przejazd automatem';
+			const rep = document.createElement('div');
+			rep.className = 'gen-check hidden';
+			chk.addEventListener('click', () => {
+				if (!rep.classList.contains('hidden')) { rep.classList.add('hidden'); return; }
+				rep.innerHTML = '<span class="hint">Sprawdzanie…</span>';
+				rep.classList.remove('hidden');
+				setTimeout(() => { rep.innerHTML = checkReport(checkRoute(d)); }, 30);
+			});
+			row.append(cb, info, play, chk, del);
 			list.appendChild(row);
+			list.appendChild(rep);
 		}
 		updateExportUI();
+	}
+	// kontrola trasy wygenerowanej (skład wybrany w menu); błąd przygotowania trasy – w error
+	function checkRoute(def) {
+		try { return { list: window.TrainRouteCheck.check(routeFor(def)) }; } catch (e) { return { list: [], error: e.message || String(e) }; }
+	}
+	function checkReport(rc) {
+		if (rc.error) return `<div class="gc-item warn">⚠ ${esc(rc.error)}</div>`;
+		if (!rc.list.length) return '<div class="gc-ok">Kontrola trasy: bez błędów i uwag.</div>';
+		const w = rc.list.filter((x) => x.lvl === 'warn').length;
+		return `<div class="gc-sum">Kontrola trasy: ${w} ${plural(w, 'błąd', 'błędy', 'błędów')}, ${rc.list.length - w} ${plural(rc.list.length - w, 'uwaga', 'uwagi', 'uwag')}</div>` +
+			rc.list.map((x) => `<div class="gc-item ${x.lvl}">${x.lvl === 'warn' ? '⚠ ' : ''}km ${(x.pos / 1000).toFixed(2).replace('.', ',')} – ${esc(x.m)}<small>→ ${esc(x.fix)}</small></div>`).join('');
 	}
 	function updateExportUI() {
 		const mine = defs.filter((d) => d.custom), n = mine.filter((d) => exportSel.has(d.id)).length;
@@ -666,6 +699,14 @@
 			genLog(`Zapisano trasę „${def.title}” (${((performance.now() - t0) / 1000).toFixed(0)} s)${stored ? '' : ' – tylko do końca sesji (brak miejsca w pamięci przeglądarki)'} – jest na liście „Wygenerowane trasy”.`, 'ok');
 			// trasa trafia na listę „Wygenerowane trasy” (tam „Wybierz”); w przebiegu – tylko ostrzeżenia do sprawdzenia
 			for (const x of (def.issues || []).filter((q) => q.lvl === 'warn')) genLog(`⚠ km ${(x.pos / 1000).toFixed(2)}: ${x.m}`, 'err');
+			// kontrola trasy (js/route-check.js): błędy danych, przejazd automatem
+			const rc = checkRoute(def);
+			if (rc.error) genLog('Kontrola trasy: ' + rc.error, 'err');
+			else {
+				const w = rc.list.filter((x) => x.lvl === 'warn');
+				genLog(`Kontrola trasy: ${w.length ? `${w.length} ${plural(w.length, 'błąd', 'błędy', 'błędów')}` : 'bez błędów'}${rc.list.length - w.length ? `, ${rc.list.length - w.length} ${plural(rc.list.length - w.length, 'uwaga', 'uwagi', 'uwag')}` : ''}.`, w.length ? 'err' : 'ok');
+				for (const x of w) genLog(`⚠ km ${(x.pos / 1000).toFixed(2)}: ${x.m}`, 'err');
+			}
 			buildGenScreen();
 			buildMenu();
 		} catch (e) {
@@ -784,6 +825,8 @@
 		$('scr-single').classList.toggle('hidden', name !== 'single');
 		$('scr-gen').classList.toggle('hidden', name !== 'gen');
 		$('scr-news').classList.toggle('hidden', name !== 'news');
+		$('scr-scen').classList.toggle('hidden', name !== 'scen');
+		$('scr-hist').classList.toggle('hidden', name !== 'hist');
 		showPreview();
 	}
 
@@ -805,19 +848,54 @@
 		high: 'Dodatkowo okluzja otoczenia, mgła wysokościowa, promienie słońca, cienie 4096, gęsta roślinność.',
 	};
 
+	/* Zapowiedź (sim.js announce): gong, tekst (toast) i – w ustawieniu „głos” – synteza mowy przeglądarki (głos polski,
+	   jeśli jest); przy wyciszeniu – tylko tekst */
+	function announce(text) {
+		const how = $('set-announce').value;
+		if (how === 'off') return;
+		audio.play('chime');
+		hud.toast(text, 'announce');
+		const sp = window.speechSynthesis;
+		if (how !== 'voice' || muted || !sp || mode !== 'play') return;
+		const u = new SpeechSynthesisUtterance(text);
+		u.lang = 'pl-PL';
+		const v = sp.getVoices().find((x) => /^pl/i.test(x.lang));
+		if (v) u.voice = v;
+		u.rate = 0.95;
+		u.volume = Math.min(1, (Number($('set-volume').value) / 100) * (Number($('set-mix-voice').value) / 100) * 1.2);
+		setTimeout(() => sp.speak(u), 1400); // po gongu
+	}
+
+	const MIX_KEYS = ['train', 'horn', 'amb', 'sig', 'voice'];
 	function applySettings() {
 		const vol = Number($('set-volume').value) / 100;
 		$('set-volume-val').textContent = Math.round(vol * 100) + '%';
 		muted = !$('set-sound').checked;
 		audio.setMuted(muted);
 		audio.setVolume(vol);
+		// głośność grup dźwięków
+		const mix = {};
+		for (const k of MIX_KEYS) {
+			const el = $('set-mix-' + k);
+			mix[k] = Number(el.value) / 100;
+			el.nextElementSibling.textContent = el.value + '%';
+		}
+		audio.setMix(mix);
+		save('opt.mix', mix);
 		const opts = { scale: Number($('set-scale').value), aa: $('set-aa').checked, shadows: $('set-shadows').checked };
 		renderer.setRenderOptions(opts);
 		$('fps').classList.toggle('hidden', !$('set-fps').checked);
+		// pociągi tła: limit rysowanych naraz i szczegóły (nowe modele – od następnego pojawienia się pociągu)
+		renderer.life.limit = Number($('set-traffic-max').value) || 3;
+		renderer.life.details = $('set-traffic-people').checked;
+		save('opt.trafficMax', renderer.life.limit);
+		save('opt.trafficPeople', renderer.life.details);
 		save('muted', muted);
 		save('opt.volume', vol);
 		save('opt.render', opts);
 		save('opt.fps', $('set-fps').checked);
+		save('opt.announce', $('set-announce').value);
+		if ($('set-announce').value !== 'voice' && window.speechSynthesis) window.speechSynthesis.cancel();
 	}
 
 	// ---------- zapisane gry: autozapis i 5 miejsc w localStorage (maszynista.save.auto, save.1 … save.5) ----------
@@ -904,8 +982,10 @@
 		const data = {
 			v: SAVE_V, saved: Date.now(),
 			route: r.id, title: r.title, train: r.train.name, cfg: r.config, cfgKey: r.configKey, sig: routeSig(r),
-			startClock: r.startClock, weather: $('opt-weather').value, ca: !!sim.opts.czuwak, assist: !!renderer.assist, timeScale,
-			timetable: sim.timetable,
+			startClock: r.startClock, weather: rideWeather || $('opt-weather').value, ca: !!sim.opts.czuwak, assist: !!renderer.assist, timeScale,
+			scen: scen ? scen.id : null, events: rideEvents, brake: sim.opts.brake, shp: !!sim.opts.shp, drive: sim.opts.drive, season: sim.opts.season,
+			traffic: rideTraffic ? rideTraffic.level : 0, trafficSeed: rideTraffic ? rideTraffic.seed : 1, trafficPen: !!sim.opts.trafficPenalty, dispatch: !!sim.opts.dispatch,
+			timetable: sim.timetable, ttEnergy: sim.timetable && sim.timetable.energy,
 			km: sim.st.pos / 1000, clock: sim.clock(), score: sim.score(), next: nx ? nx.name : null,
 			sim: sim.snapshot(),
 		};
@@ -924,6 +1004,8 @@
 	function loadGame(n) {
 		const d = readSave(n), why = saveProblem(d);
 		if (why) { savesMsg(why, 'err'); return; }
+		const sc = d.scen ? (d.scen.startsWith('daily-') ? dailyFor(d.scen.slice(6)) : SCENARIOS.find((x) => x.id === d.scen)) : null;
+		if (d.scen && !sc) { savesMsg('Nie można wczytać zapisu: scenariusz już nie istnieje.', 'err'); return; }
 		const prevCfg = trainCfg;
 		trainCfg = d.cfg;
 		try {
@@ -937,10 +1019,14 @@
 			savesMsg('Nie można wczytać zapisu: ' + e.message, 'err');
 			return;
 		}
-		// zapis staje się bieżącym wyborem w menu (trasa, skład, warunki)
-		selected = d.route;
-		trainMode = modeOf(trainCfg);
-		save('route', selected);
+		scen = sc || null;
+		if (scen) trainCfg = prevCfg; // scenariusz ma własny skład – wybór w menu bez zmian
+		else {
+			// zapis staje się bieżącym wyborem w menu (trasa, skład, warunki)
+			selected = d.route;
+			trainMode = modeOf(trainCfg);
+			save('route', selected);
+		}
 		$('opt-ca').checked = d.ca;
 		$('opt-assist').checked = d.assist;
 		$('opt-weather').value = $('pause-weather').value = d.weather || 'auto';
@@ -977,24 +1063,28 @@
 	   narysować) budowa jazdy (beginGame), potem tryb „loading” – świat wokół pociągu dobudowuje się, symulacja stoi;
 	   gdy nie ma już kawałków do zbudowania (i minęło kilka klatek na kompilację shaderów) – jazda (finishLoading). */
 	let loadingScreen = null, loadingFrames = 0, resumed = false;
+	// kompilacja shaderów na ekranie wczytywania: 0 – nie zaczęta, 1 – trwa, 2 – gotowa
+	let precompiled = 0;
 	// snap – zapis gry (loadGame): jazda od zapisanego miejsca zamiast od początku trasy
 	function startGame(snap) {
 		if (!(snap && snap.sim)) snap = null;
 		if (!defs.length || !selected) { menuScreen('gen'); buildGenScreen(); return; } // bez tras – do generatora
 		if (mode === 'loading') return;
-		const def = defById(selected), route = routeById(selected), t = route.train;
-		const dep = snap ? snap.clock : depClock(def), h = Math.floor(dep / 3600) % 24;
-		const wsel = $('opt-weather');
-		const kind = route.freight ? 'POCIĄG TOWAROWY' : (route.name.split(' ')[0] || 'Pociąg').toUpperCase();
+		const def = rideDef(), route = rideRoute(), t = route.train;
+		const dep = snap ? snap.clock : scen ? hm(scen.clock) : depClock(def), h = Math.floor(dep / 3600) % 24;
+		const wsel = $('opt-weather'), wKey = snap ? snap.weather : scen ? scen.weather : wsel.value;
+		const wName = (wsel.querySelector(`option[value="${wKey}"]`) || wsel.options[wsel.selectedIndex]).text;
+		const kind = scen ? 'SCENARIUSZ · ' + scen.title.toUpperCase() : route.freight ? 'POCIĄG TOWAROWY' : (route.name.split(' ')[0] || 'Pociąg').toUpperCase();
 		const km = ((def.stations[def.stations.length - 1].pos - def.stations[0].pos) / 1000).toFixed(1).replace('.', ',');
 		loadingScreen = window.TrainScreens ? window.TrainScreens.loading({
 			eyebrow: `${kind} · ${def.real ? 'TRASA RZECZYWISTA' : 'TRASA'}`,
 			title: route.title,
-			sub: `${t.name} · ${snap ? 'zapis z godz.' : 'odjazd'} ${fmtClock(dep).slice(0, 5)} · ${wsel.options[wsel.selectedIndex].text} · ${km} km`,
+			sub: `${t.name} · ${snap ? 'zapis z godz.' : 'odjazd'} ${fmtClock(dep).slice(0, 5)} · ${wName} · ${km} km`,
 			night: h < 5 || h >= 21 ? 0.9 : h < 7 || h >= 19 ? 0.5 : 0.12,
 		}) : null;
 		mode = 'loading';
 		loadingFrames = 0;
+		precompiled = 0;
 		sim = null;
 		requestAnimationFrame(() => requestAnimationFrame(() => {
 			try {
@@ -1018,24 +1108,52 @@
 			hud.toast('Gdy semafor zmieni się na zielony, przesuń nastawnik w górę (↑).', 'info');
 		}
 		hud.toast('Kamera: przeciągnij myszą lub ←/→, kółko – oddalenie, V – tryb kamery, C – widok domyślny.', 'info');
+		if (scen && !resumed) hud.toast(`Scenariusz „${scen.title}”. Cele: ${(sim.scenario.goals() || []).join('; ') || 'ukończ jazdę'}.`, 'info');
+		if (sim.scenario && sim.scenario.task()) hud.task(sim.scenario.task());
+		if (sim.pendingOrder()) showLastOrder(); // zapis z niepotwierdzonym rozkazem
 		if (loadingScreen) loadingScreen.done();
 		loadingScreen = null;
 	}
 	function beginGame(snap) {
 		exitFree();
 		document.querySelector('.controls [data-act=wipers]')?.classList.remove('on');
-		const route = routeById(selected);
+		const route = rideRoute();
 		applyClock(route);
+		if (scen && scen.clock) route.startClock = hm(scen.clock) - route.originWait; // godzina odjazdu ze scenariusza
 		if (snap) route.startClock = snap.startClock; // godzina z zapisu (także przestawiona w pauzie)
-		save('trainCfg', trainCfg);
-		const opts = { czuwak: $('opt-ca').checked, timetable: snap ? snap.timetable : timetable(route) };
+		if (!scen) save('trainCfg', trainCfg);
+		/* scenariusz albo zdarzenia losowe (opcja jazdy swobodnej; z zapisu – te same zdarzenia co przed zapisem) */
+		let run = null;
+		rideEvents = null;
+		// zadanie dnia: zdarzenia losowane z ziarna daty po przygotowaniu trasy
+		if (scen) run = SC.runner(scen.daily ? Object.assign({}, scen, { events: SC.randomEvents(route, scen.seed, scen.weather).events }) : scen, route);
+		else if (snap ? snap.events : $('opt-events').checked) {
+			rideEvents = snap && snap.events ? snap.events : SC.randomEvents(route, Date.now() % 1e9, $('opt-weather').value);
+			run = SC.runner(rideEvents, route);
+		}
+		// hamulec i SHP: z zapisu albo z opcji („Pomoc”)
+		const brake = snap ? snap.brake || 'simple' : $('opt-brake').value, shp = snap ? !!snap.shp : $('opt-shp').checked;
+		const drive = snap ? snap.drive || 'simple' : $('opt-drive').value, season = snap ? snap.season || 'summer' : scen && scen.season ? scen.season : $('opt-season').value;
+		const tt = snap ? snap.timetable : timetable(route);
+		if (snap && snap.ttEnergy) tt.energy = snap.ttEnergy; // odniesienie oceny „Energia”
+		// ruch na linii: poziom i ziarno (z zapisu – te same pociągi tła)
+		const tLevel = snap ? snap.traffic || 0 : Number($('opt-traffic').value), tSeed = snap ? snap.trafficSeed || 1 : Math.floor(Math.random() * 1e9);
+		const traffic = tLevel > 0 ? new window.TrainTraffic.Traffic(route, { level: tLevel, seed: tSeed, timetable: tt }) : null;
+		const dispatch = snap ? snap.dispatch !== false : $('opt-dispatch').checked;
+		const opts = { czuwak: $('opt-ca').checked, timetable: tt, scenario: run, brake, shp, traffic, trafficPenalty: snap ? !!snap.trafficPen : $('opt-traffic-pen').checked, dispatch, drive, season };
+		rideTraffic = { level: tLevel, seed: tSeed };
 		sim = snap ? Sim.restore(route, opts, snap.sim) : new Sim(route, opts);
 		resumed = !!snap;
 		save('opt.ca', $('opt-ca').checked);
 		save('opt.assist', $('opt-assist').checked);
 		renderer.assist = $('opt-assist').checked;
 		applyGraphics();
+		// pogoda jazdy: z zapisu, ze scenariusza albo z menu (scenariusz nie zmienia wyboru w menu)
+		rideWeather = snap ? snap.weather || $('opt-weather').value : scen ? scen.weather : $('opt-weather').value;
+		renderer.setWeather(rideWeather);
+		renderer.world.detailDyn = 1; // dopasowanie szczegółów – od nowa w każdej jeździe
 		renderer.reset(sim);
+		sim.setConditions(rideWeatherKey()); // przyczepność wg pogody („jak w scenariuszu” – pogoda trasy)
 		$('hud').classList.remove('hidden');
 		$('btn-pause').classList.remove('hidden');
 		showOverlay(null);
@@ -1056,7 +1174,9 @@
 		save('opt.quality', q);
 		save('opt.weather', w);
 		renderer.setQuality(q);
-		renderer.setWeather(w);
+		if (src === 'pause' || !sim) rideWeather = w;
+		renderer.setWeather(sim && rideWeather ? rideWeather : w);
+		if (sim) sim.setConditions(rideWeatherKey());
 	}
 
 	function togglePause() {
@@ -1207,10 +1327,21 @@
 		$('end-title').textContent = ok ? 'Koniec trasy – ' + sim.route.stations[sim.route.stations.length - 1].name : 'Jazda przerwana';
 		$('end-reason').textContent = ok ? `Przejazd zakończony o ${fmtClock(sim.clock())}.` : sim.failReason;
 		const ratio = ok ? Math.max(0, score / max) : 0;
-		const stars = ratio >= 0.9 ? 3 : ratio >= 0.7 ? 2 : ratio >= 0.4 ? 1 : 0;
+		let stars = ratio >= 0.9 ? 3 : ratio >= 0.7 ? 2 : ratio >= 0.4 ? 1 : 0;
+		// scenariusz: gwiazdki za ukończenie i cele; najlepszy wynik zapamiętany
+		const res = scen && sim.scenario ? sim.scenario.result(sim) : null;
+		$('end-goals').classList.toggle('hidden', !res);
+		if (res) {
+			stars = res.stars;
+			if (ok) $('end-title').textContent = `Scenariusz „${scen.title}” ukończony`;
+			$('end-goals').innerHTML = res.goals.map((g) => `<li class="${g.ok ? 'ok' : 'no'}">${esc(g.text)}</li>`).join('');
+			const bestS = load('scen.' + scen.id, 0);
+			if (stars > bestS) save('scen.' + scen.id, stars);
+		}
 		$('end-stars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
 		$('end-points').textContent = `${score} / ${max} pkt`;
-		if (ok) {
+		showRating(ok, score);
+		if (ok && !scen) {
 			const best = load(bestKey(sim.route), null);
 			if (best === null || score > best) {
 				save(bestKey(sim.route), score);
@@ -1229,10 +1360,76 @@
 		const p = sim.penalties;
 		const parts = [
 			['prędkość', p.overspeed], ['hamowanie nagłe', p.emergency], ['czuwak', p.czuwak],
-			['przejazdy', p.crossing], ['przejechane perony', p.overrun], ['pantograf pod obciążeniem', p.panto || 0],
+			['przejazdy', p.crossing], ['przejechane perony', p.overrun], ['pantograf pod obciążeniem', p.panto || 0], ['komunikaty dyżurnego', p.radio || 0], ['SHP', p.shp || 0], ['zatrzymane pociągi', p.traffic || 0], ['rozkazy', p.order || 0], ['płaskie miejsca', p.flat || 0], ['oporniki', p.drive || 0],
 		].filter(([, v]) => v > 0).map(([k, v]) => `${k} −${Math.round(v)}`);
-		$('end-penalties').innerHTML = `Premia za syrenę przed przejazdami: +${sim.bonus}. ` + (parts.length ? `Kary: ${parts.join(', ')}.` : 'Bez kar – wzorowa jazda!');
+		const blocked = sim.traffic ? ` Pociągi zatrzymane przez Twoje opóźnienie: ${sim.stats.blocked}.` : '';
+		$('end-penalties').innerHTML = `Premia za syrenę przed przejazdami: +${sim.bonus}. ` + (parts.length ? `Kary: ${parts.join(', ')}.` : 'Bez kar – wzorowa jazda!') + blocked;
 		showOverlay('end');
+	}
+
+	/* Ocena jazdy na ekranie końca: kategorie (gwiazdki 1–5), ogólna, najlepsza dla trasy i składu; wykres przejazdu;
+	   wpis do historii jazd (localStorage history – ostatnie 30) */
+	const starsTxt = (n) => '★'.repeat(n) + `<em>${'★'.repeat(5 - n)}</em>`;
+	function showRating(ok, score) {
+		const rt = sim.rating(), r = sim.route;
+		const key = `${r.id}|${r.train.name}`;
+		const hist = load('history', []);
+		const best = hist.filter((h) => h.key === key).reduce((m, h) => Math.max(m, h.overall), 0);
+		$('end-rating').innerHTML = `<div class="rall">Ocena jazdy: <b class="st">${'★'.repeat(rt.overall)}${'☆'.repeat(5 - rt.overall)}</b>${best ? ` · dotąd najlepsza na tej trasie tym składem: ${'★'.repeat(best)}` : ''}${rt.overall > best && best ? ' – nowy najlepszy wynik!' : ''}</div>` +
+			rt.cats.map((c) => `<div class="rc"><b>${esc(c.name)} <i>${c.stars === null ? '—' : starsTxt(c.stars)}</i></b>${esc(c.detail)}</div>`).join('');
+		drawChart($('end-chart'), sim);
+		hist.unshift({ key, date: Date.now(), title: r.title, train: r.train.name, ok, score, overall: rt.overall, cats: rt.cats.map((c) => [c.name, c.stars]), scen: scen ? scen.title : null });
+		save('history', hist.slice(0, 30));
+	}
+	// wykres przejazdu: prędkość (bursztyn) wobec dozwolonej (szara, schodkowa), stacje, hamowania nagłe (czerwone)
+	function drawChart(cv, s) {
+		const g = cv.getContext('2d'), W = cv.width, H = cv.height, S = s.rate.samples, st = s.route.stations;
+		g.clearRect(0, 0, W, H);
+		if (S.length < 2) return;
+		const x0 = st[0].pos, x1 = Math.max(S[S.length - 1][0], st[st.length - 1].pos);
+		const vmax = Math.max(40, ...S.map((p) => Math.max(p[1], p[2]))) * 1.08;
+		const L = 34, B = 22, X = (x) => L + ((x - x0) / (x1 - x0)) * (W - L - 8), Y = (v) => H - B - (v / vmax) * (H - B - 8);
+		g.font = '10px system-ui, sans-serif';
+		g.fillStyle = '#6f7a89';
+		g.strokeStyle = '#1e2733';
+		for (let v = 0; v <= vmax; v += 20) { g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(W - 8, Y(v)); g.stroke(); g.fillText(String(v), 6, Y(v) + 3); }
+		// stacje
+		g.strokeStyle = '#2f3b4b';
+		st.forEach((x, i) => {
+			const px = X(x.pos);
+			g.beginPath(); g.moveTo(px, 8); g.lineTo(px, H - B); g.stroke();
+			if (i % Math.ceil(st.length / 8) === 0 || i === st.length - 1) g.fillText(x.name.slice(0, 14), Math.min(W - 70, px + 2), H - 8);
+		});
+		// dozwolona prędkość (schodki)
+		g.strokeStyle = '#8592a3';
+		g.lineWidth = 1.5;
+		g.beginPath();
+		S.forEach((p, i) => { if (i) g.lineTo(X(p[0]), Y(S[i - 1][2])); g.lineTo(X(p[0]), Y(p[2])); });
+		g.stroke();
+		// prędkość
+		g.strokeStyle = '#ffb020';
+		g.lineWidth = 2;
+		g.beginPath();
+		S.forEach((p, i) => (i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))));
+		g.stroke();
+		// hamowania nagłe
+		g.fillStyle = '#ff4b3e';
+		for (const m of s.rate.marks) { const px = X(m); g.beginPath(); g.moveTo(px, H - B); g.lineTo(px - 5, H - B - 9); g.lineTo(px + 5, H - B - 9); g.fill(); }
+		g.lineWidth = 1;
+	}
+	function buildHistory() {
+		const list = $('hist-list'), hist = load('history', []);
+		const best = {};
+		for (const h of hist) best[h.key] = Math.max(best[h.key] || 0, h.overall);
+		list.innerHTML = hist.length ? '' : '<p class="hint">Brak jazd – historia zapisuje się po każdej jeździe.</p>';
+		for (const h of hist) {
+			const el = document.createElement('div');
+			el.className = 'hist-item';
+			const when = new Date(h.date).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' });
+			el.innerHTML = `<b>${esc(h.title)}</b> · ${esc(h.train)}${h.scen ? ` · scenariusz „${esc(h.scen)}”` : ''} · <span class="st">${'★'.repeat(h.overall)}${'☆'.repeat(5 - h.overall)}</span>${h.overall === best[h.key] ? ' (najlepsza)' : ''} · ${h.score} pkt${h.ok ? '' : ' · przerwana'}
+				<small>${esc(when)} – ${h.cats.map(([n, s]) => `${esc(n)} ${s === null ? '—' : s + '★'}`).join(', ')}</small>`;
+			list.appendChild(el);
+		}
 	}
 
 	// ---------- pętla ----------
@@ -1242,6 +1439,42 @@
 			const h = Math.min(0.05, rem);
 			s.update(h);
 			rem -= h;
+		}
+	}
+
+	/* Jakość automatycznie: czas rysowania świata w menu (procesor, mediana z 90 klatek po zbudowaniu świata):
+	   do 7 ms – wysoka, do 14 ms – średnia, więcej – niska. */
+	function autoQuality(ms) {
+		autoQ.t.push(ms);
+		if (autoQ.t.length < 90) return;
+		const t = autoQ.t.slice(30).sort((a, b) => a - b), med = t[t.length >> 1];
+		autoQ = null;
+		const q = med < 7 ? 'high' : med < 14 ? 'medium' : 'low';
+		$('opt-quality').value = q;
+		applyGraphics();
+		hud.toast(`Dobrano jakość grafiki: ${{ high: 'wysoka', medium: 'średnia', low: 'niska' }[q]} (rysowanie ok. ${med.toFixed(0)} ms) – zmiana w Ustawieniach.`, 'info');
+	}
+	/* Dopasowanie szczegółów w grze: co 5 s średni FPS; dwa okresy poniżej 28 FPS – zasięg świata o 10 % mniejszy (najmniej
+	   60 %), cztery powyżej 55 FPS – z powrotem o 10 % */
+	const ad = { n: 0, t: 0, low: 0, high: 0 };
+	function autoDetail(raw) {
+		if (!$('set-autodetail').checked) return;
+		ad.n++;
+		ad.t += raw;
+		if (ad.t < 5) return;
+		const fps = ad.n / ad.t, w = renderer.world;
+		ad.n = 0;
+		ad.t = 0;
+		ad.low = fps < 28 ? ad.low + 1 : 0;
+		ad.high = fps > 55 ? ad.high + 1 : 0;
+		const cur = w.detailDyn || 1;
+		if (ad.low >= 2 && cur > 0.6) {
+			w.detailDyn = Math.round((cur - 0.1) * 10) / 10;
+			ad.low = 0;
+			hud.toast(`Mała płynność (${fps.toFixed(0)} FPS) – zmniejszono zasięg szczegółów do ${Math.round(w.detailDyn * 100)} %.`, 'info', 'detail');
+		} else if (ad.high >= 4 && cur < 1) {
+			w.detailDyn = Math.round((cur + 0.1) * 10) / 10;
+			ad.high = 0;
 		}
 	}
 
@@ -1265,7 +1498,14 @@
 			if (sim) {
 				renderer.miniRect = false;
 				renderer.draw(sim, 0, 0);
-				if (++loadingFrames >= 4 && !(renderer.world.pending > 0)) finishLoading();
+				// świat zbudowany – jeszcze kompilacja shaderów wszystkich obiektów (także ukrytych, np. kabiny), potem start
+				if (++loadingFrames >= 4 && !(renderer.world.pending > 0)) {
+					if (!precompiled) {
+						precompiled = 1;
+						const s0 = sim;
+						renderer.precompile().then(() => { if (sim === s0) precompiled = 2; });
+					} else if (precompiled === 2) finishLoading();
+				}
 			} else if (demo) renderer.draw(demo, 0, 0);
 			requestAnimationFrame(frame);
 			return;
@@ -1279,7 +1519,9 @@
 			demo.events.length = 0;
 			renderer.miniRect = false; // podgląd w menu bez żadnego HUD (bez paska trasy)
 			$('fps').classList.add('menu-off');
+			const tq = performance.now();
 			renderer.draw(demo, dt, 0);
+			if (autoQ && !(renderer.world.pending > 0)) autoQuality(performance.now() - tq);
 		} else if (sim) {
 			$('fps').classList.remove('menu-off');
 			// swobodna kamera z „Pociąg jedzie dalej” – symulacja biegnie, prowadzi automat (klawisze sterują kamerą)
@@ -1301,6 +1543,12 @@
 					else if (e.type === 'sound') audio.play(e.name);
 					else if (e.type === 'arc' && renderer.trainModel && renderer.trainModel.arcBurst) renderer.trainModel.arcBurst();
 					else if (e.type === 'departed') autoSave();
+					else if (e.type === 'radio') hud.radio(e.from, e.text, e.ack);
+					else if (e.type === 'announce') announce(e.text);
+					else if (e.type === 'order' || e.type === 'order-ack') { hud.order(Object.assign({ train: sim.trainName() }, e.order), fmtClock(sim.route.startClock + e.order.at).slice(0, 5)); hud.orderChip(sim.orders.length); }
+					else if (e.type === 'radio-ack') hud.radioAck();
+					else if (e.type === 'task') hud.task(e);
+					else if (e.type === 'weather') { rideWeather = e.key; renderer.setWeather(e.key); sim.setConditions(rideWeatherKey()); }
 				}
 				sim.events.length = 0;
 				if (mode === 'play' && sim.status !== 'running') {
@@ -1324,19 +1572,53 @@
 			else if (!(mode === 'pause' && pauseFromFree)) hud.update(sim, timeScale); // HUD jazdy schowany w trybie kamery
 			renderer.miniRect = false; // w grze trasa jest na osi czasu w lewym panelu
 			renderer.draw(sim, mode === 'pause' ? 0 : dt, 0);
+			if (mode === 'play') autoDetail(raw);
 		}
 		requestAnimationFrame(frame);
 	}
 
 	// ---------- wejście ----------
+	// rozkazy pisemne: ostatni (niepotwierdzony – ten) na karcie; ponownie – schowanie
+	function showLastOrder() {
+		if (!sim || !sim.orders.length) { hud.toast('Brak rozkazów pisemnych w tej jeździe.', 'info', 'order'); return; }
+		if (!$('order').classList.contains('hidden') && !sim.pendingOrder()) { hud.orderHide(); return; }
+		const o = sim.pendingOrder() || sim.orders[sim.orders.length - 1];
+		hud.order(Object.assign({ train: sim.trainName() }, o), fmtClock(sim.route.startClock + o.at).slice(0, 5));
+	}
+	const VALVE_NAMES = { fill: 'napełnianie', run: 'jazda', lap: 'odcięcie', brake: 'hamowanie', emerg: 'nagłe' };
+	// pogoda bieżącej jazdy po rozwinięciu „jak w scenariuszu” (do przyczepności)
+	const rideWeatherKey = () => (renderer.weather && renderer.weather.key) || rideWeather || 'clear';
+	function locoKey(dir) {
+		const p = sim.locoBrake(dir);
+		if (p === null) { hud.toast('Hamulec dodatkowy – w lokomotywie przy hamulcu zespolonym (Pomoc → Hamulec).', 'info', 'valve'); return; }
+		hud.toast(`Hamulec dodatkowy lokomotywy: ${p.toFixed(1)} bar`, 'info', 'valve');
+		audio.play('click');
+	}
+	function valveKey(dir) {
+		if (!sim.air) { hud.toast('Zawór maszynisty – przy hamulcu zespolonym (Pomoc → Hamulec). Hamowanie: ↓ / S.', 'info', 'valve'); return; }
+		const v = sim.brakeValve(dir);
+		if (v) { hud.toast('Zawór maszynisty: ' + VALVE_NAMES[v], 'info', 'valve'); audio.play('click'); }
+	}
 	const KEYS = {
 		ArrowUp: () => sim.leverUp(), KeyW: () => sim.leverUp(),
 		ArrowDown: () => sim.leverDown(), KeyS: () => sim.leverDown(),
 		Digit0: () => sim.neutral(), Numpad0: () => sim.neutral(),
 		KeyE: () => sim.emergency(), Backspace: () => sim.emergency(),
 		KeyD: () => sim.toggleDoors(),
-		Space: () => { sim.ackCzuwak(); audio.play('click'); },
+		// Enter: najpierw rozkaz pisemny, potem komunikat dyżurnego
+		Enter: () => { if (sim.ackOrder() || sim.ackRadio()) audio.play('click'); },
+		NumpadEnter: () => { if (sim.ackOrder() || sim.ackRadio()) audio.play('click'); },
+		KeyO: () => showLastOrder(),
+		KeyX: () => { if (sim.sandOn()) hud.toast('Piasecznica', 'info', 'sand'); },
+		// hamulec dodatkowy lokomotywy (hamulec zespolony)
+		'Shift+KeyA': () => locoKey(1),
+		'Shift+KeyQ': () => locoKey(-1),
+		Space: () => { sim.ackButton(); audio.play('click'); },
+		// zawór maszynisty (hamulec zespolony): A – w stronę hamowania, Q – w stronę luzowania
+		KeyA: () => valveKey(1),
+		KeyQ: () => valveKey(-1),
 		KeyH: () => { sim.horn = true; },
+		KeyJ: () => { sim.horn2 = true; },
 		KeyT: () => {
 			timeScale = timeScale === 1 ? 2 : timeScale === 2 ? 4 : 1;
 			hud.toast(`Przyspieszenie czasu ×${timeScale}`);
@@ -1368,6 +1650,8 @@
 	};
 
 	document.addEventListener('keydown', (e) => {
+		// nakładka diagnostyczna (wydajność) – w każdym miejscu gry
+		if (e.code === 'F3') { e.preventDefault(); renderer.togglePerf(); return; }
 		// wczytywanie trasy po wyborze mapy – menu zablokowane (także Enter / Esc)
 		if (!$('route-loading').classList.contains('hidden')) { e.preventDefault(); return; }
 		if (!$('saves').classList.contains('hidden')) {
@@ -1379,7 +1663,7 @@
 			return;
 		}
 		if (mode === 'menu') {
-			if (e.code === 'Enter' && screen === 'single') startGame();
+			if (e.code === 'Enter' && screen === 'single') { scen = null; startGame(); }
 			if ((e.code === 'Delete' || e.code === 'Backspace') && screen === 'single' && singleTab === 'train' && !$('car-actions').classList.contains('hidden') && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); detachCar(); }
 			if (e.code === 'Escape' && screen !== 'main') menuScreen('main');
 			return;
@@ -1417,7 +1701,7 @@
 		// kamera z klawiatury: PageUp / PageDown – pochylenie, + / − – przybliżenie (w każdym widoku)
 		if (e.code === 'PageUp' || e.code === 'PageDown') { renderer.pitchKey = e.code === 'PageUp' ? -1 : 1; e.preventDefault(); return; }
 		if (/^(Equal|Minus|NumpadAdd|NumpadSubtract)$/.test(e.code)) { renderer.zoomKey = /Equal|Add/.test(e.code) ? -1 : 1; e.preventDefault(); return; }
-		const fn = KEYS[e.code];
+		const fn = (e.shiftKey && KEYS['Shift+' + e.code]) || KEYS[e.code];
 		if (!fn) return;
 		e.preventDefault();
 		if (e.repeat && e.code !== 'ArrowUp' && e.code !== 'ArrowDown' && e.code !== 'KeyW' && e.code !== 'KeyS') return;
@@ -1427,6 +1711,7 @@
 	document.addEventListener('keyup', (e) => {
 		delete freeKeysDown[e.code];
 		if (e.code === 'KeyH' && sim) sim.horn = false;
+		if (e.code === 'KeyJ' && sim) sim.horn2 = false;
 		if ((e.code === 'ArrowLeft' && renderer.rotKey < 0) || (e.code === 'ArrowRight' && renderer.rotKey > 0)) renderer.rotKey = 0;
 		if (e.code === 'PageUp' || e.code === 'PageDown') renderer.pitchKey = 0;
 		if (/^(Equal|Minus|NumpadAdd|NumpadSubtract)$/.test(e.code)) renderer.zoomKey = 0;
@@ -1434,7 +1719,8 @@
 
 	const ACTIONS = {
 		up: () => sim.leverUp(), down: () => sim.leverDown(), neutral: () => sim.neutral(),
-		doors: () => sim.toggleDoors(), ca: () => sim.ackCzuwak(), emergency: () => sim.emergency(),
+		doors: () => sim.toggleDoors(), ca: () => sim.ackButton(), emergency: () => sim.emergency(),
+		'valve-brake': () => valveKey(1), 'valve-rel': () => valveKey(-1), sand: () => KEYS.KeyX(),
 		cab: () => KEYS.KeyK(), camera: () => KEYS.KeyV(), time: () => KEYS.KeyT(), wipers: () => KEYS.KeyR(), panto: () => KEYS.KeyU(),
 	};
 	document.querySelectorAll('.controls button').forEach((b) => {
@@ -1443,18 +1729,21 @@
 			e.preventDefault();
 			if (mode !== 'play') return;
 			audio.ensure();
-			if (act === 'horn') sim.horn = true;
+			if (act === 'horn' || act === 'horn2') sim[act] = true;
 			else ACTIONS[act]();
 		});
-		if (act === 'horn') {
-			const off = () => { if (sim) sim.horn = false; };
+		if (act === 'horn' || act === 'horn2') {
+			const off = () => { if (sim) sim[act] = false; };
 			b.addEventListener('pointerup', off);
 			b.addEventListener('pointerleave', off);
 		}
 		b.addEventListener('click', (e) => e.preventDefault());
 	});
 
-	$('btn-start').addEventListener('click', () => startGame());
+	$('btn-start').addEventListener('click', () => { scen = null; startGame(); });
+	$('radio').addEventListener('click', () => { if (sim && sim.ackRadio()) audio.play('click'); });
+	$('order').addEventListener('click', () => { if (sim && !sim.ackOrder()) hud.orderHide(); });
+	$('order-chip').addEventListener('click', () => showLastOrder());
 	$('ca-left').addEventListener('click', () => moveCar(-1));
 	$('ca-right').addEventListener('click', () => moveCar(1));
 	$('ca-del').addEventListener('click', detachCar);
@@ -1478,6 +1767,8 @@
 	$('btn-again').addEventListener('click', () => startGame());
 	$('btn-menu').addEventListener('click', toMenu);
 	$('opt-ca').checked = load('opt.ca', true);
+	// pierwsze uruchomienie (bez zapisanej jakości): test wydajności w menu dobierze jakość (frame → autoQuality)
+	let autoQ = load('opt.quality', null) === null ? { t: [] } : null;
 	$('opt-quality').value = load('opt.quality', 'medium');
 	$('opt-weather').value = $('pause-weather').value = load('opt.weather', 'auto');
 	$('opt-quality').addEventListener('change', () => { applyGraphics(mode === 'menu' ? undefined : 'pause'); if (mode === 'menu') startDemo(); });
@@ -1504,11 +1795,20 @@
 	const ro = load('opt.render', { scale: 1, aa: true, shadows: true });
 	$('set-sound').checked = !muted;
 	$('set-volume').value = Math.round(load('opt.volume', 0.8) * 100);
+	const mix0 = load('opt.mix', {});
+	for (const k of MIX_KEYS) $('set-mix-' + k).value = Math.round((mix0[k] === undefined ? 1 : mix0[k]) * 100);
 	$('set-scale').value = String(ro.scale);
 	$('set-aa').checked = ro.aa;
 	$('set-shadows').checked = ro.shadows;
 	$('set-fps').checked = load('opt.fps', false);
-	for (const id of ['set-sound', 'set-volume', 'set-scale', 'set-aa', 'set-shadows', 'set-fps']) $(id).addEventListener(id === 'set-volume' ? 'input' : 'change', applySettings);
+	$('set-traffic-max').value = String(load('opt.trafficMax', 3));
+	$('set-autodetail').checked = load('opt.autoDetail', true);
+	$('set-autodetail').addEventListener('change', () => { save('opt.autoDetail', $('set-autodetail').checked); if (!$('set-autodetail').checked) renderer.world.detailDyn = 1; });
+	$('set-autoq').addEventListener('click', () => { autoQ = { t: [] }; closeSettings(); hud.toast('Pomiar wydajności w menu (kilka sekund)…', 'info'); });
+	$('set-traffic-people').checked = load('opt.trafficPeople', false);
+	$('set-announce').value = load('opt.announce', 'text');
+	for (const id of ['set-sound', 'set-volume', 'set-scale', 'set-aa', 'set-shadows', 'set-fps', 'set-traffic-max', 'set-traffic-people', 'set-announce']) $(id).addEventListener(id === 'set-volume' ? 'input' : 'change', applySettings);
+	for (const k of MIX_KEYS) $('set-mix-' + k).addEventListener('input', applySettings);
 	applySettings();
 	applyGraphics();
 	// gra jednoosobowa: zakładki, rodzaj składu, liczba zespołów
@@ -1527,6 +1827,10 @@
 	showTab(singleTab);
 	// menu główne
 	$('btn-single').addEventListener('click', () => menuScreen('single'));
+	$('btn-scen').addEventListener('click', () => { buildScenarios(); menuScreen('scen'); });
+	$('scen-back').addEventListener('click', () => menuScreen('main'));
+	$('opt-events').checked = load('opt.events', false);
+	$('opt-events').addEventListener('change', () => { save('opt.events', $('opt-events').checked); buildMenu(); });
 	$('single-back').addEventListener('click', () => menuScreen('main'));
 	$('btn-gen').addEventListener('click', () => { buildGenScreen(); menuScreen('gen'); });
 	// import i eksport tras: przyciski w generatorze, przeciąganie plików na okno menu
@@ -1558,6 +1862,49 @@
 		});
 	}
 	$('gen-back').addEventListener('click', () => menuScreen('main'));
+	/* Scenariusze (js/scenarios.js): karta z opisem, trasą, składem, celami i najlepszym wynikiem (gwiazdki) */
+	function trainLabel(c) {
+		const S = R.STOCK;
+		if (c.emu) return `${S[c.emu] ? S[c.emu].name : c.emu}${c.n > 1 ? ` ×${c.n}` : ''}`;
+		const n = (c.cars || []).length;
+		return `${c.loco} + ${n} ${plural(n, 'wagon', 'wagony', 'wagonów')}`;
+	}
+	// zadanie dnia (scenario.js dailyScenario) dla daty 'RRRR-MM-DD' (dziś – bez argumentu); trasy wbudowane
+	function dailyFor(key) {
+		const d = key ? new Date(+key.slice(0, 4), +key.slice(5, 7) - 1, +key.slice(8, 10)) : new Date();
+		return SC.dailyScenario(d, defs.filter((x) => BUILTIN.has(x.id)));
+	}
+	// seria: kolejne dni (do dziś albo do wczoraj) z ukończonym zadaniem dnia
+	function dailyStreak() {
+		let n = 0;
+		const d = new Date();
+		if (!load('scen.daily-' + SC.dayKey(d), 0)) d.setDate(d.getDate() - 1);
+		while (load('scen.daily-' + SC.dayKey(d), 0) > 0) { n++; d.setDate(d.getDate() - 1); }
+		return n;
+	}
+	function buildScenarios() {
+		const list = $('scen-list');
+		list.innerHTML = '';
+		const today = defs.some((x) => BUILTIN.has(x.id)) ? [dailyFor()] : [];
+		for (const sc of today.concat(SCENARIOS)) {
+			const def = defs.find((d) => d.id === sc.route);
+			const best = load('scen.' + sc.id, 0);
+			const el = document.createElement('div');
+			el.className = 'scen' + (sc.daily ? ' daily' : '');
+			const goals = def ? (sc.goals || []).map((g) => `<li>${esc(SC.goalText(g, def))}</li>`).join('') : '';
+			el.innerHTML = `<h3><span>${esc(sc.title)} <small class="lvl">${esc(sc.level)}</small></span><span class="stars" title="Najlepszy wynik">${'★'.repeat(best)}<i class="off">${'★'.repeat(3 - best)}</i></span></h3>
+				<div class="t">${def ? esc(def.title) : 'trasa niedostępna'} · ${esc(trainLabel(sc.train))} · ${esc(sc.clock)}</div>
+				<p>${esc(sc.desc)}</p>${goals ? `<ul>${goals}</ul>` : ''}${sc.daily ? `<div class="t">Seria: ${dailyStreak()} ${plural(dailyStreak(), 'dzień', 'dni', 'dni')} z rzędu</div>` : ''}`;
+			const b = document.createElement('button');
+			b.className = 'primary';
+			b.textContent = best ? 'Jedź jeszcze raz' : 'Jedź';
+			b.disabled = !def;
+			b.addEventListener('click', () => { scen = sc; startGame(); });
+			el.appendChild(b);
+			list.appendChild(el);
+		}
+	}
+
 	// „Co nowego” – historia wersji z js/news.js (najnowsza na górze)
 	function buildNews() {
 		const list = $('news-list');
@@ -1570,6 +1917,8 @@
 		}
 	}
 	$('btn-news').addEventListener('click', () => { buildNews(); menuScreen('news'); });
+	$('btn-hist').addEventListener('click', () => { buildHistory(); menuScreen('hist'); });
+	$('hist-back').addEventListener('click', () => menuScreen('main'));
 	$('news-back').addEventListener('click', () => menuScreen('main'));
 	$('gen-run').addEventListener('click', runGenerator);
 	for (const id of ['gen-from', 'gen-to', 'gen-line']) $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') runGenerator(); e.stopPropagation(); });
@@ -1583,14 +1932,32 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.2.0';
+	$('version').textContent = 'wersja 0.14.1';
 	$('opt-assist').checked = load('opt.assist', true);
+	$('opt-shp').checked = load('opt.shp', false);
+	$('opt-drive').value = load('opt.drive', 'simple');
+	$('opt-season').value = load('opt.season', 'summer');
+	$('opt-drive').addEventListener('change', () => { save('opt.drive', $('opt-drive').value); buildMenu(); });
+	$('opt-season').addEventListener('change', () => { save('opt.season', $('opt-season').value); buildMenu(); });
+	$('opt-traffic').value = String(load('opt.traffic', 2));
+	$('opt-traffic-pen').checked = load('opt.trafficPen', false);
+	$('opt-dispatch').checked = load('opt.dispatch', true);
+	$('opt-dispatch').addEventListener('change', () => save('opt.dispatch', $('opt-dispatch').checked));
+	// suwak ruchu na linii: 0 – brak (losowy pociąg z przeciwka tylko dla widoku), 1–3 – mały, średni, duży
+	const trafficVal = () => { $('opt-traffic-val').textContent = ['brak (tylko pociągi z przeciwka dla widoku)', 'mały ruch', 'średni ruch', 'duży ruch'][Number($('opt-traffic').value)]; };
+	trafficVal();
+	$('opt-traffic').addEventListener('input', trafficVal);
+	$('opt-traffic').addEventListener('change', () => { save('opt.traffic', Number($('opt-traffic').value)); buildMenu(); });
+	$('opt-traffic-pen').addEventListener('change', () => save('opt.trafficPen', $('opt-traffic-pen').checked));
+	$('opt-brake').value = load('opt.brake', 'simple');
+	$('opt-shp').addEventListener('change', () => { save('opt.shp', $('opt-shp').checked); buildMenu(); });
+	$('opt-brake').addEventListener('change', () => { save('opt.brake', $('opt-brake').value); buildMenu(); });
 	document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') togglePause(); });
 	// zamknięcie karty albo okna aplikacji w czasie jazdy – autozapis
 	window.addEventListener('pagehide', () => { if (sim) autoSave(); });
 
 	// podgląd stanu z konsoli przeglądarki (diagnostyka)
-	window.maszynista = { get sim() { return sim || demo; }, renderer, get preview() { return preview; }, setTrain: (c, sel = 0) => { selCar = sel; setCfg(c); } };
+	window.maszynista = { get sim() { return sim || demo; }, renderer, get preview() { return preview; }, setTrain: (c, sel = 0) => { selCar = sel; setCfg(c); }, bench: (n) => renderer.bench(sim || demo, n) };
 
 	toMenu();
 	loadCustom();
