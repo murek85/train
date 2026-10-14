@@ -4,6 +4,16 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.14.2 – 14 października 2026
+
+### Menu
+- Okna Gra jednoosobowa, Scenariusze, Generator tras, Historia jazd, Co nowego, Ustawienia, Wczytaj grę, pauza
+  i ekran końca jazdy wyrównane do lewej (jak menu główne), z tym samym tłem.
+
+### Drobne zmiany
+- Głośność głosu zapowiedzi domyślnie 60% (gdy suwaki dźwięku nie były jeszcze zmieniane).
+- Kilometraż w panelu jazdy z jednym miejscem po przecinku (km 12,3).
+
 ## 0.14.1 – 14 października 2026
 
 ### Dźwięk

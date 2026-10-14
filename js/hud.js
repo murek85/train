@@ -19,6 +19,13 @@
 			this.sctx = this.speedo.getContext('2d');
 			this.toasts = $('toasts');
 			this.prompt = $('prompt');
+			// panel z rozkładem (lewa góra) tej samej szerokości co panel z nastawnikiem (lewy dół) – zmienna CSS --drive-w
+			const drive = this.root.querySelector('.hud-drive');
+			if (drive && window.ResizeObserver) {
+				new ResizeObserver(() => {
+					if (drive.offsetWidth) document.documentElement.style.setProperty('--drive-w', drive.offsetWidth + 'px');
+				}).observe(drive);
+			}
 			this.leverEls = [];
 			const lever = $('lever');
 			for (let n = P.LEVER_MAX; n >= P.LEVER_MIN; n--) {
@@ -372,7 +379,7 @@
 			// kilometraż: położenie czoła pociągu od początku trasy (jak w swobodnej kamerze), długość i reszta do końca
 			const km = (m) => (m / 1000).toFixed(1).replace('.', ',');
 			const last = route.stations[route.stations.length - 1].pos;
-			this.set('i-km', 'km ' + (Math.max(0, front) / 1000).toFixed(3).replace('.', ','));
+			this.set('i-km', 'km ' + km(Math.max(0, front)));
 			this.set('i-km-sub', `zostało ${km(Math.max(0, last - front))} z ${km(last)} km`);
 
 			this.set('i-score', String(sim.score()));

@@ -4,6 +4,19 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.14.2',
+			date: '14 października 2026',
+			groups: [
+				['Menu', [
+					'Wszystkie okna menu, pauza, ustawienia, zapisy i ekran końca jazdy wyrównane do lewej, jak menu główne.',
+				]],
+				['Drobne zmiany', [
+					'Głos zapowiedzi domyślnie na 60% głośności.',
+					'Kilometraż w panelu jazdy z jednym miejscem po przecinku.',
+				]],
+			],
+		},
+		{
 			version: '0.14.1',
 			date: '14 października 2026',
 			groups: [

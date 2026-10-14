@@ -1796,7 +1796,8 @@
 	$('set-sound').checked = !muted;
 	$('set-volume').value = Math.round(load('opt.volume', 0.8) * 100);
 	const mix0 = load('opt.mix', {});
-	for (const k of MIX_KEYS) $('set-mix-' + k).value = Math.round((mix0[k] === undefined ? 1 : mix0[k]) * 100);
+	const MIX_DEF = { voice: 0.6 }; // domyślnie 100 %, głos zapowiedzi – 60 %
+	for (const k of MIX_KEYS) $('set-mix-' + k).value = Math.round((mix0[k] === undefined ? (MIX_DEF[k] === undefined ? 1 : MIX_DEF[k]) : mix0[k]) * 100);
 	$('set-scale').value = String(ro.scale);
 	$('set-aa').checked = ro.aa;
 	$('set-shadows').checked = ro.shadows;
@@ -1932,7 +1933,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.14.1';
+	$('version').textContent = 'wersja 0.14.2';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');
