@@ -489,6 +489,7 @@
 	function buildCondTab() {
 		tiles('weather-tiles', 'opt-weather', WEATHER_SKY);
 		tiles('time-tiles', 'opt-time', TIME_SKY);
+		tiles('season-tiles', 'opt-season', SEASON_SKY);
 		document.querySelector('.custom-time').classList.toggle('hidden', $('opt-time').value !== 'custom');
 	}
 	// pauza: kafelki pogody i pory dnia (te same listy co w menu – zsynchronizowane), nagłówek z bieżącą jazdą

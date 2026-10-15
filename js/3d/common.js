@@ -122,12 +122,24 @@
 
 	const NOISE_GLSL = `
 		/* skrót: siatka zawinięta co 2048 oczek – współrzędne świata (dziesiątki km × kilka oczek na metr) dawały w sinusie
-		   argumenty rzędu 1e7, przy precyzji 32 bitów skrót się „rozsypywał” w kwadratowe płaty (kanciasty śnieg, plamy) */
-		float gHash(vec2 p) { p = mod(p, 2048.0); return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+		   argumenty rzędu 1e7, przy precyzji 32 bitów skrót się „rozsypywał” w kwadratowe płaty (kanciasty śnieg, plamy).
+		   Bez sinusa (sin dużych argumentów na części kart graficznych ma kilka bitów dokładności – skrót przyjmował
+		   niewiele wartości i sąsiednie oczka wychodziły podobne: schodkowe, kwadratowe płaty śniegu). */
+		float gHash(vec2 p) { vec3 p3 = fract(vec3(mod(p, 2048.0).xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 		float gNoise(vec2 p) {
 			vec2 i = floor(p), f = fract(p);
 			f = f * f * (3.0 - 2.0 * f);
 			return mix(mix(gHash(i), gHash(i + vec2(1.0, 0.0)), f.x), mix(gHash(i + vec2(0.0, 1.0)), gHash(i + vec2(1.0, 1.0)), f.x), f.y);
+		}
+		/* szum gradientowy (Perlin) 0…1: izolinie gładkie i bez kierunku siatki – szum wartości (gNoise) daje przy progu
+		   zaokrąglone kwadraty ułożone wzdłuż osi (płaty śniegu) */
+		vec2 gGrad(vec2 i) { float a = gHash(i) * 6.2831853; return vec2(cos(a), sin(a)); }
+		float gPerlin(vec2 p) {
+			vec2 i = floor(p), f = fract(p);
+			vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+			float a = dot(gGrad(i), f), b = dot(gGrad(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
+			float c = dot(gGrad(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)), d = dot(gGrad(i + 1.0), f - 1.0);
+			return clamp(0.5 + 0.75 * mix(mix(a, b, u.x), mix(c, d, u.x), u.y), 0.0, 1.0);
 		}
 		float gFbm(vec2 p) { return gNoise(p) * 0.5 + gNoise(p * 2.03 + 1.7) * 0.25 + gNoise(p * 4.01 + 3.1) * 0.125 + gNoise(p * 8.05 + 5.3) * 0.0625; }
 		// kamienie: najbliższy punkt komórkowy (F1), drugi najbliższy (F2) i numer kamienia
@@ -192,10 +204,21 @@
 				roughnessFactor = mix(roughnessFactor, 0.02, drop);
 				#endif
 			}
-			float sn = gNoise(wP.xz * 0.3) * 0.55 + gNoise(wP.xz * 1.7) * 0.3 + gNoise(wP.xz * 6.5) * 0.15;
+			/* wzór płatów śniegu: oktawy obrócone względem siebie (bez krawędzi wzdłuż osi świata – „kwadraty”), najdrobniejsza
+			   gaśnie z odległością (z daleka migotała i szarpała brzegi płatów na pikselowe schodki) */
+			/* kilka skal o niewspółmiernych częstotliwościach (bez powtarzalnego rytmu): duże polany i zaspy (~30 m), płaty
+			   (~8 m), kępy (~2 m), drobne brzegi (~0,5 m – gasną z odległością) */
+			vec2 sq = wP.xz;
+			float snFine = 1.0 - smoothstep(0.02, 0.08, wpx);
+			float sn = gPerlin(sq * 0.033 + 2.7) * 0.42
+				+ gPerlin(mat2(0.8, -0.6, 0.6, 0.8) * sq * 0.127 + 4.1) * 0.27
+				+ gPerlin(mat2(0.47, 0.88, -0.88, 0.47) * sq * 0.53 + 9.3) * 0.18
+				+ mix(0.5, gPerlin(mat2(-0.29, 0.96, -0.96, -0.29) * sq * 2.11 + 1.9), snFine) * 0.13;
+			sn = 0.5 + (sn - 0.5) * 1.8; // suma oktaw skupia się wokół 0,5 – rozciągnięcie, by pokrywa narastała stopniowo
 			float th = 1.05 - uSnow * 1.15;
 			// granica płatów śniegu miękka (szersze przejście – bez ostrych krawędzi)
-			float snowMask = smoothstep(0.3, 0.75, up) * smoothstep(th - 0.13, th + 0.13, sn) * min(1.0, uSnow * 3.0) * ${snowK.toFixed(2)};
+			float snw = 0.13 + min(0.12, wpx * 1.5); // przejście szersze z odległością (bez ostrych schodków)
+			float snowMask = smoothstep(0.3, 0.75, up) * smoothstep(th - snw, th + snw, sn) * min(1.0, uSnow * 3.0) * ${snowK.toFixed(2)};
 			vec3 snowC = mix(vec3(0.74, 0.8, 0.9), vec3(0.97, 0.98, 1.0), 0.55 + 0.45 * gNoise(wP.xz * 3.0));
 			// kryształki: pojedyncze jaśniejsze punkty z bliska
 			snowC += vec3(0.25) * step(0.992, gHash(floor(wP.xz * 45.0))) * (1.0 - smoothstep(0.01, 0.025, wpx));
@@ -528,7 +551,8 @@
 	function patch(material, variant, opt = {}) {
 		allMaterials.push(material);
 		const train = variant === 'train', grime = opt.grime ?? 0.12, panels = !!opt.panels;
-		material.customProgramCacheKey = () => 'train2-' + variant + (train ? `-${grime}-${panels ? 1 : 0}` : '');
+		const snowK = opt.noSnow ? 0.0 : variant === 'grass' ? 0.0 : variant === 'wind' ? 0.75 : 1.0; // noSnow – np. ludzie (śnieg na nich nie osiada)
+		material.customProgramCacheKey = () => 'train2-' + variant + (train ? `-${grime}-${panels ? 1 : 0}` : '') + (opt.noSnow ? '-ns' : '');
 		material.onBeforeCompile = (shader) => {
 			if (variant !== 'indoor' && NS.cloudShade) NS.cloudShade(T, shader);
 			Object.assign(shader.uniforms, U);
@@ -614,7 +638,7 @@
 				metalnessFactor = mix(metalnessFactor, metalnessFactor * 0.35, wearG);` : `
 				roughnessFactor = mix(clamp(roughnessFactor + gRough, 0.3, 1.0), 0.97, gSand);`}
 				#endif
-				${WEATHER_GLSL(ground || gravel || variant === 'road' || variant === 'concrete' || variant === 'platform' || variant === 'roof' ? 1.0 : veg ? 0.6 : 0.75, variant === 'grass' ? 0.0 : variant === 'wind' ? 0.75 : 1.0, train ? 'vLocP' : 'vWorldP')}
+				${WEATHER_GLSL(ground || gravel || variant === 'road' || variant === 'concrete' || variant === 'platform' || variant === 'roof' ? 1.0 : veg ? 0.6 : 0.75, snowK, train ? 'vLocP' : 'vWorldP')}
 				${ground || variant === 'road' ? `
 				// kałuże: ciemne, gładkie jak lustro, z kręgami od kropli
 				{

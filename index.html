@@ -293,7 +293,8 @@
 				<select id="opt-time" class="hidden"><option value="auto">jak w scenariuszu</option><option value="05:20">świt (5:20)</option><option value="08:00">rano (8:00)</option><option value="12:00">południe (12:00)</option><option value="16:00">popołudnie (16:00)</option><option value="19:50">zachód słońca (19:50)</option><option value="23:00">noc (23:00)</option><option value="custom">własna godzina…</option></select>
 				<label class="row-opt custom-time">Własna godzina <input type="time" id="opt-time-custom" class="hidden" value="21:30"></label>
 				<h3>Pora roku</h3>
-				<label class="row-opt">Pora roku <select id="opt-season"><option value="spring">wiosna</option><option value="summer">lato</option><option value="autumn">jesień – liście na torach (śliskie szyny)</option><option value="winter">zima – słabsza przyczepność</option></select></label>
+				<div class="tiles" id="season-tiles"></div>
+				<select id="opt-season" class="hidden"><option value="spring">wiosna</option><option value="summer">lato</option><option value="autumn">jesień (liście na torach)</option><option value="winter">zima (słabsza przyczepność)</option></select>
 				<h3>Ruch na linii</h3>
 				<label class="row-opt">Inne pociągi <input type="range" id="opt-traffic" min="0" max="3" step="1"> <b id="opt-traffic-val"></b></label>
 				<p class="hint">Pociągi przed Tobą i za Tobą jadą po Twoim torze – semafor pokazuje „stój”, gdy odstęp za nim jest zajęty. Przy punktualnej jeździe nie wchodzą Ci w drogę.</p>

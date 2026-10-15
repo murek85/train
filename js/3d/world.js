@@ -114,7 +114,7 @@
 		/* Ludzie: części oznaczone aKeep nie biorą koloru instancji (ubranie/skóra) – spodnie i włosy z palet wg
 		   numeru osoby (gl_InstanceID), buty i pasek stałe. */
 		static personMat(m) {
-			NS.util.patch(m, 'lit');
+			NS.util.patch(m, 'lit', { noSnow: true }); // śnieg nie osiada na ludziach (ruszają się – plamy wyglądały jak tekstura)
 			const prev = m.onBeforeCompile;
 			m.onBeforeCompile = (sh, r) => {
 				prev(sh, r);
