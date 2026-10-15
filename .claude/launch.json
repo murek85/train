@@ -1,12 +1,11 @@
 {
-  "version": "0.0.1",
-  "configurations": [
-    {
-      "name": "train",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["server.js"],
-      "port": 4180,
-      "autoPort": true
-    }
-  ]
+	"version": "0.0.1",
+	"configurations": [
+		{
+			"name": "train",
+			"runtimeExecutable": "node",
+			"runtimeArgs": ["server.js"],
+			"port": 4180
+		}
+	]
 }

@@ -24,13 +24,13 @@
 		['#e8d9b5', '#e2cfa8', '#d9c2a5', '#c98f72'],
 	];
 	const ROOFS = [
-		['#8e3b2e', '#6d4c3d', '#59626b', '#a0522d', '#7a3326', '#4d5257'],
-		['#5a5f66', '#6b6f73', '#62584f'],
+		['#8e3b2e', '#6d4c3d', '#4a4d51', '#a0522d', '#7a3326', '#4d5257', '#5b3a2c'], // dachówka czerwona, brązowa, grafitowa
+		['#555759', '#6b6b6b', '#62584f', '#7a3326'],
 		['#868b8f', '#7a8084', '#959a9e'],
-		['#5a5f66', '#6b6f73'],
+		['#555759', '#6b6b6b'],
 		['#7a3326', '#4f6a5a'],
 		['#76797d', '#7f6656', '#6a6e72'],
-		['#8e3b2e', '#5a5f66', '#7a3326'],
+		['#8e3b2e', '#555759', '#7a3326'],
 	];
 	/* rodzaje (przeznaczenie) budynków – env.bu (zob. USE_RULES w osm-route.js): 1 dom, 2 blok, 3 garaż, 4 przemysł,
 	   5 magazyn, 6 biurowiec, 7 sklep/usługi, 8 market/centrum handlowe, 9 restauracja, 10 bank, 11 apteka, 12 poczta,
@@ -66,6 +66,30 @@
 		31: ['DWORZEC AUTOBUSOWY', '#1c3d6e', '#ffffff'],
 		33: ['DOM STUDENCKI', '#2c2c54', '#ffffff'],
 	};
+	/* sieci (rozpoznawane po nazwie z mapy): barwy szyldu (tło, napis) i pasa firmowego – bez logotypów (znaki towarowe),
+	   sama nazwa z mapy zwykłą czcionką; fuel – sieć stacji paliw */
+	const BRANDS = [
+		[/żabka|zabka/i, ['#0b8a3e', '#ffffff', '#0b8a3e']],
+		[/biedronka/i, ['#e30613', '#ffd400', '#e30613']],
+		[/lidl/i, ['#0050aa', '#ffe500', '#0050aa']],
+		[/netto/i, ['#ffd400', '#1a1a1a', '#ffd400']],
+		[/\bdino\b/i, ['#ffffff', '#d7141a', '#2e8b3d']],
+		[/kaufland/i, ['#e10915', '#ffffff', '#e10915']],
+		[/aldi/i, ['#1c3f94', '#ffffff', '#1c3f94']],
+		[/carrefour/i, ['#ffffff', '#004e9f', '#004e9f']],
+		[/stokrotka/i, ['#5aa02c', '#ffffff', '#5aa02c']],
+		[/lewiatan/i, ['#ffffff', '#00843d', '#00843d']],
+		[/rossmann/i, ['#c3002f', '#ffffff', '#c3002f']],
+		// sieci stacji paliw (1) – tylko dla stacji paliw (bank „PKO BP” nie dostaje barw BP)
+		[/orlen/i, ['#e30613', '#ffffff', '#e30613'], 1],
+		[/\bbp\b/i, ['#009b3a', '#ffe600', '#009b3a'], 1],
+		[/shell/i, ['#ffd500', '#dd1d21', '#dd1d21'], 1],
+		[/lotos/i, ['#00377a', '#ffd400', '#00377a'], 1],
+		[/circle\s*k|statoil/i, ['#e30613', '#ffffff', '#f28c00'], 1],
+		[/moya/i, ['#0b74b8', '#ffffff', '#0b74b8'], 1],
+		[/amic/i, ['#00a651', '#ffffff', '#00a651'], 1],
+	];
+	const brandOf = (name, use) => { if (!name) return null; for (const [re, c, fuel] of BRANDS) if (re.test(name) && (!fuel || use === 26)) return c; return null; };
 	const SHOPS = ['SPOŻYWCZY', 'PIEKARNIA', 'KWIATY', 'ODZIEŻ', 'MIĘSO WĘDLINY', 'DROGERIA', 'OPTYK', 'FRYZJER', 'KSIĘGARNIA', 'ELEKTRONIKA', 'OBUWIE', 'ZOOLOGICZNY'];
 	const MARKET_C = ['#d7262e', '#0a5ca8', '#f2b705', '#1e8f3e', '#e4572e'];
 	const USE_WALL = {
@@ -218,6 +242,7 @@
 		World.envM = {
 			facade: m({ map: facadeTex, normalMap: facadeNorm, normalScale: new T.Vector2(1, 1), emissiveMap: litTex, emissive: '#ffffff', emissiveIntensity: 0 }, 'dirt'),
 			plain: m({}, 'dirt'),
+			roof: m({ roughness: 0.78 }, 'roof'), // dachy: dachówki, blachodachówka, papa (common.js ROOF_GLSL)
 			// przesunięcie głębi: między wierzchołkami jezdnia nie przecina załamań siatki terenu i mogła się pod nie
 			// zapadać o kilka centymetrów (z ukosa – zielone kliny w jezdni)
 			road: m({ roughness: 0.94, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -12 }, 'road'),
@@ -231,7 +256,9 @@
 			catSteel: patch(new T.MeshStandardMaterial({ color: '#8c9298', roughness: 0.45, metalness: 0.6 }), 'lit'), // konstrukcje sieci
 			catInsul: patch(new T.MeshStandardMaterial({ color: '#7a4a32', roughness: 0.35, metalness: 0.1 }), 'lit'), // izolatory
 			catFound: patch(new T.MeshStandardMaterial({ color: '#9e9a92', roughness: 0.95 }), 'concrete'), // fundamenty
-			switchMachine: patch(new T.MeshStandardMaterial({ color: '#4f6a8a', roughness: 0.6, metalness: 0.3 }), 'lit'), // napędy zwrotnicowe
+			switchMachine: patch(new T.MeshStandardMaterial({ color: '#3e4549', roughness: 0.55, metalness: 0.45 }), 'lit'), // napędy zwrotnicowe (grafitowe)
+			switchWood: patch(new T.MeshStandardMaterial({ color: '#4a3b2e', roughness: 0.92, metalness: 0 }), 'lit'), // podrozjazdnice drewniane (nasycone)
+			switchCab: patch(new T.MeshStandardMaterial({ color: '#9aa1a6', roughness: 0.5, metalness: 0.5 }), 'lit'), // szafki ogrzewania rozjazdów
 			switchHand: patch(new T.MeshStandardMaterial({ color: '#2d3136', roughness: 0.7, metalness: 0.4 }), 'lit'), // zwrotniki ręczne
 			switchLamp: patch(new T.MeshStandardMaterial({ color: '#e8ecef', emissive: '#c8d8ff', emissiveIntensity: 0.25, roughness: 0.5 }), 'lit'), // latarnie zwrotnicowe
 		};
@@ -2260,7 +2287,7 @@
 		const dark = mat('#26282b', { roughness: 0.85 }), body = mat('#ffffff', { roughness: 0.8 }), coalM = mat('#1b1b1c', { roughness: 0.95 });
 		const W = new T.Matrix4(), L = new T.Matrix4(), S = new T.Matrix4(), RX = new T.Matrix4().makeRotationX(Math.PI / 2), out = new T.Matrix4();
 		const M = { dark, coal: coalM, steel: mat('#55595e', { roughness: 0.5, metalness: 0.5 }), wheel: mat('#3b3a38', { roughness: 0.6, metalness: 0.5 }), roof: mat('#8a8f93', { roughness: 0.6 }) };
-		const RZ = new T.Matrix4().makeRotationZ(Math.PI / 2), RA = new T.Matrix4(), cols = new Map();
+		const RZ = new T.Matrix4().makeRotationZ(Math.PI / 2), RA = new T.Matrix4(), EU = new T.Euler(), cols = new Map();
 		const colOf = (hex) => { if (!cols.has(hex)) cols.set(hex, new T.Color(hex)); return cols.get(hex); };
 		for (const w of list) {
 			R.sidePoint(r, w.s, w.d, tp);
@@ -2272,6 +2299,7 @@
 				if (rot === 'x') out.multiply(RX);
 				else if (rot === 'z') out.multiply(RZ);
 				else if (typeof rot === 'number') out.multiply(RA.makeRotationX(rot));
+				else if (Array.isArray(rot)) out.multiply(RA.makeRotationFromEuler(EU.set(rot[0], rot[1], rot[2])));
 				out.multiply(S.makeScale(sx, sy, sz));
 				add(geo + '|' + mk, GEO[geo], mk === 'body' ? body : M[mk], out, mk === 'body' ? colOf(col) : null);
 			}
@@ -3157,7 +3185,7 @@
 		group.add(new T.Mesh(rg, wm));
 
 		// konstrukcje wsporcze przy słupach w tym kawałku
-		const parts = { steel: [], insul: [], found: [], lattice: [], beam: [], tube: [] };
+		const parts = { steel: [], insul: [], found: [], lattice: [], beam: [], tube: [], weight: [], wheel: [] };
 		const F = new T.Matrix4(), Mx = new T.Matrix4(), Q = new T.Quaternion(), V = new T.Vector3(), S3 = new T.Vector3(), Z = new T.Vector3(0, 0, 1);
 		const part = (list, x, y, sx, sy, sz, angle) => {
 			Q.setFromAxisAngle(Z, angle || 0);
@@ -3165,6 +3193,32 @@
 			list.push(F.clone().multiply(Mx));
 		};
 		const tube = (x1, y1, x2, y2, th) => part(parts.tube, (x1 + x2) / 2, (y1 + y2) / 2, Math.hypot(x2 - x1, y2 - y1), th * 1.2, th * 1.2, Math.atan2(y2 - y1, x2 - x1));
+		// część poza płaszczyzną słupa (z – wzdłuż toru), obrót Eulera (rx, ry, rz)
+		const EU = new T.Euler();
+		const partZ = (list, x, y, z, sx, sy, sz, rx, rz) => {
+			Q.setFromEuler(EU.set(rx || 0, 0, rz || 0));
+			Mx.compose(V.set(x, y, z), Q, S3.set(sx, sy, sz));
+			list.push(F.clone().multiply(Mx));
+		};
+		// pręt / linka wzdłuż toru: od (x, y1, z1) do (x, y2, z2)
+		const rod = (x, y1, z1, y2, z2, t) => partZ(parts.steel, x, (y1 + y2) / 2, (z1 + z2) / 2, t, t, Math.hypot(y2 - y1, z2 - z1), Math.atan2(-(y2 - y1), z2 - z1));
+		/* kotwienie sieci z naprężaczem (co ok. 24 przęsła – koniec odcinka naprężania, jak na zdjęciach sieci PKP): na
+		   słupie od strony zewnętrznej dwa stosy ciężarków na prowadnicach (przewód jezdny i lina nośna – dwa odcinki
+		   naprężania zachodzą na siebie), krążki u góry z linkami do ciężarków, odciągi słupa wzdłuż toru do fundamentów */
+		const anchor = (x, yb, yt, out) => {
+			const xo = x + out * 0.42;
+			for (const z of [-0.32, 0.32]) {
+				const y0 = yb + 1.4;
+				for (let k = 0; k < 14; k++) partZ(parts.weight, xo, y0 + k * 0.07, z, 0.36, 0.055, 0.36);
+				partZ(parts.steel, xo + out * 0.22, (y0 + yt - 0.6) / 2, z, 0.035, yt - 0.6 - y0 + 0.4, 0.035);
+				partZ(parts.steel, xo, (y0 + 14 * 0.07 + yt - 0.55) / 2, z, 0.015, yt - 0.55 - (y0 + 14 * 0.07), 0.015);
+				partZ(parts.wheel, xo, yt - 0.4, z, 0.5, 0.06, 0.5, 0, Math.PI / 2);
+			}
+			for (const e of [-1, 1]) {
+				rod(x, yt - 0.3, 0, yb + 0.15, e * 4.2, 0.035);
+				partZ(parts.found, x, yb - 0.05, e * 4.2, 0.45, 0.4, 0.45);
+			}
+		};
 		// słup kratowy na fundamencie (zwężony ku górze nie jest – jak typowe słupy kratowe PKP)
 		const post = (x, yb, yt) => {
 			part(parts.found, x, yb - 0.25, 0.7, 0.7, 0.7);
@@ -3225,6 +3279,10 @@
 					cant(xl, lo, yr(lo));
 					post(xr, yr(hi) - 0.6, yr(hi) + CAT.cw + CAT.sys + 0.6);
 					cant(xr, hi, yr(hi));
+					if (p % 24 === 12) {
+						anchor(xl, yr(lo) - 0.6, yr(lo) + CAT.cw + CAT.sys + 0.6, -1);
+						anchor(xr, yr(hi) - 0.6, yr(hi) + CAT.cw + CAT.sys + 0.6, 1);
+					}
 				} else {
 					// pojedynczy tor: słup po wolnej stronie (tor pociągu – najpierw po prawej; tor z mapy – z dala od naszego)
 					const d = G[0], y = yr(d);
@@ -3235,6 +3293,7 @@
 					} else xp = spot(s, d + Math.sign(d) * 3.3, Math.sign(d));
 					post(xp, y - 0.6, y + CAT.cw + CAT.sys + 0.6);
 					cant(xp, d, y);
+					if (p % 24 === 12) anchor(xp, y - 0.6, y + CAT.cw + CAT.sys + 0.6, Math.sign(xp - d) || 1);
 				}
 			}
 		}
@@ -3249,13 +3308,14 @@
 			bi.castShadow = this.shadows;
 			group.add(bi);
 		}
-		const mats = { steel: EM.catSteel, insul: EM.catInsul, found: EM.catFound, lattice: EM.catSteel, beam: EM.catSteel, tube: EM.catSteel };
-		const CG = catGeometries(), geos = { steel: GEO.box, found: GEO.box, insul: CG.insul, lattice: CG.lattice, beam: CG.beam, tube: CG.tube };
+		const wM = World.catWeight || (World.catWeight = NS.util.matS('#55585b', { roughness: 0.85, metalness: 0.1 })); // ciężarki betonowe / żeliwne
+		const mats = { steel: EM.catSteel, insul: EM.catInsul, found: EM.catFound, lattice: EM.catSteel, beam: EM.catSteel, tube: EM.catSteel, weight: wM, wheel: EM.catSteel };
+		const CG = catGeometries(), geos = { steel: GEO.box, found: GEO.box, insul: CG.insul, lattice: CG.lattice, beam: CG.beam, tube: CG.tube, weight: GEO.cyl, wheel: GEO.cyl };
 		for (const [k, list] of Object.entries(parts)) {
 			if (!list.length) continue;
 			const inst = new T.InstancedMesh(geos[k], mats[k], list.length);
 			list.forEach((m, i2) => inst.setMatrixAt(i2, m));
-			inst.castShadow = (k === 'steel' || k === 'lattice' || k === 'beam' || k === 'tube') && this.shadows;
+			inst.castShadow = (k === 'steel' || k === 'lattice' || k === 'beam' || k === 'tube' || k === 'weight') && this.shadows;
 			inst.receiveShadow = true;
 			group.add(inst);
 		}
@@ -3274,7 +3334,7 @@
 	World.prototype.buildEnvSwitches = function (group, list) {
 		if (!list || !list.length) return;
 		const r = this.route, M = World.materials();
-		const parts = { timber: [], blade: [], steel: [], machine: [], hand: [], lamp: [] };
+		const parts = { timber: [], wood: [], blade: [], steel: [], machine: [], hand: [], lamp: [], ball: [], cab: [] };
 		const q = new T.Quaternion(), upV = new T.Vector3(0, 1, 0), m4 = new T.Matrix4(), p3 = new T.Vector3(), sc = new T.Vector3();
 		for (const row of list) {
 			const [s, d, a, side] = row;
@@ -3290,10 +3350,11 @@
 				q.setFromAxisAngle(upV, -(H + ang));
 				dst.push(m4.compose(p3, q, sc.set(w, h, len)).clone());
 			};
+			// podrozjazdnice: betonowe, przy zwrotnikach ręcznych (rozjazdy starsze, boczne) – drewniane
 			const timbers = (u0, u1, vA, vB) => {
 				for (let u = u0; u < u1; u += 0.6) {
 					const lo = vA(u), hi = vB(u);
-					add(parts.timber, u, (lo + hi) / 2, -0.26, 0, hi - lo, 0.2, 0.26);
+					add(handOp ? parts.wood : parts.timber, u, (lo + hi) / 2, -0.26, 0, hi - lo, 0.2, 0.26);
 				}
 			};
 			// iglica od ostrza: linia v(u) (z kątem), odcinkami po 1 m
@@ -3303,14 +3364,31 @@
 					add(parts.blade, um, vf(um) + sgnIn * taper, -0.08, af(um), 0.06, 0.13, 1.0);
 				}
 			};
-			// napęd: elektryczny (skrzynia) albo zwrotnik ręczny (skrzynka, dźwignia, latarnia)
+			/* napęd (wg zdjęć rozjazdów PKP): elektryczny – stalowa podstawa na dwóch podrozjazdnicach, grafitowa obudowa
+			   z pokrywą, skrzynka kablowa, drążek nastawczy i dwa drążki kontrolne do iglic, obok szafka ogrzewania rozjazdu
+			   na nóżkach; zwrotnik ręczny – skrzynka, dźwignia z kulą przeciwwagi, słupek z latarnią zwrotnicową (białe
+			   tarcze wskaźnika położenia z obu stron) */
 			const drive = (u, v) => {
+				const sv = Math.sign(v) || 1;
 				if (handOp) {
 					add(parts.hand, u, v, -0.05, 0, 0.36, 0.3, 0.7);
-					add(parts.hand, u, v, 0.55, 0, 0.07, 1.0, 0.07);
-					add(parts.lamp, u, v, 1.15, 0, 0.26, 0.26, 0.26);
-				} else add(parts.machine, u, v, -0.05, 0, 0.55, 0.42, 1.1);
-				add(parts.steel, u, v / 2, -0.16, 0, Math.abs(v) - 0.2, 0.06, 0.08);
+					add(parts.hand, u + 0.45, v, 0.12, 0, 0.06, 0.06, 0.9);
+					add(parts.ball, u + 0.88, v, 0.12, 0, 0.24, 0.24, 0.24);
+					add(parts.hand, u - 0.2, v + sv * 0.25, 0.5, 0, 0.07, 1.1, 0.07);
+					add(parts.hand, u - 0.2, v + sv * 0.25, 1.15, 0, 0.3, 0.38, 0.3);
+					for (const e of [-1, 1]) add(parts.lamp, u - 0.2 + e * 0.16, v + sv * 0.25, 1.15, 0, 0.22, 0.26, 0.02);
+					add(parts.hand, u - 0.2, v + sv * 0.25, 1.37, 0, 0.36, 0.05, 0.36);
+					add(parts.steel, u, v / 2, -0.16, 0, Math.abs(v) - 0.2, 0.06, 0.08);
+				} else {
+					add(parts.steel, u, v, -0.19, 0, 0.9, 0.05, 1.5);
+					add(parts.machine, u, v, -0.02, 0, 0.5, 0.32, 1.1);
+					add(parts.machine, u, v, 0.16, 0, 0.56, 0.05, 1.16);
+					add(parts.machine, u + 0.72, v + sv * 0.1, -0.05, 0, 0.26, 0.26, 0.24);
+					for (const du of [-0.32, 0, 0.32]) add(parts.steel, u + du, v / 2, -0.16, 0, Math.abs(v) - 0.25, du ? 0.04 : 0.06, du ? 0.05 : 0.08);
+					// szafka ogrzewania rozjazdu
+					add(parts.cab, u - 3.2, v, 0.45, 0, 0.42, 0.85, 0.6);
+					for (const du of [-0.22, 0.22]) add(parts.steel, u - 3.2 + du, v, -0.05, 0, 0.05, 0.4, 0.05);
+				}
 			};
 			if (type <= 1) {
 				const uf = Math.sqrt(3 * Rs), bl = Math.max(7, Math.min(32, 0.82 * Math.sqrt(Rs)));
@@ -3371,13 +3449,13 @@
 			}
 		}
 		const EM = envMaterials();
-		const mats = { timber: M.sleeper, blade: M.rail, steel: M.railSide, machine: EM.switchMachine, hand: EM.switchHand, lamp: EM.switchLamp };
+		const mats = { timber: M.sleeper, wood: EM.switchWood, blade: M.rail, steel: M.railSide, machine: EM.switchMachine, hand: EM.switchHand, lamp: EM.switchLamp, ball: EM.switchHand, cab: EM.switchCab };
 		for (const [k, list2] of Object.entries(parts)) {
 			if (!list2.length) continue;
-			const inst = new T.InstancedMesh(GEO.box, mats[k], list2.length);
+			const inst = new T.InstancedMesh(k === 'ball' ? GEO.sphere : GEO.box, mats[k], list2.length);
 			list2.forEach((mm, i) => inst.setMatrixAt(i, mm));
 			inst.receiveShadow = true;
-			inst.castShadow = (k === 'machine' || k === 'hand') && this.shadows;
+			inst.castShadow = (k === 'machine' || k === 'hand' || k === 'cab' || k === 'ball') && this.shadows;
 			group.add(inst);
 		}
 	};
@@ -3921,7 +3999,10 @@
 	World.prototype.buildEnvPlatforms = function (group, list) {
 		if (!list.length) return;
 		const r = this.route;
-		const top = { p: [] }, sides = { p: [] }, wl = { p: [] }, yl = { p: [] };
+		// a – atrybut aPl (kilometraż względem base, odsunięcie) – wzór płyt peronu wzdłuż toru (common.js PLATFORM_GLSL)
+		const top = { p: [], a: [] }, sides = { p: [] }, wl = { p: [], a: [] }, yl = { p: [], a: [] };
+		let base = null;
+		const pl = (s, d) => { if (base === null) base = Math.floor(s / 100) * 100; return [s - base, d]; };
 		const deco = [];
 		// przycięcie wielokąta (s, d) do półpłaszczyzny f(p) ≥ 0 (Sutherland–Hodgman)
 		const clip = (poly, f) => {
@@ -3938,7 +4019,11 @@
 				R.sidePoint(r, s, d, tp);
 				const y = yAt(s, d);
 				// ściana boczna do terenu (obniżony teren przy wiadukcie, nasyp) – peron nie wisi nad ziemią
-				return [tp.x, y + 0.77, tp.z, Math.min(y - 0.4, this.terrainY(s, d) - 0.3)];
+				return [tp.x, y + 0.77, tp.z, Math.min(y - 0.4, this.terrainY(s, d) - 0.3), ...pl(s, d)];
+			};
+			const topTri = (A, B, Cc) => {
+				top.p.push(A[0], A[1], A[2], B[0], B[1], B[2], Cc[0], Cc[1], Cc[2]);
+				top.a.push(A[4], A[5], B[4], B[5], Cc[4], Cc[5]);
 			};
 			/* wierzch: obrys pocięty na pasy co 4 m wzdłuż toru i boki zagęszczone co 4 m – na łuku peron idzie za torem;
 			   dawniej wierzchołki tylko w punktach obrysu, a długi bok (np. 170 m) był w świecie cięciwą łuku i płyta
@@ -3954,8 +4039,8 @@
 				for (const [a, b, c2] of ids) {
 					const A = Wp[a], B = Wp[b], Cc = Wp[c2];
 					const up = ((Cc[2] - A[2]) * (B[0] - A[0]) - (Cc[0] - A[0]) * (B[2] - A[2])) < 0;
-					if (up) top.p.push(A[0], A[1], A[2], B[0], B[1], B[2], Cc[0], Cc[1], Cc[2]);
-					else top.p.push(A[0], A[1], A[2], Cc[0], Cc[1], Cc[2], B[0], B[1], B[2]);
+					if (up) topTri(A, B, Cc);
+					else topTri(A, Cc, B);
 				}
 			}
 			const dense = [];
@@ -3996,13 +4081,13 @@
 					const ps = p[0] + no[0] * out, pd = p[1] + no[1] * out, y = yAt(p[0], p[1]);
 					R.sidePoint(r, ps, pd, tp);
 					const yt = out ? yE : y + 0.77;
-					return [tp.x, yt, tp.z, Math.min(yt - 0.3, y - 0.4, this.terrainY(ps, pd) - 0.3)];
+					return [tp.x, yt, tp.z, Math.min(yt - 0.3, y - 0.4, this.terrainY(ps, pd) - 0.3), ...pl(ps, pd)];
 				};
 				const A = v(a, 0), B = v(b, 0), Ao = v(a, Lr), Bo = v(b, Lr);
 				const tri = (P1, P2, P3) => {
 					const up = ((P3[2] - P1[2]) * (P2[0] - P1[0]) - (P3[0] - P1[0]) * (P2[2] - P1[2])) < 0;
-					if (up) top.p.push(P1[0], P1[1], P1[2], P2[0], P2[1], P2[2], P3[0], P3[1], P3[2]);
-					else top.p.push(P1[0], P1[1], P1[2], P3[0], P3[1], P3[2], P2[0], P2[1], P2[2]);
+					if (up) topTri(P1, P2, P3);
+					else topTri(P1, P3, P2);
 				};
 				tri(A, B, Bo);
 				tri(A, Bo, Ao);
@@ -4017,7 +4102,16 @@
 			const P3 = (p, y) => { R.sidePoint(r, p[0], p[1], tp); return [tp.x, y, tp.z]; };
 			const strip = (dst, a, b, no, o0, o1, y) => {
 				const A0 = [a[0] - no[0] * o0, a[1] - no[1] * o0], A1 = [a[0] - no[0] * o1, a[1] - no[1] * o1], B0 = [b[0] - no[0] * o0, b[1] - no[1] * o0], B1 = [b[0] - no[0] * o1, b[1] - no[1] * o1];
-				const v = [P3(A0, y(A0)), P3(A1, y(A1)), P3(B1, y(B1)), P3(B0, y(B0))];
+				const Q = [A0, A1, B1, B0], v = Q.map((q) => P3(q, y(q)));
+				for (const [x, z, w2] of [[0, 1, 2], [0, 2, 3], [0, 2, 1], [0, 3, 2]]) {
+					dst.p.push(...v[x], ...v[z], ...v[w2]);
+					if (dst.a) for (const k of [x, z, w2]) dst.a.push(...pl(Q[k][0], Q[k][1]));
+				}
+			};
+			// pionowa ściana wzdłuż boku (odsunięcie o od krawędzi, wysokości yTop…yBot nad wierzchem) – obie strony
+			const face = (dst, a, b, no, o, h0, h1, y) => {
+				const A = [a[0] - no[0] * o, a[1] - no[1] * o], B = [b[0] - no[0] * o, b[1] - no[1] * o];
+				const v = [P3(A, y(A) + h0), P3(A, y(A) + h1), P3(B, y(B) + h1), P3(B, y(B) + h0)];
 				for (const [x, z, w2] of [[0, 1, 2], [0, 2, 3], [0, 2, 1], [0, 3, 2]]) dst.p.push(...v[x], ...v[z], ...v[w2]);
 			};
 			for (let k = 0; k < poly.length; k++) {
@@ -4031,9 +4125,13 @@
 					const ms = (p0[0] + p1[0]) / 2, md = (p0[1] + p1[1]) / 2;
 					const tr = [0].concat(this.envTracksAt(ms).filter((t) => !t.sk).map((t) => t.d));
 					if (!tr.some((td) => { const g = (td - md) * Math.sign(no[1]); return g > 1.2 && g < 2.8; })) continue;
+					/* krawężnik peronowy (jasne płyty, nawis 7 cm nad ścianą – czoło i spód) i pas ostrzegawczy z wypustkami
+					   0,55–0,95 m od krawędzi */
 					const y = (p) => yAt(p[0], p[1]) + 0.785;
-					strip(wl, p0, p1, no, 0, 0.35, y);
-					strip(yl, p0, p1, no, 0.45, 0.59, y);
+					strip(wl, p0, p1, no, -0.07, 0.5, y);
+					strip(yl, p0, p1, no, 0.55, 0.95, y);
+					face(sides, p0, p1, no, -0.07, -0.2, 0, y);
+					strip(sides, p0, p1, no, -0.07, 0, (p) => y(p) - 0.2);
 				}
 			}
 		};
@@ -4107,15 +4205,15 @@
 			}
 			if (lamps.length && this.envLampSink) this.envLampSink.push(...lamps);
 		}
-		const concrete = World.platformConcrete || (World.platformConcrete = NS.util.matS('#b8b2a6', { roughness: 0.9, surf: 'concrete' }));
+		// nawierzchnia z płyt, krawężnik i pas ostrzegawczy (wzór wzdłuż toru – World.platformMats)
+		const PM = World.platformMats();
 		// ściany boczne – beton jak nawierzchnia, ciemniejszy (wcześniej jasna, gładka biel – peron wyglądał jak pudło)
 		const edge = World.platformEdge || (World.platformEdge = NS.util.matS('#9d978c', { roughness: 0.95, surf: 'concrete', side: T.DoubleSide }));
-		const white = World.platformWhite || (World.platformWhite = NS.util.mat('#f2f2f2'));
-		const yellow = World.platformYellow || (World.platformYellow = NS.util.mat('#e8c430'));
-		for (const [d, material] of [[top, concrete], [sides, edge], [wl, white], [yl, yellow]]) {
+		for (const [d, material] of [[top, PM.top], [sides, edge], [wl, PM.edge], [yl, PM.tact]]) {
 			if (!d.p.length) continue;
 			const geo = new T.BufferGeometry();
 			geo.setAttribute('position', new T.Float32BufferAttribute(d.p, 3));
+			if (d.a) geo.setAttribute('aPl', new T.Float32BufferAttribute(d.a, 2));
 			geo.computeVertexNormals();
 			const m = new T.Mesh(geo, material);
 			m.receiveShadow = true;
@@ -4128,7 +4226,7 @@
 	World.prototype.buildEnvBuildings = function* (group, list, M) {
 		if (!list.length) return;
 		const r = this.route;
-		const fa = { p: [], uv: [], c: [] }, pl = { p: [], uv: [], c: [] };
+		const fa = { p: [], uv: [], c: [] }, pl = { p: [], uv: [], c: [] }, rf = { p: [], uv: [], c: [] }; // rf – dachy (osobny materiał)
 		const tri = (dst, a, b, c2, ua, ub, uc, rgb) => {
 			dst.p.push(a[0], a[1], a[2], b[0], b[1], b[2], c2[0], c2[1], c2[2]);
 			dst.uv.push(ua[0], ua[1], ub[0], ub[1], uc[0], uc[1]);
@@ -4278,7 +4376,7 @@
 			if (kind === 6) this.envStationSign(group, b, top);
 			// dachy
 			const up = (a, b2, c2) => ((b2[2] - a[2]) * (c2[0] - a[0]) - (b2[0] - a[0]) * (c2[2] - a[2])) > 0; // normalna w górę
-			const roofTri = (a, b2, c2, rgb) => { if (up(a, b2, c2)) tri(pl, a, b2, c2, Z, Z, Z, rgb); else tri(pl, a, c2, b2, Z, Z, Z, rgb); };
+			const roofTri = (a, b2, c2, rgb) => { if (up(a, b2, c2)) tri(rf, a, b2, c2, Z, Z, Z, rgb); else tri(rf, a, c2, b2, Z, Z, Z, rgb); };
 			const at = (p, y) => [p[0], y, p[2]];
 			if (roofS === 1 && n === 4) {
 				// dwuspadowy: kalenica wzdłuż dłuższego boku, szczyty w kolorze ścian
@@ -4324,6 +4422,7 @@
 		};
 		mesh(fa, M.facade);
 		mesh(pl, M.plain);
+		mesh(rf, M.roof);
 	};
 
 	/* Wyposażenie budynku wg rodzaju na ścianie od strony toru (najbliższej osi, co najmniej 4 m): szyld z napisem
@@ -4365,18 +4464,20 @@
 		let text = S ? (name && use !== 13 && use !== 14 && use !== 12 ? name : S[0]) : null;
 		if (use === 7 && !name) text = SHOPS[Math.floor(hash(seed + 4.1) * SHOPS.length)];
 		if (use === 6 && !name) text = null; // biurowiec bez nazwy – bez szyldu
+		const brand = brandOf(name, use);
 		if (text && S) {
 			const high = !!S[4];
-			let bg = S[1];
+			let bg = S[1], fg = S[2];
 			if (use === 8) bg = MARKET_C[Math.floor(hash(seed + 3.3) * MARKET_C.length)];
+			if (brand) { bg = brand[0]; fg = brand[1]; }
 			const sh = high ? Math.min(2.2, 0.9 + h * 0.06) : 0.85, sw = Math.min(L * 0.8, Math.max(2.6, Math.min(14, text.length * sh * 0.5 + 1.4)));
 			const ys = high ? top - sh / 2 - 0.5 : Math.min(top - sh / 2 - 0.3, y0 + (use === 14 ? 4.5 : 3.4)); // remiza – nad bramami
 			if (ys - sh / 2 > y0 + 1.8) {
-				const key = `${text}|${bg}|${S[2]}|${S[3] || ''}`;
+				const key = `${text}|${bg}|${fg}|${S[3] || ''}`;
 				World.signMats = World.signMats || new Map();
 				let m = World.signMats.get(key);
 				if (!m) {
-					const tex = signTexture(text, bg, S[2], S[3]);
+					const tex = signTexture(text, bg, fg, S[3]);
 					m = new T.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: '#ffffff', emissiveIntensity: 0.22, roughness: 0.5 });
 					m.userData.shared = true;
 					World.signMats.set(key, m);
@@ -4391,15 +4492,66 @@
 				cuboid(mx + nx * 0.04, ys, mz + nz * 0.04, sw + 0.12, sh + 0.12, 0.08, C3('#2a2d31'));
 			}
 		}
+		// sklep sieci w parterze (np. Żabka w bloku): pas w barwie sieci nad witryną, tylko na ścianie frontowej
+		if (use === 7 && brand && top - y0 > 3.6) cuboid(mx + nx * 0.06, y0 + 3.05, mz + nz * 0.06, L - 0.6, 0.4, 0.06, C3(brand[2]));
 		// pas w kolorze sieci (market) pod attyką
 		if (use === 8 && h > 3.5) {
-			const c = C3(MARKET_C[Math.floor(hash(seed + 3.3) * MARKET_C.length)]);
+			const c = C3(brand ? brand[2] : MARKET_C[Math.floor(hash(seed + 3.3) * MARKET_C.length)]);
 			for (let k = 0; k < n; k++) {
 				const p = P[k], q = P[(k + 1) % n], [ex, ez] = NE[k];
 				const a = [p[0] + ex * 0.03, top - 0.9, p[2] + ez * 0.03], b2 = [q[0] + ex * 0.03, top - 0.9, q[2] + ez * 0.03], c2 = [q[0] + ex * 0.03, top - 0.45, q[2] + ez * 0.03], d2 = [p[0] + ex * 0.03, top - 0.45, p[2] + ez * 0.03];
 				if (ccw) { tri(pl, a, c2, b2, Z, Z, Z, c); tri(pl, a, d2, c2, Z, Z, Z, c); } else { tri(pl, a, b2, c2, Z, Z, Z, c); tri(pl, a, c2, d2, Z, Z, Z, c); }
 			}
 		}
+		/* witryna parteru (sklep, market, restauracja, bank, apteka, poczta): przeszklenie wzdłuż ściany frontowej
+		   ze szprosami co ok. 1,6 m, drzwi pośrodku (jaśniejsza rama); market – zadaszenie nad wejściem na dwóch słupach
+		   z pasem w barwie sieci */
+		const glassC = C3('#24313b'), frameC = C3('#5d6670'), steelC = C3('#c9ced3');
+		if ((use >= 7 && use <= 12) && top - y0 > 3.3 && L > 5) {
+			const gw = L - 1.2, gh = 2.4, gy = y0 + 0.4 + gh / 2;
+			cuboid(mx + nx * 0.05, gy, mz + nz * 0.05, gw, gh, 0.06, glassC);
+			const nm = Math.max(2, Math.round(gw / 1.6));
+			for (let i = 0; i <= nm; i++) {
+				const t = i / nm - 0.5;
+				cuboid(mx + ux * t * gw + nx * 0.09, gy, mz + uz * t * gw + nz * 0.09, 0.08, gh + 0.08, 0.05, frameC);
+			}
+			for (const dy of [-gh / 2, gh / 2]) cuboid(mx + nx * 0.09, gy + dy, mz + nz * 0.09, gw + 0.08, 0.1, 0.05, frameC);
+			cuboid(mx + nx * 0.1, y0 + 0.4 + 1.1, mz + nz * 0.1, 1.9, 2.2, 0.04, steelC); // drzwi (rama)
+			cuboid(mx + nx * 0.12, y0 + 0.4 + 1.1, mz + nz * 0.12, 1.7, 2.05, 0.03, glassC);
+			if (use === 8 && L > 10) {
+				const cw = Math.min(9, L * 0.4), cd = 2.4, cy = y0 + 3.15;
+				const bc = C3(brand ? brand[2] : MARKET_C[Math.floor(hash(seed + 3.3) * MARKET_C.length)]);
+				cuboid(mx + nx * cd / 2, cy, mz + nz * cd / 2, cw, 0.28, cd, C3('#e8e8e6'));
+				cuboid(mx + nx * (cd + 0.03), cy, mz + nz * (cd + 0.03), cw + 0.06, 0.42, 0.06, bc);
+				for (const t of [-0.5, 0.5]) cuboid(mx + ux * t * (cw - 0.4) + nx * (cd - 0.25), y0 + 1.5, mz + uz * t * (cw - 0.4) + nz * (cd - 0.25), 0.16, 3.2, 0.16, steelC);
+			}
+		}
+		// policja: granatowy pas wzdłuż ściany frontowej nad parterem (z białym paskiem)
+		if (use === 13 && top - y0 > 3.6) {
+			cuboid(mx + nx * 0.05, y0 + 2.95, mz + nz * 0.05, L - 0.4, 0.42, 0.05, C3('#1d3f8f'));
+			cuboid(mx + nx * 0.07, y0 + 3.2, mz + nz * 0.07, L - 0.4, 0.07, 0.04, C3('#f2f2f2'));
+		}
+		// apteka: zielony krzyż wysunięty prostopadle do ściany przy jednym końcu (widoczny z ulicy z obu stron)
+		if (use === 11 && top - y0 > 3.6 && L > 4) {
+			const px = A[0] + ux * 0.9 + nx * 0.55, pz = A[2] + uz * 0.9 + nz * 0.55, py = y0 + 3.3;
+			cuboid(px, py, pz, 0.12, 0.95, 0.95, C3('#f2f2f2'), nx, nz);
+			cuboid(px, py, pz, 0.16, 0.7, 0.22, C3('#1e8f3e'), nx, nz);
+			cuboid(px, py, pz, 0.16, 0.22, 0.7, C3('#1e8f3e'), nx, nz);
+			cuboid(A[0] + ux * 0.9 + nx * 0.2, py + 0.4, A[2] + uz * 0.9 + nz * 0.2, 0.06, 0.06, 0.45, frameC);
+		}
+		// urząd, szkoła: schody i daszek nad wejściem na dwóch słupach
+		if ((use === 20 || use === 15 || use === 17) && L > 8) {
+			const ew = Math.min(6, L * 0.35);
+			for (let i = 0; i < 3; i++) cuboid(mx + nx * (0.35 + (2 - i) * 0.35), y0 - 0.15 + i * 0.15, mz + nz * (0.35 + (2 - i) * 0.35), ew + 0.6 - i * 0.2, 0.15 + i * 0.15 + 0.15, 0.35, C3('#b9b4aa'));
+			if (top - y0 > 3.8) {
+				cuboid(mx + nx * 1.3, y0 + 3.3, mz + nz * 1.3, ew, 0.25, 2.6, C3('#e3dfd6'));
+				for (const t of [-0.5, 0.5]) cuboid(mx + ux * t * (ew - 0.5) + nx * 2.3, y0 + 1.65, mz + uz * t * (ew - 0.5) + nz * 2.3, 0.3, 3.3, 0.3, C3('#ece8df'));
+			}
+		}
+		/* stacja paliw: wiata przed budynkiem (od strony ulicy), na czterech słupach, z pasem w barwach sieci, dwie wyspy
+		   z dystrybutorami, pylon z cenami przy wjeździe – gdy przed ścianą jest wolne miejsce (bez budynków, jezdni i torów) */
+		if (use === 26) this.envFuelCanopy(b, k0, cuboid, C3, brand, ux, uz, nx, nz, mx, mz);
+
 		// straż pożarna: czerwone bramy garażowe (z białymi pasami) i wieża do suszenia węży w narożniku
 		if (use === 14) {
 			const nd = Math.max(1, Math.min(4, Math.floor((L - 2) / 4.6)));
@@ -4462,6 +4614,47 @@
 			cuboid(cx, top + 0.05, cz, 6, 0.04, 1.8, c);
 			cuboid(cx, top + 0.05, cz, 1.8, 0.04, 6, c);
 		}
+	};
+
+	// wiata stacji paliw (envBuildingDecor): środek 7 m przed ścianą frontową, w układzie trasy sprawdzane wolne miejsce
+	World.prototype.envFuelCanopy = function (b, k0, cuboid, C3, brand, ux, uz, nx, nz, mx, mz) {
+		const row = b.row, n = b.n, r = this.route;
+		const s0 = row[3 + k0 * 2], d0 = row[4 + k0 * 2], s1 = row[3 + ((k0 + 1) % n) * 2], d1 = row[4 + ((k0 + 1) % n) * 2];
+		let cs = 0, cd2 = 0;
+		for (let k = 0; k < n; k++) { cs += row[3 + k * 2] / n; cd2 += row[4 + k * 2] / n; }
+		const el = Math.hypot(s1 - s0, d1 - d0) || 1, es = (s1 - s0) / el, ed = (d1 - d0) / el;
+		let ps = -ed, pd = es;
+		const ms = (s0 + s1) / 2, md = (d0 + d1) / 2;
+		if (ps * (ms - cs) + pd * (md - cd2) < 0) { ps = -ps; pd = -pd; }
+		const DIST = 7, CW = 14, CD = 9;
+		const sc = ms + ps * DIST, dc = md + pd * DIST;
+		// wolne miejsce: środek i narożniki wiaty poza budynkami i jezdnią, daleko od torów
+		const pts = [[0, 0], [-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, q]) => [sc + es * a * CW / 2 + ps * q * CD / 2, dc + ed * a * CW / 2 + pd * q * CD / 2]);
+		if (pts.some(([s2, d2]) => Math.abs(d2) < 12 || this.inBuilding(s2, d2) || this.onRoad(s2, d2) || this.envTrackGap(s2, d2) < 6)) return;
+		R.sidePoint(r, sc, dc, tp);
+		const x = tp.x, z = tp.z, gy = this.terrainY(sc, dc);
+		const H = 5.2, band = C3(brand ? brand[2] : '#1e8f3e'), white = C3('#f2f2f0'), conc = C3('#a9a59c');
+		// słupy, dach z pasem (obwódka), spód jasny
+		for (const [a, q] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) cuboid(x + ux * a * (CW / 2 - 1.2) + nx * q * (CD / 2 - 1.2), gy + H / 2, z + uz * a * (CW / 2 - 1.2) + nz * q * (CD / 2 - 1.2), 0.4, H, 0.4, white);
+		cuboid(x, gy + H + 0.35, z, CW, 0.7, CD, white);
+		for (const q of [-1, 1]) cuboid(x + nx * q * (CD / 2 + 0.02), gy + H + 0.35, z + nz * q * (CD / 2 + 0.02), CW + 0.08, 0.72, 0.05, band);
+		for (const a of [-1, 1]) cuboid(x + ux * a * (CW / 2 + 0.02), gy + H + 0.35, z + uz * a * (CW / 2 + 0.02), 0.05, 0.72, CD + 0.08, band);
+		// wyspy z dystrybutorami
+		for (const a of [-1, 1]) {
+			const ix = x + ux * a * 3.2, iz = z + uz * a * 3.2;
+			cuboid(ix, gy + 0.1, iz, 1.3, 0.2, 5.2, conc, nx, nz);
+			for (const q of [-1, 1]) {
+				const px = ix + nx * q * 1.3, pz = iz + nz * q * 1.3;
+				cuboid(px, gy + 1.0, pz, 0.55, 1.6, 0.9, white, nx, nz);
+				cuboid(px, gy + 1.65, pz, 0.58, 0.32, 0.93, band, nx, nz);
+				cuboid(px + ux * 0.3, gy + 1.15, pz + uz * 0.3, 0.04, 0.4, 0.5, C3('#24313b'), nx, nz); // wyświetlacz
+			}
+		}
+		// pylon z cenami przy krawędzi placu (od strony ulicy)
+		const yx = x + ux * (CW / 2 + 1.5) + nx * (CD / 2 + 1.5), yz = z + uz * (CW / 2 + 1.5) + nz * (CD / 2 + 1.5);
+		cuboid(yx, gy + 3.2, yz, 1.5, 6.4, 0.45, band);
+		cuboid(yx + nx * 0.24, gy + 2.6, yz + nz * 0.24, 1.2, 3.6, 0.03, C3('#1b1d20'));
+		for (let i = 0; i < 4; i++) cuboid(yx + nx * 0.26, gy + 1.3 + i * 0.85, yz + nz * 0.26, 0.9, 0.42, 0.02, C3(i % 2 ? '#ffd400' : '#f2f2f2'));
 	};
 
 	World.prototype.envStationSign = function (group, b, top) {
@@ -5378,17 +5571,22 @@
 				if (!byKind.has(k)) byKind.set(k, []);
 				byKind.get(k).push(x);
 			}
+			// lakier – kolor egzemplarza; szyby i reszta (opony, światła, tablice) – własne kolory
+			const F = NS.props.carFixedMats();
 			for (const [k, list] of byKind) {
-				const im = new T.InstancedMesh(NS.props.carGeo(k), parkCarMat(), list.length);
-				list.forEach((x, i) => {
-					const a = W(x.c, 0.075), b = W([x.c[0] + x.dir[0], x.c[1] + x.dir[1]], 0.075);
-					q.setFromAxisAngle(up, Math.atan2(b[0] - a[0], b[2] - a[2]));
-					im.setMatrixAt(i, m4.compose(p3.set(a[0], a[1], a[2]), q, one));
-					im.setColorAt(i, col.set(x.color));
-				});
-				im.castShadow = this.shadows;
-				im.receiveShadow = true;
-				group.add(im);
+				const G = NS.props.carGeo(k);
+				for (const [geo, mt, paintIt] of [[G.paint, parkCarMat(), true], [G.glass, F.glass, false], [G.trim, F.trim, false]]) {
+					const im = new T.InstancedMesh(geo, mt, list.length);
+					list.forEach((x, i) => {
+						const a = W(x.c, 0.075), b = W([x.c[0] + x.dir[0], x.c[1] + x.dir[1]], 0.075);
+						q.setFromAxisAngle(up, Math.atan2(b[0] - a[0], b[2] - a[2]));
+						im.setMatrixAt(i, m4.compose(p3.set(a[0], a[1], a[2]), q, one));
+						if (paintIt) im.setColorAt(i, col.set(x.color));
+					});
+					im.castShadow = this.shadows && paintIt;
+					im.receiveShadow = true;
+					group.add(im);
+				}
 			}
 		}
 		for (const d0 of [dst, mk]) {
@@ -5453,17 +5651,36 @@
 			const pts = [[row[1 + k * 2], row[2 + k * 2]], [row[3 + k * 2], row[4 + k * 2]]];
 			this.envStrip(dst, pts, row[0], 0.12, white, skip);
 		}
-		// zbiorniki: serie komórek „woda” w wierszach rastra należących do kawałka
+		/* zbiorniki: serie komórek „woda” w wierszach rastra należących do kawałka. Brzeg wygładzony: granica serii na
+		   styku wierszy – średnia z sąsiednią serią (trapezy zamiast prostokątów – bez schodków co 10 m na ukośnych
+		   brzegach); bez sąsiada – koniec zbiornika lekko zwężony (zaokrąglony) */
 		const g = e.g, st = g.step;
-		for (let s = c * C; s < (c + 1) * C; s += st) {
-			const ri = Math.round((s - g.s0) / st);
-			if (ri < 0 || ri >= e.rows) continue;
+		const runsOf = (ri) => {
+			if (ri < 0 || ri >= e.rows) return [];
+			const out = [];
 			let ci = 0;
 			while (ci < g.cols) {
 				if (e.grid[ri * g.cols + ci] !== 9) { ci++; continue; }
 				let cj = ci;
 				while (cj + 1 < g.cols && e.grid[ri * g.cols + cj + 1] === 9) cj++;
-				const dA = g.d0 + (ci - 0.5) * st, dB = g.d0 + (cj + 0.5) * st;
+				out.push({ ci, cj, dA: g.d0 + (ci - 0.5) * st, dB: g.d0 + (cj + 0.5) * st });
+				ci = cj + 1;
+			}
+			return out;
+		};
+		// sąsiednia seria o największym wspólnym zakresie komórek
+		const best = (list, R0) => {
+			let bst = null, ov = 0;
+			for (const q of list) { const o = Math.min(q.cj, R0.cj) - Math.max(q.ci, R0.ci) + 1; if (o > ov) { ov = o; bst = q; } }
+			return bst;
+		};
+		const T3 = (x, y2, z) => { dst.p.push(...x, ...y2, ...z); for (let i = 0; i < 3; i++) dst.c.push(1, 1, 1); };
+		for (let s = c * C; s < (c + 1) * C; s += st) {
+			const ri = Math.round((s - g.s0) / st);
+			if (ri < 0 || ri >= e.rows) continue;
+			const prev = runsOf(ri - 1), next = runsOf(ri + 1);
+			for (const R0 of runsOf(ri)) {
+				const { ci, dA, dB } = R0;
 				/* poziom lustra: mediana terenu w serii (+0,65 m) – dawniej z terenu w środku każdego płata 10 × 20 m; pomiar
 				   nad wodą jest zaszumiony, płaty stały schodkami (ciemne pasy na rzece) */
 				const wl = this.envWaterLevel(s, g.d0 + ci * st);
@@ -5472,24 +5689,29 @@
 				else {
 					const hs = [];
 					for (let d = dA + st / 2; d < dB; d += st) hs.push(this.terrainY(s, d));
-					hs.sort((a, b) => a - b);
+					hs.sort((a2, b2) => a2 - b2);
 					yRun = hs[hs.length >> 1] + 0.65;
 				}
-				for (let d = dA; d < dB - 1e-6; d += 20) {
-					const d2 = Math.min(dB, d + 20);
+				// granice na styku z poprzednim (s0) i następnym (s1) wierszem
+				const pr = best(prev, R0), nx = best(next, R0), w = dB - dA;
+				const a0 = pr ? (dA + pr.dA) / 2 : dA + w * 0.18, b0 = pr ? (dB + pr.dB) / 2 : dB - w * 0.18;
+				const a1 = nx ? (dA + nx.dA) / 2 : dA + w * 0.18, b1 = nx ? (dB + nx.dB) / 2 : dB - w * 0.18;
+				const N = Math.max(1, Math.ceil(Math.max(b0 - a0, b1 - a1, w) / 20));
+				for (let j = 0; j < N; j++) {
+					const l0 = a0 + ((b0 - a0) * j) / N, r0 = a0 + ((b0 - a0) * (j + 1)) / N;
+					const l1 = a1 + ((b1 - a1) * j) / N, r1 = a1 + ((b1 - a1) * (j + 1)) / N;
+					const dm = (l0 + r0 + l1 + r1) / 4;
 					// przy osi – tylko pod przęsłem mostu (Wisła w Toruniu: pas bez wody wzdłuż mostu)
-					if ((Math.abs((d + d2) / 2) < 10 && !this.underBridge(s, (d + d2) / 2)) || this.envStationZone(s, (d + d2) / 2)) continue;
-					const P = [[s - st / 2, d], [s - st / 2, d2], [s + st / 2, d2], [s + st / 2, d]].map(([ss, dd]) => {
+					if ((Math.abs(dm) < 10 && !this.underBridge(s, dm)) || this.envStationZone(s, dm)) continue;
+					const P = [[s - st / 2, l0], [s - st / 2, r0], [s + st / 2, r1], [s + st / 2, l1]].map(([ss, dd]) => {
 						R.sidePoint(r, ss, dd, tp);
 						return [tp.x, 0, tp.z];
 					});
-					const y = wl !== undefined ? yRun : Math.max(yRun, this.terrainY(s, (d + d2) / 2) - 0.6);
-					for (const p of P) p[1] = y;
+					const y = wl !== undefined ? yRun : Math.max(yRun, this.terrainY(s, dm) - 0.6);
+					for (const q of P) q[1] = y;
 					const up = ((P[2][2] - P[0][2]) * (P[1][0] - P[0][0]) - (P[2][0] - P[0][0]) * (P[1][2] - P[0][2])) < 0;
-					const T3 = (x, y2, z) => { dst.p.push(...x, ...y2, ...z); for (let i = 0; i < 3; i++) dst.c.push(1, 1, 1); };
 					if (up) { T3(P[0], P[1], P[2]); T3(P[0], P[2], P[3]); } else { T3(P[0], P[2], P[1]); T3(P[0], P[3], P[2]); }
 				}
-				ci = cj + 1;
 			}
 		}
 		if (!dst.p.length) return;

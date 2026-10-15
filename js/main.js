@@ -470,7 +470,8 @@
 	}
 
 	// ---------- zakładka „Warunki”: kafelki pogody i pory dnia (wybór w ukrytych listach – te same co w pauzie) ----------
-	const WEATHER_SKY = { auto: ['#8fb3d9', '#c9d6e3'], clear: ['#3f8fe0', '#bfe0ff'], cloudy: ['#8a96a3', '#c3cad2'], rain: ['#56606b', '#8c96a0'], fog: ['#b9bec3', '#e1e4e6'], snow: ['#c9d3dd', '#f2f5f8'] };
+	const WEATHER_SKY = { auto: ['#8fb3d9', '#c9d6e3'], clear: ['#3f8fe0', '#bfe0ff'], cloudy: ['#8a96a3', '#c3cad2'], rain: ['#56606b', '#8c96a0'], storm: ['#2c3138', '#6c7480'], fog: ['#b9bec3', '#e1e4e6'], snow: ['#c9d3dd', '#f2f5f8'] };
+	const SEASON_SKY = { spring: ['#8ccf7e', '#e6f2c8'], summer: ['#3f8fe0', '#7fbf5a'], autumn: ['#c9772f', '#e8c070'], winter: ['#c9d3dd', '#ffffff'] };
 	const TIME_SKY = { auto: ['#8fb3d9', '#c9d6e3'], '05:20': ['#2b3a63', '#f0a77a'], '08:00': ['#6fa7df', '#e9d3a8'], '12:00': ['#3f8fe0', '#bfe0ff'], '16:00': ['#5d98d6', '#f1d9a6'], '19:50': ['#3a3f73', '#f08a4b'], '23:00': ['#070b18', '#1b2440'], custom: ['#444b5a', '#6d7385'] };
 	function tiles(boxId, selId, sky) {
 		const box = $(boxId), sel = $(selId);
@@ -494,6 +495,8 @@
 	function buildPause() {
 		tiles('pause-weather-tiles', 'pause-weather', WEATHER_SKY);
 		tiles('pause-time-tiles', 'pause-time', TIME_SKY);
+		$('pause-season').value = sim ? sim.opts.season : $('opt-season').value;
+		tiles('pause-season-tiles', 'pause-season', SEASON_SKY);
 		$('pause-custom-row').classList.toggle('hidden', $('pause-time').value !== 'custom');
 		if (!sim) { $('pause-info').innerHTML = ''; return; }
 		const r = sim.route, km = (sim.st.pos / 1000).toFixed(2).replace('.', ',');
@@ -562,7 +565,32 @@
 				rep.classList.remove('hidden');
 				setTimeout(() => { rep.innerHTML = checkReport(checkRoute(d)); }, 30);
 			});
-			row.append(cb, info, play, chk, del);
+			/* horyzont z prawdziwego terenu (trasy wygenerowane przed wersją 0.17 nie mają go): stacje z OSM, wysokości
+			   z Open-Meteo – wynik zapisany w trasie; komunikaty w raporcie pod wierszem */
+			const hz = document.createElement('button');
+			hz.textContent = d.horizon ? 'Horyzont ✓' : 'Horyzont';
+			hz.title = d.horizon ? 'Trasa ma horyzont z prawdziwego terenu – kliknij, by policzyć ponownie' : 'Policz horyzont z prawdziwego terenu (góry i wzniesienia w tle; potrzebny internet, ok. minuty)';
+			hz.addEventListener('click', async () => {
+				hz.disabled = true;
+				rep.classList.remove('hidden');
+				const say = (m) => { rep.innerHTML = `<span class="hint">${esc(m)}</span>`; };
+				say('Horyzont: liczenie…');
+				try {
+					const res = await window.TrainHorizonData.forRoute(plain(d), { findStations: window.TrainOSM.findStations, elevations: window.TrainOSM.elevations, log: (m) => say('Horyzont: ' + m) });
+					d.geo = res.geo;
+					d.horizon = res.horizon;
+					for (const k of Object.keys(prepared)) if (k.startsWith(d.id + '|')) delete prepared[k];
+					await routeDB.put(plain(d));
+					const max = Math.max(...res.horizon.anchors.flatMap((a) => a.slice(1))) / 100;
+					rep.innerHTML = `<div class="gc-ok">Horyzont gotowy: ${res.horizon.anchors.length} profili, najwyżej ${max.toFixed(1).replace('.', ',')}° nad poziomem.</div>`;
+					hz.textContent = 'Horyzont ✓';
+					if (selected === d.id && mode === 'menu') startDemo();
+				} catch (e) {
+					rep.innerHTML = `<div class="gc-item warn">⚠ Horyzont: ${esc(e.message || String(e))}</div>`;
+				}
+				hz.disabled = false;
+			});
+			row.append(cb, info, play, chk, hz, del);
 			list.appendChild(row);
 			list.appendChild(rep);
 		}
@@ -1194,7 +1222,8 @@
 	/* Start jazdy z ekranem wczytywania (js/screens.js): ekran z trasą i składem, po dwóch klatkach (ekran zdąży się
 	   narysować) budowa jazdy (beginGame), potem tryb „loading” – świat wokół pociągu dobudowuje się, symulacja stoi;
 	   gdy nie ma już kawałków do zbudowania (i minęło kilka klatek na kompilację shaderów) – jazda (finishLoading). */
-	let loadingScreen = null, loadingFrames = 0, resumed = false;
+	let loadingScreen = null, loadingFrames = 0, loadingMax = 0, resumed = false;
+	let seasonBuild = false; // przebudowa świata po zmianie pory roku w pauzie
 	// kompilacja shaderów na ekranie wczytywania: 0 – nie zaczęta, 1 – trwa, 2 – gotowa
 	let precompiled = 0;
 	// snap – zapis gry (loadGame): jazda od zapisanego miejsca zamiast od początku trasy
@@ -1216,6 +1245,8 @@
 		}) : null;
 		mode = 'loading';
 		loadingFrames = 0;
+		loadingMax = 0;
+		if (loadingScreen && loadingScreen.progress) loadingScreen.progress(0.03); // od początku rzeczywisty postęp (bez animacji „na czas”)
 		precompiled = 0;
 		sim = null;
 		requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -1623,13 +1654,24 @@
 			fpsT = 0;
 		}
 		// ekran wczytywania: kawałki świata budowane bez limitu czasu na klatkę (World.update)
-		if (renderer.world) renderer.world.fast = mode === 'loading';
+		if (renderer.world) renderer.world.fast = mode === 'loading' || (seasonBuild && mode === 'pause');
+		// przebudowa świata po zmianie pory roku: postęp w nagłówku sekcji w pauzie
+		if (seasonBuild && renderer.world) {
+			const pend = renderer.world.pending || 0;
+			$('pause-season-note').textContent = pend > 0 ? `przebudowa świata… (zostało ${pend})` : 'roślinność, liście, śnieg i przyczepność';
+			if (!pend) seasonBuild = false;
+		}
 		if (mode === 'loading') {
 			// wczytywanie: świat buduje się w draw (symulacja stoi), ekran wczytywania przykrywa scenę
 			$('fps').classList.add('menu-off');
 			if (sim) {
 				renderer.miniRect = false;
 				renderer.draw(sim, 0, 0);
+				/* postęp na ekranie wczytywania: budowa kawałków świata (8–85%, wg największej liczby czekających), kompilacja
+				   shaderów (90%), start – 100% */
+				const pend = renderer.world.pending || 0;
+				loadingMax = Math.max(loadingMax, pend);
+				if (loadingScreen && loadingScreen.progress) loadingScreen.progress(precompiled ? 0.9 : 0.08 + 0.77 * (loadingMax ? 1 - pend / loadingMax : loadingFrames >= 4 ? 1 : 0));
 				// świat zbudowany – jeszcze kompilacja shaderów wszystkich obiektów (także ukrytych, np. kabiny), potem start
 				if (++loadingFrames >= 4 && !(renderer.world.pending > 0)) {
 					if (!precompiled) {
@@ -1693,6 +1735,8 @@
 					if (endTimer <= 0) showEnd();
 				}
 				audio.update(sim, mode === 'end' ? 0 : dt * timeScale);
+				// grzmoty po błyskawicach (burza)
+				for (const th of renderer.weather.takeThunder()) if (!muted) audio.thunder(th.delay, th.gain, th.dist);
 				const wc = renderer.weather.cur;
 				// urban: bliskość stacji (szum miasta, przejeżdżające auta) – 1 na stacji, 0 dalej niż ok. 1,5 km
 				const sp = sim.st.pos;
@@ -2104,13 +2148,26 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.15.0';
+	$('version').textContent = 'wersja 0.27.0';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');
 	$('opt-season').value = load('opt.season', 'summer');
 	$('opt-drive').addEventListener('change', () => { save('opt.drive', $('opt-drive').value); buildMenu(); });
 	$('opt-season').addEventListener('change', () => { save('opt.season', $('opt-season').value); buildMenu(); });
+	/* pora roku z pauzy: zapamiętana jak w menu; w trakcie jazdy – przyczepność, odcinki „liście na torze” i świat od nowa
+	   (renderer.reseason; budowa w pauzie bez limitu czasu – seasonBuild) */
+	$('pause-season').addEventListener('change', () => {
+		const v = $('pause-season').value;
+		$('opt-season').value = v;
+		save('opt.season', v);
+		if (sim && sim.setSeason(v)) {
+			renderer.reseason(sim);
+			seasonBuild = true;
+			hud.toast(`Pora roku: ${$('pause-season').selectedOptions[0].text} – przebudowa świata wokół pociągu.`, 'info');
+		}
+		buildPause();
+	});
 	$('opt-traffic').value = String(load('opt.traffic', 2));
 	$('opt-traffic-pen').checked = load('opt.trafficPen', false);
 	$('opt-dispatch').checked = load('opt.dispatch', true);

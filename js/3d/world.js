@@ -17,7 +17,8 @@
 	})();
 	const ASPECT_COLOR = { green: 0x34d058, yellow: 0xffb020, red: 0xff3b30, yellow2: 0xffb020, white: 0xf2f2ff };
 	const SKIN = ['#f1c9a5', '#e2b48f', '#c58c66', '#8d5a3b', '#f5d5b8'];
-	const PEOPLE = [0xc0392b, 0x2e86c1, 0x27ae60, 0x8e44ad, 0xd35400, 0x34495e, 0xe67e22, 0x16a085, 0xf1c40f];
+	// ubrania (kurtki, płaszcze) jak na ulicach i peronach: przeważają ciemne i stonowane, rzadziej żywe kolory
+	const PEOPLE = [0x22304a, 0x1c1d20, 0x3a3d42, 0x2f4a3a, 0xa58a62, 0x6e2430, 0x3f5f86, 0xb6b8b9, 0xa8322d, 0xb58b2c, 0xd9d9d6, 0x2a2b2e, 0x5a4636, 0x4b5d6e];
 	const HOUSE_WALLS = ['#e8dcc4', '#d9b99b', '#c9d3d9', '#efe6b8', '#f2f0ea', '#cfb7a3'];
 	const HOUSE_ROOFS = ['#8e3b2e', '#6d4c3d', '#59626b', '#a0522d'];
 	const tmpColor = new T.Color();
@@ -129,6 +130,12 @@
 					   w fazie przenoszenia, ręce przeciwnie do nóg z ugiętymi łokciami, podskok; stanie – oddech,
 					   przenoszenie ciężaru, kołysanie rąk, rozglądanie się */
 					animP = position;
+					/* osoba (wg numeru egzemplarza – ciało i głowa mają ten sam): wzrost 1,6–1,9 m, tusza; plecak (ok. 28 %)
+					   albo torba na ramię (ok. 22 %) – u pozostałych dodatki zwinięte do wnętrza tułowia */
+					float pid = float(gl_InstanceID);
+					float pH = 0.92 + 0.16 * fract(sin(pid * 7.13 + 0.7) * 43758.5453), pW = 0.9 + 0.2 * fract(sin(pid * 3.31 + 2.9) * 43758.5453);
+					float bagR = fract(sin(pid * 3.71 + 1.3) * 43758.5453);
+					if ((aKeep > 3.5 && aKeep < 4.5 && bagR > 0.28) || (aKeep > 4.5 && (bagR < 0.28 || bagR > 0.5))) animP = vec3(0.0, 1.2, 0.0);
 					{
 						// aAnim.y = −1 – siedzi (uda poziomo, łydki w dół, przedramiona na udach, ciało niżej o 0,35 m)
 						float sit = step(aAnim.y, -0.5);
@@ -154,6 +161,8 @@
 						animP.y += (abs(sin(ph)) - 0.5) * 0.04 * w - 0.35 * sit;
 						if (L == 0 || L >= 5) animP.y += id * (0.5 + 0.5 * sin(t2 * 1.6)) * 0.006 * smoothstep(0.95, 1.2, position.y);
 						animP.x += shift * 0.25 * smoothstep(0.3, 1.0, position.y);
+						// wzrost i tusza (siedzący – tylko tusza, żeby siedzieli na ławce)
+						animP *= vec3(pW, mix(pH, 1.0, sit), pW);
 					}`)
 					.replace('#include <begin_vertex>', 'vec3 transformed = animP;')
 					.replace('#include <color_vertex>', `#include <color_vertex>
@@ -162,7 +171,10 @@
 						vec3 pal = aKeep < 1.5
 							? (ph < 0.4 ? vec3(0.12, 0.16, 0.3) : ph < 0.6 ? vec3(0.07) : ph < 0.8 ? vec3(0.24, 0.24, 0.23) : vec3(0.42, 0.36, 0.26))
 							: aKeep > 2.5
-								? (ph < 0.35 ? vec3(0.1, 0.08, 0.06) : ph < 0.65 ? vec3(0.3, 0.2, 0.12) : ph < 0.85 ? vec3(0.62, 0.5, 0.3) : vec3(0.55))
+								? aKeep > 3.5
+									// plecaki i torby: czarne, granatowe, szare, czerwone, brązowe (skóra)
+									? (ph < 0.35 ? vec3(0.03) : ph < 0.55 ? vec3(0.04, 0.06, 0.14) : ph < 0.72 ? vec3(0.18) : ph < 0.86 ? vec3(0.4, 0.05, 0.04) : vec3(0.22, 0.12, 0.06))
+									: (ph < 0.35 ? vec3(0.1, 0.08, 0.06) : ph < 0.65 ? vec3(0.3, 0.2, 0.12) : ph < 0.85 ? vec3(0.62, 0.5, 0.3) : vec3(0.55))
 								: color.rgb;
 						vColor.rgb = pal;
 					}`);
@@ -191,9 +203,58 @@
 		}
 
 		// materiały współdzielone przez wszystkie kawałki (tworzone raz)
+		/* materiały nawierzchni peronu (wariant 'platform' – common.js): wierzch z płyt, krawężnik peronowy, pas
+		   ostrzegawczy z wypustkami; ściana – beton. Inne #define – bez zamiany na materiał z kolorem w wierzchołkach. */
+		static platformMats() {
+			if (World._plM) return World._plM;
+			const mk = (color, def) => {
+				const m = matS(color, { roughness: 0.92, surf: 'platform' });
+				if (def) {
+					m.defines = Object.assign({}, m.defines, { [def]: '' });
+					const k = m.customProgramCacheKey();
+					m.customProgramCacheKey = () => k + '-' + def;
+				}
+				m.userData.plain = false;
+				return m;
+			};
+			World._plM = { top: mk('#aaa79f'), edge: mk('#d4d1c8', 'PL_EDGE'), tact: mk('#e2bb28', 'PL_TACT'), wall: matS('#9d978c', { roughness: 0.95, surf: 'concrete' }) };
+			return World._plM;
+		}
+		/* atrybut aPl (kilometraż, odsunięcie) dla wzoru nawierzchni peronu: s – kilometraż (mid − z w układzie toru),
+		   przesunięty o wielokrotność 100 m (dokładność w shaderze; wzór ciągły – okresy płyt dzielą 100 m) */
+		static plAttr(geo, sOf, dOf) {
+			const p = geo.attributes.position, a = new Float32Array(p.count * 2);
+			let o = null;
+			for (let i = 0; i < p.count; i++) {
+				const s = sOf(i, p);
+				if (o === null) o = Math.floor(s / 100) * 100;
+				a[i * 2] = s - o;
+				a[i * 2 + 1] = dOf(i, p);
+			}
+			geo.setAttribute('aPl', new T.BufferAttribute(a, 2));
+			return geo;
+		}
+		// płyta peronu w układzie toru stacji (x – odsunięcie, z – wzdłuż; mid – kilometraż z = 0), dzielona co 3 m (wygina się po łuku)
+		platformSlab(w, h, len, x, y, z, mid, material) {
+			const geo = new T.BoxGeometry(w, h, len, 1, 1, Math.max(1, Math.ceil(len / 3))).toNonIndexed();
+			geo.translate(x, y, z);
+			World.plAttr(geo, (i, p) => mid - p.getZ(i), (i, p) => p.getX(i));
+			const m = new T.Mesh(geo, material);
+			m.castShadow = this.shadows;
+			m.receiveShadow = true;
+			return m;
+		}
+
 		static materials() {
 			if (World.M) return World.M;
-			const veg = (color) => patch(new T.MeshStandardMaterial({ color, roughness: 0.82, vertexColors: true }), 'wind'); // faktura liści w shaderze (LEAF_GLSL)
+			// roślinność (kołysanie – wariant 'wind'); fol – korony drzew i krzewy: atlas kępek liści i igieł (props.foliageAtlas),
+			// karty z przezroczystością (alphaTest – także w cieniach), widoczne z obu stron
+			// (faktura w szarościach – średnio ok. 0,45 po przeliczeniu z sRGB: kolor materiału ×2,5 zachowuje jasność koron)
+			const veg = (color, fol) => {
+				const m = patch(new T.MeshStandardMaterial(Object.assign({ color, roughness: 0.82, vertexColors: true }, fol ? { map: NS.props.foliageAtlas(false), alphaTest: 0.42, side: T.DoubleSide } : {})), 'wind');
+				if (fol) m.color.multiplyScalar(2.5);
+				return m;
+			};
 			World.G = { trees: NS.props.buildTrees(), grass: NS.props.buildGrass(), people: NS.props.buildPeople() };
 			// woda: mapa normalnych z sumy fal, przesuwana w czasie; odbija niebo (mapa otoczenia sceny)
 			const normals = canvasTexture('water-normals', 256, 256, (g, w) => {
@@ -232,18 +293,21 @@
 				railSide: matS('#54402f', { roughness: 0.82, metalness: 0.3 }), // boki szyn: ciemna rdza (jaskrawo pomarańczowe w słońcu wyglądały jak pomalowane)
 				grass: patch(new T.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, vertexColors: true, side: T.DoubleSide }), 'grass'),
 				flower: mat('#ffffff'),
+				// opadłe liście (jesień): płaski listek z faktury z przezroczystością, kolor z egzemplarza
+				litter: patch(new T.MeshStandardMaterial({ map: World.leafTexture(), alphaTest: 0.5, side: T.DoubleSide, roughness: 0.85, color: '#ffffff' }), 'lit'),
 				personBody: World.personMat(new T.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: 0.9, metalness: 0, envMapIntensity: 0.35 })),
 				personHead: World.personMat(new T.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: 0.7, metalness: 0, envMapIntensity: 0.35 })),
 				trunkMat: mat('#5a3f2a', { roughness: 0.95 }),
 				birchMat: mat('#e9e6df', { roughness: 0.9 }),
 				trunk: mat('#5a3f2a'),
 				birch: mat('#e9e6df'),
-				spruce: veg('#ffffff'),
-				leaf: veg('#ffffff'),
-				bush: veg('#ffffff'),
+				spruce: veg('#ffffff', true),
+				leaf: veg('#ffffff', true),
+				bush: veg('#ffffff', true),
 				reed: veg('#8a9442'),
 				forest: patch(new T.MeshLambertMaterial({ color: '#ffffff', flatShading: true }), 'lit'),
-				water: patch(new T.MeshStandardMaterial({ color: '#2c6a8f', roughness: 0.07, metalness: 0.1, normalMap: normals, normalScale: new T.Vector2(0.6, 0.6), envMapIntensity: 1.3 }), 'clean'),
+				// woda: fale, Fresnel, odbicie lustrzane (js/3d/water.js)
+				water: NS.waterMaterial(),
 				normals,
 				// latarnie: klosz, poświata, plama światła na ziemi (wspólne dla wszystkich)
 				...World.lampMaterials(),
@@ -252,6 +316,55 @@
 				litWin: patch(new T.MeshLambertMaterial({ color: '#3d4a57', emissive: 0xffc070, emissiveIntensity: 0 }), 'lit'),
 			};
 			return World.M;
+		}
+
+		/* Pora roku w grafice (sim.opts.season – ustawia scene.reset przed budową świata): kolory koron, trawy i terenu,
+		   zimą bezlistne korony, jesienią opadłe liście (na torze gęsto na odcinkach „liście na torze” – leafPatches) */
+		seasonTree(kind, rgb, seed) {
+			const se = this.season || 'summer', h = hash(seed + 0.61);
+			const conifer = kind === 'spruce' || kind === 'pine';
+			if (conifer) return se === 'winter' ? [rgb[0] * 0.85, rgb[1] * 0.85, rgb[2] * 0.9] : rgb;
+			// jasność egzemplarza (ok. 1) – względem koloru bazowego gatunku
+			const sh = (rgb[0] + rgb[1] + rgb[2]) / ({ oak: 0.99, birch: 1.34, poplar: 0.99, bush: 0.92 }[kind] || 1);
+			if (se === 'spring') return [rgb[0] * 1.08, rgb[1] * 1.14, rgb[2] * 0.95];
+			if (se === 'winter') return [0.25 * sh, 0.21 * sh, 0.18 * sh]; // gałęzie bez liści – szarobrązowa, rzadka korona
+			if (se === 'autumn') {
+				if (kind === 'birch' || kind === 'poplar') return h < 0.75 ? [0.82 * sh, 0.68 * sh, 0.16 * sh] : [0.62 * sh, 0.58 * sh, 0.2 * sh];
+				if (kind === 'bush') return h < 0.45 ? [0.6 * sh, 0.2 * sh, 0.09 * sh] : h < 0.8 ? [0.68 * sh, 0.42 * sh, 0.12 * sh] : [0.36 * sh, 0.4 * sh, 0.16 * sh];
+				// dęby, lipy: rdzawe, złote, brązowe, część jeszcze zielona
+				return h < 0.32 ? [0.6 * sh, 0.3 * sh, 0.1 * sh] : h < 0.62 ? [0.74 * sh, 0.55 * sh, 0.13 * sh] : h < 0.82 ? [0.44 * sh, 0.31 * sh, 0.14 * sh] : [0.38 * sh, 0.48 * sh, 0.17 * sh];
+			}
+			// lato: pojedyncze drzewa lekko żółknące
+			return h < 0.04 ? [rgb[0] * 1.2, rgb[1] * 1.02, rgb[2] * 0.6] : rgb;
+		}
+		// zimą korony liściastych mniejsze (bez liści widać tylko gałęzie)
+		seasonCrown(kind) { return this.season === 'winter' && kind !== 'spruce' && kind !== 'pine' ? 0.78 : 1; }
+		// kolor trawy i terenu wg pory roku (zielenie – jesienią płowe, zimą zgaszone, wiosną świeższe)
+		seasonGreen(r, g, b) {
+			const se = this.season || 'summer';
+			if (se === 'summer' || !(g > r && g > b)) return [r, g, b];
+			if (se === 'spring') return [r * 0.96, g * 1.06, b * 0.95];
+			const [tr, tg, tb, k] = se === 'autumn' ? [0.48, 0.44, 0.22, 0.45] : [0.43, 0.41, 0.34, 0.62];
+			return [r + (tr - r) * k, g + (tg - g) * k, b + (tb - b) * k];
+		}
+		onLeafPatch(s) { return (this.leafPatches || []).some(([a, b]) => s > a && s < b); }
+
+		// faktura opadłego liścia: owalny listek z nerwem i ogonkiem (biały – kolor z egzemplarza), przezroczyste tło
+		static leafTexture() {
+			return canvasTexture('leaf-litter', 64, 64, (g, w) => {
+				g.clearRect(0, 0, w, w);
+				g.fillStyle = '#ffffff';
+				g.beginPath();
+				g.moveTo(6, 32);
+				g.quadraticCurveTo(30, 6, 58, 32);
+				g.quadraticCurveTo(30, 58, 6, 32);
+				g.fill();
+				g.strokeStyle = 'rgba(120,110,90,0.7)';
+				g.lineWidth = 2;
+				g.beginPath(); g.moveTo(2, 32); g.lineTo(54, 32); g.stroke();
+				g.lineWidth = 1;
+				for (let x = 14; x < 50; x += 8) { g.beginPath(); g.moveTo(x, 32); g.lineTo(x + 7, 22); g.moveTo(x, 32); g.lineTo(x + 7, 42); g.stroke(); }
+			});
 		}
 
 		setRoute(route) {
@@ -527,6 +640,11 @@
 			}
 			const h = R.heightAt(this.route, s);
 			if (this.dip(s, d) > 3 && y < h - 7.5) { r = 0.42; g = 0.4; b = 0.3; }
+			// pola po żniwach i zimą: ściernisko / zaorane
+			if (f && !f.border && (this.season === 'autumn' || this.season === 'winter') && (f.kind < 0.3 || (f.kind >= 0.5 && f.kind < 0.62))) {
+				if (this.season === 'autumn') { r = 0.7; g = 0.62; b = 0.4; } else { r = 0.5; g = 0.43; b = 0.34; }
+			}
+			[r, g, b] = this.seasonGreen(r, g, b);
 			tmpColor.setRGB(r, g, b, T.SRGBColorSpace);
 			return tmpColor;
 		}
@@ -843,6 +961,7 @@
 
 			r.stations.forEach((st, i) => { if (inRange((st.platformStart + st.platformEnd) / 2)) this.buildStation(group, dyn, st, i); });
 			r.signals.forEach((sig, i) => { if (inRange(sig.pos)) this.buildSignal(group, dyn, sig, i); });
+			for (const w of this.warnDiscs()) if (inRange(w.pos)) this.buildWarnDisc(group, dyn, w);
 			for (let i = 1; i < r.limits.length; i++) {
 				const l = r.limits[i], down = l.speed < r.limits[i - 1].speed;
 				if (inRange(l.pos)) this.buildBoard(group, l.pos, boardTexture(String(l.speed), down ? '#ffd23f' : '#ffffff', 'sq'));
@@ -1145,6 +1264,9 @@
 		// generatory drzew i trawy (krok co kilkadziesiąt / tysiąc sztuk) – zob. chunkSteps
 		*buildTrees(group, c, s0, s1) {
 			const M = World.materials(), G = World.G.trees;
+			// zimą liściaste z faktury nagich gałązek (to samo rozmieszczenie pól atlasu; iglaste bez zmian)
+			const fa = NS.props.foliageAtlas(this.season === 'winter');
+			M.leaf.map = M.bush.map = fa;
 			const dens = this.density;
 			const N = Math.round(230 * dens * (this.env ? 2.4 : 1));
 			const inst = (geo, material, n) => {
@@ -1208,7 +1330,6 @@
 					else if (ar === 12) sp = 0.51 + hash(seed + 0.72) * 0.45;
 				}
 				const sh = 0.8 + hash(seed + 0.4) * 0.35;
-				const autumn = hash(seed + 0.27) < 0.12 ? [1.25, 1.0, 0.55] : [1, 1, 1];
 				// trasa rzeczywista: korona (promień wg gatunku) nie wchodzi w budynki ani nad jezdnię – drzewo mniejsze albo żadne
 				if (this.env && this.envFit) {
 					const f = this.envFit(s, d, (sp > 0.6 ? 3.1 : sp > 0.5 ? 3 : sp > 0.33 ? 4.25 : sp > 0.22 ? 2.2 : 1.8) * k);
@@ -1217,19 +1338,22 @@
 				}
 				if (sp > 0.6) { // świerk
 					put(trunks, tp.x, y + 1 * k, tp.z, 0.45 * k, 2 * k, 0.45 * k);
-					put(spruces, tp.x, y + 6.2 * k, tp.z, 6.2 * k, 11 * k, 6.2 * k, [0.17 * sh, 0.34 * sh, 0.2 * sh]);
+					put(spruces, tp.x, y + 6.2 * k, tp.z, 6.2 * k, 11 * k, 6.2 * k, this.seasonTree('spruce', [0.17 * sh, 0.34 * sh, 0.2 * sh], seed));
 				} else if (sp > 0.5) { // sosna: wysoki pień, płaska korona
 					put(trunks, tp.x, y + 4.5 * k, tp.z, 0.45 * k, 9 * k, 0.45 * k);
-					put(pines, tp.x, y + 9.6 * k, tp.z, 6 * k, 6 * k, 6 * k, [0.2 * sh, 0.36 * sh, 0.18 * sh]);
+					put(pines, tp.x, y + 9.6 * k, tp.z, 6 * k, 6 * k, 6 * k, this.seasonTree('pine', [0.2 * sh, 0.36 * sh, 0.18 * sh], seed));
 				} else if (sp > 0.33) { // dąb, lipa: szeroka korona
 					put(trunks, tp.x, y + 2.2 * k, tp.z, 0.75 * k, 4.4 * k, 0.75 * k);
-					put(oaks, tp.x, y + 6.6 * k, tp.z, 8.5 * k, 7 * k, 8.5 * k, [0.29 * sh * autumn[0], 0.5 * sh * autumn[1], 0.2 * sh * autumn[2]]);
+					const kc = this.seasonCrown('oak');
+					put(oaks, tp.x, y + 6.6 * k, tp.z, 8.5 * k * kc, 7 * k * kc, 8.5 * k * kc, this.seasonTree('oak', [0.29 * sh, 0.5 * sh, 0.2 * sh], seed));
 				} else if (sp > 0.22) { // brzoza: biały pień, jasna wąska korona
 					put(birchTrunks, tp.x, y + 3 * k, tp.z, 0.3 * k, 6 * k, 0.3 * k);
-					put(birches, tp.x, y + 7.4 * k, tp.z, 4.4 * k, 6.5 * k, 4.4 * k, [0.45 * sh * autumn[0], 0.62 * sh * autumn[1], 0.27 * sh]);
+					const kc = this.seasonCrown('birch');
+					put(birches, tp.x, y + 7.4 * k, tp.z, 4.4 * k * kc, 6.5 * k * kc, 4.4 * k * kc, this.seasonTree('birch', [0.45 * sh, 0.62 * sh, 0.27 * sh], seed));
 				} else { // topola: wysoka i smukła
 					put(trunks, tp.x, y + 1.5 * k, tp.z, 0.5 * k, 3 * k, 0.5 * k);
-					put(poplars, tp.x, y + 9 * k, tp.z, 3.6 * k, 15 * k, 3.6 * k, [0.3 * sh, 0.48 * sh, 0.21 * sh]);
+					const kc = this.seasonCrown('poplar');
+					put(poplars, tp.x, y + 9 * k, tp.z, 3.6 * k * kc, 15 * k * kc, 3.6 * k * kc, this.seasonTree('poplar', [0.3 * sh, 0.48 * sh, 0.21 * sh], seed));
 				}
 			}
 			// krzewy: przy torze, na skraju pól i lasów
@@ -1253,7 +1377,8 @@
 				}
 				q.setFromAxisAngle(up, hash(seed + 0.1) * 6.28);
 				const sh = 0.8 + hash(seed + 0.3) * 0.3;
-				put(bushes, tp.x, y + 0.8 * k, tp.z, 3 * k, 2.2 * k, 3 * k, [0.27 * sh, 0.45 * sh, 0.2 * sh]);
+				const kb = this.seasonCrown('bush');
+				put(bushes, tp.x, y + 0.8 * k, tp.z, 3 * k * kb, 2.2 * k * kb, 3 * k * kb, this.seasonTree('bush', [0.27 * sh, 0.45 * sh, 0.2 * sh], seed));
 			}
 			// daleko od toru: zwarte masy lasu (duże bryły)
 			const nf = blobs.instanceMatrix.count;
@@ -1335,8 +1460,10 @@
 				tufts.setMatrixAt(tufts.count, m4);
 				const dry = vnoise(s * 0.02 + 7, d * 0.02);
 				const sh = 0.85 + hash(seed + 0.5) * 0.3;
-				tufts.setColorAt(tufts.count++, tmpColor.setRGB((0.3 + dry * 0.22) * sh, (0.5 + dry * 0.06) * sh, 0.18 * sh, T.SRGBColorSpace));
-				if (hash(seed + 0.71) < 0.08 && flowers.count < flowers.instanceMatrix.count) {
+				const gc = this.seasonGreen((0.3 + dry * 0.22) * sh, (0.5 + dry * 0.06) * sh, 0.18 * sh);
+				tufts.setColorAt(tufts.count++, tmpColor.setRGB(gc[0], gc[1], gc[2], T.SRGBColorSpace));
+				// kwiaty – wiosną i latem
+				if ((this.season === 'summer' || this.season === 'spring' || !this.season) && hash(seed + 0.71) < 0.08 && flowers.count < flowers.instanceMatrix.count) {
 					m4.compose(p3.set(tp.x + 0.05, y + 0.85 * k, tp.z), q, sc.set(1, 0.7, 1));
 					flowers.setMatrixAt(flowers.count, m4);
 					const fc = FL[Math.floor(hash(seed + 0.33) * FL.length)];
@@ -1349,6 +1476,78 @@
 				if (m.instanceColor) m.instanceColor.needsUpdate = true;
 				group.add(m);
 			}
+			if (this.season === 'autumn') yield* this.buildLitter(group, c, s0, s1);
+		}
+
+		/* Opadłe liście (jesień): na torze (między szynami, na podkładach i podsypce) – gęsto na odcinkach „liście na torze”
+		   (leafPatches, jak w symulacji – śliska szyna), rzadko gdzie indziej; w trawie przy torze i pod drzewami. Płaskie
+		   listki z faktury, kolory: żółte, rdzawe, brązowe. */
+		*buildLitter(group, c, s0, s1) {
+			const M = World.materials();
+			if (!World.litterGeo) {
+				World.litterGeo = new T.PlaneGeometry(0.17, 0.11).rotateX(-Math.PI / 2);
+				World.litterGeo.userData.shared = true;
+			}
+			const patchLen = (this.leafPatches || []).reduce((a, [x, y]) => a + Math.max(0, Math.min(s1, y) - Math.max(s0, x)), 0);
+			const N = Math.round((C * 30 + patchLen * 120) * this.density); // odcinek „liście na torze”: ok. 25 liści na m²
+			// perony stacji w tym kawałku: [s0, s1, krawędź d od…do, wysokość wierzchu nad główką szyny]
+			const plats = [];
+			for (const st of this.route.stations) {
+				const P = st.platform, a = Math.max(s0, st.platformStart), b = Math.min(s1, st.platformEnd);
+				if (b - a < 5) continue;
+				const sg = P ? P.side : 1, e0 = P ? P.edge : 2.15, w = P ? P.width : 4.4, hh = P && typeof P.h === 'number' ? P.h : 0.76;
+				plats.push([a, b, sg * (e0 + 1.0), sg * (e0 + w - 0.2), hh]);
+			}
+			const leaves = new T.InstancedMesh(World.litterGeo, M.litter, Math.max(1, N));
+			leaves.count = 0;
+			leaves.userData.fine = true;
+			const LC = [[0.78, 0.55, 0.12], [0.66, 0.32, 0.1], [0.45, 0.3, 0.15], [0.82, 0.68, 0.2], [0.55, 0.22, 0.08], [0.4, 0.38, 0.16]];
+			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
+			const h = (s) => R.heightAt(this.route, s);
+			for (let i = 0; i < N && leaves.count < N; i++) {
+				if (i % 1500 === 1499) yield;
+				const seed = c * 4517 + i * 0.913;
+				let s = s0 + hash(seed) * C, d, y;
+				const onPatch = this.onLeafPatch(s);
+				const r = hash(seed + 0.2);
+				/* gdzie leży liść: odcinek „liście na torze” – na torze; poza nim na torze tylko pojedyncze (losowo), część na
+				   peronach i ulicach, reszta na trawie – gęsto pod drzewami, rzadko na otwartym terenie */
+				if (!onPatch && r >= 0.03 && r < 0.13 && plats.length) {
+					const pl = plats[Math.floor(hash(seed + 0.31) * plats.length)];
+					s = pl[0] + hash(seed + 0.32) * (pl[1] - pl[0]);
+					d = pl[2] + hash(seed + 0.33) * (pl[3] - pl[2]);
+					y = h(s) + pl[4] + 0.035;
+				} else if (!onPatch && r >= 0.13 && r < 0.3 && this.env) {
+					d = (hash(seed + 0.3) < 0.5 ? -1 : 1) * (8 + hash(seed + 0.4) * 70);
+					if (!this.onRoad(s, d)) continue;
+					y = this.terrainY(s, d) + 0.07;
+				} else if (onPatch || r < 0.03) {
+					// tor: między szynami i obok (podsypka); na podkładach wyżej
+					d = (hash(seed + 0.3) - 0.5) * (onPatch ? 4.2 : 4.6);
+					const onSleeper = Math.abs(d) < 1.3 && Math.abs(((s - s0) % 0.6) - 0.3) < 0.13;
+					y = h(s) + (onSleeper ? -0.165 : Math.abs(d) < 1.75 ? -0.283 : -0.3 - Math.max(0, Math.abs(d) - 2.15) * 0.48);
+					if (Math.abs(Math.abs(d) - 0.75) < 0.05) continue; // nie na główce szyny
+				} else {
+					// trawa przy torze i pod drzewami (gęstość wg zadrzewienia: pomiar koron albo zagospodarowanie)
+					d = (hash(seed + 0.3) < 0.5 ? -1 : 1) * (4.4 + Math.pow(hash(seed + 0.4), 1.3) * 55);
+					if (this.env && (this.inBuilding(s, d) || this.onRoad(s, d) || this.areaAt(s, d) === 9)) continue;
+					if (this.excluded(s, d)) continue;
+					const trees = this.env ? Math.max(this.envTreeP(s, d), this.canopyAt && this.canopyAt(s, d) >= 3 ? 1 : 0) : vnoise(s * 0.006 + 2, d * 0.012);
+					if (hash(seed + 0.38) > 0.12 + 0.88 * Math.min(1, trees)) continue;
+					y = this.terrainY(s, d) + 0.025;
+				}
+				R.sidePoint(this.route, s, d, tp);
+				q.setFromAxisAngle(up, hash(seed + 0.5) * 6.28);
+				const k = 0.8 + hash(seed + 0.6) * 0.9;
+				m4.compose(p3.set(tp.x, y + 0.005, tp.z), q, sc.set(k, 1, k));
+				leaves.setMatrixAt(leaves.count, m4);
+				const lc = LC[Math.floor(hash(seed + 0.7) * LC.length)], v = 1.0 + hash(seed + 0.8) * 0.3;
+				leaves.setColorAt(leaves.count++, tmpColor.setRGB(lc[0] * v, lc[1] * v, lc[2] * v, T.SRGBColorSpace));
+			}
+			if (!leaves.count) { leaves.dispose(); return; }
+			leaves.receiveShadow = true;
+			if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
+			group.add(leaves);
 		}
 
 		// Dom: cokół, ściany (parterowy lub piętrowy), dach z okapem, komin, okna z ramami i parapetami, drzwi ze schodkiem, rynny.
@@ -1457,18 +1656,23 @@
 				if (dbl && !this.env) sides.push({ c: -8.75, edge: -6.75, line: -7.2, back: -10.7, sgn: -1, width: 4.4 });
 			}
 			const P0 = sides[0];
+			const PM = World.platformMats();
 			for (const P of sides) {
-				// trasa rzeczywista: płyta głębsza (peron na nasypie, przy moście lub obniżeniu terenu)
-				if (this.env) add(box(P.width, 3.0, len, concrete, P.c, -0.74, 0));
-				else add(box(P.width, 1.0, len, concrete, P.c, 0.26, 0));
+				/* płyta wierzchnia 0,22 m (płyty chodnikowe) nawisa 0,18 m nad ścianą od strony toru (jak na peronach PKP PLK –
+				   pod krawędzią cień); trasa rzeczywista: ściana głębsza (peron na nasypie, przy moście lub obniżeniu terenu) */
+				g.add(this.platformSlab(P.width, 0.22, len, P.c, 0.65, 0, mid, PM.top));
+				const wb = this.env ? -2.24 : -0.24;
+				const rc = P.island ? 0.36 : 0.18; // peron wyspowy – nawis z obu stron
+				add(box(P.width - rc, 0.54 - wb, len, PM.wall, P.c + (P.island ? 0 : P.sgn * 0.09), (0.54 + wb) / 2, 0));
 				// pochylnie na końcach (z = +len/2 – początek peronu, s = platformStart); nie tam, gdzie peron z mapy
 				// biegnie dalej (dorysowana reszta obrysu)
 				const ext = this.env && this.envPlatformExt ? this.envPlatformExt(st) : { start: false, end: false };
 				// przystanek (bez wyspy) ma od strony z = +len/2 własną pochylnię przy tylnej krawędzi (haltPlatformExtras)
 				if (!ext.start && (big || P.island)) this.platformRamp(g, P, len / 2, 1, concrete, this.env ? 2.2 : 0.25);
 				if (!ext.end) this.platformRamp(g, P, -len / 2, -1, concrete, this.env ? 2.2 : 0.25);
-				g.add(box(0.35, 0.03, len, mat('#f2f2f2'), P.edge, 0.77, 0));
-				g.add(box(0.14, 0.03, len, mat('#e8c430'), P.line, 0.77, 0));
+				// krawężnik peronowy (jasne płyty 0,5 m) i pas ostrzegawczy z wypustkami (0,4 m, 0,55–0,95 m od krawędzi)
+				g.add(this.platformSlab(0.5, 0.03, len, P.edge + P.sgn * 0.25, 0.77, 0, mid, PM.edge));
+				g.add(this.platformSlab(0.4, 0.03, len, P.edge + P.sgn * 0.75, 0.77, 0, mid, PM.tact));
 				// latarnie: stożkowy słup, wygięty wysięgnik nad peron, oprawa; na co drugiej – numer peronu,
 				// na środkowej – zegar, na niektórych – głośnik
 				// odcinek pod wiatą: bez latarń (oświetla go wiata), zegar i tablice podwieszone pod jej dachem
@@ -2182,8 +2386,18 @@
 			// głębokość: dach z blendą (0,45 m przed słupami) kończy się co najmniej 0,3 m przed krawędzią peronu
 			const D = Math.max(1.0, Math.min(2.0, Math.abs(xb - P.edge) - 0.75)), xf = xb - sg * D, xc = (xb + xf) / 2;
 			// słupy
-			for (const x of [xb, xf]) for (const z of [sz - L / 2, sz + L / 2]) g.add(box(0.1, H, 0.1, frame, x, y0 + H / 2, z));
+			for (const x of [xb, xf]) for (const z of [sz - L / 2, sz + L / 2]) {
+				g.add(box(0.1, H, 0.1, frame, x, y0 + H / 2, z));
+				g.add(box(0.22, 0.03, 0.22, frame, x, y0 + 0.015, z)); // stopa (płyta z kotwami)
+			}
 			g.add(box(0.1, H, 0.1, frame, xb, y0 + H / 2, sz));
+			// rura spustowa przy tylnym narożniku, gablota z rozkładem jazdy na ścianie bocznej (od zewnątrz)
+			const dp = new T.Mesh(GEO.cyl, frame);
+			dp.scale.set(0.08, H, 0.08);
+			dp.position.set(xb + sg * 0.1, y0 + H / 2, sz + L / 2 + 0.12);
+			g.add(dp);
+			g.add(box(0.7, 0.9, 0.06, mat('#f2d23a'), xb - sg * 0.5, y0 + 1.45, sz - L / 2 - 0.05));
+			g.add(box(0.6, 0.78, 0.02, mat('#fffbe8'), xb - sg * 0.5, y0 + 1.45, sz - L / 2 - 0.09));
 			// dach z lekkim spadkiem ku tyłowi i blendą
 			const roof = box(D + 0.6, 0.1, L + 0.6, roofM, xc - sg * 0.15, y0 + H + 0.08, sz);
 			roof.rotation.z = sg * 0.05;
@@ -2235,9 +2449,6 @@
 		haltPlatformExtras(g, P, len, mid, st) {
 			const sg = P.sgn, y0 = 0.77;
 			const h0 = R.heightAt(this.route, mid);
-			const tactile = mat('#d9d4c4', { roughness: 0.95 });
-			// pas dotykowy (jaśniejsze płyty z wypustkami) wzdłuż żółtej linii
-			g.add(box(0.4, 0.03, len, tactile, P.line + sg * 0.42, y0 + 0.01, 0));
 			// barierka wzdłuż tyłu i w poprzek na drugim końcu (przy pochylni otwarte)
 			const xr = P.back - sg * 0.08;
 			this.railing(g, -len / 2 + 0.2, len / 2 - 0.2, xr, y0);
@@ -2403,6 +2614,20 @@
 				const br = box(Math.hypot(bx1 - bx0, by1 - by0), 0.08, 0.08, steel, (bx0 + bx1) / 2, (by0 + by1) / 2, z);
 				br.rotation.z = Math.atan2(by1 - by0, bx1 - bx0);
 				g.add(br);
+			}
+			// płatwie wzdłuż wiaty (na wysięgnikach, pod pokryciem) i rury spustowe z rynny przy co drugim słupie
+			for (const t of [0.12, 0.5, 0.88]) {
+				const pu = box(0.1, 0.14, sl - 0.2, steel, xb + (xf - xb) * t, yb + (yf - yb) * t - 0.2, sz);
+				pu.rotation.z = sg > 0 ? slope : -slope;
+				g.add(pu);
+			}
+			for (let k = 0; k <= n; k += 2) {
+				const z = sz - sl / 2 + 0.3 + (k * (sl - 0.6)) / n + 0.16;
+				const dp = new T.Mesh(GEO.cyl, steel);
+				dp.scale.set(0.1, yb - 0.85, 0.1);
+				dp.position.set(xb + sg * 0.15, (yb + 0.85) / 2, z);
+				g.add(dp);
+				g.add(box(0.16, 0.06, 0.25, steel, xb + sg * 0.15, 0.83, z + 0.08)); // wylot
 			}
 			// dach: pokrycie + jaśniejszy spód
 			const roof = box(span, 0.08, sl + 0.4, roofM, xm + sg * 0.1, ym + 0.02, sz); // przód nad krawędzią peronu
@@ -2721,7 +2946,8 @@
 		   głowica – czarna tarcza tła z białą obwódką i pięć komór (od góry: zielona, pomarańczowa, czerwona,
 		   pomarańczowa dolna, biała), każda z daszkiem i soczewką; tabliczka z oznaczeniem na maszcie.
 		   Lico od strony nadjeżdżającego pociągu (lokalne +z). Zapalane: zielona / pomarańczowa / czerwona. */
-		buildSignal(group, dyn, sig, idx) {
+		// wspólne geometrie głowic sygnałów (daszek komory, obręcz, soczewka, tarcza tła)
+		signalGeos() {
 			if (!World.SG) {
 				const sh = (gm) => { gm.userData.shared = true; return gm; };
 				World.SG = {
@@ -2737,6 +2963,11 @@
 					})(),
 				};
 			}
+			return World.SG;
+		}
+
+		buildSignal(group, dyn, sig, idx) {
+			this.signalGeos();
 			const G = World.SG;
 			const g = new T.Group();
 			// trasa rzeczywista: maszt w wolnym miejscu obok torów z mapy, między torami albo bramownica nad torami
@@ -2838,6 +3069,110 @@
 			g.traverse((o) => { if (o.isMesh) { o.castShadow = this.shadows; o.receiveShadow = true; } });
 			dyn.push({ type: 'signal', index: idx, lamps, glow, glow2, pas, key: null });
 			group.add(g);
+		}
+
+		/* Tarcze ostrzegawcze (Ie-1, wg Wikipedii i zdjęcia tarczy w Ustroniu): przed semaforem wjazdowym, gdy poprzedni
+		   sygnał to semafor odjazdowy albo wjazdowy (szlak bez samoczynnej blokady liniowej – przy SBL rolę tarczy pełni
+		   ostatni semafor odstępowy), w odległości drogi hamowania (1000 m; nie bliżej niż 150 m za poprzednim sygnałem).
+		   Lista dla trasy liczona raz: { pos, index – semafor wjazdowy (r.signals), label }. */
+		warnDiscs() {
+			if (this._warn) return this._warn;
+			const r = this.route, list = [];
+			const sg = r.signals.map((s, i) => ({ s, i })).sort((a, b) => a.s.pos - b.s.pos);
+			sg.forEach(({ s, i }, k) => {
+				if (s.kind !== 'entry' || k === 0) return;
+				const prev = sg[k - 1].s;
+				if (prev.kind === 'block') return;
+				const pos = s.pos - 1000;
+				if (pos < prev.pos + 150 || pos < 50) return;
+				list.push({ pos, index: i, label: 'To' + (s.label || '') });
+			});
+			this._warn = list;
+			return list;
+		}
+
+		/* Tarcza ostrzegawcza świetlna: szary maszt rurowy na fundamencie, czarna głowica z dwiema komorami (górna zielona,
+		   dolna pomarańczowa) z daszkami, tabliczka z oznaczeniem pod głowicą; przed nią wskaźnik W 1 (biała tablica
+		   z czarną obwódką i czarnym krzyżem ukośnym). Sygnały (world update): Os1 – pomarańczowe ciągłe (semafor: stój),
+		   Os2 – zielone ciągłe, Os3 – zielone migające (100 km/h), Os4 – pomarańczowe migające (40 / 60 km/h). */
+		buildWarnDisc(group, dyn, w) {
+			const G = this.signalGeos();
+			let s = w.pos;
+			if (this.route.electrified) {
+				const m = ((s % 60) + 60) % 60;
+				if (m < 2.5) s -= 3 - m;
+				else if (m > 57.5) s -= 3 - (60 - m);
+			}
+			const g = new T.Group();
+			const d = this.env && this.envBoardSpot ? this.envBoardSpot(s) : 3.4;
+			this.place(g, s, d);
+			const steel = matS('#9aa0a6', { roughness: 0.45, metalness: 0.6 }), grey = matS('#a7acb1', { roughness: 0.5, metalness: 0.5 });
+			const black = matS('#121212', { roughness: 0.5, metalness: 0.2 });
+			g.add(box(0.6, 0.45, 0.6, mat('#9e9a92', { roughness: 0.95 }), 0, -0.05, 0));
+			const mast = new T.Mesh(GEO.cyl, grey);
+			mast.scale.set(0.17, 3.6, 0.17);
+			mast.position.set(0, 0.2 + 1.8, 0);
+			g.add(mast);
+			g.add(box(0.26, 0.06, 0.26, steel, 0, 0.22, 0));
+			// głowica (skala 0,7 jak semafor): tarcza tła, komory z daszkami i soczewkami
+			const head = new T.Group();
+			head.position.set(0, 4.25, 0);
+			head.scale.setScalar(0.7);
+			g.add(head);
+			const sh = new T.Mesh(G.shield, black);
+			sh.scale.set(1, 0.5, 1);
+			head.add(sh);
+			head.add(box(0.5, 1.3, 0.3, black, 0, 0, -0.15));
+			const DARK = { green: 0x123018, yellow: 0x3a2808 };
+			const lamps = ['green', 'yellow'].map((name, k) => {
+				const y = k ? -0.34 : 0.34;
+				const ring = new T.Mesh(G.ring, steel);
+				ring.position.set(0, y, 0.09);
+				head.add(ring);
+				const visor = new T.Mesh(G.visor, black);
+				visor.position.set(0, y, 0.07);
+				head.add(visor);
+				const m = new T.Mesh(G.lens, new T.MeshBasicMaterial({ color: DARK[name] }));
+				m.userData.ownMaterial = true;
+				m.userData.dark = DARK[name];
+				m.position.set(0, y, 0.12);
+				head.add(m);
+				return m;
+			});
+			// wspornik głowicy i tabliczka z oznaczeniem
+			g.add(box(0.1, 0.4, 0.1, steel, 0, 3.75, -0.08));
+			const pm = new T.MeshStandardMaterial({ map: labelTexture(w.label, '#f4f4f4', '#111111'), roughness: 0.6 });
+			NS.util.patch(pm, 'lit');
+			pm.userData.shared = false;
+			if (!World.boardGeo) { World.boardGeo = new T.PlaneGeometry(1, 1); World.boardGeo.userData.shared = true; }
+			const plate = new T.Mesh(World.boardGeo, pm);
+			plate.userData.ownMaterial = true;
+			plate.scale.set(0.42, 0.13, 1);
+			plate.position.set(0, 3.62, 0.1);
+			g.add(plate);
+			// wskaźnik W 1 – 4 m przed tarczą (bliżej nadjeżdżającego pociągu), na niskim słupku
+			if (!World.w1Mat) {
+				const tex = canvasTexture('w1', 128, 192, (c, W, H) => {
+					c.fillStyle = '#f2f2f2'; c.fillRect(0, 0, W, H);
+					c.strokeStyle = '#111'; c.lineWidth = 12; c.strokeRect(6, 6, W - 12, H - 12);
+					c.lineWidth = 22; c.beginPath(); c.moveTo(14, 14); c.lineTo(W - 14, H - 14); c.moveTo(W - 14, 14); c.lineTo(14, H - 14); c.stroke();
+				});
+				World.w1Mat = NS.util.patch(new T.MeshStandardMaterial({ map: tex, roughness: 0.6 }), 'lit');
+			}
+			const w1 = new T.Group();
+			this.place(w1, s - 4, d - Math.sign(d || 1) * 0.6);
+			const pl = new T.Mesh(World.boardGeo, World.w1Mat);
+			pl.scale.set(0.6, 0.9, 1);
+			pl.position.set(0, 1.25, 0.03);
+			w1.add(pl);
+			w1.add(box(0.62, 0.92, 0.02, steel, 0, 1.25, 0));
+			w1.add(box(0.07, 0.85, 0.07, steel, 0, 0.42, -0.03));
+			const glow = sprite(glowTexture(), 2.0, 2.0, { additive: true, fog: false });
+			glow.position.set(0, 0, 0.5);
+			head.add(glow);
+			for (const o of [g, w1]) o.traverse((x) => { if (x.isMesh) { x.castShadow = this.shadows; x.receiveShadow = true; } });
+			dyn.push({ type: 'warnDisc', index: w.index, lamps, glow, key: null });
+			group.add(g, w1);
 		}
 
 		// tablica przy torze na słupku, przodem do nadjeżdżającego pociągu; shape: 'sq' | 'tri'
@@ -3341,6 +3676,9 @@
 			let budget = 3;
 			if (this.fast || this.warm || (next !== undefined && isNear(next))) budget = 40;
 			else if (next !== undefined && Math.abs(next * C + C / 2 - front) < 900) budget = 8;
+			// swobodna kamera (podgląd mapy): wszystko w ±900 m od kamery – szybciej kosztem płynności (dawniej nad miastem
+			// nawet minuta doczytywania)
+			if (free && next !== undefined) budget = Math.max(budget, 20);
 			const t0 = performance.now();
 			while (performance.now() - t0 < budget) {
 				if (!this.job) {
@@ -3737,6 +4075,25 @@
 					if (S.pas) d.pas.material.color.multiplyScalar(3);
 				}
 				d.glow.material.opacity = d.glow2.material.opacity = 0.55 + dark * 0.45;
+			} else if (d.type === 'warnDisc') {
+				// tarcza ostrzegawcza: sygnał wg semafora wjazdowego (Os1 – stój, Os2 – wolna, Os3 – 100, Os4 – 40/60 km/h)
+				const sig = sim.signals[d.index], S = TrainSimSignals()[sig.code];
+				const stop = !S || S.top === 'red', own = S && S.own;
+				const k = stop || (own && own < 100) ? 1 : 0, flash = !stop && !!own;
+				const on = !flash || Math.floor(this.time / 0.5) % 2 === 0;
+				const key = k + (on ? '' : '-');
+				if (key !== d.key) {
+					d.key = key;
+					d.lamps.forEach((l, j) => {
+						const lit = j === k && on;
+						l.material.color.setHex(lit ? ASPECT_COLOR[j ? 'yellow' : 'green'] : l.userData.dark);
+						if (lit) l.material.color.multiplyScalar(4);
+					});
+					d.glow.visible = on;
+					d.glow.material.color.setHex(ASPECT_COLOR[k ? 'yellow' : 'green']).multiplyScalar(1.6);
+					d.glow.position.y = d.lamps[k].position.y;
+				}
+				d.glow.material.opacity = 0.55 + dark * 0.45;
 			} else if (d.type === 'station') {
 				for (const g of d.glows) {
 					g.material.opacity = dark > 0.15 ? Math.min(1, dark * 1.3) : 0;

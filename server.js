@@ -9,7 +9,7 @@ const { UA, proxyTarget } = require('./electron/proxy');
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT) || 4180;
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.json': 'application/json; charset=utf-8', '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.webm': 'audio/webm' };
 
 function pipe(url, req, res, hops) {
 	const up = https.get(url, { headers: { 'User-Agent': UA }, timeout: 300000 }, (r) => {

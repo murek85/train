@@ -121,7 +121,9 @@
 	const U = { uTime: { value: 0 }, uWind: { value: 0.4 }, uWet: { value: 0 }, uSnow: { value: 0 }, uRain: { value: 0 }, uWear: { value: 1 } };
 
 	const NOISE_GLSL = `
-		float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+		/* skrót: siatka zawinięta co 2048 oczek – współrzędne świata (dziesiątki km × kilka oczek na metr) dawały w sinusie
+		   argumenty rzędu 1e7, przy precyzji 32 bitów skrót się „rozsypywał” w kwadratowe płaty (kanciasty śnieg, plamy) */
+		float gHash(vec2 p) { p = mod(p, 2048.0); return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 		float gNoise(vec2 p) {
 			vec2 i = floor(p), f = fract(p);
 			f = f * f * (3.0 - 2.0 * f);
@@ -192,12 +194,13 @@
 			}
 			float sn = gNoise(wP.xz * 0.3) * 0.55 + gNoise(wP.xz * 1.7) * 0.3 + gNoise(wP.xz * 6.5) * 0.15;
 			float th = 1.05 - uSnow * 1.15;
-			float snowMask = smoothstep(0.3, 0.75, up) * smoothstep(th - 0.07, th + 0.07, sn) * min(1.0, uSnow * 3.0) * ${snowK.toFixed(2)};
+			// granica płatów śniegu miękka (szersze przejście – bez ostrych krawędzi)
+			float snowMask = smoothstep(0.3, 0.75, up) * smoothstep(th - 0.13, th + 0.13, sn) * min(1.0, uSnow * 3.0) * ${snowK.toFixed(2)};
 			vec3 snowC = mix(vec3(0.74, 0.8, 0.9), vec3(0.97, 0.98, 1.0), 0.55 + 0.45 * gNoise(wP.xz * 3.0));
 			// kryształki: pojedyncze jaśniejsze punkty z bliska
 			snowC += vec3(0.25) * step(0.992, gHash(floor(wP.xz * 45.0))) * (1.0 - smoothstep(0.01, 0.025, wpx));
 			snowC = mix(diffuseColor.rgb * 0.6 + vec3(0.3, 0.32, 0.36), snowC, smoothstep(0.0, 0.6, snowMask));
-			diffuseColor.rgb = mix(diffuseColor.rgb, snowC, smoothstep(0.0, 0.3, snowMask));
+			diffuseColor.rgb = mix(diffuseColor.rgb, snowC, smoothstep(0.0, 0.45, snowMask));
 			#ifdef STANDARD
 			roughnessFactor = mix(roughnessFactor, 0.62, snowMask);
 			metalnessFactor = mix(metalnessFactor, 0.0, snowMask);
@@ -349,6 +352,42 @@
 		gH = grain * 0.003 - crack * 0.005;
 		gRough = 0.06 * (m2 - 0.5) - 0.1 * stain * uWet;`;
 
+	/* Nawierzchnia peronu (wg zdjęć peronów PKP PLK po modernizacji) – wzór wzdłuż toru: atrybut aPl = (kilometraż,
+	   odsunięcie od osi toru; z przesunięciem o wielokrotność 100 m – wzór ciągły między kawałkami). Wierzch: szare płyty
+	   chodnikowe 0,5 × 0,5 m w rzędach przesuniętych o pół płyty, każda w trochę innym odcieniu, ciemniejsze fugi;
+	   PL_EDGE – krawężnik peronowy (jasne płyty 1 m wzdłuż krawędzi); PL_TACT – pas ostrzegawczy z płyt 0,4 m
+	   z kopułkami co 6 cm. Ściany (nie poziome) – zwykły beton. */
+	const PLATFORM_GLSL = `${SURF_HEAD}
+		float m1 = gFbm(sp2 * 0.12), m2 = gNoise(sp2 * 1.1);
+		float grain = mix(0.5, gNoise(sp2 * 30.0), AAK(30.0));
+		float stain = smoothstep(0.55, 0.85, gFbm(sp2 * 0.35 + 4.0));
+		vec3 base = c0 * (0.88 + 0.2 * m1 + 0.05 * m2) * (0.94 + 0.12 * grain) * (1.0 - 0.15 * stain);
+		float jH = 0.0, bump = 0.0;
+		if (fl > 0.5) {
+			#if defined(PL_TACT)
+			vec2 sz = vec2(0.4);
+			vec2 qs = vPl / sz;
+			vec2 fd = fract(vPl / 0.06) - 0.5;
+			bump = (1.0 - smoothstep(0.17, 0.3, length(fd))) * AAK(17.0);
+			base *= 1.0 + 0.1 * bump - 0.05 * AAK(17.0);
+			#elif defined(PL_EDGE)
+			vec2 sz = vec2(1.0, 1000.0);
+			vec2 qs = vec2(vPl.x, 0.5);
+			#else
+			vec2 sz = vec2(0.5);
+			vec2 qs = vPl / sz;
+			qs.x += step(1.0, mod(floor(qs.y), 2.0)) * 0.5;
+			#endif
+			vec2 jf = fract(qs), jid = floor(qs);
+			float jd = min(min(jf.x, 1.0 - jf.x) * sz.x, min(jf.y, 1.0 - jf.y) * sz.y);
+			float joint = (1.0 - smoothstep(0.004, 0.004 + 1.2 * px, jd)) * AAK(1.5);
+			base *= (0.95 + 0.1 * gHash(jid + 3.0)) * (1.0 - 0.28 * joint);
+			jH = -joint * 0.004;
+		}
+		diffuseColor.rgb = base;
+		gH = grain * 0.002 + jH + bump * 0.004;
+		gRough = 0.06 * (m2 - 0.5) - 0.1 * stain * uWet;`;
+
 	/* Zabrudzenia obiektów nieruchomych (elewacje, dachy, fundamenty, podkłady): plamy, zacieki pionowe
 	   na ścianach, ziarno tynku – w przestrzeni świata, więc tylko dla obiektów, które się nie ruszają. */
 	const DIRT_GLSL = `${SURF_HEAD}
@@ -358,6 +397,41 @@
 		diffuseColor.rgb = c0 * (0.88 + 0.2 * m1) * (1.0 - 0.14 * smoothstep(0.5, 0.9, streak)) * (0.95 + 0.1 * grain);
 		gH = grain * 0.002;`;
 
+	/* Dachy budynków (G5, wg zdjęć dachów w Polsce): spadziste – rzędy dachówek (co 0,2 m wysokości) z cieniem pod
+	   zakładką, fala dachówki w poprzek spadku, odcień każdej dachówki, plamy mchu i zabrudzeń; płaskie – papa w pasach
+	   co 1 m z zakładami, ziarno posypki, łaty; ściany szczytowe – tynk. */
+	const ROOF_GLSL = `${SURF_HEAD}
+		float m1 = gFbm(wp * 0.15 + 3.0);
+		float ny = abs(gN.y);
+		vec3 base = c0;
+		float hgt = 0.0;
+		if (ny > 0.985) {
+			float sx = fract(wp.x), seam = 1.0 - smoothstep(0.0, 0.03 + 1.5 * px, min(sx, 1.0 - sx));
+			float grain = mix(0.5, gNoise(wp * 25.0), AAK(25.0));
+			float patchA = smoothstep(0.55, 0.75, gFbm(wp * 0.08 + 7.0));
+			base = c0 * (0.85 + 0.25 * m1) * (0.92 + 0.16 * grain) * (1.0 - 0.18 * seam * AAK(1.0)) * (1.0 - 0.15 * patchA);
+			hgt = grain * 0.002 + seam * 0.004;
+		} else if (ny > 0.12) {
+			vec2 tg = normalize(vec2(-gN.z, gN.x) + 1e-5);
+			float hc = dot(wp, tg);
+			float ry = vWorldP.y / 0.2, rI = floor(ry), rF = fract(ry);
+			float tc = hc / 0.3 + rI * 0.5, tI = floor(tc);
+			float wave = 0.5 + 0.5 * sin(tc * 6.2832);
+			float lip = smoothstep(0.0, 0.3, rF);
+			// wygładzanie wg gęstości rzędów na ekranie (z ukosa piksel w świecie jest długi, ale rzędy wciąż widać)
+			float aa = 1.0 - smoothstep(0.18, 0.5, max(fwidth(ry), fwidth(tc) * 0.6));
+			float tone = 0.92 + 0.16 * gHash(vec2(tI, rI));
+			float moss = smoothstep(0.6, 0.85, gFbm(wp * 0.25 + 1.7)) * 0.5;
+			base = c0 * mix(1.0, tone * (0.55 + 0.45 * lip) * (0.9 + 0.14 * wave), aa) * (0.88 + 0.22 * m1);
+			base = mix(base, base * vec3(0.75, 0.85, 0.6), moss);
+			hgt = (lip * 0.003 + wave * 0.002) * aa;
+		} else {
+			float grain = mix(0.5, gNoise(vWorldP.xy * 20.0 + vWorldP.zy * 20.0), AAK(30.0));
+			base = c0 * (0.9 + 0.15 * m1) * (0.95 + 0.1 * grain);
+		}
+		diffuseColor.rgb = base;
+		gH = hgt;`;
+
 	/* Korony drzew i krzewy: kępki liści (szum 3D w przestrzeni świata – każde drzewo inne), prześwity
 	   ciemniejsze, nasłonecznione końce jaśniejsze i cieplejsze; drobny wzór gaśnie w oddali. */
 	const LEAF_GLSL = `
@@ -366,8 +440,14 @@
 		float laa = 1.0 - smoothstep(0.15, 0.45, lpx);
 		float leafN = gNoise(lp.xz + lp.y * 0.71) * 0.55 + gNoise(lp.zy * 1.93 + lp.x * 0.47 + 3.0) * 0.45;
 		float leafM = gNoise(vWorldP.xz * 0.9 + vWorldP.y * 0.6);
+		#ifdef USE_MAP
+		// korony z faktury kępek liści: tylko duże plamy (odcień kęp) – liście są w fakturze
+		diffuseColor.rgb *= 0.9 + 0.2 * leafM;
+		diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.1, 1.06, 0.82), smoothstep(0.62, 0.86, leafN) * 0.25);
+		#else
 		diffuseColor.rgb *= mix(0.92 + 0.16 * leafM, (0.66 + 0.6 * leafN) * (0.9 + 0.2 * leafM), laa);
 		diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.12, 1.08, 0.78), smoothstep(0.62, 0.86, leafN) * 0.45 * laa);
+		#endif
 		gH = leafN * 0.05 * laa;`;
 
 	/* Tabor (wariant 'train'): patyna eksploatacyjna, spoiny i falowanie blach, nity, okluzja z wierzchołków.
@@ -475,7 +555,7 @@
 					clearcoatNormal = normal;
 					#endif`);
 			}
-			const surf = variant === 'road' ? ROAD_GLSL : variant === 'concrete' ? CONCRETE_GLSL : variant === 'dirt' ? DIRT_GLSL : '';
+			const surf = variant === 'road' ? ROAD_GLSL : variant === 'concrete' ? CONCRETE_GLSL : variant === 'platform' ? PLATFORM_GLSL : variant === 'roof' ? ROOF_GLSL : variant === 'dirt' ? DIRT_GLSL : '';
 			const veg = variant === 'wind' || variant === 'grass';
 			const wind = veg ? `
 				#ifdef USE_INSTANCING
@@ -492,7 +572,8 @@
 				uniform float uTime; uniform float uWind; uniform float uSnow;
 				varying vec3 vWorldP;
 				${ground ? 'attribute vec2 aRow; varying vec2 vRow; attribute vec3 aMat; varying vec3 vMat;' : ''}
-				${variant === 'road' ? 'attribute vec3 aLat; varying vec3 vLat;' : ''}`)
+				${variant === 'road' ? 'attribute vec3 aLat; varying vec3 vLat;' : ''}
+				${variant === 'platform' ? 'attribute vec2 aPl; varying vec2 vPl;' : ''}`)
 				.replace('#include <begin_vertex>', `#include <begin_vertex>
 				${wind}`)
 				.replace('#include <project_vertex>', `#include <project_vertex>
@@ -504,13 +585,15 @@
 					vWorldP = (modelMatrix * wpos).xyz;
 				}
 				${ground ? 'vRow = aRow; vMat = aMat;' : ''}
-				${variant === 'road' ? 'vLat = aLat;' : ''}`);
+				${variant === 'road' ? 'vLat = aLat;' : ''}
+				${variant === 'platform' ? 'vPl = aPl;' : ''}`);
 			shader.fragmentShader = shader.fragmentShader
 				.replace('#include <common>', `#include <common>
 				uniform float uWet; uniform float uSnow; uniform float uRain; uniform float uTime;
 				varying vec3 vWorldP;
 				${ground ? 'varying vec2 vRow; varying vec3 vMat;' : ''}
 				${variant === 'road' ? 'varying vec3 vLat;' : ''}
+				${variant === 'platform' ? 'varying vec2 vPl;' : ''}
 				${NOISE_GLSL}`)
 				.replace('#include <color_fragment>', `#include <color_fragment>
 				float gH = 0.0, puddle = 0.0, gSand = 0.0, gRough = 0.0; // gRough – zmiana chropowatości (stosowana niżej)
@@ -531,7 +614,7 @@
 				metalnessFactor = mix(metalnessFactor, metalnessFactor * 0.35, wearG);` : `
 				roughnessFactor = mix(clamp(roughnessFactor + gRough, 0.3, 1.0), 0.97, gSand);`}
 				#endif
-				${WEATHER_GLSL(ground || gravel || variant === 'road' || variant === 'concrete' ? 1.0 : veg ? 0.6 : 0.75, variant === 'grass' ? 0.0 : variant === 'wind' ? 0.75 : 1.0, train ? 'vLocP' : 'vWorldP')}
+				${WEATHER_GLSL(ground || gravel || variant === 'road' || variant === 'concrete' || variant === 'platform' || variant === 'roof' ? 1.0 : veg ? 0.6 : 0.75, variant === 'grass' ? 0.0 : variant === 'wind' ? 0.75 : 1.0, train ? 'vLocP' : 'vWorldP')}
 				${ground || variant === 'road' ? `
 				// kałuże: ciemne, gładkie jak lustro, z kręgami od kropli
 				{
@@ -615,6 +698,9 @@
 		cone: shared(new T.ConeGeometry(0.5, 1, 7)),
 		ico: shared(new T.IcosahedronGeometry(0.5, 0)),
 		sphere: shared(new T.SphereGeometry(0.5, 10, 8)),
+		// gładsze (zbiorniki cystern – duże, widoczne z bliska)
+		cylHi: shared(new T.CylinderGeometry(0.5, 0.5, 1, 28)),
+		sphereHi: shared(new T.SphereGeometry(0.5, 28, 14)),
 		// trójkątny graniastosłup (dach): wierzchołek w górę, podstawa na y = −0.25, szerokość 0.866
 		prism: shared(new T.CylinderGeometry(0.5, 0.5, 1, 3).rotateX(-Math.PI / 2)),
 	};

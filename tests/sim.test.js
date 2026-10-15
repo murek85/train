@@ -385,3 +385,18 @@ test('start jazdy z zahamowanym składem: nastawnik na H1 (hamulec prosty), auto
 	drive(sim);
 	assert.equal(sim.status, 'ended', sim.failReason);
 });
+
+test('pora roku w trakcie jazdy: przyczepność i odcinki „liście na torze” tylko jesienią', () => {
+	const sim = new Sim(routes[0], { czuwak: false, season: 'summer', weather: 'clear' });
+	assert.equal(sim.leaves.length, 0);
+	const summer = sim.adhesionAt(0, 100);
+	assert.equal(sim.setSeason('summer'), false); // bez zmiany
+	assert.equal(sim.setSeason('winter'), true);
+	assert.equal(sim.opts.season, 'winter');
+	assert.ok(sim.adhesionAt(0, 100) < summer);
+	assert.equal(sim.leaves.length, 0);
+	sim.setSeason('autumn');
+	assert.ok(Array.isArray(sim.leaves));
+	sim.setSeason('spring');
+	assert.equal(sim.leaves.length, 0);
+});

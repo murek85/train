@@ -20,6 +20,8 @@ const MIME = {
 	'.ogg': 'audio/ogg',
 	'.mp3': 'audio/mpeg',
 	'.wav': 'audio/wav',
+	'.flac': 'audio/flac',
+	'.webm': 'audio/webm',
 	'.woff2': 'font/woff2',
 	'.ttf': 'font/ttf',
 };

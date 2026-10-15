@@ -4,6 +4,195 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.27.0 – 15 października 2026
+
+Poprawki po etapie 11 (śnieg, liście, budynki wg rodzaju).
+
+### Śnieg i liście
+- `gHash` (common.js): siatka skrótu zawinięta co 2048 oczek – przy współrzędnych świata rzędu 1e4–1e5 m sinus w skrócie
+  tracił precyzję i szum rozpadał się w kwadratowe płaty; szerszy próg płatów śniegu.
+- Liście (`buildLitter`): na odcinkach „liście na torze” – jak dawniej; poza nimi tor 3 %, perony ok. 10 %, ulice ok. 17 %,
+  reszta na trawie z gęstością wg zadrzewienia (`envTreeP`, pomiar koron); spadające (`weather.js`) – tylko pojedyncze.
+
+### Budynki wg rodzaju (`envBuildingDecor`)
+- Sieci rozpoznawane po nazwie z mapy (`BRANDS` – barwy szyldu i pasa, bez logotypów; sieci paliwowe tylko dla stacji
+  paliw); witryny parteru (sklepy, markety, restauracje, banki, apteki, poczty), pas sieci nad witryną sklepu w parterze,
+  zadaszenie wejścia marketu.
+- Stacje paliw (`envFuelCanopy`): wiata 14 × 9 m przed ścianą frontową, gdy miejsce wolne (budynki, jezdnie, tory),
+  dystrybutory, pylon cenowy; policja – pas, apteka – krzyż prostopadły do ściany, urzędy i szkoły – schody i daszek.
+
+### Drobne poprawki
+- ET22: okna boczne kabiny (`cabPanes`); EN57: pług `ploughW` 1,7 m; Zacns: bryły `cylHi` / `sphereHi`.
+- Wody z rastra (`buildEnvWater`): granice serii na styku wierszy uśrednione (trapezy), końce zaokrąglone.
+- `TrainHorizonData.forRoute` – horyzont dla gotowej trasy (stacje z OSM, wysokości z Open-Meteo); przycisk w Generatorze.
+- Swobodna kamera: limit budowy kawałków 20 ms na klatkę.
+- Nagrania dźwięku (D1, w przygotowaniu): `js/audio-samples.js`, folder `sounds/` (manifest `sounds.json`, lista
+  `NAGRANIA.md`) – bez plików gra brzmi jak dotąd.
+
+## 0.26.0 – 15 października 2026
+
+Etap 11, krok G5 – część 3 (ludzie i budynki).
+
+### Ludzie i budynki (etap 11, G5 – część 3)
+- Ludzie (`personMat` w world.js): wzrost i tusza z numeru egzemplarza (ciało i głowa – ten sam), dodatki w bryle
+  (`aKeep` 4 – plecak z szelkami, 5 – torba na ramię z paskiem), widoczne u ok. 28 % / 22 % osób, kolory z palety
+  w shaderze; w pozach zapieczonych (pasażerowie, maszynista) bez dodatków; paleta ubrań `PEOPLE` – stonowane barwy.
+- Dachy (`real-env.js`): osobna siatka `rf` z materiałem `roof` (common.js `ROOF_GLSL`) – dachówki (wygładzanie wg
+  gęstości rzędów na ekranie), papa na dachach płaskich, tynk na ścianach szczytowych; paleta `ROOFS` bez
+  niebieskawych szarości.
+- Korony sosen: karty spłaszczone najwyżej do 0,8 (wcześniej 0,45 – „naleśniki”).
+
+## 0.25.0 – 15 października 2026
+
+Etap 11, krok G5 – część 2 (samochody).
+
+### Samochody (etap 11, G5 – część 2)
+- `props.carGeo(kind)` zwraca trzy bryły: `paint` (lakier – kolor materiału albo egzemplarza), `glass` i `trim`
+  (własne kolory wierzchołków; wspólne materiały `carFixedMats` – szyby z połyskiem i odbiciami); `carModel` i auta
+  na parkingach z mapy (`real-env.js`, instancje – kolor egzemplarza tylko dla lakieru).
+- Nadwozie z fazowaniem 0,13 m (4 kroki), reflektory, światła tylne i zderzaki zaokrąglone (`rbox`), detale
+  przesunięte za obrys.
+
+## 0.24.0 – 15 października 2026
+
+Etap 11, krok G5 – część 1 (drzewa).
+
+### Drzewa (etap 11, G5 – część 1)
+- Korony z kart z faktury (`props.foliageAtlas` – atlas 1024 × 512 rysowany w kodzie: kępki liści, drobne liście
+  brzozy, gałązka świerku, pęczki igieł sosny, gęste liście i igły na rdzeń; zimą w polach liściastych nagie gałązki):
+  `leafyCards` – karty na kępach (jak dawne bryły), zwrócone na zewnątrz korony, normalne jak elipsoida, ciemny rdzeń
+  i konary; `spruceCards` – piętra opadających gałązek (dwie skrzyżowane karty), rdzeń, wierzchołek. Wersje z daleka
+  z mniejszą liczbą kart.
+- Materiały koron (`veg(…, fol)`): faktura, `alphaTest` (także w mapie cieni), obie strony; jasność ×2,5 (szarości
+  faktury); `LEAF_GLSL` przy fakturze tylko duże plamy odcienia. Zimą faktura nagich gałązek dla liściastych.
+
+## 0.23.0 – 15 października 2026
+
+Etap 11, krok G4 – część 5 (rozjazdy) – koniec G4.
+
+### Rozjazdy (etap 11, G4 – część 5)
+- `buildEnvSwitches`: napęd elektryczny – podstawa, obudowa i pokrywa (materiał grafitowy), skrzynka kablowa, drążek
+  nastawczy i drążki kontrolne, szafka ogrzewania rozjazdu (`switchCab`); zwrotnik ręczny – dźwignia z kulą
+  przeciwwagi (`GEO.sphere`), latarnia zwrotnicowa z białymi tarczami i daszkiem; podrozjazdnice drewniane
+  (`switchWood`) przy rozjazdach ręcznych.
+
+## 0.22.0 – 15 października 2026
+
+Etap 11, krok G4 – część 4 (tarcze i sieć trakcyjna).
+
+### Sygnalizacja i sieć (etap 11, G4 – część 4)
+- Tarcze ostrzegawcze świetlne (`World.warnDiscs` / `buildWarnDisc`, wg Ie-1 i zdjęcia tarczy w Ustroniu): przed
+  semaforem wjazdowym, gdy poprzedni sygnał nie jest semaforem SBL, 1000 m przed nim (co najmniej 150 m za
+  poprzednim sygnałem); szary maszt, głowica z komorą zieloną (górną) i pomarańczową, tabliczka „To…”, wskaźnik W 1.
+  Sygnał z kodu semafora wjazdowego: Os1 – stój / sygnał zastępczy, Os2 – wolna droga, Os3 – 100 km/h (zielone
+  migające), Os4 – 40/60 km/h (pomarańczowe migające). Geometrie głowic wspólne z semaforami (`signalGeos`).
+- Sieć trakcyjna z mapy (`buildEnvCatenary`): kotwienie z naprężaczem na słupach przy jednym i dwóch torach (co 24.
+  słup) – dwa stosy ciężarków, prowadnice, krążki, odciągi wzdłuż toru do fundamentów.
+
+## 0.21.0 – 15 października 2026
+
+Etap 11, krok G4 – część 3 (perony i wiaty).
+
+### Perony i wiaty (etap 11, G4 – część 3)
+- Nowy wariant nawierzchni `platform` (common.js `PLATFORM_GLSL`): wzór we współrzędnych toru z atrybutu `aPl`
+  (kilometraż względem wielokrotności 100 m, odsunięcie) – płyty 0,5 × 0,5 m, `PL_EDGE` – krawężnik (płyty 1 m),
+  `PL_TACT` – pas ostrzegawczy z kopułkami co 6 cm; materiały `World.platformMats()` (bez zamiany na materiał z kolorem
+  w wierzchołkach).
+- Peron z gry (`buildStation`): płyta wierzchnia 0,22 m (`platformSlab` – dzielona co 3 m, wygina się po łuku)
+  z nawisem 0,18 m nad cofniętą ścianą (peron wyspowy – z obu stron); krawężnik 0,5 m i pas ostrzegawczy 0,55–0,95 m
+  od krawędzi; na przystankach bez osobnego jasnego pasa dotykowego.
+- Perony z mapy (`buildEnvPlatforms`): wierzch, pochylnie, krawężnik i pas z atrybutem `aPl`; listwa krawędzi
+  (nawis 7 cm – czoło i spód).
+- Wiaty: płatwie i rury spustowe (`shelter`), stopy słupów, rura spustowa i gablota (`haltShelter`).
+
+## 0.20.0 – 15 października 2026
+
+Etap 11, krok G4 – część 2 (wagony).
+
+### Tabor (etap 11, G4 – część 2: wagony)
+- Wagony towarowe (`freightParts` – także wagony na bocznicach, instancje w `real-env.js`): obrót części jako kąty
+  Eulera `[rx, ry, rz]`; Eaos – skrzydła drzwi, drążki zamknięć, zawiasy, słupki poza drzwiami, tablice; Falns – burta
+  pośrodku wyżej, pod nią skośne ściany lejów, zsypy z klapami; Zacns – kołyski, obejmy, pomosty z poręczami, zawór
+  spustowy; Sgns – naroża kontenerów i tabliczki CSC; Habbiins – uchwyty i zamki ścian; tablice danych UIC.
+- Sygnał końca pociągu: wagony towarowe – tarcze (biały kwadrat z czerwonymi trójkątami, `endPlate`), wagony
+  pasażerskie – latarnie toczone na ścianach czołowych (świecą na końcu ostatniego wagonu).
+- Szyby boczne: krycie 0,42 (było 0,3), mocniejsze odbicia otoczenia.
+
+## 0.19.0 – 15 października 2026
+
+Etap 11, krok G4 – część 1 (lokomotywy).
+
+### Tabor (etap 11, G4 – część 1: lokomotywy)
+- Naprawa kloszy reflektorów i świateł końcowych: profil bryły obrotowej klosza był odwrócony (ściany do środka –
+  niewidoczne); teraz klosze są widoczne we wszystkich pojazdach.
+- Górny reflektor na dachu (styl `roofLamp`: EU07, ET22, EN57/EN71/ED72): toczona obudowa na podstawie dopasowanej
+  do wysokości dachu (promień w dół na bryłę pudła), chromowana obręcz, klosz; w lokomotywach po bokach syreny
+  (`HORN_GEO` – trąbka z czarą), pozostałe lokomotywy – syreny jako trąbki zamiast walców.
+- Lampy dwukomorowe (`twinLamp`: EU07, ET22): białe i czerwone światło w jednej obręczy z odbłyśnikiem; wysokość lamp
+  i tabliczki z numerem ze stylu (`headY`, `headR`, `plateY`).
+- Zgarniacze pod zderzakami (`plough: 'pair'`) zamiast pługa w kształcie V (EU07, ET22); wycieraczki EU07 zawieszone
+  u góry szyb (`wiperTop`).
+- Burta ET22 (`side: 'et22'`, wg zdjęć ET22-886 i ET22-128): okienko i kratka w górnym rzędzie, siedem żaluzji filtrów,
+  pas żaluzji pod dachem; numer i napis PKP w górnym rzędzie (na jasnym lakierze ciemne).
+
+## 0.18.0 – 15 października 2026
+
+Etap 11, krok G3.
+
+### Niebo
+- Chmury wolumetryczne zamiast płaskiej warstwy szumu: marsz promienia przez warstwę ok. 1,1–2,6 km (przy pełnym
+  zachmurzeniu niższą i zwartą), gęstość z tej samej mapy zachmurzenia co cienie chmur na ziemi (cień pod chmurą),
+  kształt – płaska podstawa, kłęby zwężające się ku górze, brzegi z trzech oktaw szumu 3D; światło z dwóch próbek
+  w stronę słońca (prawo Beera, „puder” na brzegach), rozproszone światło nieba, o zachodzie podświetlenie od spodu,
+  w oddali kolor horyzontu. Liczone co ok. 0,4 s do panoramy 1024 × 512 (64 kroki) z rozmyciem – w kopule nieba tylko
+  odczyt (gładko, bez ziarna); zachmurzenie wg pogody (pogodnie – pojedyncze kłęby, deszcz – bez prześwitów).
+
+### Woda
+- Materiał wody (`js/3d/water.js`): fale z czterech kierunków wg wiatru (dłuższe niż kilka pikseli – bez mory
+  w oddali), kolor głębi, efekt Fresnela, połysk słońca.
+- Odbicie lustrzane: przed klatką scena z kamery odbitej względem lustra akwenu, na który się patrzy (mediana
+  wysokości), z ukośną płaszczyzną przycięcia (bez rekompilacji shaderów), w połowie rozdzielczości (niska jakość –
+  35 %, wysoka – 60 %), co drugą klatkę; bez opadów, flary i wnętrza kabiny; zniekształcone falami. Koszt tylko blisko
+  wody (średnia jakość: ok. 2–3 ms na klatkę).
+
+## 0.17.0 – 15 października 2026
+
+Etap 11, krok G2.
+
+### Horyzont z prawdziwego terenu
+- Dawniej: dwa pierścienie sinusoidalnych gór (do ok. 8° nad horyzontem) na każdej trasie – także tam, gdzie gór
+  nie ma. Teraz daleki pierścień ma wysokość R · tg(kąt wzniesienia terenu) w danym kierunku, z profilu dla bieżącego
+  miejsca trasy (co ok. 3 km, 180 kierunków, teren 2,5–60 km z krzywizną Ziemi i refrakcją) – `js/horizon-data.js`.
+- Trasy wbudowane: `node tools/horizon.js` – stacje z OSM dopasowane do położeń w grze (obrót, odbicie osi,
+  przesunięcie; błąd średni 50–65 m), wysokości z kafli terenu AWS Terrain Tiles (przybliżenie 10), wynik
+  w `routes/horizon/<id>.js`. Najwyżej: Rybnik – Katowice 1,4°, Gliwice – Katowice 1,2°, Gliwice – Zabrze 0,7°,
+  Toruń – Chełmża 0,5°.
+- Generator: powiązanie układu gry z mapą zapisane w trasie (`geo`) i horyzont (`horizon`) z siatki wysokości co
+  4 km (Open-Meteo) – trasy wygenerowane wcześniej mają łagodne pagórki (wygeneruj ponownie, by dostać horyzont).
+- Bliski pierścień: niska linia lasów i zabudowy zamiast drugiego pasma wzgórz.
+
+## 0.16.0 – 15 października 2026
+
+Etap 11, krok G1.
+
+### Pory roku i pogoda
+- Pora roku w grafice (dotąd tylko w przyczepności): jesień – korony dębów i lip rdzawe, złote i brązowe (część zielona),
+  brzozy i topole żółte, krzewy czerwonawe, trawa i łąki płowe, pola po żniwach; opadłe liście na torze (na odcinkach
+  „liście na torze” ok. 25 na m², gdzie indziej rzadko) i w trawie; spadające liście przy kamerze, niesione wiatrem.
+  Zima – bezlistne, rzadsze korony, zgaszona trawa, zaorane pola i lekka pokrywa śnieżna także bez opadu (nie
+  w deszczu). Wiosna – jaśniejsza zieleń. Zmiana pory roku przebudowuje świat.
+- Pogoda „burza”: ulewa, wiatr, ciemne niebo; co 5–21 s błyskawica 0,4–5,5 km od kamery – rozbłysk nieba i sceny,
+  rozgałęziony kanał (bliżej niż 3,5 km), grzmot z opóźnieniem odległość / 343 m/s (trzask przy bliskich, dudnienie –
+  im dalej, tym niżej i dłużej). Przyczepność jak w deszczu.
+
+### Kabina i ekran wczytywania
+- Kabina: światło wypełniające słabsze i niżej (w dzień natężenie do 3,5 zamiast 15,5 tuż pod sufitem – sufit
+  i ściany były przepalone na biało); reflektory i światła końca pierwszego pojazdu (model zewnętrzny) schowane
+  w widoku z kabiny – były widoczne jako jasna okrągła tarcza na suficie; rozbłysk słońca zasłaniany przez dach
+  i ściany kabiny.
+- Ekran wczytywania: pasek i procent pokazują rzeczywisty postęp (budowa świata, kompilacja shaderów) – dawniej pasek
+  szedł animacją „na czas”, a procent stał, gdy strona budowała świat.
+
 ## 0.15.0 – 14 października 2026
 
 ### Głos zapowiedzi

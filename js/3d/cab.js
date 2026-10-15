@@ -529,8 +529,10 @@
 			   i dalej od blatu – oświetla pulpit równo, bez przepalonej plamy na jasnych tabliczkach). Stale
 			   w grupie pojazdu (poza widokiem z kabiny – natężenie 0): liczba świateł w scenie się nie zmienia, więc
 			   przełączenie widoku nie przekompilowuje shaderów */
-			this.fill = new T.PointLight(0xfff2e2, 0, 4.2, 1.4);
-			this.fill.position.set(0, H - 0.18, deskBack + 0.85).add(g.position);
+			// (pół metra pod sufitem, z zasięgiem 5 m: dawniej 18 cm pod sufitem i do natężenia 15,5 – sufit i ściany w dzień
+			// przepalone na biało)
+			this.fill = new T.PointLight(0xfff2e2, 0, 5, 1.4);
+			this.fill.position.set(0, H - 0.68, deskBack + 0.85).add(g.position);
 			car.group.add(this.fill);
 			// wnętrze przyjmuje cienie – pudło (dach, ściany) zasłania słońce, więc nie oświetla ono kabiny „przez blachę”
 			g.traverse((o) => {
@@ -548,6 +550,14 @@
 			if (!v) this.fill.intensity = 0;
 			// wnętrze kabiny widoczne z zewnątrz (train.js) – w widoku z kabiny zastępuje je pełne wnętrze
 			if (this.car.room) this.car.room.visible = !v;
+			/* reflektory i światła końca pierwszego pojazdu (model zewnętrzny, materiał nieoświetlany) leżą w obrębie kabiny –
+			   z fotela były widoczne jako jasna okrągła tarcza na suficie; w widoku z kabiny schowane */
+			if (!this.lamps0) {
+				this.lamps0 = [];
+				const m = this.model;
+				this.car.group.traverse((o) => { if (o.isMesh && (o.material === m.headMat || o.material === m.tailMat)) this.lamps0.push(o); });
+			}
+			for (const o of this.lamps0) o.visible = !v;
 		}
 
 		update(sim, dt, dark) {
@@ -556,7 +566,7 @@
 			const day = 1 - Math.min(0.85, (dark || 0) * 0.9);
 			for (const [m, base] of this.glow) m.emissiveIntensity = base * day;
 			// nocą wnętrze oświetla tylko lampa sufitowa i ekrany – światło wypełniające słabnie
-			this.fill.intensity = 1.5 + 14 * day * day;
+			this.fill.intensity = 0.8 + 2.7 * day * day;
 			const st = sim.st;
 			/* rączka nastawnika przesuwa się w szczelinie – podstawa przy znaku bieżącej pozycji (podziałka co ok. 32 mm:
 			   0,38 m × 432/512 na 10 odstępów), z lekkim pochyleniem w stronę ruchu; napęd wg serii – pozycja jako ułamek

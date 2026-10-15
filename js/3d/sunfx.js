@@ -137,9 +137,11 @@ function createSunFx3D(THREE, { scene, heightAt }) {
 	const lookDir = new THREE.Vector3();
 
 	return {
+		// obiekty efektu (promienie, flara) – chowane w odbiciu wody
+		objects: [shafts].concat(flares.map((f) => f.sprite)),
 		// Every frame: sun direction (true, may be below the horizon), its colour, e (its height), haze and
 		// mist 0…1, the camera and the focus of the view (map point) with the span of the view.
-		update({ camera, imageRays = false, sunDir, sunColor, e, haze = 0, mist = 0, focus, span }) {
+		update({ camera, imageRays = false, sunDir, sunColor, e, haze = 0, mist = 0, focus, span, blocked = false }) {
 			// Shafts: in the golden hour, and in dusty or misty air; never at night.
 			const golden = Math.max(0, Math.min(1, (e - 0.02) / 0.1)) * (1 - Math.max(0, Math.min(1, (e - 0.3) / 0.25)));
 			// A thick storm (sand, snow) hides the sun: light dust and mist show the shafts, a dense one does not —
@@ -162,7 +164,8 @@ function createSunFx3D(THREE, { scene, heightAt }) {
 			camera.getWorldDirection(probe);
 			const ahead = probe.dot(sunDir) > 0.05;
 			ndc.copy(camera.position).addScaledVector(sunDir, camera.near * 20).project(camera);
-			let vis = e > -0.02 && ahead && Math.abs(ndc.x) < 1.25 && Math.abs(ndc.y) < 1.25 ? 1 : 0;
+			// blocked – słońce zasłonięte przez pojazd (widok z kabiny: dach, ściany)
+			let vis = !blocked && e > -0.02 && ahead && Math.abs(ndc.x) < 1.25 && Math.abs(ndc.y) < 1.25 ? 1 : 0;
 			if (vis)
 				for (let k = 1; k <= 14; k++) {
 					probe.copy(camera.position).addScaledVector(sunDir, k * 180);

@@ -29,6 +29,7 @@ Każdy etap przed rozpoczęciem wymaga potwierdzenia i odpowiedzi na pytania. St
 | 8 | **A4 + A5** – przyczepność, napędy wg serii | Pogłębienie dla zaawansowanych, niezależne od reszty | **0.9.0** ✓ |
 | 9 | **D2 + D4 + D5** – cienie, automatyczna jakość, kontrola tras | Drugi przebieg wydajności po dodaniu ruchu i scenariuszy | **0.10.0** ✓ |
 | 10 | **B4, B5, C5, C3, A6** – prawdziwy rozkład, zadanie dnia, pasażerowie i zapowiedzi, krzyżowania, ocena jazdy | Rozbudowa na gotowych fundamentach; kolejność wewnątrz do ustalenia | **0.11.0–0.14.0** ✓ (10d pominięty) |
+| 11 | **G1–G5, D1** – grafika i dźwięk (szczegóły niżej) | Gra działa – czas na wygląd i brzmienie | 0.16.0+ (w toku) |
 | – | **B6, C6** – edytor scenariuszy, manewry | Najdroższe; decyzja na końcu, czy w ogóle | ? |
 
 Zasady:
@@ -52,6 +53,24 @@ Plan szczegółowy: 10a ocena jazdy (A6), 10b zadanie dnia (B5), 10c pasażerowi
   i masa, postój z wymiany), zapowiedzi z gongiem (głos – opcja), tablice odjazdów na dworcach.
 - **10e – 0.14.0 ✓**: krzyżowania na liniach jednotorowych (odcinki z mapy, pociąg tła czeka na mijance na torze
   bocznym, gracz zawsze torem głównym – „stój” przed zajętym odcinkiem), komunikaty dyżurnego, testy zakleszczeń.
+
+---
+
+## Etap 11 – grafika i dźwięk (plan 15 października 2026)
+
+Decyzje: modele dalej budowane w kodzie (wierne wg zdjęć), z teksturami PBR na licencji CC0 (Poly Haven, ambientCG);
+dźwięki – krótkie nagrania CC0 (np. Freesound) jako próbki mieszane z syntezą zależną od prędkości i mocy (nagrania
+analizowane liczbowo – widmo, obwiednia – Claude nie słyszy dźwięku); wydajność – jakość ponad wszystko (wyższe
+wymagania dla wszystkich jakości); kolejność G1 → G2 → G3 → G4 → G5 → D1, każdy z wersją i „Co nowego”.
+
+| Etap | Zakres |
+|---|---|
+| **G1 – 0.16.0 ✓** | Kabina: ekspozycja dopasowana do wnętrza, słabsze światło wypełniające (w dzień prześwietlona). Pora roku w grafice: jesienne korony, liście na torze, w trawie i spadające; zima – szron, śnieg na ziemi. Błyskawice w burzy: błysk nieba i sceny, grzmot z opóźnieniem wg odległości. |
+| **G2 – 0.17.0 ✓** | Horyzont z prawdziwego terenu: dla tras rzeczywistych sylwetka 5–60 km z danych wysokości (np. Copernicus 30 m, pobierane w Generatorze); płasko – bez gór, linia lasu, zabudowy, kominów, hałd w mgiełce; trasy z gry – ustawienie góry / pagórki / płasko. |
+| **G3 – 0.18.0 ✓** | Niebo i chmury (warstwy oświetlone słońcem, zachmurzenie wg pogody, świt i zmierzch), deszcz (smugi, mokra nawierzchnia z odbiciami), śnieg (płatki, zalegający śnieg), woda (fale, odbicia, brzegi, nurt rzek), miękkie cienie. |
+| **G4 – 0.19.0–0.23.0 ✓** (lokomotywy, wagony, perony i wiaty, tarcze i sieć, rozjazdy) | Modele kolejowe wg zdjęć: lokomotywy i EZT, wagony, perony, wiaty, zadaszenia, semafory, tarcze, sieć trakcyjna, rozjazdy. |
+| **G5** (drzewa – 0.24.0 ✓, samochody – 0.25.0 ✓, ludzie i budynki – 0.26.0 ✓) | Modele otoczenia wg zdjęć: drzewa (gatunki, pory roku), samochody, ulice (krawężniki, oznakowanie, latarnie, znaki), ludzie, budynki. |
+| **D1** | Dźwięk: pociągi, ludzie na peronach, otoczenie, grzmot, deszcz o dach kabiny – nagrania CC0 + synteza. |
 
 ---
 

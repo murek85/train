@@ -14,9 +14,9 @@ const NS = (window.Train3D = window.Train3D || {});
    and in reflections; its horizon colour is also the colour of the distance haze. */
 
 // Cloud cover shared by the sky and the shadows on the ground: offset (drift) and amount of shadow.
-const SKY_CLOUDS = { cloudAmount: { value: 0 }, cloudOffset: { value: [0, 0] } };
+const SKY_CLOUDS = { cloudAmount: { value: 0 }, cloudOffset: { value: [0, 0] }, cloudThr: { value: 0.55 } };
 const SKY_CLOUD_GLSL = `
-	uniform float cloudAmount; uniform vec2 cloudOffset;
+	uniform float cloudAmount; uniform vec2 cloudOffset; uniform float cloudThr;
 	float cloudHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 	float cloudNoise(vec2 p) {
 		vec2 i = floor(p), f = fract(p);
@@ -28,7 +28,8 @@ const SKY_CLOUD_GLSL = `
 	float cloudShadow(vec3 viewPos) {
 		if (cloudAmount <= 0.0) return 1.0;
 		vec3 world = transpose(mat3(viewMatrix)) * (viewPos - viewMatrix[3].xyz);
-		return 1.0 - cloudAmount * smoothstep(0.47, 0.7, cloudCover(world.xz / 1300.0 + cloudOffset));
+		// (ten sam próg co chmury na niebie – cień leży pod chmurą)
+		return 1.0 - cloudAmount * smoothstep(cloudThr, cloudThr + 0.22, cloudCover(world.xz / 1300.0 + cloudOffset));
 	}`;
 
 // The cloud cover for other shaders (sunbeams through the gaps): its GLSL and its shared uniforms.
@@ -90,6 +91,11 @@ function createSky3D(THREE) {
 		cloudLight: { value: C("#ffffff") },
 		skyTime: { value: 0 },
 		cloudOffset: SKY_CLOUDS.cloudOffset,
+		cloudThr: SKY_CLOUDS.cloudThr,
+		// chmury wolumetryczne: położenie kamery (chmury zakotwiczone w świecie), liczba kroków (jakość)
+		camPos: { value: new THREE.Vector3() },
+		cloudSteps: { value: 64 },
+		cloudTex: { value: null },
 		// Moon phase 0…1: 0 new, 0.5 full (lit from the side facing the sun).
 		moonPhase: { value: 0.62 },
 		// Aurora 0…1 (ice maps at night).
@@ -115,6 +121,7 @@ function createSky3D(THREE) {
 			uniform vec3 zenith; uniform vec3 horizon; uniform vec3 sunColor; uniform vec3 sunDir; uniform vec3 moonDir;
 			uniform float sunVis; uniform float moonVis; uniform float starVis; uniform float cover; uniform vec3 cloudLight;
 			uniform float skyTime; uniform vec2 cloudOffset; uniform float moonPhase; uniform float aurora;
+			uniform float cloudThr; uniform vec3 camPos; uniform float cloudSteps; uniform sampler2D cloudTex;
 			uniform vec3 sun2Dir; uniform vec3 sun2Color; uniform vec4 bodyDir[2]; uniform vec4 bodyA[2]; uniform vec4 bodyB[2]; uniform float clear;
 			varying vec3 vDir;
 			float skyHash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
@@ -132,6 +139,33 @@ function createSky3D(THREE) {
 					mix(mix(skyHash(i + vec3(0.0, 0.0, 1.0)), skyHash(i + vec3(1.0, 0.0, 1.0)), f.x), mix(skyHash(i + vec3(0.0, 1.0, 1.0)), skyHash(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
 			}
 			float skyFbm3(vec3 p) { return skyNoise3(p) * 0.55 + skyNoise3(p * 2.3 + 5.2) * 0.3 + skyNoise3(p * 5.1 - 1.7) * 0.15; }
+			/* mapa zachmurzenia – jak cloudCover() w cieniach na ziemi (ten sam szum i skala 1300 m), żeby cień był pod
+			   chmurą */
+			float cvHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+			float cvNoise(vec2 p) {
+				vec2 i = floor(p), f = fract(p);
+				f = f * f * (3.0 - 2.0 * f);
+				return mix(mix(cvHash(i), cvHash(i + vec2(1.0, 0.0)), f.x), mix(cvHash(i + vec2(0.0, 1.0)), cvHash(i + vec2(1.0, 1.0)), f.x), f.y);
+			}
+			float cvCover(vec2 p) { return cvNoise(p) * 0.55 + cvNoise(p * 2.3 + 5.2) * 0.3 + cvNoise(p * 5.1 - 1.7) * 0.15; }
+			/* gęstość chmury w punkcie świata (y – wysokość nad kamerą): podstawa płaska, ku górze zwężenie (kłęby),
+			   brzegi rozmyte szumem 3D; przy zachmurzeniu całkowitym – zwarta, niska warstwa */
+			const float CB = 1100.0;
+			float cloudTop() { return CB + mix(1500.0, 650.0, smoothstep(0.82, 1.0, cover)); }
+			float cloudDens(vec3 w) {
+				float h = (w.y - CB) / (cloudTop() - CB);
+				if (h < 0.0 || h > 1.0) return 0.0;
+				// mapa zachmurzenia lekko falująca z wysokością (bez pionowych „kolumn”), ku górze węższa (kłęby, wierzchołki)
+				vec2 warp = (vec2(skyNoise3(w * 0.0009), skyNoise3(w * 0.0009 + 17.0)) - 0.5) * 520.0;
+				float cv = cvCover((w.xz + warp) / 1300.0 + cloudOffset) - h * h * 0.28;
+				float base = smoothstep(cloudThr, cloudThr + 0.2, cv);
+				if (base <= 0.0) return 0.0;
+				// kłęby szersze niż wyższe (oś pionowa ściśnięta), trzy oktawy szumu – od ok. 400 m do kilkudziesięciu metrów
+				vec3 q = vec3(w.x, w.y * 1.7, w.z) * 0.0026 + vec3(skyTime * 0.006, 0.0, skyTime * 0.004);
+				float det = skyNoise3(q) * 0.5 + skyNoise3(q * 2.9 + 3.1) * 0.3 + skyNoise3(q * 7.3 - 1.3) * 0.2;
+				float shape = base * smoothstep(0.0, 0.06, h);
+				return clamp((shape - (1.0 - det) * 0.55 * (1.0 - 0.4 * base)) * 1.7, 0.0, 1.0);
+			}
 			vec3 skyRot(vec3 v, vec3 k, float a) { float c = cos(a), s = sin(a); return v * c + cross(k, v) * s + k * dot(k, v) * (1.0 - c); }
 			// One layer of stars: at most one in a cell of a grid on the sphere (scale cells across), kept
 			// above the threshold; a colour by temperature (red, yellow, white, blue), a magnitude (most
@@ -303,18 +337,12 @@ function createSky3D(THREE) {
 					vec3 ciTone = mix(horizon, cloudLight * 1.1, 0.65) + dusk * hiGlow * toward * 0.9 + sunColor * pow(s, 6.0) * 0.3 * sunVis;
 					col = mix(col, ciTone, ci);
 					col += vec3(0.7, 0.76, 0.92) * ci * moonM * 0.35;
-					// The low layer, seen in perspective, thinning to the horizon.
-					if (cover > 0.0) {
-						vec2 q = d.xz / (h + 0.12) * 0.9 + cloudOffset * 2.0;
-						float f = skyFbm(q);
-						float c = smoothstep(0.62 - cover * 0.3, 0.9 - cover * 0.2, f) * smoothstep(0.0, 0.18, h);
-						float loGlow = smoothstep(-0.12, -0.01, sy) * (1.0 - smoothstep(0.06, 0.22, sy));
-						// Undersides: the thick middles darker, the thin edges catching the light.
-						float thick = smoothstep(0.75, 1.0, f);
-						vec3 tone = mix(horizon, cloudLight, 0.55) * (1.0 - 0.25 * thick) + sunColor * pow(s, 4.0) * 0.35 * sunVis + dusk * loGlow * toward * (0.75 - 0.4 * thick);
-						col = mix(col, tone, c * 0.85);
-						float edge = c * (1.0 - c) * 4.0;
-						col += vec3(0.75, 0.8, 0.95) * edge * moonM * 0.45;
+					/* chmury wolumetryczne z panoramy (cloudTex – liczona rzadko w osobnym przebiegu, renderClouds): kolor
+					   przemnożony przez krycie, alfa – krycie */
+					if (cover > 0.0 && d.y > 0.0) {
+						vec4 cl = texture2D(cloudTex, vec2(atan(d.x, d.z) / 6.2831853 + 0.5, sqrt(d.y)));
+						col = col * (1.0 - cl.a) + cl.rgb;
+						col += vec3(0.75, 0.8, 0.95) * cl.a * (1.0 - cl.a) * 4.0 * moonM * 0.35;
 					}
 				}
 				gl_FragColor = vec4(col, 1.0);
@@ -325,6 +353,94 @@ function createSky3D(THREE) {
 		depthWrite: false,
 		fog: false,
 	});
+	/* Panorama chmur: 1024 × 512 (kierunek – długość, sqrt(wysokość) – szerokość: więcej wierszy nisko nad horyzontem),
+	   marsz promienia przez warstwę ok. 1,1–2,6 km (do 7 km drogi, 64 kroki, bez szumu – gładko), światło: dwie próbki
+	   w stronę słońca (prawo Beera, „puder” na brzegach), światło rozproszone nieba, o zachodzie podświetlenie od spodu,
+	   w oddali kolor horyzontu. Liczona co ok. 0,4 s (chmury płyną powoli) – w kopule tylko odczyt z wygładzaniem. */
+	const cloudRT = new THREE.WebGLRenderTarget(1024, 512, { type: THREE.HalfFloatType, depthBuffer: false });
+	cloudRT.texture.wrapS = THREE.RepeatWrapping;
+	cloudRT.texture.generateMipmaps = false;
+	const cloudRT2 = cloudRT.clone();
+	uniforms.cloudTex.value = cloudRT2.texture;
+	// rozmycie panoramy (9 próbek, w poziomie z zawijaniem) – szum kroków marszu znika
+	const blurMat = new THREE.ShaderMaterial({
+		uniforms: { src: { value: cloudRT.texture }, px: { value: new THREE.Vector2(1 / 1024, 1 / 512) } },
+		vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+		fragmentShader: `uniform sampler2D src; uniform vec2 px; varying vec2 vUv;
+			void main() {
+				vec4 c = vec4(0.0);
+				for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+					float w = (x == 0 ? 2.0 : 1.0) * (y == 0 ? 2.0 : 1.0);
+					c += texture2D(src, vUv + vec2(float(x), float(y)) * px * 1.5) * w;
+				}
+				gl_FragColor = c / 16.0;
+			}`,
+		depthTest: false,
+		depthWrite: false,
+		toneMapped: false,
+	});
+	const fragSrc = material.fragmentShader;
+	const PRE = fragSrc.slice(0, fragSrc.indexOf('void main()'));
+	const cloudMat = new THREE.ShaderMaterial({
+		uniforms,
+		vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+		fragmentShader: PRE + `
+			varying vec2 vUv;
+			void main() {
+				float az = (vUv.x - 0.5) * 6.2831853, dy = vUv.y * vUv.y, r = sqrt(max(0.0, 1.0 - dy * dy));
+				vec3 d = vec3(sin(az) * r, dy, cos(az) * r);
+				vec4 outC = vec4(0.0);
+				if (cover > 0.0 && d.y > 0.004) {
+					float s = max(dot(d, sunDir), 0.0), sy = sunDir.y;
+					vec3 dusk = mix(vec3(1.0, 0.38, 0.26), vec3(1.0, 0.72, 0.44), smoothstep(-0.05, 0.12, sy));
+					float top = cloudTop();
+					float t0 = CB / d.y, t1 = min(min(top / d.y, 40000.0), t0 + 7000.0);
+					if (t0 < 40000.0) {
+						float nSt = clamp((t1 - t0) / 100.0, 20.0, cloudSteps);
+						float dt = (t1 - t0) / nSt;
+						float Tr = 1.0;
+						vec3 acc = vec3(0.0);
+						float jit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453); // szum – wygładzany rozmyciem panoramy
+						float loGlow = smoothstep(-0.12, -0.01, sy) * (1.0 - smoothstep(0.06, 0.24, sy));
+						vec3 sunL = sunColor * sunVis * 1.55 + dusk * loGlow * 1.2;
+						vec3 amb = mix(horizon, cloudLight * mix(zenith, vec3(1.0), 0.55), 0.6) * (0.72 - 0.3 * smoothstep(0.85, 1.0, cover));
+						vec3 L3 = normalize(vec3(sunDir.x, max(sunDir.y, 0.08), sunDir.z));
+						for (int i = 0; i < 96; i++) {
+							if (float(i) >= nSt || Tr < 0.02) break;
+							float t = t0 + (float(i) + jit) * dt;
+							vec3 w = vec3(camPos.x, 0.0, camPos.z) + d * t;
+							float de = cloudDens(w);
+							if (de <= 0.002) continue;
+							float od = cloudDens(w + L3 * 120.0) * 1.6 + cloudDens(w + L3 * 380.0) * 1.1;
+							float lightK = exp(-od * 1.9) * (1.0 - exp(-de * 6.0) * 0.55);
+							float hh = (w.y - CB) / (top - CB);
+							vec3 c = sunL * lightK * (0.55 + 0.45 * pow(s, 3.0)) + amb * (0.55 + 0.6 * hh);
+							float a = 1.0 - exp(-de * dt * 0.0042 * (1.0 + 2.5 * smoothstep(0.85, 1.0, cover)));
+							acc += Tr * a * c;
+							Tr *= 1.0 - a;
+						}
+						float far = smoothstep(9000.0, 38000.0, t0);
+						float al = (1.0 - Tr) * (1.0 - far * 0.55);
+						vec3 cc = acc / max(1e-3, 1.0 - Tr);
+						cc = mix(cc, horizon * 0.95 + cloudLight * 0.05, far * 0.7);
+						outC = vec4(cc * al, al);
+					}
+				}
+				gl_FragColor = outC;
+			}`,
+		depthTest: false,
+		depthWrite: false,
+		toneMapped: false,
+	});
+	const cloudScene = new THREE.Scene(), cloudCam = new THREE.Camera();
+	const cloudQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), cloudMat);
+	cloudQuad.frustumCulled = false;
+	cloudScene.add(cloudQuad);
+	const blurScene = new THREE.Scene(), blurQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blurMat);
+	blurQuad.frustumCulled = false;
+	blurScene.add(blurQuad);
+	let cloudT = -1, cloudAt = new THREE.Vector3(1e9, 0, 0);
+
 	const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), material);
 	mesh.frustumCulled = false;
 	// Drawn after the opaque board, behind it (depth test on): the sky is shaded only where it shows.
@@ -385,6 +501,7 @@ function createSky3D(THREE) {
 			uniforms.moonPhase.value = moonPhase;
 			uniforms.aurora.value = aurora * (1 - Math.min(1, haze * 1.2));
 			mesh.position.copy(camera.position);
+			uniforms.camPos.value.copy(camera.position);
 			mesh.scale.setScalar(camera.far * 0.9);
 			uniforms.zenith.value.copy(z);
 			uniforms.horizon.value.copy(h);
@@ -425,6 +542,23 @@ function createSky3D(THREE) {
 			SKY_CLOUDS.cloudOffset.value[0] = time * 0.0042;
 			SKY_CLOUDS.cloudOffset.value[1] = time * 0.0017;
 			SKY_CLOUDS.cloudAmount.value = shadow;
+			// próg mapy zachmurzenia wg zachmurzenia: pogodnie – pojedyncze kłęby, pochmurno – dużo, deszcz – zwarta warstwa
+			const c = uniforms.cover.value;
+			SKY_CLOUDS.cloudThr.value = 0.72 - c * 0.55 - Math.max(0, Math.min(1, (c - 0.85) / 0.15)) * 0.22; // deszcz – bez prześwitów
+		},
+		// jakość chmur: liczba kroków marszu promienia (niska – mniej)
+		setCloudQuality(steps) { uniforms.cloudSteps.value = steps; },
+		/* panorama chmur – co ok. 0,4 s albo po przesunięciu kamery o ponad 300 m (force – od razu); renderer – WebGLRenderer */
+		renderClouds(renderer, time, force) {
+			if (!force && time - cloudT < 0.4 && cloudAt.distanceTo(uniforms.camPos.value) < 300) return;
+			cloudT = time;
+			cloudAt.copy(uniforms.camPos.value);
+			const prev = renderer.getRenderTarget();
+			renderer.setRenderTarget(cloudRT);
+			renderer.render(cloudScene, cloudCam);
+			renderer.setRenderTarget(cloudRT2);
+			renderer.render(blurScene, cloudCam);
+			renderer.setRenderTarget(prev);
 		},
 	};
 }

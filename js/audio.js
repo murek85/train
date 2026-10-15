@@ -1,4 +1,4 @@
-/* Dźwięki generowane w WebAudio – bez plików.
+/* Dźwięki generowane w WebAudio; warstwy z nagrań (js/audio-samples.js, sounds/) – gdy są, zastępują syntezę tych grup.
    Pociąg (głos wg serii – VOICE): silniki trakcyjne prądu stałego z przekładnią, wentylatory, styczniki
    i przetwornica (EU07, EP09, ET22, EN57, EN71, ED72; Elfy i ED250 – falownik zamiast styczników) albo silnik spalinowy z pulsami zapłonu (SM42, SU46,
    dwusuwowy ST44), luzy zderzaków przy ruszaniu i hamowaniu, toczenie kół (szum zależny od prędkości), stukot na złączach szyn (po dwa uderzenia
@@ -303,6 +303,107 @@
 			src(this.noiseBuf).connect(filter('bandpass', 1400, 0.7, this.passHiG));
 			this.passMotorG = gain(A);
 			this.passMotor = osc('sawtooth', 120, filter('lowpass', 1500, 0.8, this.passMotorG));
+			// nagrania (js/audio-samples.js, sounds/sounds.json): wczytywane w tle; warstwy zastępują syntezę
+			this.L = {};
+			this.muteG = {};
+			if (window.TrainSampleBank) {
+				this.bank = new window.TrainSampleBank(c);
+				this.bank.load().then(() => this.attachSamples()).catch((e) => console.warn('Nagrania: ' + e.message));
+			}
+		}
+
+		/* warstwy z nagrań: pętle (głośność i wysokość w updateSamples), synteza tej samej grupy przez węzeł wyciszenia
+		   (muteG – 0, gdy jest nagranie; napęd i silnik spalinowy – wg głosu pojazdu w updateSamples); stukot – próbki
+		   clack1…4 zamiast liczonych */
+		attachSamples() {
+			const B = this.bank, c = this.ctx, T = this.trainBus, A = this.ambBus, H = this.hornBus;
+			const lay = (k, dest) => { const l = B.loop(k, dest); if (l) this.L[k] = l; return !!l; };
+			const via = (name, dest, ...gs) => {
+				const m = c.createGain();
+				m.connect(dest);
+				for (const g of gs) { g.disconnect(); g.connect(m); }
+				this.muteG[name] = m;
+				return m;
+			};
+			for (const k of ['roll', 'roll_cab', 'flange', 'motor_dc', 'motor_emu', 'motor_ac', 'diesel_idle', 'diesel_run', 'blower', 'compressor', 'brake_squeal', 'air_hiss']) lay(k, T);
+			for (const k of ['horn_lo', 'horn_hi']) lay(k, H);
+			for (const k of ['wind', 'rain', 'rain_cab', 'birds', 'city', 'crickets', 'bell']) lay(k, A);
+			const L = this.L, has = (...ks) => ks.some((k) => L[k]);
+			if (has('roll', 'roll_cab')) via('roll', T, this.rollG, this.rollHiG).gain.value = 0;
+			if (has('flange')) via('flange', T, this.flangeG).gain.value = 0;
+			if (has('motor_dc', 'motor_emu', 'motor_ac', 'diesel_run', 'diesel_idle')) via('motor', T, this.motorG, this.gearG);
+			if (has('diesel_run', 'diesel_idle')) via('diesel', T, this.chugG);
+			if (has('blower')) via('fan', T, this.fanG, this.bladeG);
+			if (has('compressor')) via('comp', T, this.compG).gain.value = 0;
+			if (has('brake_squeal')) via('squeal', T, this.squealG).gain.value = 0;
+			if (has('air_hiss')) via('hiss', T, this.hissG).gain.value = 0;
+			if (has('horn_lo')) via('horn', H, this.hornG, this.hornAirG).gain.value = 0;
+			if (has('horn_hi')) via('horn2', H, this.horn2G).gain.value = 0;
+			if (has('wind')) via('wind', A, this.windG).gain.value = 0;
+			if (has('rain', 'rain_cab')) via('rain', A, this.rainG, this.rainLowG).gain.value = 0;
+			if (has('city')) via('city', A, this.cityG).gain.value = 0;
+			if (has('crickets')) via('crickets', A, this.cricketG).gain.value = 0;
+			const cl = ['clack1', 'clack2', 'clack3', 'clack4'].filter((k) => B.has(k)).map((k) => B.buf[k]);
+			if (cl.length) this.clackBufs = cl;
+			const n = Object.keys(L).length + cl.length;
+			if (n) console.info('Nagrania: ' + n + ' (' + Object.keys(L).concat(cl.length ? ['clack×' + cl.length] : []).join(', ') + ')');
+		}
+
+		/* warstwy z nagrań (S – wartości z update): toczenie i pisk, napęd wg głosu (rate – prędkość względem prędkości
+		   nagrania ref), silnik spalinowy (bieg jałowy ↔ obciążenie wg obrotów), wentylatory, sprężarka, hamulce,
+		   syreny (wysokość wg tonu pojazdu względem tonu nagrania), otoczenie */
+		updateSamples(S) {
+			const L = this.L, B = this.bank;
+			if (!B || !L || !Object.keys(L).length) return;
+			const g = (k, v, tc) => { if (L[k]) this.set(L[k].g.gain, Math.max(0, v), tc); };
+			const r = (k, v) => { if (L[k]) this.set(L[k].src.playbackRate, Math.max(0.05, v), 0.1); };
+			const { v, tr, live, tun, cab, V, vk, moving } = S;
+			// toczenie (w kabinie – nagranie z kabiny, jeśli jest)
+			const rollOn = v > 0.1 ? (0.12 + 0.88 * vk) * tun : 0;
+			const rc = L.roll_cab ? (cab ? 1 : 0) : 0;
+			g('roll', rollOn * (1 - rc) * 0.9);
+			g('roll_cab', rollOn * (L.roll ? rc : 1) * 0.9);
+			for (const k of ['roll', 'roll_cab']) r(k, Math.min(1.4, 0.6 + (0.4 * v) / B.param(k, 'ref', 22)));
+			g('flange', S.flange * 0.7, 0.05);
+			// napęd
+			const dc = V.kind !== 'diesel';
+			const mk = dc ? (V.ac ? (L.motor_ac ? 'motor_ac' : null) : V.emu && L.motor_emu ? 'motor_emu' : L.motor_dc ? 'motor_dc' : L.motor_emu ? 'motor_emu' : null) : null;
+			for (const k of ['motor_dc', 'motor_emu', 'motor_ac']) if (k !== mk) g(k, 0, 0.3);
+			if (mk) {
+				g(mk, moving ? (0.25 + 0.75 * tr) * Math.min(1, 0.2 + v / 8) * V.heavy * tun * 0.75 : 0);
+				r(mk, Math.min(2.2, 0.35 + (0.65 * v) / B.param(mk, 'ref', 16.7)));
+			}
+			const dz = !dc && !!(L.diesel_run || L.diesel_idle);
+			if (this.muteG.motor) this.set(this.muteG.motor.gain, (dc && mk) || dz ? 0 : 1, 0.2);
+			if (this.muteG.diesel) this.set(this.muteG.diesel.gain, dz ? 0 : 1, 0.2);
+			if (!dc) {
+				const rpm = this.dieselRpm || V.idle, x = Math.max(0, Math.min(1, (rpm - V.idle) / (1 - V.idle)));
+				const both = L.diesel_run && L.diesel_idle;
+				g('diesel_idle', (both ? 1 - x : 1) * 0.6 * V.heavy * tun);
+				g('diesel_run', (both ? x : 0.3 + 0.7 * x) * 0.85 * V.heavy * tun);
+				r('diesel_idle', rpm / V.idle);
+				r('diesel_run', 0.7 + 0.3 * x);
+			} else { g('diesel_idle', 0, 0.3); g('diesel_run', 0, 0.3); }
+			if (this.muteG.fan) this.set(this.muteG.fan.gain, dc && L.blower ? 0 : 1, 0.2);
+			g('blower', dc && live ? (0.2 + 0.8 * tr) * (V.blow || 0) * 0.4 : 0, live ? 0.15 : 1.5);
+			r('blower', 0.85 + 0.15 * tr);
+			g('compressor', S.comp ? 0.5 : 0, 0.4);
+			g('brake_squeal', S.squeal * 16, 0.05);
+			g('air_hiss', S.hiss * 4, 0.05);
+			// syreny
+			const hornLevel = 0.9 * V.heavy;
+			if (L.horn_lo && S.hornOn !== this.sHorn) { this.sHorn = S.hornOn; g('horn_lo', S.hornOn ? hornLevel : 0, S.hornOn ? 0.03 : 0.07); r('horn_lo', V.horn[0] / B.param('horn_lo', 'pitch', 370)); }
+			if (L.horn_hi && S.horn2On !== this.sHorn2) { this.sHorn2 = S.horn2On; g('horn_hi', S.horn2On ? hornLevel * 0.85 : 0, S.horn2On ? 0.03 : 0.07); r('horn_hi', horn2Of(V) / B.param('horn_hi', 'pitch', 740)); }
+			// otoczenie
+			const E = this.env;
+			g('wind', (0.1 + E.wind * 0.6) * S.gust * (1 + vk * 0.5), 0.3);
+			const rcab = L.rain_cab ? (cab ? 1 : 0) : 0;
+			g('rain', E.rain * (L.rain_cab ? 1 - rcab : 1) * 0.8, 0.5);
+			g('rain_cab', E.rain * (L.rain ? rcab : 1) * 0.9, 0.5);
+			g('birds', S.birds ? (cab ? 0.15 : 0.4) * (1 - (E.urban || 0) * 0.5) : 0, 1);
+			g('city', (E.urban || 0) * (0.6 - E.dark * 0.3) * (cab ? 0.4 : 1), 1);
+			g('crickets', S.crickets ? (cab ? 0.08 : 0.25) : 0, 1);
+			g('bell', S.bell * (cab ? 0.4 : 0.9), 0.1);
 		}
 
 		// pociąg z przeciwka (life.other) albo null
@@ -738,7 +839,7 @@
 			// ptaki w dzień (bez deszczu i śniegu), świerszcze o zmierzchu latem
 			const day = 1 - E.dark;
 			const urban = E.urban || 0;
-			if (day > 0.5 && E.rain < 0.2 && E.snow < 0.2) {
+			if (day > 0.5 && E.rain < 0.2 && E.snow < 0.2 && !(this.L && this.L.birds)) {
 				this.birdT -= dt;
 				if (this.birdT <= 0) {
 					this.birdT = 1.2 + Math.random() * 5 + urban * 3;
@@ -769,13 +870,18 @@
 				const k2 = 1 / (1 + (dd / 45) * (dd / 45));
 				if (k2 > bell) { bell = k2; bellPan = Math.max(-0.7, Math.min(0.7, (cr.pos - ear) / 60)) * 0; }
 			}
-			if (bell > 0.01) {
+			if (bell > 0.01 && !(this.L && this.L.bell)) {
 				this.bellT -= dt;
 				while (this.bellT <= 0) {
 					this.bellT += 0.14 + Math.random() * 0.012;
 					this.ding(now + Math.max(0, this.bellT), bell * (cab ? 0.035 : 0.08), bellPan);
 				}
 			} else this.bellT = 0;
+			this.updateSamples({
+				v, tr, br, live, tun, cab, V, vk, moving, flange: Math.max(fl, sw * 0.8) * trem,
+				comp: this.compOn && v < 0.5 && live, squeal: v > 0.05 && v < 4 && br > 0.3 ? 0.022 * (1 - v / 4) : 0, hiss,
+				hornOn, horn2On, gust, birds: day > 0.5 && E.rain < 0.2 && E.snow < 0.2, crickets: E.dark > 0.3 && E.dark < 0.9 && E.rain < 0.1 && E.snow < 0.1, bell,
+			});
 		}
 
 		// uderzenie koła: próbka z clackBuffers(); rate – wysokość (prędkość), dist – odległość (dalej głuchsze)
@@ -1103,6 +1209,43 @@
 			this.voiceEnd = at + buf.duration / rate;
 			(this.voices || (this.voices = new Set())).add(s);
 			s.onended = () => this.voices.delete(s);
+		}
+		/* grzmot po błyskawicy (burza): po delay s (odległość / prędkość dźwięku); blisko – trzask, potem dudnienie kilku
+		   nakładających się fal szumu przez filtr dolnoprzepustowy (im dalej, tym niżej i dłużej); szyna otoczenia */
+		thunder(delay, gain, dist) {
+			if (!this.ctx || !this.noiseBuf) return;
+			const c = this.ctx, t0 = c.currentTime + delay, far = Math.min(1, dist / 5000);
+			const wave = (at, dur, f0, f1, vol) => {
+				const s = c.createBufferSource();
+				s.buffer = this.noiseBuf;
+				const f = c.createBiquadFilter();
+				f.type = 'lowpass';
+				f.frequency.setValueAtTime(f0, at);
+				f.frequency.exponentialRampToValueAtTime(f1, at + dur);
+				f.Q.value = 0.7;
+				const g = c.createGain();
+				g.gain.setValueAtTime(0.0001, at);
+				g.gain.exponentialRampToValueAtTime(vol, at + 0.08 + far * 0.5);
+				g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+				s.connect(f).connect(g).connect(this.ambBus);
+				s.start(at, Math.random() * 2, dur + 0.1);
+			};
+			if (dist < 1500) {
+				// trzask kanału (bliska błyskawica)
+				const s = c.createBufferSource();
+				s.buffer = this.noiseBuf;
+				const f = c.createBiquadFilter();
+				f.type = 'highpass';
+				f.frequency.value = 900;
+				const g = c.createGain();
+				g.gain.setValueAtTime(0.5 * gain, t0);
+				g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
+				s.connect(f).connect(g).connect(this.ambBus);
+				s.start(t0, Math.random(), 0.4);
+			}
+			const len = 3 + far * 4;
+			wave(t0, len, 420 - far * 250, 70, 0.55 * gain);
+			for (let k = 1; k <= 3; k++) wave(t0 + 0.3 * k + Math.random() * 0.6, len * (0.7 + Math.random() * 0.4), 260 - far * 120, 55, 0.35 * gain * (1 - k * 0.15));
 		}
 		stopVoice() {
 			for (const s of this.voices || []) { try { s.stop(); } catch (e) { /* już zatrzymany */ } }

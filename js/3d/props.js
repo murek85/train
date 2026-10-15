@@ -76,6 +76,263 @@
 		return [k * (1 + t), k, k * (1 - t)];
 	};
 
+	/* ---- Korony z kępek liści (G5, wg zdjęć drzew): atlas faktur rysowany w kodzie (1024 × 512, 4 × 2 pola po 256 px):
+	   0, 1 – kępki liści (dąb, lipa), 2 – gęste liście (rdzeń korony, bez prześwitów), 3 – drobne liście brzozy,
+	   4 – gałązka świerku z igłami (od pnia w lewo do końca w prawo), 5 – pęczki igieł sosny, 6 – gęste igły (rdzeń),
+	   7 – gałązki bez liści. Szarości – kolor nadaje egzemplarz (gatunek, pora roku), cieniowanie – kolory wierzchołków.
+	   Zima (winter): w polach liściastych nagie gałązki (prześwitująca korona), iglaste bez zmian. ---- */
+	const FOL = { cols: 4, rows: 2, mg: 0.012 };
+	// współrzędne (u, v) w polu k atlasu (u, v ∈ 0…1, v = 1 – góra pola)
+	function cellUV(k, u, v) {
+		const col = k % FOL.cols, row = Math.floor(k / FOL.cols), m = FOL.mg;
+		return [(col + m + u * (1 - 2 * m)) / FOL.cols, 1 - (row + m + (1 - v) * (1 - 2 * m)) / FOL.rows];
+	}
+	function foliageAtlas(winter) {
+		return NS.util.canvasTexture(winter ? 'foliage-winter' : 'foliage', 1024, 512, (g) => {
+			const S = 256;
+			let sd = winter ? 77.7 : 11.3;
+			const rnd = () => hash((sd += 1.618));
+			const grey = (v, a = 1) => `rgba(${v | 0},${v | 0},${v | 0},${a})`;
+			const cell = (k, fn) => {
+				const x0 = (k % 4) * S, y0 = Math.floor(k / 4) * S;
+				g.save();
+				g.beginPath();
+				g.rect(x0 + 2, y0 + 2, S - 4, S - 4);
+				g.clip();
+				fn(x0, y0);
+				g.restore();
+			};
+			// liść: elipsa z nerwem głównym
+			const leaf = (x, y, L, ang, v) => {
+				g.save();
+				g.translate(x, y);
+				g.rotate(ang);
+				g.fillStyle = grey(v);
+				g.beginPath();
+				g.ellipse(0, 0, L / 2, L * 0.28, 0, 0, Math.PI * 2);
+				g.fill();
+				g.strokeStyle = grey(v * 0.72);
+				g.lineWidth = Math.max(1, L * 0.06);
+				g.beginPath();
+				g.moveTo(-L / 2, 0);
+				g.lineTo(L / 2, 0);
+				g.stroke();
+				g.restore();
+			};
+			// gałązka rozgałęziona (rekurencyjnie)
+			const twig = (x, y, ang, len, w, depth, v) => {
+				const x2 = x + Math.cos(ang) * len, y2 = y + Math.sin(ang) * len;
+				g.strokeStyle = grey(v);
+				g.lineWidth = w;
+				g.lineCap = 'round';
+				g.beginPath();
+				g.moveTo(x, y);
+				g.lineTo(x2, y2);
+				g.stroke();
+				if (depth <= 0) return;
+				const n = 2 + (rnd() < 0.4 ? 1 : 0);
+				for (let i = 0; i < n; i++) twig(x2, y2, ang + (rnd() - 0.5) * 1.3, len * (0.62 + rnd() * 0.15), w * 0.68, depth - 1, v);
+			};
+			const cluster = (x0, y0, n, size, spreadK) => {
+				const cx = x0 + S / 2, cy = y0 + S / 2;
+				for (let i = 0; i < 5; i++) twig(cx + (rnd() - 0.5) * 30, y0 + S - 8, -Math.PI / 2 + (rnd() - 0.5) * 1.6, S * 0.22, 5, 2, 70);
+				for (let i = 0; i < n; i++) {
+					const a = rnd() * Math.PI * 2, r = S * spreadK * Math.sqrt(rnd());
+					const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r * 0.92;
+					// jaśniej u góry kępki, ciemniej u dołu i w głębi (wcześniej rysowane – pod spodem)
+					const v = 105 + 150 * (0.55 * rnd() + 0.45 * (1 - (y - y0) / S)) * (i / n * 0.35 + 0.65);
+					leaf(x, y, size * (0.75 + 0.5 * rnd()), rnd() * Math.PI * 2, v);
+				}
+			};
+			// pole iglaste: gałązka z igłami (oś od lewej do prawej, lekko opadająca)
+			const needles = (x, y, ang, len, v) => {
+				g.strokeStyle = grey(v);
+				g.lineWidth = 1.6;
+				g.beginPath();
+				g.moveTo(x, y);
+				g.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+				g.stroke();
+			};
+			const spray = (x0, y0) => {
+				const yA = y0 + S / 2;
+				const axis = (t) => [x0 + 6 + t * (S - 14), yA + t * t * 22];
+				g.strokeStyle = grey(85);
+				g.lineWidth = 5;
+				g.beginPath();
+				for (let t = 0; t <= 1.001; t += 0.05) { const [x, y] = axis(t); t ? g.lineTo(x, y) : g.moveTo(x, y); }
+				g.stroke();
+				// boczne gałązki na przemian, krótsze ku końcowi
+				for (let t = 0.06; t < 0.95; t += 0.075) {
+					const [x, y] = axis(t);
+					for (const sgn of [-1, 1]) {
+						const L = S * 0.36 * (1 - t * 0.6) * (0.8 + rnd() * 0.3), ang = sgn * (0.75 + rnd() * 0.25) + 0.12;
+						g.strokeStyle = grey(95);
+						g.lineWidth = 2.5;
+						g.beginPath();
+						g.moveTo(x, y);
+						const xe = x + Math.cos(ang) * L, ye = y + Math.sin(ang) * L;
+						g.lineTo(xe, ye);
+						g.stroke();
+						for (let q = 0.1; q < 1; q += 0.07) {
+							const px = x + (xe - x) * q, py = y + (ye - y) * q, nl = 14 * (1 - q * 0.4);
+							for (const s2 of [-1, 1]) needles(px, py, ang + s2 * 0.95 + (rnd() - 0.5) * 0.3, nl, 130 + rnd() * 120);
+						}
+					}
+					for (const s2 of [-1, 1]) needles(x, y, s2 * 1.1 + 0.2, 16, 140 + rnd() * 110);
+				}
+			};
+			const tufts = (x0, y0, n) => {
+				for (let i = 0; i < n; i++) {
+					const a = rnd() * Math.PI * 2, r = S * 0.28 * Math.sqrt(rnd());
+					const cx = x0 + S / 2 + Math.cos(a) * r, cy = y0 + S / 2 + Math.sin(a) * r;
+					twig(cx, cy + 20, -Math.PI / 2 + (rnd() - 0.5), 22, 4, 0, 80);
+					for (let k = 0; k < 46; k++) {
+						const b = rnd() * Math.PI * 2, L = 26 + rnd() * 26;
+						needles(cx, cy, b, L, 120 + rnd() * 130);
+					}
+				}
+			};
+			if (winter) {
+				// zima: gałązki bez liści (korona prześwitująca), w rdzeniu rzadsze
+				for (const k of [0, 1, 3, 7]) cell(k, (x0, y0) => { for (let i = 0; i < 4; i++) twig(x0 + S / 2 + (rnd() - 0.5) * 60, y0 + S - 6, -Math.PI / 2 + (rnd() - 0.5) * 1.2, S * 0.3, 7, 4, 200); });
+				cell(2, (x0, y0) => { for (let i = 0; i < 3; i++) twig(x0 + S / 2 + (rnd() - 0.5) * 80, y0 + S - 6, -Math.PI / 2 + (rnd() - 0.5) * 1.4, S * 0.28, 6, 3, 190); });
+			} else {
+				cell(0, (x0, y0) => cluster(x0, y0, 230, 30, 0.42));
+				cell(1, (x0, y0) => cluster(x0, y0, 200, 36, 0.4));
+				cell(2, (x0, y0) => { g.fillStyle = grey(110); g.fillRect(x0, y0, S, S); for (let i = 0; i < 520; i++) leaf(x0 + rnd() * S, y0 + rnd() * S, 26 + rnd() * 14, rnd() * 6.28, 95 + rnd() * 140); });
+				cell(3, (x0, y0) => cluster(x0, y0, 300, 17, 0.44));
+				cell(7, (x0, y0) => { for (let i = 0; i < 4; i++) twig(x0 + S / 2, y0 + S - 6, -Math.PI / 2 + (rnd() - 0.5) * 1.2, S * 0.3, 7, 4, 200); });
+			}
+			cell(4, spray);
+			cell(5, (x0, y0) => tufts(x0, y0, 9));
+			cell(6, (x0, y0) => { g.fillStyle = grey(100); g.fillRect(x0, y0, S, S); for (let i = 0; i < 1400; i++) { const x = x0 + rnd() * S, y = y0 + rnd() * S; needles(x, y, rnd() * 6.28, 12 + rnd() * 12, 110 + rnd() * 130); } });
+		});
+	}
+
+	/* budowa korony z kart: pozycje, normalne, kolory wierzchołków, UV (atlas) */
+	function crownGeo() {
+		const P = [], N = [], C = [], U = [];
+		const vtx = (p, n, c, uv) => { P.push(p[0], p[1], p[2]); N.push(n[0], n[1], n[2]); C.push(c[0], c[1], c[2]); U.push(uv[0], uv[1]); };
+		const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+		// czworokąt a-b-c-d (przeciwnie do wskazówek patrząc od strony normalnej); nf(p) – normalna, cf(p) – kolor
+		const quad = (a, b, c, d, uvs, nf, cf) => {
+			for (const [p, uv] of [[a, uvs[0]], [b, uvs[1]], [c, uvs[2]], [a, uvs[0]], [c, uvs[2]], [d, uvs[3]]]) vtx(p, nf(p), cf(p), uv);
+		};
+		// bryła (rdzeń, gałęzie): uvf(x, y, z) – UV w atlasie
+		const solid = (geo, uvf, cf) => {
+			const g = geo.index ? geo.toNonIndexed() : geo;
+			const p = g.attributes.position, n = g.attributes.normal;
+			for (let i = 0; i < p.count; i++) {
+				const q = [p.getX(i), p.getY(i), p.getZ(i)];
+				vtx(q, [n.getX(i), n.getY(i), n.getZ(i)], cf(q), uvf(q));
+			}
+		};
+		const done = () => {
+			const out = new T.BufferGeometry();
+			out.setAttribute('position', new T.Float32BufferAttribute(P, 3));
+			out.setAttribute('normal', new T.Float32BufferAttribute(N, 3));
+			out.setAttribute('color', new T.Float32BufferAttribute(C, 3));
+			out.setAttribute('uv', new T.Float32BufferAttribute(U, 2));
+			out.computeBoundingSphere();
+			out.userData.shared = true;
+			return out;
+		};
+		return { quad, solid, done, nrm };
+	}
+
+	/* korona liściasta (jednostki: wysokość korony ok. 1): kępy (jak dawniej – rdzeń, n kęp na różnych wysokościach,
+	   drobne kępki na obrzeżu); każda kępa – kilka kart z kępką liści, zwróconych na zewnątrz korony (normalne
+	   zaokrąglone jak elipsoida – miękkie światło); w środku ciemny rdzeń z gęstych liści i konary od pnia */
+	function leafyCards(n, seed, spread, squash, vy, lo, cells, dense) {
+		const B = crownGeo(), lobes = [];
+		lobes.push({ c: [0, 0.06, 0], r: lo ? 0.38 : 0.34, main: true });
+		for (let k = 0; k < n; k += lo ? 2 : 1) {
+			const a = k * 2.39996 + hash(seed + k) * 0.6, h = hash(seed * 3 + k);
+			const oy = (h - 0.45) * vy * 1.5;
+			const rad = spread * (0.75 + 0.5 * hash(seed * 5 + k)) * (1 - Math.min(0.6, Math.abs(oy) * 0.9));
+			lobes.push({ c: [Math.cos(a) * rad, oy, Math.sin(a) * rad], r: (0.17 + hash(seed * 2 + k) * 0.15) * (lo ? 1.15 : 1), main: true });
+		}
+		for (let k = 0; k < (lo ? 0 : n); k++) {
+			const a = k * 2.39996 + 1.2 + hash(seed * 7 + k) * 0.8, h = hash(seed * 11 + k);
+			const oy = (h - 0.4) * vy * 1.7, rad = spread * (1.25 + 0.3 * hash(seed * 13 + k)) * (1 - Math.min(0.55, Math.abs(oy) * 0.8));
+			lobes.push({ c: [Math.cos(a) * rad, oy, Math.sin(a) * rad], r: 0.09 + hash(seed * 17 + k) * 0.07 });
+		}
+		const shade = leafShade(0, 0.55), sq = squash;
+		const outN = (p) => B.nrm([p[0], (p[1] - 0.05) / (sq * sq), p[2]]);
+		// rdzeń: kępy główne pomniejszone, ciemne, z gęstych liści
+		for (const L of lobes) {
+			if (!L.main) continue;
+			const geo = lumpy(L.r * 0.78, lo ? 0 : 1, seed + L.r * 31, sq).translate(L.c[0], L.c[1], L.c[2]);
+			B.solid(geo, (q) => cellUV(dense, 0.5 + 0.45 * Math.sin(q[0] * 9 + q[2] * 5), 0.5 + 0.45 * Math.sin(q[1] * 11 + q[2] * 3)), (q) => shade(q[0], q[1], q[2]).map((x) => x * 0.72));
+		}
+		// konary: od pnia (spód korony) do środków kęp głównych – ciemne, z gęstego pola (nieprzezroczyste)
+		if (!lo) for (const L of lobes.filter((x) => x.main).slice(1, 6)) {
+			const a = [L.c[0] * 0.1, -0.5, L.c[2] * 0.1], b = [L.c[0] * 0.8, L.c[1] * 0.8, L.c[2] * 0.8];
+			const dir = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], len = Math.hypot(...dir);
+			const geo = new T.CylinderGeometry(0.012, 0.022, len, 5);
+			const qt = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), new T.Vector3(dir[0] / len, dir[1] / len, dir[2] / len));
+			geo.applyQuaternion(qt).translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+			B.solid(geo, () => cellUV(dense, 0.5, 0.5), () => [0.16, 0.13, 0.11]);
+		}
+		// karty z kępkami liści
+		lobes.forEach((L, li) => {
+			const K = lo ? 4 : L.main ? 7 : 3, size = L.r * (lo ? 2.3 : 1.75);
+			for (let j = 0; j < K; j++) {
+				const h1 = hash(seed * 1.7 + li * 13.1 + j * 3.3), h2 = hash(seed * 2.9 + li * 7.7 + j * 5.1), h3 = hash(seed * 4.1 + li * 3.9 + j * 9.7);
+				// kierunek: na zewnątrz kępy (od środka korony) z rozrzutem
+				const az = h1 * Math.PI * 2, el = (h2 - 0.35) * 2.2;
+				const rd = [Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el)];
+				const o = B.nrm([L.c[0] * 1.5 + rd[0], L.c[1] * 1.5 + rd[1] + 0.15, L.c[2] * 1.5 + rd[2]]);
+				const cc = [L.c[0] + o[0] * L.r * 0.55, L.c[1] + o[1] * L.r * 0.55 * sq, L.c[2] + o[2] * L.r * 0.55];
+				// płaszczyzna karty: normalna = kierunek o z odchyleniem, obrót wokół niej losowy
+				const nn = B.nrm([o[0] + (h3 - 0.5) * 0.9, o[1] + 0.25, o[2] + (h1 - 0.5) * 0.9]);
+				const ref = Math.abs(nn[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+				let t = B.nrm([ref[1] * nn[2] - ref[2] * nn[1], ref[2] * nn[0] - ref[0] * nn[2], ref[0] * nn[1] - ref[1] * nn[0]]);
+				let b = [nn[1] * t[2] - nn[2] * t[1], nn[2] * t[0] - nn[0] * t[2], nn[0] * t[1] - nn[1] * t[0]];
+				const rot = h2 * Math.PI * 2, cr = Math.cos(rot), sr = Math.sin(rot);
+				[t, b] = [[t[0] * cr + b[0] * sr, t[1] * cr + b[1] * sr, t[2] * cr + b[2] * sr], [b[0] * cr - t[0] * sr, b[1] * cr - t[1] * sr, b[2] * cr - t[2] * sr]];
+				const hs = size / 2, pt = (u, v) => [cc[0] + t[0] * u * hs + b[0] * v * hs, cc[1] + (t[1] * u * hs + b[1] * v * hs) * Math.min(1.3, Math.max(0.8, sq)), cc[2] + t[2] * u * hs + b[2] * v * hs];
+				const k = cells[(li + j) % cells.length];
+				B.quad(pt(-1, -1), pt(1, -1), pt(1, 1), pt(-1, 1), [cellUV(k, 0, 0), cellUV(k, 1, 0), cellUV(k, 1, 1), cellUV(k, 0, 1)], (p) => { const a = outN(p); return B.nrm([a[0] * 0.75 + nn[0] * 0.25, a[1] * 0.75 + nn[1] * 0.25, a[2] * 0.75 + nn[2] * 0.25]); }, (p) => shade(p[0], p[1], p[2]));
+			}
+		});
+		return B.done();
+	}
+
+	/* świerk (jednostki: wysokość 1, y −0,5…0,5): piętra gałęzi – na każdym kilka(naście) kart gałązki z igłami od pnia
+	   na zewnątrz, opadających ku końcom (w wersji dokładnej także druga karta skrzyżowana pod kątem – objętość), ciemny
+	   stożkowy rdzeń z gęstych igieł i wierzchołek */
+	function spruceCards(lo) {
+		const B = crownGeo(), tiers = lo ? 5 : 9;
+		const col = (p) => { const s = 0.5 + 0.5 * Math.max(0, Math.min(1, p[1] + 0.5)) + 0.1 * Math.hypot(p[0], p[2]); return [s, s, s]; };
+		for (let k = 0; k < tiers; k++) {
+			const t = k / tiers, r = 0.52 * (1 - t * 0.86), h = 0.86 / tiers * 1.6;
+			const y0 = -0.42 + t * 0.86;
+			const core = new T.ConeGeometry(r * 0.42, h * 1.2, lo ? 6 : 8, 1, true).translate(0, y0, 0);
+			B.solid(core, (q) => cellUV(6, 0.5 + 0.45 * Math.atan2(q[2], q[0]) / Math.PI, 0.5 + (q[1] - y0) / h * 0.8), (q) => col(q).map((x) => x * 0.5));
+			const M = lo ? 6 : 11;
+			for (let j = 0; j < M; j++) {
+				const a = (j / M) * Math.PI * 2 + k * 1.7 + hash(k * 7.1 + j) * 0.4, ca = Math.cos(a), sa = Math.sin(a);
+				const L = r * (0.95 + hash(k * 3.3 + j * 1.7) * 0.2), w = Math.max(0.07, ((2 * Math.PI * r) / M) * (lo ? 1.5 : 1.2));
+				const yi = y0 + h * 0.25, yo = y0 - h * 0.55;
+				const crosses = lo ? [0] : [0, 1];
+				for (const cx of crosses) {
+					// szerokość karty: poziomo w poprzek gałęzi (cx = 1 – pochylona o 55°)
+					const side = cx ? [-sa * 0.57, 0.82, ca * 0.57] : [-sa, 0, ca];
+					const P0 = (u, v) => {
+						const rr = r * 0.08 + L * u, y = yi + (yo - yi) * u * u, ww = w * (0.35 + 0.65 * u) * v * 0.5;
+						return [ca * rr + side[0] * ww, y + side[1] * ww, sa * rr + side[2] * ww];
+					};
+					const n0 = B.nrm([ca, 0.65, sa]);
+					B.quad(P0(0, 1), P0(1, 1), P0(1, -1), P0(0, -1), [cellUV(4, 0, 1), cellUV(4, 1, 1), cellUV(4, 1, 0), cellUV(4, 0, 0)], () => n0, col); // lico do góry
+				}
+			}
+		}
+		const tip = new T.ConeGeometry(0.035, 0.12, 6, 1, true).translate(0, 0.5, 0);
+		B.solid(tip, () => cellUV(6, 0.5, 0.5), col);
+		return B.done();
+	}
+
 	function buildTrees() {
 		/* liściaste: korona (geometria w jednostkach: wysokość korony ok. 1) – rdzeń, n kęp na różnych wysokościach
 		   (wyżej i niżej bliżej osi – kształt jaja, nie kuli) i n drobnych kępek na obrzeżu, które rozbijają sylwetkę;
@@ -128,24 +385,20 @@
 		const spruce = spruceOf(false);
 		const trunk = new T.CylinderGeometry(0.32, 0.5, 1, 7);
 		trunk.userData.shared = true;
-		return {
-			oak: leafy(9, 1.3, 0.34, 0.9),
-			birch: leafy(8, 7.7, 0.22, 1.4),
-			poplar: leafy(7, 4.4, 0.14, 2.6),
-			pine: leafy(8, 9.1, 0.36, 0.45, 0.8), // sosna: spłaszczone kępy na kilku wysokościach
-			bush: leafy(6, 2.2, 0.3, 0.75),
-			spruce,
-			trunk,
-			// z daleka (World: kawałki dalej od kamery, zwarte masy lasu)
-			lo: {
-				oak: leafy(9, 1.3, 0.34, 0.9, 0.42, true),
-				birch: leafy(8, 7.7, 0.22, 1.4, 0.42, true),
-				poplar: leafy(7, 4.4, 0.14, 2.6, 0.42, true),
-				pine: leafy(8, 9.1, 0.36, 0.45, 0.8, true),
-				bush: leafy(6, 2.2, 0.3, 0.75, 0.42, true),
-				spruce: spruceOf(true),
-			},
-		};
+		/* korony z kart z kępkami liści i igieł (atlas foliageAtlas) – kształty kęp jak dawniej (leafy / spruceOf zostają
+		   jako bryły zapasowe); pola atlasu: dąb – kępki 0 i 1, brzoza – drobne liście 3, topola – 3 i 0, sosna – pęczki
+		   igieł 5 (rdzeń 6), krzew – 1 i 0 */
+		const kinds = (lo) => ({
+			oak: leafyCards(9, 1.3, 0.34, 0.9, 0.42, lo, [0, 1], 2),
+			birch: leafyCards(8, 7.7, 0.22, 1.4, 0.42, lo, [3], 2),
+			poplar: leafyCards(7, 4.4, 0.14, 2.6, 0.42, lo, [3, 0], 2),
+			pine: leafyCards(8, 9.1, 0.36, 0.45, 0.8, lo, [5], 6), // sosna: spłaszczone kępy na kilku wysokościach
+			bush: leafyCards(6, 2.2, 0.3, 0.75, 0.42, lo, [1, 0], 2),
+			spruce: spruceCards(lo),
+		});
+		void leafy; void spruce;
+		// z daleka (lo – World: kawałki dalej od kamery, zwarte masy lasu)
+		return Object.assign(kinds(false), { trunk, lo: kinds(true) });
 	}
 
 	// kępa trawy: 10 cienkich źdźbeł wygiętych łukiem (2 odcinki, zwężające się), od ciemnej nasady do jasnych końców (y od −0.5 do 0.5)
@@ -230,6 +483,17 @@
 			part(cyl(0.051, 0.044, 0.25, 10, x, 1.03, 0), W, low);
 			part(cyl(0.047, 0.047, 0.03, 10, x, 0.9, 0), [0.75, 0.75, 0.75], low);
 		}
+		/* dodatki (aKeep 4 – plecak, 5 – torba na ramię z paskiem): w bryle każdej osoby, widoczne tylko u części
+		   (shader personMat – wg numeru egzemplarza; u pozostałych zwinięte do wnętrza tułowia) */
+		part(new T.BoxGeometry(0.3, 0.38, 0.14).translate(0, 1.24, 0.17), W, 0, 4);
+		part(new T.BoxGeometry(0.26, 0.12, 0.1).translate(0, 1.08, 0.2), W, 0, 4);
+		for (const x of [-0.1, 0.1]) part(new T.BoxGeometry(0.035, 0.36, 0.02).translate(x, 1.3, -0.12), W, 0, 4); // szelki z przodu
+		part(new T.BoxGeometry(0.08, 0.24, 0.3).translate(0.25, 0.98, 0.02), W, 0, 5);
+		{
+			const strap = new T.BoxGeometry(0.03, 0.62, 0.012).rotateZ(-0.62).translate(0.03, 1.28, -0.125);
+			part(strap, W, 0, 5);
+			part(new T.BoxGeometry(0.03, 0.62, 0.012).rotateZ(-0.62).translate(0.03, 1.28, 0.125), W, 0, 5);
+		}
 		const body = merge(P);
 		const H = [];
 		const hp = (geo, color, limb, keep) => H.push({ geo, color, limb, keep });
@@ -261,13 +525,15 @@
 		const src = NS.props.people || (NS.props.people = buildPeople());
 		const fix = (geo) => {
 			const g = geo.clone();
-			const P = g.attributes.position, N = g.attributes.normal, Lb = g.attributes.aLimb;
+			const P = g.attributes.position, N = g.attributes.normal, Lb = g.attributes.aLimb, Kp = g.attributes.aKeep;
 			const rot = (arr, i, cy, a, centered) => {
 				const y = arr.getY(i) - (centered ? cy : 0), z = arr.getZ(i), s = Math.sin(a), c = Math.cos(a);
 				arr.setY(i, (centered ? cy : 0) + y * c - z * s);
 				arr.setZ(i, y * s + z * c);
 			};
 			for (let i = 0; i < P.count; i++) {
+				// plecak i torba (aKeep 4, 5) – siedzący bez nich (zwinięte do wnętrza tułowia)
+				if (Kp && Kp.getX(i) > 3.5) { P.setXYZ(i, 0, 1.2 - (pose.drop || 0), 0); continue; }
 				const L = Math.round(Lb.getX(i));
 				let a1 = 0, a2 = 0, c1 = 0, c2 = 0;
 				if (L >= 1 && L <= 4) { a1 = pose.hip + (L % 2 ? -0.03 : 0.05); a2 = L >= 3 ? pose.knee : 0; c1 = 0.92; c2 = 0.5; }
@@ -332,13 +598,22 @@
 		if (carGeos[kind]) return carGeos[kind];
 		const W1 = [1, 1, 1], GL = [0.06, 0.08, 0.11], TY = [0.05, 0.05, 0.05], RIM = [0.55, 0.57, 0.6], TRIM = [0.13, 0.13, 0.14], DK = [0.04, 0.04, 0.045];
 		const van = kind === 1, L = [2.0, 2.4, 2.25, 2.3][kind] || 2.0;
-		const ext = (pts, width, bevel) => {
+		const ext = (pts, width, bevel, segs = 2) => {
 			const sh = new T.Shape();
 			pts.forEach(([z, y], k) => (k ? sh.lineTo(z, y) : sh.moveTo(z, y)));
-			const g = new T.ExtrudeGeometry(sh, { depth: width - 2 * bevel, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 4 });
+			const g = new T.ExtrudeGeometry(sh, { depth: width - 2 * bevel, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: segs, curveSegments: 4 });
 			g.rotateY(-Math.PI / 2); // profil (z, y), wyciągnięcie w poprzek
 			g.translate(width / 2 - bevel, 0, 0);
 			return g;
+		};
+		// prostopadłościan z zaokrąglonymi krawędziami (światła, zderzaki): w × h – lico, d – głębokość, r – promień
+		const rbox = (w, h, d, r, x, y, z) => {
+			const sh = new T.Shape(), x0 = -w / 2, x1 = w / 2, y0 = -h / 2, y1 = h / 2;
+			sh.moveTo(x0 + r, y0); sh.lineTo(x1 - r, y0); sh.quadraticCurveTo(x1, y0, x1, y0 + r);
+			sh.lineTo(x1, y1 - r); sh.quadraticCurveTo(x1, y1, x1 - r, y1); sh.lineTo(x0 + r, y1);
+			sh.quadraticCurveTo(x0, y1, x0, y1 - r); sh.lineTo(x0, y0 + r); sh.quadraticCurveTo(x0, y0, x0 + r, y0);
+			const g = new T.ExtrudeGeometry(sh, { depth: Math.max(0.005, d - r), bevelEnabled: true, bevelThickness: r * 0.5, bevelSize: r * 0.3, bevelSegments: 2, curveSegments: 3 });
+			return g.translate(x, y, z - (d - r) / 2);
 		};
 		// belka wzdłuż odcinka (z0, y0)–(z1, y1) w płaszczyźnie x (słupki)
 		const strut = (x, z0, y0, z1, y1, w, color) => {
@@ -352,7 +627,10 @@
 			: kind === 2
 				? [[-L, 0.36], [L, 0.36], [L + 0.04, 0.56], [L - 0.04, 0.76], [0.95, 0.92], [-1.35, 0.97], [-L + 0.12, 0.95], [-L, 0.82]]
 				: [[-L, 0.36], [L, 0.36], [L + 0.04, 0.56], [L - 0.04, 0.76], [0.95, 0.92], [-L + 0.15, 0.97], [-L, 0.84]];
-		parts.push({ geo: ext(body, 1.76, 0.07), color: W1 });
+		// nadwozie mocniej zaokrąglone (fazowanie 0,13 m w 4 krokach – jak współczesne auta); detale z przodu i z tyłu
+		// odsunięte o przyrost fazowania (ex)
+		const BV = 0.13, ex = BV - 0.07;
+		parts.push({ geo: ext(body, 1.76, BV, 4), color: W1 });
 		// kabina (szyby): przednia szyba od (0,92; 0,9) do (0,15; 1,42), tylna wg typu
 		const gh = van
 			? [[-L + 0.05, 1.1], [L - 0.72, 1.1], [L - 1.25, 1.95], [-L + 0.05, 1.98]]
@@ -376,8 +654,8 @@
 			}
 		}
 		// zderzaki, osłona chłodnicy, listwy progowe
-		for (const z of [L + 0.02, -L - 0.02]) parts.push({ geo: new T.BoxGeometry(1.8, 0.2, 0.14).translate(0, 0.45, z), color: TRIM });
-		parts.push({ geo: new T.BoxGeometry(0.72, 0.13, 0.04).translate(0, van ? 0.82 : 0.66, L + 0.04), color: DK });
+		for (const z of [L + 0.02 + ex, -L - 0.02 - ex]) parts.push({ geo: rbox(1.82, 0.22, 0.16, 0.05, 0, 0.45, z), color: TRIM });
+		parts.push({ geo: new T.BoxGeometry(0.72, 0.13, 0.04).translate(0, van ? 0.82 : 0.66, L + 0.04 + ex), color: DK });
 		for (const x of [-0.885, 0.885]) {
 			parts.push({ geo: new T.BoxGeometry(0.02, 0.07, 2 * L - 1.6).translate(x, 0.4, 0), color: TRIM });
 			// linia drzwi, klamki
@@ -391,11 +669,11 @@
 		}
 		// światła
 		for (const x of [-0.6, 0.6]) {
-			parts.push({ geo: new T.BoxGeometry(0.38, 0.12, 0.06).translate(x, van ? 0.78 : 0.68, L + 0.04), color: [1.7, 1.6, 1.25] });
-			parts.push({ geo: new T.BoxGeometry(0.3, 0.16, 0.06).translate(x * 1.05, van ? 0.85 : 0.76, -L - 0.03), color: [0.95, 0.1, 0.08] });
+			parts.push({ geo: rbox(0.4, 0.13, 0.1, 0.03, x, van ? 0.78 : 0.68, L + BV - 0.01), color: [1.7, 1.6, 1.25] });
+			parts.push({ geo: rbox(0.32, 0.17, 0.1, 0.03, x * 1.05, van ? 0.85 : 0.76, -L - BV + 0.01), color: [0.95, 0.1, 0.08] });
 		}
 		// tablice rejestracyjne
-		for (const z of [L + 0.1, -L - 0.1]) parts.push({ geo: new T.BoxGeometry(0.52, 0.12, 0.02).translate(0, 0.46, z), color: [1.4, 1.4, 1.4] });
+		for (const z of [L + 0.1 + ex, -L - 0.1 - ex]) parts.push({ geo: new T.BoxGeometry(0.52, 0.12, 0.02).translate(0, 0.46, z), color: [1.4, 1.4, 1.4] });
 		// koła w nadkolach: ciemne nadkole (półkole na boku), opona, felga
 		const wz = van ? [1.55, -1.5] : [L - 0.72, -L + 0.68];
 		for (const z of wz) for (const x of [-0.8, 0.8]) {
@@ -403,7 +681,21 @@
 			parts.push({ geo: new T.CylinderGeometry(0.32, 0.32, 0.22, 16).rotateZ(Math.PI / 2).translate(x, 0.32, z), color: TY });
 			parts.push({ geo: new T.CylinderGeometry(0.2, 0.2, 0.23, 10).rotateZ(Math.PI / 2).translate(x * 1.005, 0.32, z), color: RIM });
 		}
-		return (carGeos[kind] = merge(parts));
+		/* trzy bryły: lakier (kolor wierzchołków biały – kolor auta z materiału albo egzemplarza), szyby (ciemne, błyszczące)
+		   i reszta we własnych kolorach (opony, felgi, nadkola, zderzaki, światła, tablice) – dawniej jedna bryła i wszystko
+		   mnożone przez kolor lakieru (fioletowe koła, pomarańczowe felgi) */
+		const isW = (c) => c === W1, isG = (c) => c === GL;
+		return (carGeos[kind] = { paint: merge(parts.filter((q) => isW(q.color))), glass: merge(parts.filter((q) => isG(q.color))), trim: merge(parts.filter((q) => !isW(q.color) && !isG(q.color))) });
+	}
+	// materiały części auta wspólne dla wszystkich (szyby z odbiciami nieba, reszta – kolory wierzchołków)
+	let carFixed = null;
+	function carFixedMats() {
+		if (carFixed) return carFixed;
+		carFixed = {
+			glass: NS.util.patch(new T.MeshPhysicalMaterial({ color: '#ffffff', vertexColors: true, roughness: 0.06, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.4 }), 'train', { grime: 0.02 }),
+			trim: NS.util.patch(new T.MeshStandardMaterial({ color: '#ffffff', vertexColors: true, roughness: 0.55, metalness: 0.35 }), 'train', { grime: 0.08 }),
+		};
+		return carFixed;
 	}
 	// losowy typ nadwozia: hatchback, sedan, kombi, dostawczy
 	const carKind = (seed) => { const h = hash(seed + 3); return h < 0.42 ? 0 : h < 0.67 ? 2 : h < 0.85 ? 3 : 1; };
@@ -414,11 +706,14 @@
 		const car = new T.Group();
 		const color = CAR_COLORS[Math.floor(hash(seed) * CAR_COLORS.length)];
 		const paint = carMats[color] || (carMats[color] = NS.util.patch(new T.MeshPhysicalMaterial({ color, vertexColors: true, roughness: 0.35, metalness: 0.4, clearcoat: 0.9, clearcoatRoughness: 0.12 }), 'train', { grime: 0.05 }));
-		const m = new T.Mesh(carGeo(carKind(seed)), paint);
-		m.castShadow = shadows;
-		car.add(m);
+		const G = carGeo(carKind(seed)), F = carFixedMats();
+		for (const [geo, mt] of [[G.paint, paint], [G.glass, F.glass], [G.trim, F.trim]]) {
+			const m = new T.Mesh(geo, mt);
+			m.castShadow = shadows;
+			car.add(m);
+		}
 		return car;
 	}
 
-	NS.props = { merge, lumpy, buildTrees, buildGrass, buildPeople, carModel, carGeo, carKind, seatedPeople, driverPeople, seatGeos };
+	NS.props = { merge, lumpy, buildTrees, foliageAtlas, buildGrass, buildPeople, carModel, carGeo, carKind, carFixedMats, seatedPeople, driverPeople, seatGeos };
 })();

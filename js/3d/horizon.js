@@ -1,5 +1,8 @@
-/* Horyzont: dwa pierścienie dalekich wzgórz i gór wokół kamery. Zawsze w tej samej odległości,
-   więc nigdy się do nich nie dojeżdża; kolor mieszany z mgłą oddalenia. */
+/* Horyzont: dwa pierścienie wokół kamery, zawsze w tej samej odległości (nigdy się do nich nie dojeżdża), kolor
+   mieszany z mgłą oddalenia. Daleki – sylwetka terenu: dla tras rzeczywistych z danymi (route.horizon – js/horizon-
+   data.js, tools/horizon.js, Generator) wysokość wierzchołka = R · tg(kąt wzniesienia terenu w tym kierunku) w bieżącym
+   miejscu trasy (płasko – prawie zero, Beskidy z Rybnika – kilka stopni); bez danych – łagodne pagórki. Bliski – niska
+   linia lasów i zabudowy (dawniej druga warstwa wzgórz – góry „znikąd” na płaskim terenie). */
 (function () {
 	'use strict';
 	const T = window.THREE;
@@ -29,12 +32,14 @@
 		return g;
 	}
 
+	const FAR = 2250;
+
 	class Horizon {
 		constructor(scene) {
 			this.group = new T.Group();
 			this.layers = [
-				{ geo: ring(2250, 90, [[3, 160], [7, 90], [13, 45], [29, 18]], 1.3), color: new T.Color('#5d6f8c'), haze: 0.62 },
-				{ geo: ring(1650, 25, [[5, 55], [11, 30], [23, 14], [47, 6]], 4.1), color: new T.Color('#4c6a3c'), haze: 0.42 },
+				{ geo: ring(FAR, 20, [[3, 40], [7, 24], [13, 12], [29, 6]], 1.3), color: new T.Color('#5d6f8c'), haze: 0.62 },
+				{ geo: ring(1650, 4, [[37, 7], [71, 5], [13, 4], [113, 3]], 4.1), color: new T.Color('#3f5636'), haze: 0.42 },
 			].map((L) => {
 				const m = new T.ShaderMaterial({
 					uniforms: { col: { value: L.color.clone() }, haze: { value: new T.Color() }, k: { value: L.haze } },
@@ -55,11 +60,41 @@
 				this.group.add(mesh);
 				return { mesh, base: L.color.clone(), haze: L.haze };
 			});
+			this.farBase = Float32Array.from(this.layers[0].mesh.geometry.attributes.position.array);
+			this.data = null;
+			this.angles = null;
+			this.lastS = null;
 			scene.add(this.group);
 		}
 
+		// trasa: z danymi horyzontu – daleki pierścień z prawdziwego terenu; bez – pagórki
+		setRoute(route) {
+			this.data = route && route.horizon && route.horizon.anchors && route.horizon.anchors.length ? route.horizon : null;
+			this.angles = this.data ? new Float32Array(this.data.anchors[0].length - 1) : null;
+			this.lastS = null;
+			const pos = this.layers[0].mesh.geometry.attributes.position;
+			if (!this.data) { pos.array.set(this.farBase); pos.needsUpdate = true; }
+		}
+		// daleki pierścień wg profilu w miejscu s (co 100 m; kierunki pierścienia: 361 punktów, profil – co 2°)
+		updateFar(s) {
+			if (!this.data || (this.lastS !== null && Math.abs(s - this.lastS) < 100)) return;
+			this.lastS = s;
+			const A = window.TrainHorizonData.sample(this.data, s, this.angles), n = A.length;
+			const pos = this.layers[0].mesh.geometry.attributes.position, arr = pos.array, seg = arr.length / 9 - 1;
+			for (let i = 0; i <= seg; i++) {
+				const f = (i / seg) * n, k = Math.floor(f) % n, t = f - Math.floor(f);
+				const ang = A[k] + (A[(k + 1) % n] - A[k]) * t;
+				// trochę ponad linię wzroku nawet na płaskim terenie (przykrywa krawędź świata), najwyżej ok. 12°
+				const h = Math.max(6, FAR * Math.tan(Math.min(0.21, ang)) + 6);
+				arr[i * 9 + 4] = h * 0.45;
+				arr[i * 9 + 7] = h;
+			}
+			pos.needsUpdate = true;
+		}
+
 		// haze: kolor horyzontu (liniowy); light: jasność 0…1; extraHaze: mgła z pogody 0…1
-		update(camera, groundY, haze, light, extraHaze) {
+		update(camera, groundY, haze, light, extraHaze, s) {
+			if (s !== undefined) this.updateFar(s);
 			this.group.position.set(camera.position.x, groundY, camera.position.z);
 			for (const L of this.layers) {
 				const u = L.mesh.material.uniforms;

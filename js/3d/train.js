@@ -26,7 +26,7 @@
 	const STYLES = {
 		// EN57 (jak EN57-038 w barwach retro): dół granatowy z przetłoczeniami, pas okienny i drzwi żółte, dach
 		// jasnoszary, czarny fartuch czoła, czerwone ramy pantografów; trzy szyby czołowe, zderzak centralny
-		ezt: { paint: '#16357a', stripe: '#f4cb10', band: '#f4cb10', roof: '#b4b9c0', door: '#f4cb10', apron: '#121618', panto: '#b02832', nose: 0.3, yb: 3.3, round: 0.24, split: true, panes: 3, central: true, vfront: true, headY: 1.8, tailY: 1.55,
+		ezt: { paint: '#16357a', stripe: '#f4cb10', band: '#f4cb10', roof: '#b4b9c0', door: '#f4cb10', apron: '#121618', panto: '#b02832', nose: 0.3, yb: 3.3, round: 0.24, split: true, panes: 3, central: true, vfront: true, headY: 1.8, tailY: 1.55, roofLamp: true, headR: 0.18, ploughW: 1.7,
 			/* czoło pionowe (jak EN57-038): od dołu czarny fartuch (pas nakładany), granat z reflektorami do 2,5 m, żółty pas
 			   z trzema szybami (2,62–3,28 m; szyba środkowa węższa), nad nim jasnoszary dach z wyświetlaczem */
 			face: (x, y) => {
@@ -40,7 +40,10 @@
 		// EU07 (jak EU07-333, malowanie PKP z lat 90.): górna połowa burt jasna miętowa zieleń (ciemne kratki i okna), dolna
 		// ciemnozielona z poziomymi przetłoczeniami, czoło żółte pod jasnozielonym pasem szyb (trzy szyby), dach
 		// brązowoszary, wyposażenie dachu i pantografy rdzawobrązowe, duży biały numer i napis PKP na burtach
-		loco: { paint: '#9cc4ab', stripe: '#1f2124', band: '#3f5a3e', roof: '#6b5a50', door: '#9cc4ab', head: '#1d1d1d', front: '#e8b830', frame: '#9cc4ab', panto: '#7a3a30', splitY: 2.3, ribs: true, panes: 3, nose: 0.9, yb: 2.5, round: 0.25, split: true, seat: '#444' },
+		// (wg zdjęć EU07-195 i EP07-338: reflektor w obudowie na dachu między syrenami, lampy czołowe z białym i czerwonym
+		// światłem w jednej obręczy na wysokości tabliczki, osobne zgarniacze pod zderzakami, wycieraczki zawieszone u góry szyb)
+		loco: { paint: '#9cc4ab', stripe: '#1f2124', band: '#3f5a3e', roof: '#6b5a50', door: '#9cc4ab', head: '#1d1d1d', front: '#e8b830', frame: '#9cc4ab', panto: '#7a3a30', splitY: 2.3, ribs: true, panes: 3, nose: 0.9, yb: 2.5, round: 0.25, split: true, seat: '#444',
+			roofLamp: true, twinLamp: true, headY: 1.74, headR: 0.17, plateY: 1.74, plough: 'pair', wiperTop: true },
 		// wagon 111A (malowanie PKP z lat 90.): zielony pas okienny aż do dachu, kremowy pas pod oknami, wąski zielony pas
 		// u dołu, kremowe drzwi, zielone ściany czołowe, dach beżowoszary
 		coach: { paint: '#4f9a6c', stripe: '#ddd2bd', band: '#4f9a6c', roof: '#b9b2a6', door: '#ddd2bd', text: '#2f6b48', nose: 0, yb: 0, seat: '#7a3328' },
@@ -72,7 +75,8 @@
 		// EP09: pomarańczowo-brązowa z kremowym pasem pod oknami kabin, czoło mocniej pochylone, kratki na całym boku
 		ep09: { base: 'loco', paint: '#b5502a', stripe: '#e8d27a', band: '#b5502a', roof: '#8c8f91', door: '#b5502a', head: '#1d1d1d', frame: '#b5502a', panto: '#8c8f91', splitY: 2.0, belt: [2.1, 2.27], panes: 2, nose: 1.15, yb: 2.45, round: 0.3, split: true, side: 'grilles', panels: 5, prefix: 'EP09', bogieOff: 4.0, wb: 3.0, wR: 0.6, pantoZ: 0.25, single: true, headX: 1.08, headY: 1.5, noDoorWin: true, seat: '#444' },
 		// ET22 („Byk”): długa, sześcioosiowa; PKP Cargo – jasnoszara z granatowym dołem i czerwonym paskiem
-		et22: { base: 'loco', paint: '#c9cccb', stripe: '#c8102e', band: '#1f3a70', roof: '#80878c', door: '#c9cccb', head: '#f2c200', frame: '#c9cccb', panto: '#8c8f91', splitY: 1.62, belt: [1.62, 1.74], panes: 2, nose: 0.85, yb: 2.5, round: 0.22, split: true, side: 'ports', panels: 9, sideDoors: [2, 6], numZ: 0, prefix: 'ET22', bogieOff: 4.3, wb: 3.4, wR: 0.6, axles: 3, pantoZ: 0.3, seat: '#444' },
+		et22: { base: 'loco', paint: '#c9cccb', stripe: '#c8102e', band: '#1f3a70', roof: '#80878c', door: '#c9cccb', head: '#f2c200', frame: '#c9cccb', panto: '#8c8f91', splitY: 1.62, belt: [1.62, 1.74], panes: 2, nose: 0.85, yb: 2.5, round: 0.22, split: true, side: 'et22', panels: 9, numZ: -1.6, numY: 2.95, cabPanes: [[0.12, 0.62], [0.82, 1.38]], prefix: 'ET22', bogieOff: 4.3, wb: 3.4, wR: 0.6, axles: 3, pantoZ: 0.3, seat: '#444',
+			roofLamp: true, twinLamp: true, headY: 1.72, headR: 0.17, plateY: 1.72, plough: 'pair' },
 		// ST44 („Gagarin”): zielona z żółtym pasem, zaokrąglone czoło, wentylatory na dachu, wózki trzyosiowe
 		st44: { base: 'loco', paint: '#3b6b40', stripe: '#e8c860', band: '#3b6b40', roof: '#6d7175', door: '#3b6b40', head: '#a52019', frame: '#3b6b40', splitY: 2.0, belt: [2.05, 2.2], panes: 2, nose: 1.3, yb: 2.45, round: 0.6, split: true, side: 'ports', panels: 8, prefix: 'ST44', bogieOff: 4.2, wb: 3.6, wR: 0.55, axles: 3, diesel: true, bigLamp: true, glassT: 0.8, roofShape: [0.85, 0.7], seat: '#444' },
 		// SU46: czerwono-brązowa z kremowym pasem na wysokości okien kabin, kanciasta, żaluzje pionowe
@@ -101,7 +105,7 @@
 	   drzwi, doorW / doorLeaves – szerokość i liczba skrzydeł; winW / pitch – okna; seats4 – fotele 2+2;
 	   wózki Jakobsa – z katalogu (spec.art). Malowanie domyślne: Elf – Koleje Śląskie, ED250 – PKP Intercity. */
 	const MODERN = {
-		base: 'ezt', modern: true, vfront: false, split: false, face: undefined, central: false, scharfenberg: true, single: true, ac: true,
+		base: 'ezt', modern: true, vfront: false, split: false, face: undefined, central: false, scharfenberg: true, single: true, ac: true, roofLamp: false, headR: undefined,
 		fixedWin: true, seats4: true, panes: 1, endGroup: 1, wR: 0.42, wb: 2.6, bogieOff: 2.9, pantoZ: 0.22, headX: 0.8, headY: 1.92, tailY: 1.64, apron: '#24292e',
 	};
 	// Pesa Elf: krótkie, mocno pochylone czoło z dużą szybą, szerokie drzwi dwuskrzydłowe (jedne na człon), duże okna
@@ -139,7 +143,8 @@
 	const CONTAINER_COLORS = ['#42a5d5', '#d9a33a', '#e05a1c', '#1c4c8c', '#2f6b3f', '#c4157a', '#9aa0a5', '#8b2a22', '#e2e0d8'];
 	const darker = (hex, f) => { const c = new T.Color(hex).multiplyScalar(f); return '#' + c.getHexString(); };
 	/* Części wagonu towarowego typu ti (indeks FREIGHT_TYPES) jako lista prostych brył: [bryła (GEO), materiał, x, y, z,
-	   sx, sy, sz, kolor, obrót] – obrót 'x' (walec wzdłuż wagonu), 'z' (walec w poprzek), liczba (pochylenie wokół x).
+	   sx, sy, sz, kolor, obrót] – obrót 'x' (walec wzdłuż wagonu), 'z' (walec w poprzek), liczba (pochylenie wokół x),
+	   [rx, ry, rz] – dowolny (kąty Eulera).
 	   Materiały: body (kolor), dark (ostojnica), steel, coal, wheel, roof. bogies – z prostymi wózkami (bocznice). */
 	function freightParts(ti, len, seed, color, bogies) {
 		const P = [], hl = len / 2, c = color, h = (k) => hash(seed * 7.13 + k * 3.7);
@@ -171,20 +176,44 @@
 			add('box', 'dark', 0, 1.3, 0, 2.8, 0.1, len - 0.5);
 			for (const x of [-1.42, 1.42]) add('box', 'body', x, 2.33, 0, 0.06, 2.06, len - 0.5, c);
 			for (const e of [-1, 1]) add('box', 'body', 0, 2.33, e * (hl - 0.28), 2.9, 2.06, 0.06, c);
+			const doors = [-len * 0.24, len * 0.24];
 			for (const x of [-1, 1]) {
-				// słupki, pas górny i dolny, drzwi dwuskrzydłowe (szczeliny)
-				for (let k = 0; k <= 8; k++) add('box', 'body', x * 1.47, 2.33, -(hl - 0.6) + (k * (len - 1.2)) / 8, 0.08, 2.06, 0.12, cd);
+				// słupki (poza drzwiami), pas górny i dolny
+				for (let k = 0; k <= 8; k++) {
+					const z = -(hl - 0.6) + (k * (len - 1.2)) / 8;
+					if (doors.some((d) => Math.abs(z - d) < 1.0)) continue;
+					add('box', 'body', x * 1.47, 2.33, z, 0.08, 2.06, 0.12, cd);
+				}
 				add('box', 'body', x * 1.46, 3.34, 0, 0.12, 0.1, len - 0.4, cd);
 				add('box', 'dark', x * 1.46, 1.32, 0, 0.1, 0.1, len - 0.4);
-				for (const dz of [-len * 0.24, len * 0.24]) for (const o of [-0.9, 0, 0.9]) add('box', 'dark', x * 1.48, 2.25, dz + o, 0.03, 1.8, 0.04);
+				/* drzwi dwuskrzydłowe (wg zdjęć Eaos PKP Cargo): skrzydła z blachy wystające z burty, szczeliny, drążki
+				   zamknięć z uchwytami, zawiasy */
+				for (const dz of doors) {
+					for (const o of [-0.45, 0.45]) add('box', 'body', x * 1.475, 2.28, dz + o, 0.05, 1.86, 0.86, cd);
+					for (const o of [-0.9, 0, 0.9]) add('box', 'dark', x * 1.5, 2.28, dz + o, 0.03, 1.86, 0.04);
+					for (const o of [-0.16, 0.16]) { add('box', 'steel', x * 1.52, 2.28, dz + o, 0.04, 2.0, 0.045); add('box', 'steel', x * 1.55, 1.55, dz + o, 0.06, 0.05, 0.16); }
+					for (const y of [1.55, 2.28, 3.0]) for (const o of [-0.86, 0.86]) add('box', 'dark', x * 1.51, y, dz + o, 0.05, 0.09, 0.16);
+				}
+				// tablice: dane UIC (lewy dół) i oznaczenie przewoźnika
+				add('box', 'body', x * 1.5, 1.72, -x * (hl - 1.5), 0.02, 0.42, 0.95, '#d9d9d3');
+				add('box', 'body', x * 1.5, 2.95, x * (hl - 1.25), 0.02, 0.32, 0.6, '#d9d9d3');
 			}
 			if (h(1) < 0.7) { add('box', 'coal', 0, 3.0, 0, 2.75, 0.5, len - 0.8); add('box', 'coal', 0, 3.3, 0, 2.1, 0.3, len - 2.4); }
 		} else if (id === 'Falns') {
 			const cd = darker(c, 0.82);
-			// burty od fartucha nad ramą do górnej krawędzi (1,55–3,85 m), ściany czołowe
-			for (const x of [-1.45, 1.45]) add('box', 'body', x, 2.7, 0, 0.06, 2.3, len - 0.6, c);
-			// fartuchy pod burtami (lekko cofnięte) – pudło nie „wisi” nad ramą
-			for (const x of [-1.36, 1.36]) add('box', 'body', x, 1.42, 0, 0.06, 0.3, len - 1.4, cd);
+			/* burty (wg zdjęć Falns): nad wózkami od ramy do górnej krawędzi (1,55–3,85 m), pośrodku wyżej – pod nią skośne
+			   ściany lejów zbiegające się ku zsypom; ściany czołowe */
+			const mid = len * 0.42, Le = hl - 0.3 - mid / 2;
+			for (const x of [-1, 1]) {
+				for (const e of [-1, 1]) add('box', 'body', x * 1.45, 2.7, e * (mid / 2 + Le / 2), 0.06, 2.3, Le, c);
+				add('box', 'body', x * 1.45, 3.08, 0, 0.06, 1.55, mid, c);
+				add('box', 'body', x * 1.27, 1.97, 0, 0.06, 0.84, mid + 0.1, c, [0, 0, -x * 0.46]);
+				for (const e of [-1, 1]) add('box', 'body', x * 1.36, 1.42, e * (mid / 2 + Le / 2), 0.06, 0.3, Le - 0.7, cd); // fartuchy nad wózkami
+				// tablica danych UIC
+				add('box', 'body', x * 1.53, 1.9, -x * (hl - 1.4), 0.02, 0.42, 0.95, '#d9d9d3');
+			}
+			// zsypy pośrodku: lej (spód ścian skośnych) i klapy
+			for (const e of [-1, 1]) { add('box', 'dark', 0, 1.5, e * mid * 0.22, 1.4, 0.5, mid * 0.36); add('box', 'steel', 0, 1.22, e * mid * 0.22, 1.1, 0.06, mid * 0.3); }
 			for (const e of [-1, 1]) {
 				add('box', 'body', 0, 2.7, e * (hl - 0.32), 2.95, 2.3, 0.06, c);
 				// skośne dna lejów – wewnątrz pudła (węższe od niego)
@@ -197,14 +226,18 @@
 				for (const x of [0.96, 1.44]) add('box', 'steel', x, 2.6, e * (hl - 0.27), 0.04, 2.0, 0.04);
 			}
 			for (const x of [-1, 1]) {
-				for (let k = 0; k <= 10; k++) add('box', 'body', x * 1.5, 2.7, -(hl - 0.5) + (k * (len - 1.0)) / 10, 0.08, 2.3, 0.1, cd);
+				for (let k = 0; k <= 10; k++) {
+					const z = -(hl - 0.5) + (k * (len - 1.0)) / 10, inMid = Math.abs(z) < mid / 2 - 0.05;
+					add('box', 'body', x * 1.5, inMid ? 3.08 : 2.7, z, 0.08, inMid ? 1.55 : 2.3, 0.1, cd);
+				}
 				add('box', 'body', x * 1.49, 3.88, 0, 0.12, 0.1, len - 0.5, cd);
-				add('box', 'body', x * 1.49, 1.57, 0, 0.1, 0.08, len - 0.5, cd);
+				for (const e of [-1, 1]) add('box', 'body', x * 1.49, 1.57, e * (mid / 2 + Le / 2), 0.1, 0.08, Le, cd);
+				add('box', 'body', x * 1.49, 2.3, 0, 0.1, 0.08, mid, cd);
 			}
 			if (h(2) < 0.75) { add('box', 'coal', 0, 3.75, 0, 2.8, 0.25, len - 0.9); add('box', 'coal', 0, 4.0, 0, 2.2, 0.3, len - 2.6); }
 		} else if (id === 'Zacns') {
-			add('cyl', 'body', 0, 2.7, 0, 2.9, len - 2.0, 2.9, c, 'x');
-			for (const e of [-1, 1]) add('sphere', 'body', 0, 2.7, e * (hl - 1.0), 2.9, 2.9, 1.1, c);
+			add('cylHi', 'body', 0, 2.7, 0, 2.9, len - 2.0, 2.9, c, 'x');
+			for (const e of [-1, 1]) add('sphereHi', 'body', 0, 2.7, e * (hl - 1.0), 2.9, 2.9, 1.1, c);
 			for (const z of [-len * 0.3, 0, len * 0.3]) add('cyl', 'dark', 0, 2.7, z, 2.96, 0.07, 2.96, null, 'x');
 			add('cyl', 'body', 0, 4.2, 0, 0.9, 0.35, 0.9, c);
 			add('cyl', 'steel', 0, 4.4, 0, 0.6, 0.08, 0.6);
@@ -212,6 +245,24 @@
 			for (const x of [-0.5, 0.5]) { add('box', 'steel', x, 4.65, 0, 0.04, 0.04, 2.6); for (const z of [-1.2, 0, 1.2]) add('box', 'steel', x, 4.42, z, 0.04, 0.48, 0.04); }
 			for (const x of [-1.5, 1.5]) { add('box', 'steel', x, 2.6, 0, 0.05, 2.3, 0.04); add('box', 'steel', x, 2.6, 0.4, 0.05, 2.3, 0.04); for (let y = 1.6; y < 3.7; y += 0.35) add('box', 'steel', x, y, 0.2, 0.04, 0.03, 0.4); }
 			for (const e of [-1, 1]) add('box', 'dark', 0, 1.5, e * len * 0.3, 2.4, 0.5, 0.6);
+			/* (wg zdjęć Zacns): kołyski pod zbiornikiem z obejmami, zawór spustowy pośrodku, pomosty na końcach
+			   z barierkami, tablica danych na zbiorniku */
+			for (const e of [-1, 1]) {
+				const z = e * len * 0.3;
+				for (const x of [-1, 1]) add('box', 'dark', x * 1.0, 1.72, z, 0.12, 0.55, 0.6, null, [0, 0, x * 0.5]);
+				add('cyl', 'dark', 0, 2.7, z, 2.98, 0.12, 2.98, null, 'x');
+				// pomost: krata, słupki i poręcze
+				const zp = e * (hl - 0.95);
+				add('box', 'steel', 0, 1.32, zp, 2.7, 0.05, 1.1);
+				for (const x of [-1.3, 1.3]) {
+					for (const dz of [-0.5, 0.5]) add('box', 'steel', x, 1.85, zp + dz, 0.04, 1.0, 0.04);
+					add('box', 'steel', x, 2.35, zp, 0.04, 0.04, 1.04);
+					add('box', 'steel', x, 1.9, zp, 0.03, 0.03, 1.0);
+				}
+			}
+			add('cyl', 'dark', 0, 1.15, 0, 0.32, 0.45, 0.32);
+			add('box', 'steel', 0, 1.0, 0, 0.9, 0.1, 0.16);
+			for (const x of [-1.445, 1.445]) add('box', 'body', x, 2.5, -Math.sign(x) * (hl - 3.6), 0.02, 0.5, 1.2, '#d9d9d3');
 			// tablica ostrzegawcza (pomarańczowa) na burtach
 			for (const x of [-1.47, 1.47]) add('box', 'body', x, 1.75, hl - 1.9, 0.02, 0.3, 0.4, '#e37b1c');
 		} else if (id === 'Sgns') {
@@ -227,6 +278,9 @@
 				for (let zz = -l / 2 + 0.35; zz < l / 2 - 0.2; zz += 0.5) for (const x of [-1.235, 1.235]) add('box', 'body', x, 2.77, z + zz, 0.03, 2.4, 0.14, ccd);
 				for (const x of [-1.22, 1.22]) for (const y of [1.53, 4.0]) add('box', 'dark', x, y, z, 0.07, 0.1, l);
 				for (const x of [-0.75, -0.25, 0.25, 0.75]) add('box', 'steel', x, 2.77, z + l / 2 + 0.02, 0.04, 2.4, 0.04);
+				// naroża (odlewy z otworami) i tabliczka CSC
+				for (const x of [-1.16, 1.16]) for (const y of [1.56, 3.98]) for (const e of [-1, 1]) add('box', 'dark', x, y, z + e * (l / 2 - 0.09), 0.18, 0.13, 0.18);
+				for (const x of [-1.23, 1.23]) add('box', 'body', x, 3.55, z - l / 2 + 0.8, 0.02, 0.3, 0.5, '#d9d9d3');
 			});
 		} else {
 			const fr = FREIGHT_TYPES[ti].frame, cd = darker(c, 0.85);
@@ -235,6 +289,9 @@
 				for (let z = -(hl - 0.6); z <= hl - 0.6; z += 0.7) add('box', 'body', x * 1.47, 2.65, z, 0.05, 2.6, 0.08, cd);
 				for (const y of [1.33, 3.98]) add('box', 'body', x * 1.47, y, 0, 0.08, 0.12, len - 0.6, fr);
 				for (const z of [-hl / 2, 0, hl / 2]) add('box', 'dark', x * 1.48, 2.65, z, 0.04, 2.6, 0.06);
+				// uchwyty i zamki ścian przesuwnych, tablica danych
+				for (const z of [-hl * 0.75, -hl * 0.25, hl * 0.25, hl * 0.75]) { add('box', 'steel', x * 1.5, 1.75, z, 0.05, 0.5, 0.06); add('box', 'steel', x * 1.5, 1.5, z, 0.06, 0.06, 0.25); }
+				add('box', 'body', x * 1.5, 1.85, -x * (hl - 1.3), 0.02, 0.42, 0.95, '#d9d9d3');
 			}
 			add('cyl', 'roof', 0, 3.95, 0, 2.9, len - 0.6, 0.5, null, 'x');
 			for (const e of [-1, 1]) add('box', 'body', 0, 2.65, e * (hl - 0.3), 2.95, 2.7, 0.06, fr);
@@ -754,8 +811,11 @@
 	const BUFFER_FACE = lathe([[0, 0.014], [0.1, 0.011], [0.19, 0.003], [0.215, 0]]);
 	// obudowa reflektora (promień 1, głębokość 1 – skalowana): wypukły tył, kołnierz, wnętrze czaszy; klosz wypukły; obręcz
 	const LAMP_GEO = lathe([[0, 0], [0.55, 0.03], [0.88, 0.2], [1, 0.5], [1, 0.92], [1.1, 0.96], [1.1, 1], [0.9, 1], [0.86, 0.8], [0.5, 0.55], [0, 0.5]]);
-	const LENS_GEO = lathe([[0, 0.14], [0.5, 0.11], [0.85, 0.05], [1, 0]]);
+	const LENS_GEO = lathe([[1, 0], [0.85, 0.05], [0.5, 0.11], [0, 0.14]]);
+	// syrena (trąbka; promień czary 1, długość 1 – skalowana): króciec, stożek rozszerzający się ku przodowi, czara z wnętrzem
+	const HORN_GEO = lathe([[0, 0], [0.3, 0], [0.3, 0.28], [0.36, 0.55], [0.55, 0.82], [1, 1], [0.9, 1], [0.5, 0.9], [0, 0.86]], 16);
 	const RING_GEO = new T.TorusGeometry(1, 0.06, 6, 32).rotateX(Math.PI / 2);
+	let END_PLATE_GEO = null; // tarcza końca pociągu – czerwone trójkąty (endPlate)
 	RING_GEO.userData.shared = true;
 	// izolator dachowy (wysokość 1, promień 1 – skalowany): podstawa, trzy klosze, okucie u góry
 	const INSUL_GEO = lathe([[0, 0], [0.5, 0], [0.5, 0.1], [0.32, 0.13], [0.32, 0.22], [0.8, 0.28], [0.32, 0.36], [0.32, 0.44], [0.8, 0.5], [0.32, 0.58], [0.32, 0.66], [0.8, 0.72], [0.32, 0.8], [0.32, 0.88], [0.45, 0.9], [0.45, 1], [0, 1]], 14);
@@ -1086,7 +1146,8 @@
 				};
 				m.customProgramCacheKey = () => 'interior-person';
 			}
-			this.sideGlass = own(patch(new T.MeshStandardMaterial({ color: '#2a3a46', transparent: true, opacity: 0.3, roughness: 0.04, metalness: 0.1, envMapIntensity: 1.0, depthWrite: false, side: T.DoubleSide }), 'clean'));
+			// szyby boczne przyciemniane (jak w wagonach i EZT na zdjęciach – z zewnątrz wnętrze w półmroku, odbicia nieba)
+			this.sideGlass = own(patch(new T.MeshStandardMaterial({ color: '#22303a', transparent: true, opacity: 0.42, roughness: 0.04, metalness: 0.1, envMapIntensity: 1.25, depthWrite: false, side: T.DoubleSide }), 'clean'));
 			this.sideGlass.userData.shared = false;
 			this.hiddenMat = own(new T.MeshBasicMaterial({ visible: false }));
 			// szyby kabin: przyciemnione, przezroczyste – z zewnątrz widać wnętrze kabiny i maszynistę
@@ -1632,6 +1693,74 @@
 			add(box(width * 0.7, 0.06, 0.08, steel, 0, y - 0.2, zt + sgn * 0.3));
 		}
 
+		/* Burta ET22 (wg zdjęć ET22-886, ET22-128): w górnym rzędzie (na wysokości okien kabiny) tylko okienko i kratka
+		   z żaluzjami pionowymi, niżej równy rząd siedmiu ciemnych żaluzji filtrów powietrza, pod dachem pas żaluzji
+		   wzdłuż przedziału maszynowego. Układ na drugiej burcie – odwrócony (jak obrót lokomotywy). */
+		sideET22(add, za, zb, st, glass, frameA) {
+			const span = zb - za, grille = mat('#20262b'), slat = mat('#11161a'), roofM = matS(st.roof, { roughness: 0.55, metalness: 0.3 });
+			for (const sx of [-1, 1]) {
+				const x = sx * (HALF + 0.012), u = (f) => sx * (za + span * f);
+				// rząd żaluzji filtrów
+				const n = 7, w = 0.8, h = 0.76, y0 = 2.18;
+				for (let k = 0; k < n; k++) {
+					const z = sx * (za + 0.5 + ((span - 1.0) * (k + 0.5)) / n);
+					add(box(0.03, h, w, grille, x, y0, z));
+					for (let y = y0 - h / 2 + 0.06; y < y0 + h / 2 - 0.03; y += 0.075) add(fine(box(0.045, 0.03, w - 0.06, slat, x + sx * 0.008, y, z)));
+					for (const dy of [-h / 2, h / 2]) add(box(0.05, 0.035, w + 0.05, frameA, x + sx * 0.01, y0 + dy, z));
+					for (const dz of [-w / 2, w / 2]) add(box(0.05, h + 0.035, 0.035, frameA, x + sx * 0.01, y0, z + dz));
+				}
+				// okienko i kratka w górnym rzędzie
+				const zw = u(0.16), zg = u(0.7);
+				add(box(0.04, 0.5, 0.62, glass, x + sx * 0.01, 2.92, zw));
+				add(box(0.035, 0.6, 0.72, mat('#1a1a1a'), x, 2.92, zw));
+				add(box(0.03, 0.78, 1.0, grille, x, 2.88, zg));
+				for (let z = zg - 0.44; z < zg + 0.45; z += 0.09) add(fine(box(0.045, 0.72, 0.03, slat, x + sx * 0.008, 2.88, z)));
+				for (const dy of [-0.39, 0.39]) add(box(0.05, 0.035, 1.05, frameA, x + sx * 0.01, 2.88 + dy, zg));
+				for (const dz of [-0.5, 0.5]) add(box(0.05, 0.81, 0.035, frameA, x + sx * 0.01, 2.88, zg + dz));
+				// pas żaluzji pod dachem (na łuku dachu, prawie pionowo)
+				const L = span + 0.6, bx = sx * 1.43, by = 3.62;
+				const band = box(0.03, 0.22, L, grille, bx, by, 0);
+				band.rotation.z = -sx * 0.12;
+				add(band);
+				for (let z = -L / 2 + 0.05; z < L / 2; z += 0.1) {
+					const sl = fine(box(0.05, 0.2, 0.03, roofM, bx + sx * 0.01, by, z));
+					sl.rotation.set(0, sx * 0.5, -sx * 0.12);
+					add(sl);
+				}
+			}
+		}
+
+		/* tarcza końca pociągu (wagony towarowe): biały kwadrat podzielony przekątnymi – trójkąty górny i dolny czerwone
+		   (odblaskowe – w nocy świecą w świetle reflektorów), na uchwycie */
+		endPlate(group, x, y, z) {
+			if (!END_PLATE_GEO) {
+				const g = new T.BufferGeometry(), a = 0.16;
+				g.setAttribute('position', new T.Float32BufferAttribute([-a, a, 0, 0, 0, 0, a, a, 0, -a, -a, 0, a, -a, 0, 0, 0, 0], 3));
+				g.computeVertexNormals();
+				g.userData.shared = true;
+				END_PLATE_GEO = g;
+			}
+			group.add(box(0.33, 0.33, 0.03, mat('#e8e8e4'), x, y, z));
+			const red = new T.Mesh(END_PLATE_GEO, this.tailMat);
+			red.position.set(x, y, z + 0.02);
+			group.add(red);
+			group.add(box(0.05, 0.25, 0.05, mat('#232426'), x, y - 0.25, z - 0.02));
+		}
+
+		/* zgarniacze pod zderzakami (EU07, ET22): dwie blachy pochylone dołem do przodu i odchylone na zewnątrz, na
+		   wspornikach z czołownicy, u dołu listwa */
+		ploughPair(add, zt, sgn) {
+			const steel = matS('#26282b', { roughness: 0.6, metalness: 0.4 });
+			for (const sx of [-1, 1]) {
+				const x = sx * 0.86, z = zt + sgn * 0.42;
+				const pl = box(0.74, 0.5, 0.05, steel, x, 0.5, z);
+				pl.rotation.set(-sgn * 0.28, sgn * sx * 0.32, 0);
+				add(pl);
+				add(box(0.7, 0.06, 0.09, steel, x - sx * 0.02, 0.27, z + sgn * 0.07));
+				for (const dx of [-0.22, 0.22]) add(box(0.06, 0.42, 0.06, steel, x + dx, 0.85, zt + sgn * 0.3));
+			}
+		}
+
 		/* Wnętrze kabiny widoczne z zewnątrz przez szyby: podłoga, ściany, sufit z lampą, ściana tylna z drzwiami, pulpit
 		   z ekranami, fotel maszynisty po lewej stronie (w kierunku jazdy), a w kabinie prowadzącej maszynista
 		   (granatowy mundur, czapka). Grupa – w widoku z kabiny gracza ukrywana (tam jest pełne wnętrze z cab.js). */
@@ -1820,8 +1949,19 @@
 			// czoło opływowe: narożniki cofnięte (jak w loftBody) – światła osadzone na powierzchni czoła
 			const rec = (x) => (st.modern ? (st.round ?? 0.85) * Math.pow(Math.min(1, Math.abs(x) / 0.9 / HALF), 2.4) : 0);
 			for (const x of [-hx, hx]) {
+				if (st.twinLamp) {
+					/* lampa dwukomorowa (EU07): obudowa z chromowaną obręczą, wewnątrz jasna czasza odbłyśnika, klosz światła
+					   białego (wyżej, bliżej osi) i mały czerwony (niżej, na zewnątrz) */
+					const r0 = st.headR || 0.17, ly = st.headY || 1.7, z0 = zt - sgn * rec(x), sx = Math.sign(x);
+					add(turned(LAMP_GEO, dark, x, ly, z0 - sgn * 0.03, r0 + 0.05, 0.12, sgn));
+					add(turned(RING_GEO, chrome, x, ly, z0 + sgn * 0.092, r0 + 0.025, r0 + 0.03, sgn));
+					add(turned(CYL, matS('#b9bdc2', { metalness: 0.9, roughness: 0.3 }), x, ly, z0 + sgn * 0.07, 2 * r0, 0.01, sgn));
+					group.add(turned(LENS_GEO, head, x - sx * 0.045, ly + 0.045, z0 + sgn * 0.074, 0.105, 0.2, sgn));
+					group.add(turned(LENS_GEO, tail, x + sx * 0.085, ly - 0.085, z0 + sgn * 0.074, 0.055, 0.2, sgn));
+					continue;
+				}
 				// reflektor: obudowa, chromowana obręcz, klosz (świeci); obok światło końcowe w mniejszej obudowie
-				for (const [lx, ly, r0, m] of [[x, st.headY || 1.62, 0.15, head], [x * 1.13, st.tailY || 1.32, 0.1, tail]]) {
+				for (const [lx, ly, r0, m] of [[x, st.headY || 1.62, st.headR || 0.15, head], [x * 1.13, st.tailY || 1.32, 0.1, tail]]) {
 					// obudowa toczona (wypukły tył, kołnierz), chromowana obręcz, wypukły klosz
 					const z0 = zt - sgn * rec(lx);
 					add(turned(LAMP_GEO, dark, lx, ly, z0 - sgn * 0.03, r0 + 0.05, 0.1, sgn));
@@ -1849,6 +1989,30 @@
 			const pTop = nosePoint(st, H, tL, 0, yL);
 			const zL = sgn * (hl - st.nose * (1 - tL) + (st.bigLamp ? 0.1 : 0));
 			const tilt = st.bigLamp ? 0.25 : 0.6;
+			if (st.roofLamp) {
+				/* reflektor na dachu nad czołem (EU07, ET22, EN57): toczona obudowa na podstawie, chromowana obręcz, klosz;
+				   po bokach syreny (lokomotywy) – trąbki skierowane do przodu */
+				const r0 = 0.17, D = 0.3, zc = sgn * (hl - st.nose * 0.88) + sgn * (st.vfront ? 0.02 : 0.06);
+				// wysokość dachu pod reflektorem – promień w dół na bryłę pudła (czoło zaokrąglone, dach niżej niż H)
+				let yr = H - 0.1;
+				if (this.curBody) {
+					this.curBody.updateMatrixWorld(true);
+					const hit = new T.Raycaster(new T.Vector3(0, H + 2, zc - sgn * 0.05), new T.Vector3(0, -1, 0)).intersectObject(this.curBody, false)[0];
+					if (hit) yr = hit.point.y;
+				}
+				const yc = yr + r0 + 0.04;
+				add(box(0.3, yc - yr, 0.34, dark, 0, (yr + yc) / 2 - 0.02, zc - sgn * 0.05));
+				add(turned(LAMP_GEO, dark, 0, yc, zc - sgn * D / 2, r0 + 0.05, D, sgn));
+				add(turned(RING_GEO, chrome, 0, yc, zc + sgn * (D / 2 + 0.002), r0 + 0.03, r0 + 0.03, sgn));
+				group.add(turned(LENS_GEO, head, 0, yc, zc + sgn * (D / 2 - 0.008), r0, 0.35, sgn));
+				if (kind === 'loco' || kind === 'cargo') {
+					const hornM = matS('#55595e', { metalness: 0.75, roughness: 0.35 });
+					for (const sx of [-1, 1]) {
+						add(box(0.08, 0.16, 0.08, dark, sx * 0.4, yr + 0.06, zc - sgn * 0.15));
+						add(turned(HORN_GEO, hornM, sx * 0.4, yr + 0.15, zc - sgn * 0.4, 0.075, 0.42, sgn));
+					}
+				}
+			} else {
 			const top = new T.Mesh(CYL, head);
 			top.scale.set(st.bigLamp ? 0.4 : 0.22, 0.08, st.bigLamp ? 0.4 : 0.22);
 			if (st.bigLamp) {
@@ -1861,6 +2025,7 @@
 			top.rotation.x = Math.PI / 2 - sgn * tilt;
 			top.position.set(0, pTop.y - 0.05, zL + sgn * (st.bigLamp ? 0.04 : 0));
 			group.add(top);
+			}
 			// wycieraczki: oś u dołu szyby, ramię i pióro (rama + guma) na płaszczyźnie dopasowanej do szyby
 			if (st.vfront) {
 				// EN57/EN71 starszego typu – wycieraczki zawieszone u góry szyb, zmodernizowane i ED72 – u dołu
@@ -1868,7 +2033,7 @@
 			} else {
 				const yLow = noseCenter(st, H, hl, sgn, 0.96).y + 0.04, yHigh = noseCenter(st, H, hl, sgn, Math.min(0.9, (st.glassT || 0.55) + 0.12)).y;
 				const px = st.panes === 3 ? 0.8 : 0.6;
-				for (const x of [-px, px]) this.addWiper(group, sgn, hl, x, (yLow + yHigh) / 2, false);
+				for (const x of [-px, px]) this.addWiper(group, sgn, hl, x, (yLow + yHigh) / 2, !!st.wiperTop);
 			}
 			if (st.modern) {
 				/* nowoczesne EZT: sprzęg Scharfenberga wysunięty z wnęki w czole, pod nim owiewka (zgarniacz) w kolorze
@@ -1902,7 +2067,8 @@
 			} else {
 				// zderzaki, sprzęg śrubowy, przewody hamulcowe, pług
 				this.buffers(add, zt - sgn * 0.2, sgn, st.head || '#1d1d1d', st.central); // talerze 0,46 m przed czołem – stykają się z wagonem
-				this.plough(add, zt, sgn, 2.5, 0.42);
+				if (st.plough === 'pair') this.ploughPair(add, zt, sgn);
+				else this.plough(add, zt, sgn, st.ploughW || 2.5, st.ploughW ? 0.36 : 0.42); // EN57 – węższy i niższy
 			}
 		}
 
@@ -1999,7 +2165,7 @@
 			plate.material.userData.shared = false;
 			plate.userData.ownMaterial = plate.userData.ownGeometry = true;
 			this.ownMats.push(plate.material);
-			plate.position.set(0, 1.58, sgn * (hl + 0.02));
+			plate.position.set(0, st.plateY || 1.58, sgn * (hl + 0.02));
 			if (sgn < 0) plate.rotation.y = Math.PI;
 			group.add(plate);
 		}
@@ -2338,6 +2504,8 @@
 				}
 			}
 			const cuts = cabWin ? [-hl + st.nose + cabWin, hl - st.nose - cabWin] : [];
+			// okna boczne kabiny podzielone (cabPanes: [od, do] w m od końca czoła – ET22: okno stałe i okno w drzwiach)
+			if (cabWin && st.cabPanes) for (const [a, b] of st.cabPanes) cuts.push(-hl + st.nose + a, -hl + st.nose + b, hl - st.nose - a, hl - st.nose - b);
 			for (const [a, b] of wins) cuts.push(a, b);
 			for (const d of doorZ) cuts.push(d - DOOR_W / 2, d + DOOR_W / 2);
 			const livery = (xo, yo, to, zo) => {
@@ -2347,7 +2515,12 @@
 					if (yo > 2.3 && yo < 3.3 && wins.some(([a, b]) => zo > a && zo < b)) return 5;
 				}
 				// okna boczne kabiny (przy płaskim czole – tylko na prostej burcie, za narożnikami)
-				if (cabWin && ax > 1.3 && yo > 2.3 && yo < 3.3 && (!st.split || to < 0.01) && ((noseF && zo < -hl + st.nose + cabWin) || (noseR && zo > hl - st.nose - cabWin))) return 4;
+				if (cabWin && ax > 1.3 && yo > 2.3 && yo < 3.3 && (!st.split || to < 0.01) && ((noseF && zo < -hl + st.nose + cabWin) || (noseR && zo > hl - st.nose - cabWin))) {
+					if (!st.cabPanes) return 4;
+					const u = zo < 0 ? zo - (-hl + st.nose) : hl - st.nose - zo;
+					if (st.cabPanes.some(([a, b]) => u > a && u < b)) return 4;
+					return 0;
+				}
 				// szyba czołowa: ściśnięty łuk dachu na skosie czoła (+ przy czole opływowym boczne okna kabiny)
 				// górna część skosu (to < 0.35) zostaje dachem kabiny – od środka widać sufit, nie niebo
 				// przy płaskim czole szyba niższa (wyżej jest dach kabiny – z fotela widać sufit, a nie niebo)
@@ -2501,13 +2674,7 @@
 				for (const [sgn, on] of [[-1, noseF], [1, noseR]]) {
 					if (!on) continue;
 					for (const sx of [-1, 1]) add(box(0.06, 0.25, 0.18, mat('#1e1e1e'), sx * (HALF + 0.08), 3.05, sgn * (hl - st.nose - 0.15)));
-					for (const sx of [-0.35, 0.35]) {
-						const horn = new T.Mesh(CYL, rail);
-						horn.scale.set(0.12, 0.45, 0.12);
-						horn.rotation.x = Math.PI / 2;
-						horn.position.set(sx, H + 0.12, sgn * (hl - st.nose - 0.6));
-						group.add(horn);
-					}
+					for (const sx of st.roofLamp ? [] : [-0.35, 0.35]) group.add(turned(HORN_GEO, rail, sx, H + 0.12, sgn * (hl - st.nose - 0.85), 0.075, 0.42, sgn));
 				}
 				if (kind === 'loco') {
 					// EU07: na przemian kratki żaluzjowe i okienka przedziału maszynowego
@@ -2521,7 +2688,8 @@
 						add(box(0.035, 0.05, 2 * (hl - st.nose - 2.32), paint(st.band), sx * (xr + 0.012), y, 0)); // między drzwiami kabin
 					}
 					const frameA = paint(darker(st.paint, 0.88));
-					for (let k = 0; k < nP; k++) {
+					if (sideKind === 'et22') this.sideET22(add, za, zb, st, glass, frameA);
+					for (let k = 0; sideKind !== 'et22' && k < nP; k++) {
 						const zc = za + pw * (k + 0.5);
 						if (st.sideDoors && st.sideDoors.includes(k)) {
 							// drzwi do przedziału maszynowego: skrzydło z okienkiem, zawiasy, uchwyt, uszczelka
@@ -2588,19 +2756,21 @@
 					}
 					// duży biały numer na burtach (na ciemnym dole, pod jasną górą) i napis PKP przy końcu
 					const num = (spec && spec.num) || `${st.prefix || 'EU07'}-${100 + Math.floor(hash(this.seed * 5.1) * 400)}`;
-					const pm = new T.MeshStandardMaterial({ map: sideTextTexture(num, st.band, '#f2f2f2', 512, 96, 72), roughness: 0.5, transparent: true, alphaTest: 0.3 });
-					const km = new T.MeshStandardMaterial({ map: sideTextTexture('PKP', st.band, '#f2f2f2', 256, 96, 64), roughness: 0.5, transparent: true, alphaTest: 0.3 });
+					// napisy w górnym rzędzie (numY) – na kolorze górnej części pudła: na jasnym ciemne, na ciemnym białe
+					const tBg = st.numY ? st.paint : st.band, tFg = st.numY && new T.Color(st.paint).getHSL({}).l > 0.55 ? '#23272b' : '#f2f2f2';
+					const pm = new T.MeshStandardMaterial({ map: sideTextTexture(num, tBg, tFg, 512, 96, 72), roughness: 0.5, transparent: true, alphaTest: 0.3 });
+					const km = new T.MeshStandardMaterial({ map: sideTextTexture('PKP', tBg, tFg, 256, 96, 64), roughness: 0.5, transparent: true, alphaTest: 0.3 });
 					for (const m of [pm, km]) { m.userData.shared = false; this.ownMats.push(m); }
 					for (const sx of [-1, 1]) {
 						const pl = new T.Mesh(new T.PlaneGeometry(2.6, 0.48), pm);
 						pl.userData.ownGeometry = true;
 						pl.rotation.y = sx * Math.PI / 2;
-						pl.position.set(sx * (HALF + 0.02), 1.86, sx * (st.numZ ?? 1.6)); // ET22 – między drzwiami przedziału maszynowego
+						pl.position.set(sx * (HALF + 0.02), st.numY || 1.86, sx * (st.numZ ?? 1.6)); // ET22 – w górnym rzędzie, między okienkiem a kratką
 						group.add(pl);
 						const pk = new T.Mesh(new T.PlaneGeometry(0.9, 0.34), km);
 						pk.userData.ownGeometry = true;
 						pk.rotation.y = sx * Math.PI / 2;
-						pk.position.set(sx * (HALF + 0.02), 1.86, -sx * (hl - st.nose - 2.6));
+						pk.position.set(sx * (HALF + 0.02), st.numY || 1.86, st.numY ? sx * (st.numZ + 1.9) : -sx * (hl - st.nose - 2.6));
 						group.add(pk);
 					}
 				} else {
@@ -2799,6 +2969,14 @@
 					for (const y of [2.64, 3.26]) add(box(0.56, 0.04, 0.03, metal, 0, y, z0 + e * 0.05));
 					add(box(0.04, 0.2, 0.05, metal, 0.36, 2.35, z0 + e * 0.06));
 					this.endDetails(add, z0, e);
+					/* latarnie sygnałowe na ścianie czołowej (jak na 111A): toczona obudowa, obręcz, czerwony klosz – na końcu
+					   ostatniego wagonu świecą (sygnał końca pociągu) */
+					const lit = i === n - 1 && e > 0;
+					for (const x of [-0.98, 0.98]) {
+						add(turned(LAMP_GEO, mat('#1e1e1e'), x, 1.62, z0 + e * 0.01, 0.12, 0.09, e));
+						add(turned(RING_GEO, matS('#c9ccd0', { metalness: 0.95, roughness: 0.18 }), x, 1.62, z0 + e * 0.1, 0.1, 0.1, e));
+						group.add(turned(LENS_GEO, lit ? this.tailMat : mat('#4a1210'), x, 1.62, z0 + e * 0.095, 0.085, 0.2, e));
+					}
 				}
 			}
 			// zderzaki między wagonami klasycznymi
@@ -2814,7 +2992,7 @@
 			this.curCarIdx = i;
 			if (noseF) this.cabEnd(group, add, kind, st, H, hl, -1, i === 0 ? 'front' : 'none');
 			if (noseR) this.cabEnd(group, add, kind, st, H, hl, 1, i === n - 1 ? 'rear' : 'none');
-			else if (i === n - 1) for (const x of [-0.9, 0.9]) group.add(box(0.3, 0.3, 0.05, this.tailMat, x, 1.6, hl + 0.03));
+			else if (i === n - 1 && kind !== 'coach') for (const x of [-0.9, 0.9]) group.add(box(0.3, 0.3, 0.05, this.tailMat, x, 1.6, hl + 0.03));
 
 			// pantografy
 			if (t.electric && (t.pantographs ? t.pantographs.includes(i) : i === t.pantograph)) {
@@ -3075,6 +3253,7 @@
 				if (rot === 'x') m.rotation.x = Math.PI / 2;
 				else if (rot === 'z') m.rotation.z = Math.PI / 2;
 				else if (typeof rot === 'number') m.rotation.x = rot;
+				else if (Array.isArray(rot)) m.rotation.set(rot[0], rot[1], rot[2]);
 				m.position.set(x, y, z);
 				add(m);
 			}
@@ -3107,7 +3286,7 @@
 				add(fine(box(0.12, 0.04, 0.04, M.steel, -1.44, 1.05, hl - 1.1)));
 			}
 			// tarcze końca pociągu na ostatnim wagonie
-			if (i === this.train.cars.length - 1) for (const x of [-0.9, 0.9]) group.add(box(0.3, 0.3, 0.05, this.tailMat, x, 1.6, len / 2 + 0.02));
+			if (i === this.train.cars.length - 1) for (const x of [-0.9, 0.9]) this.endPlate(group, x, 1.6, len / 2 + 0.02);
 			this.finish(group, new Set());
 			return { group, len, doorZ: [] };
 		}

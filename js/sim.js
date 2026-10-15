@@ -546,6 +546,13 @@
 		adhesionAt(a, b) { return P.adhesion(this.opts.weather, this.opts.season, this.onLeaves(a, b), this.sand.t > 0); }
 		// zmiana warunków w czasie jazdy (pogoda w pauzie, zdarzenie scenariusza)
 		setConditions(weather) { if (weather) this.opts.weather = weather; }
+		// pora roku w trakcie jazdy (pauza): przyczepność wg pory, odcinki „liście na torze” tylko jesienią (losowane od nowa)
+		setSeason(season) {
+			if (!season || season === this.opts.season) return false;
+			this.opts.season = season;
+			this.leaves = season === 'autumn' ? leafPatches(this.route) : [];
+			return true;
+		}
 		sandOn() {
 			if (this.status !== 'running') return false;
 			if (this.sand.left <= 0) { this.msg('Piasecznica pusta.', 'warn', 'sand'); return false; }

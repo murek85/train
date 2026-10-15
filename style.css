@@ -869,9 +869,9 @@ body.drop-routes::after { content: 'Upuść pliki tras (.trasa, .json, .js), aby
 .pause-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .pause-actions button { padding: 8px 6px; }
 @media (max-width: 560px) { .pause-actions { grid-template-columns: 1fr; } }
-#pause-time-tiles { grid-template-columns: repeat(4, 1fr); }
-#pause-weather-tiles { grid-template-columns: repeat(6, 1fr); }
-@media (max-width: 560px) { #pause-time-tiles, #pause-weather-tiles { grid-template-columns: repeat(2, 1fr); } }
+#pause-time-tiles, #pause-season-tiles { grid-template-columns: repeat(4, 1fr); }
+#pause-weather-tiles { grid-template-columns: repeat(7, 1fr); }
+@media (max-width: 560px) { #pause-time-tiles, #pause-weather-tiles, #pause-season-tiles { grid-template-columns: repeat(2, 1fr); } }
 /* ekran startowy z index.html – bez wejściowego zanikania (menu nie prześwituje przy starcie) */
 #boot { animation: none; }
 #boot.closing { animation: scr-out 0.5s ease-in both; }

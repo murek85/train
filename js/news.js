@@ -4,6 +4,157 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.27.0',
+			date: '15 października 2026',
+			groups: [
+				['Śnieg i liście', [
+					'Śnieg osiada w nieregularnych płatach z miękkimi brzegami – bez kanciastych, kwadratowych plam (błąd precyzji szumu przy dużych współrzędnych świata; poprawka obejmuje też inne wzory powierzchni).',
+					'Jesienią liście głównie leżą: gęsto na trawie pod drzewami, część na peronach i ulicach, na torach tylko pojedynczo; spadających w powietrzu – niewiele.',
+				]],
+				['Budynki wg rodzaju', [
+					'Sklepy sieci w ich barwach (z nazwą z mapy, bez logotypów): Żabka, Biedronka, Lidl, Netto, Dino, Kaufland, Aldi i inne; witryny parteru ze szprosami i drzwiami, pas firmowy, przy marketach zadaszenie nad wejściem.',
+					'Stacje paliw z wiatą w barwach sieci (Orlen, BP, Shell, Lotos, Moya…), wyspami z dystrybutorami i pylonem cenowym.',
+					'Komendy policji z granatowym pasem, apteki z zielonym krzyżem wysuniętym nad chodnik, urzędy i szkoły ze schodami i daszkiem nad wejściem.',
+				]],
+				['Drobne poprawki', [
+					'ET22: dwa okna boczne kabiny (stałe i w drzwiach) zamiast jednego długiego; EN57 – węższy pług; cysterny Zacns – gładki zbiornik.',
+					'Brzegi jezior i szerokich rzek bez schodków na ukosach.',
+					'Generator tras: przycisk „Horyzont” – horyzont z prawdziwego terenu także dla tras wygenerowanych wcześniej.',
+					'Swobodna kamera szybciej doczytuje świat wokół siebie.',
+				]],
+			],
+		},
+		{
+			version: '0.26.0',
+			date: '15 października 2026',
+			groups: [
+				['Ludzie i budynki', [
+					'Ludzie w ubraniach w realistycznych, stonowanych kolorach (granat, czerń, grafit, beż, bordo, dżins) zamiast jaskrawych; różny wzrost (ok. 1,6–1,9 m) i tusza.',
+					'Część osób z plecakiem albo torbą na ramię.',
+					'Dachy z dachówek: rzędy dachówek z cieniem pod zakładką, odcień każdej dachówki, mech i zabrudzenia; płaskie dachy z papy w pasach; mniej niebieskawych szarości – dachówka czerwona, brązowa i grafitowa.',
+					'Sosny z kształtniejszymi koronami (wcześniej spłaszczone kępy).',
+				]],
+			],
+		},
+		{
+			version: '0.25.0',
+			date: '15 października 2026',
+			groups: [
+				['Samochody', [
+					'Koła, felgi, zderzaki, światła i tablice we własnych kolorach – wcześniej wszystko było w kolorze lakieru (np. fioletowe opony, pomarańczowe felgi).',
+					'Szyby aut ciemne i błyszczące, z odbiciami nieba.',
+					'Nadwozia mocniej zaokrąglone, zaokrąglone reflektory, światła tylne i zderzaki.',
+				]],
+			],
+		},
+		{
+			version: '0.24.0',
+			date: '15 października 2026',
+			groups: [
+				['Drzewa wg zdjęć', [
+					'Korony drzew liściastych z kępek liści zamiast gładkich brył: postrzępione sylwetki, prześwity, konary w środku korony; dęby i lipy z większymi liśćmi, brzozy i topole z drobnymi.',
+					'Świerki z opadających gałęzi z igłami (piętra gałęzi), sosny z pęczków igieł.',
+					'Zimą drzewa liściaste bez liści – nagie gałęzie, przez które widać niebo; jesienią kolorowe kępki liści.',
+					'Cienie drzew z prześwitami między liśćmi.',
+				]],
+			],
+		},
+		{
+			version: '0.23.0',
+			date: '15 października 2026',
+			groups: [
+				['Rozjazdy wg zdjęć', [
+					'Napęd zwrotnicowy elektryczny: grafitowa obudowa z pokrywą na stalowej podstawie, skrzynka kablowa, drążek nastawczy i dwa drążki kontrolne do iglic (zamiast niebieskiej skrzynki).',
+					'Przy rozjazdach z napędem elektrycznym szafka ogrzewania rozjazdu na nóżkach.',
+					'Zwrotnik ręczny: dźwignia z kulą przeciwwagi i latarnia zwrotnicowa na słupku z białymi tarczami; rozjazdy ręczne na drewnianych podrozjazdnicach.',
+				]],
+			],
+		},
+		{
+			version: '0.22.0',
+			date: '15 października 2026',
+			groups: [
+				['Tarcze i sieć trakcyjna', [
+					'Tarcze ostrzegawcze (To) przed semaforami wjazdowymi na szlakach bez samoczynnej blokady – 1000 m przed semaforem, na szarym maszcie, z komorą zieloną i pomarańczową; powtarzają sygnał semafora: Os1 (pomarańczowe – stój), Os2 (zielone), Os3 (zielone migające – 100 km/h), Os4 (pomarańczowe migające – 40/60 km/h).',
+					'Przed każdą tarczą ostrzegawczą wskaźnik W 1 – biała tablica z czarną obwódką i krzyżem.',
+					'Sieć trakcyjna: miejsca kotwienia z naprężaczami co ok. 24 przęsła – stosy ciężarków na prowadnicach, krążki z linkami, odciągi słupa do fundamentów.',
+				]],
+			],
+		},
+		{
+			version: '0.21.0',
+			date: '15 października 2026',
+			groups: [
+				['Perony i wiaty wg zdjęć', [
+					'Nawierzchnia peronów jak na zmodernizowanych stacjach PKP PLK: szare płyty chodnikowe w rzędach przesuniętych o pół płyty (każda w trochę innym odcieniu, fugi), wzór biegnie wzdłuż toru także na łukach.',
+					'Krawędź peronu: jasny krawężnik peronowy z płyt i żółty pas ostrzegawczy z wypustkami (zamiast białego pasa i cienkiej żółtej linii); płyta wierzchnia nawisa nad ścianą peronu.',
+					'Wiaty na stacjach: płatwie pod dachem i rury spustowe z rynny; wiaty przystankowe: stopy słupów, rura spustowa i gablota z rozkładem jazdy na ścianie bocznej.',
+				]],
+			],
+		},
+		{
+			version: '0.20.0',
+			date: '15 października 2026',
+			groups: [
+				['Wagony wg zdjęć', [
+					'Węglarka Eaos: drzwi dwuskrzydłowe w burtach z drążkami zamknięć i zawiasami, tablice z danymi wagonu.',
+					'Falns: pośrodku skośne ściany lejów zbiegające się ku zsypom (burta nad wózkami pełna), tablica danych.',
+					'Cysterna Zacns: kołyski i obejmy pod zbiornikiem, pomosty z barierkami na końcach, zawór spustowy, tablica danych.',
+					'Kontenery na Sgns: odlewy narożne i tabliczka; Habbiins: uchwyty i zamki ścian przesuwnych.',
+					'Koniec pociągu: na wagonach towarowych tarcze z czerwonymi trójkątami na uchwytach, w wagonach pasażerskich okrągłe latarnie na ścianach czołowych (na ostatnim świecą na czerwono).',
+					'Szyby boczne wagonów i EZT przyciemnione – z zewnątrz wnętrze w półmroku, więcej odbić nieba.',
+				]],
+			],
+		},
+		{
+			version: '0.19.0',
+			date: '15 października 2026',
+			groups: [
+				['Lokomotywy i EZT wg zdjęć', [
+					'Reflektory wreszcie mają klosze: wcześniej były niewidoczne i lampy wyglądały jak puste tuby (dotyczy wszystkich pojazdów, także świateł końcowych).',
+					'EU07, ET22 i EN57: górny reflektor w toczonej obudowie na dachu nad czołem; w lokomotywach po bokach syreny – trąbki skierowane do przodu (syreny pozostałych lokomotyw też jako trąbki).',
+					'EU07 i ET22: lampy czołowe ze światłem białym i czerwonym w jednej chromowanej obręczy, na wysokości tabliczki z numerem; osobne zgarniacze pod zderzakami; w EU07 wycieraczki zawieszone u góry szyb.',
+					'ET22: nowa burta – w górnym rzędzie tylko okienko i kratka, niżej rząd siedmiu ciemnych żaluzji filtrów, pod dachem pas żaluzji; numer i napis PKP na wysokości okien.',
+					'EN57: większe reflektory czołowe.',
+				]],
+			],
+		},
+		{
+			version: '0.18.0',
+			date: '15 października 2026',
+			groups: [
+				['Niebo i woda', [
+					'Chmury wolumetryczne: kłębiaste cumulusy z jasnymi wierzchołkami i ciemnymi podstawami, przy zachmurzeniu i deszczu zwarta warstwa, o zachodzie podświetlone na różowo i pomarańczowo; cienie chmur na ziemi leżą dokładnie pod nimi.',
+					'Woda z prawdziwym odbiciem: w rzekach i jeziorach odbijają się mosty, brzegi, zabudowa i niebo; fale z wiatrem, połysk słońca, im bardziej z ukosa, tym więcej odbicia.',
+				]],
+			],
+		},
+		{
+			version: '0.17.0',
+			date: '15 października 2026',
+			groups: [
+				['Horyzont', [
+					'Góry w tle z prawdziwego terenu: na trasach rzeczywistych sylwetka horyzontu liczona z wysokości terenu do 60 km – na płaskim Śląsku i Kujawach prawie płaska, z Rybnika widać łagodne pasmo Beskidów; zmienia się w czasie jazdy.',
+					'Bliżej – niska linia lasów zamiast drugiego pasma wzgórz; trasy bez danych mają łagodne pagórki.',
+					'Generator tras liczy horyzont dla nowych tras (wysokości terenu co 4 km, Open-Meteo).',
+				]],
+			],
+		},
+		{
+			version: '0.16.0',
+			date: '15 października 2026',
+			groups: [
+				['Pory roku i pogoda', [
+					'Pora roku widoczna w świecie: jesienią złote i rdzawe korony, opadłe liście na torze (gęsto na odcinkach „liście na torze”) i w trawie, liście spadające z wiatrem; zimą bezlistne drzewa i lekka pokrywa śnieżna; wiosną świeża zieleń.',
+					'Nowa pogoda „burza”: ulewa, porywisty wiatr, błyskawice rozświetlające niebo i grzmot słyszany z opóźnieniem zależnym od odległości.',
+				]],
+				['Kabina i ekran wczytywania', [
+					'Kabina w dzień nie jest już prześwietlona; zniknęła jasna okrągła plama na suficie (reflektor i odblask słońca widoczne przez dach).',
+					'Ekran wczytywania pokazuje rzeczywisty postęp – pasek i procent zawsze zgodne.',
+				]],
+			],
+		},
+		{
 			version: '0.15.0',
 			date: '14 października 2026',
 			groups: [

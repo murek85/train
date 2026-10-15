@@ -224,8 +224,8 @@
 	   0,06; zima – mniej o 15 %; piasecznica +0,07 (najwyżej 0,33). Siła pociągowa do μ·g·masa napędna, opóźnienie
 	   hamowania do μ·g (wszystkie osie hamowane). */
 	function adhesion(weather, season, leaves, sand) {
-		let mu = { rain: 0.2, fog: 0.22, snow: 0.15 }[weather] || 0.3;
-		if (leaves) mu = Math.min(mu, weather === 'rain' ? 0.05 : 0.06);
+		let mu = { rain: 0.2, storm: 0.19, fog: 0.22, snow: 0.15 }[weather] || 0.3;
+		if (leaves) mu = Math.min(mu, weather === 'rain' || weather === 'storm' ? 0.05 : 0.06);
 		if (season === 'winter') mu *= 0.85;
 		if (sand) mu = Math.min(0.33, mu + 0.07);
 		return mu;

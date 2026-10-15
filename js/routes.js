@@ -550,6 +550,8 @@
 			issues: def.issues || [], // uwagi generatora (miejsca do sprawdzenia)
 			fixes: def.fixes || null,
 			double: def.double !== false, // drugi tor po lewej (pociągi z przeciwka – tylko wygląd)
+			// horyzont z prawdziwego terenu (js/horizon-data.js): w trasie (Generator) albo osobny plik routes/horizon/<id>.js
+			horizon: def.horizon || (typeof globalThis !== 'undefined' && globalThis.TrainHorizons && globalThis.TrainHorizons[def.id]) || null,
 			length: bufferPos + 200,
 		};
 		buildAlignment(route);

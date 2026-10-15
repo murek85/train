@@ -124,6 +124,8 @@
 			this.moonGlow.renderOrder = 950;
 			this.scene.add(this.moonGlow);
 			this.weather = new NS.Weather(this.scene);
+			this.waterRefl = new NS.WaterReflection(this.gl); // odbicie lustrzane wody (js/3d/water.js)
+			this.waterWind = new T.Vector2();
 			this.weatherKey = 'auto';
 			this.env = { zenith: new T.Color(), horizon: new T.Color(), ground: new T.Color('#3a4a2a'), sunDir: new T.Vector3(), sunColor: new T.Color() };
 			this.sunDir = new T.Vector3(0, 1, 0);
@@ -412,11 +414,31 @@
 			if (this.routeId) this.weather.set(key, this.routeId, false);
 		}
 
+		/* zmiana pory roku w trakcie jazdy (pauza): sam świat od nowa (roślinność, liście, śnieg) – pociąg, kabina i ruch bez
+		   zmian; kawałki budują się w tle (main.js – w pauzie bez limitu czasu na klatkę) */
+		reseason(sim) {
+			const season = (sim.opts && sim.opts.season) || 'summer';
+			this.world.season = season;
+			this.world.leafPatches = sim.leaves || [];
+			this.world.leafKey = JSON.stringify(sim.leaves || []);
+			this.world.setRoute(sim.route);
+			this.world.warm = true;
+			this.weather.setSeason(season);
+		}
+
 		reset(sim) {
-			if (this.routeId !== sim.route.id || !this.world.route) {
+			// pora roku (kolory roślinności, liście) – inna niż przy budowie świata: świat od nowa
+			const season = (sim.opts && sim.opts.season) || 'summer';
+			const leaves = JSON.stringify(sim.leaves || []);
+			if (this.routeId !== sim.route.id || !this.world.route || this.world.season !== season || this.world.leafKey !== leaves) {
+				this.world.season = season;
+				this.world.leafPatches = sim.leaves || [];
+				this.world.leafKey = leaves;
 				this.world.setRoute(sim.route);
 				this.routeId = sim.route.id;
 			} else this.world.warm = true;
+			this.weather.setSeason(season);
+			this.horizon.setRoute(sim.route);
 			if (this.trainModel) this.trainModel.dispose();
 			this.trainModel = new NS.TrainModel(this.scene, sim.train, { shadows: this.quality.shadow >= 1024, player: true, destination: sim.route.stations[sim.route.stations.length - 1].name });
 			if (this.cab) this.cab.dispose();
@@ -476,10 +498,14 @@
 			const W = this.weather.update(dt, this.camera.position, this.focus);
 			const pal = this.sky.palette(e);
 			const zen = this.env.zenith.copy(pal.zenith), hor = this.env.horizon.copy(pal.horizon), sunCol = this.env.sunColor.copy(pal.sunlight);
+			// błyskawica: niebo rozjaśnione chłodnym światłem
+			const fl = this.weather.flash || 0;
+			if (fl > 0.001) { zen.lerp(tmpC.setRGB(0.75, 0.8, 0.95), fl * 0.65); hor.lerp(tmpC.setRGB(0.8, 0.84, 0.95), fl * 0.6); }
 			const dayK = smoothstep(-0.04, 0.22, e);
 			const gray = this.hazeColor.copy(hor).lerp(tmpC.setRGB(0.5, 0.53, 0.57), 0.65).multiplyScalar(0.3 + 0.7 * smoothstep(-0.15, 0.3, e));
 			this.sky.update({ camera: this.camera, time: this.time, e, sunDir: this.sunDir, moonDir: this.moonDir, zenith: zen, horizon: hor, sunlight: sunCol, haze: W.haze, hazeColor: gray, cover: W.cover });
 			this.sky.clouds(this.time, W.shadow * clamp01((e + 0.02) / 0.15));
+			this.sky.renderClouds(this.gl, this.time); // panorama chmur wolumetrycznych (co ok. 0,4 s)
 
 			// światło kierunkowe: słońce w dzień, księżyc w nocy
 			if (e > -0.03) {
@@ -495,8 +521,8 @@
 			this.hemi.color.copy(zen).lerp(hor, 0.5).lerp(gray, W.haze * 0.6);
 			this.hemi.groundColor.setRGB(0.16, 0.19, 0.11).multiplyScalar(0.3 + dayK);
 			// światło otoczenia dzielone między półkulę i odbicia nieba (razem dawały płaski, wyblakły obraz)
-			this.hemi.intensity = (0.3 + 0.78 * smoothstep(-0.2, 0.3, e)) * (0.8 + 0.2 * W.sun);
-			this.scene.environmentIntensity = 0.3 + 0.45 * dayK;
+			this.hemi.intensity = (0.3 + 0.78 * smoothstep(-0.2, 0.3, e)) * (0.8 + 0.2 * W.sun) + fl * 2.6;
+			this.scene.environmentIntensity = 0.3 + 0.45 * dayK + fl * 0.5;
 			// korekta barw: chłodne cienie, ciepłe światła (złota godzina – cieplej), nocą chłodniej i mniej nasycenia
 			const golden = dayK * (1 - smoothstep(0.12, 0.35, e)) * W.sun, night = 1 - dayK;
 			this.grade.lightTint.setRGB(1.035, 1.0, 0.95).lerp(tmpC.setRGB(1.09, 0.99, 0.86), golden * 0.6).lerp(tmpC.setRGB(0.97, 1.0, 1.06), night);
@@ -527,9 +553,28 @@
 				const env = { zenith: zen.clone().lerp(gray, W.haze), horizon: hor.clone().lerp(gray, W.haze), ground: this.env.ground, sunDir: this.sunDir, sunColor: sunCol.clone().multiplyScalar(dayK * W.sun) };
 				this.scene.environment = this.post.environment(env);
 			}
-			this.horizon.update(this.camera, this.focus.y - 3, fog.color, 0.25 + 0.75 * dayK, W.haze);
+			this.horizon.update(this.camera, this.focus.y - 3, fog.color, 0.25 + 0.75 * dayK, W.haze, this.free ? this.free.s : sim.st.pos);
 			// słońce: promienie i flara; księżyc: poświata
-			this.sunFx.update({ camera: this.camera, imageRays: true, sunDir: this.sunDir, sunColor: sunCol, e, haze: W.haze, mist: W.haze * 0.5, focus: { x: this.focus.x, y: this.focus.z }, span: 700 });
+			/* widok z kabiny: słońce zasłonięte, gdy promień od oka w jego stronę trafia w pudło kabiny (ściana, dach – nie
+			   szyba); sprawdzane co 4 klatki. Dawniej flara świeciła przez dach jak okrągła lampa na suficie. */
+			let sunBlocked = false;
+			if (this.camMode === 'cab' && this.cab && this.cab.group.visible) {
+				if (!this.sunRay) { this.sunRay = new T.Raycaster(); this.sunRay.far = 6; this.sunBlockedN = 0; }
+				if (this.sunBlockedN++ % 4 === 0) {
+					this.sunRay.set(this.camera.getWorldPosition(this.sunRayO || (this.sunRayO = new T.Vector3())), this.sunDir);
+					this.sunRay.camera = this.camera; // w grupie pojazdu są też sprite'y (światła)
+					let hits = [];
+					try { hits = this.sunRay.intersectObject(this.cab.car.group, true); } catch (err) { hits = []; }
+					const hit = hits.find((h) => {
+						if (!h.object.isMesh) return false;
+						const m = Array.isArray(h.object.material) ? h.object.material[h.face ? h.face.materialIndex : 0] : h.object.material;
+						return m && m.visible !== false && !(m.transparent && m.opacity < 0.5);
+					});
+					this.sunBlockedV = !!hit;
+				}
+				sunBlocked = this.sunBlockedV;
+			}
+			this.sunFx.update({ camera: this.camera, imageRays: true, sunDir: this.sunDir, sunColor: sunCol, e, haze: W.haze, mist: W.haze * 0.5, focus: { x: this.focus.x, y: this.focus.z }, span: 700, blocked: sunBlocked });
 			const moonVis = Math.max(0, Math.min(1, -e / 0.12)) * (1 - Math.min(1, W.haze * 1.2));
 			this.moonGlow.visible = moonVis > 0.02;
 			if (this.moonGlow.visible) {
@@ -1010,6 +1055,13 @@
 			}
 			const q = this.quality;
 			const exposure = 1 + 0.7 * (1 - this.dayK);
+			// odbicie wody (przed klatką): bez opadów, flary i wnętrza kabiny; rozdzielczość wg jakości
+			if (this.waterRefl) {
+				const wv = (this.W && this.W.wind) || 0.4;
+				this.waterWind.set(0.8 * wv, 0.35 * wv);
+				const wt = this.weather;
+				this.waterRefl.update(this.scene, this.camera, this.scene, this.time, this.waterWind, [wt.rain, wt.rainNear, wt.snow, wt.splash, wt.leaves, this.cab && this.cab.group].concat(this.sunFx.objects || []), q.post ? (q.ao ? 0.6 : 0.5) : 0.35);
+			}
 			if (q.post) {
 				const W = this.W;
 				const rays = this.e > 0 ? 0.4 * (1 - W.haze) * W.sun * (1 - smoothstep(0.25, 0.55, this.e)) : 0;

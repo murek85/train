@@ -1,6 +1,6 @@
 {
 	"name": "maszynista",
-	"version": "0.15.0",
+	"version": "0.27.0",
 	"private": true,
 	"description": "Prosty symulator pociągu w przeglądarce",
 	"author": "Marcin Murawski",
@@ -13,6 +13,7 @@
 		"app": "electron .",
 		"app:check": "node tools/app-check.js",
 		"dist": "node tools/dist.js",
+		"web": "node tools/web.js",
 		"dist:dir": "node tools/dist.js --dir"
 	},
 	"devDependencies": {
@@ -33,6 +34,7 @@
 			"!tools/**",
 			"!dist/**",
 			"!build/**",
+			"!web/**",
 			"!**/*.md",
 			"!server.js",
 			"!vendor/three.module.js",

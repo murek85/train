@@ -12,7 +12,10 @@
 		rain: { name: 'deszcz', cover: 0.97, shadow: 0.15, haze: 0.45, rain: 1, snow: 0, fogNear: 140, fogFar: 950, wind: 1.15, wet: 1, snowGround: 0, sun: 0.32 },
 		fog: { name: 'mgła', cover: 0.6, shadow: 0.05, haze: 0.85, rain: 0, snow: 0, fogNear: 15, fogFar: 300, wind: 0.12, wet: 0.35, snowGround: 0, sun: 0.4 },
 		snow: { name: 'śnieg', cover: 0.92, shadow: 0.12, haze: 0.5, rain: 0, snow: 1, fogNear: 90, fogFar: 720, wind: 0.55, wet: 0, snowGround: 1, sun: 0.5 },
+		// burza: ulewa, porywisty wiatr, ciemno, błyskawice (lightning) z grzmotem
+		storm: { name: 'burza', cover: 1, shadow: 0.08, haze: 0.55, rain: 1.35, snow: 0, fogNear: 110, fogFar: 820, wind: 1.75, wet: 1, snowGround: 0, sun: 0.2, lightning: 1 },
 	};
+	for (const p of Object.values(PRESETS)) if (p.lightning === undefined) p.lightning = 0;
 	const ROUTE_DEFAULT = { osobowy: 'clear', ekspres: 'cloudy' };
 	// Opad wypełnia prostopadłościan wokół widoku; jego rozmiar zależy od kamery (90…420 m w poziomie),
 	// więc pada na całym ekranie także przy kamerze wysoko i daleko. Pozycje cząstek są w [0,1) i skalowane w shaderze.
@@ -119,19 +122,32 @@
 		}
 
 		build(scale) {
-			for (const m of [this.rain, this.rainNear, this.snow, this.splash]) if (m) { this.scene.remove(m); m.geometry.dispose(); m.material.dispose(); }
+			for (const m of [this.rain, this.rainNear, this.snow, this.splash, this.leaves]) if (m) { this.scene.remove(m); m.geometry.dispose(); m.material.dispose(); }
 			const mk = (snow, speed) => new T.ShaderMaterial({
 				uniforms: {
 					uT: { value: 0 }, uCenter: { value: new T.Vector3() }, uBox: { value: new T.Vector3(90, 90, 90) }, uSpeed: { value: speed }, uDrift: { value: new T.Vector2(snow ? 0.7 : 2.6, snow ? 0.35 : 1.3) },
 					uLen: { value: snow ? 0 : 1 }, uSize: { value: snow ? 4.2 : 1 }, uSnow: { value: snow ? 1 : 0 }, uWindK: { value: 0.5 },
 					uColor: { value: new T.Color(snow ? '#ffffff' : '#d4dee9') }, uOpacity: { value: 0 }, uLight: { value: 1 },
-					uCar: { value: this.carM }, uCarH: { value: this.carH }, uCars: { value: 0 },
+					uCar: { value: this.carM }, uCarH: { value: this.carH }, uCars: { value: 0 }, uLeaf: { value: 0 },
 				},
 				vertexShader: VS,
-				fragmentShader: `uniform vec3 uColor; uniform float uOpacity; uniform float uSnow; uniform float uLight; varying float vA; varying float vS;
+				fragmentShader: `uniform vec3 uColor; uniform float uOpacity; uniform float uSnow; uniform float uLight; uniform float uLeaf; uniform float uT; varying float vA; varying float vS;
 					void main() {
 						float a = uOpacity * vA;
 						if (a < 0.002) discard;
+						if (uLeaf > 0.5) {
+							// spadający liść: obracany owal (wirowanie – kąt z ziarna i czasu w vS), jesienne kolory
+							vec2 c = gl_PointCoord - 0.5;
+							float an = vS * 40.0 + uT * (1.2 + vS * 2.5);
+							c = mat2(cos(an), -sin(an), sin(an), cos(an)) * c;
+							float e = length(c * vec2(1.0, 2.1 + 1.4 * abs(sin(an * 0.7))));
+							a *= smoothstep(0.42, 0.34, e);
+							if (a < 0.02) discard;
+							vec3 col = mix(vec3(0.78, 0.5, 0.12), vec3(0.58, 0.24, 0.08), fract(vS * 13.0));
+							col = mix(col, vec3(0.82, 0.7, 0.2), step(0.7, fract(vS * 7.0)));
+							gl_FragColor = vec4(col * uLight * (0.8 + 0.3 * fract(vS * 5.0)), a);
+							return;
+						}
 						if (uSnow > 0.5) {
 							vec2 c = gl_PointCoord - 0.5;
 							float r = length(c);
@@ -148,6 +164,11 @@
 			this.rain = new T.LineSegments(precip(Math.round(16000 * scale), false), mk(false, 24));
 			this.rainNear = new T.LineSegments(precip(Math.round(5000 * scale), false), mk(false, 24));
 			this.snow = new T.Points(precip(Math.round(18000 * scale), true), mk(true, 1.5));
+			// spadające liście (jesień): rzadkie, większe, wolniej i mocniej niesione wiatrem
+			this.leaves = new T.Points(precip(Math.round(1600 * scale), true), mk(true, 0.85));
+			this.leaves.material.uniforms.uLeaf.value = 1;
+			this.leaves.material.uniforms.uSize.value = 7;
+			this.leaves.material.uniforms.uDrift.value.set(2.4, 1.2);
 			const sg = new T.BufferGeometry();
 			const sn = Math.round(1400 * scale);
 			const pos = new Float32Array(sn * 3), seed = new Float32Array(sn);
@@ -170,7 +191,7 @@
 				depthWrite: false,
 				fog: false,
 			}));
-			for (const m of [this.rain, this.rainNear, this.snow, this.splash]) {
+			for (const m of [this.rain, this.rainNear, this.snow, this.splash, this.leaves]) {
 				m.frustumCulled = false;
 				m.renderOrder = 1100;
 				this.scene.add(m);
@@ -187,7 +208,84 @@
 			if (key === 'auto') key = ROUTE_DEFAULT[routeId] || 'clear';
 			this.key = key;
 			this.target = PRESETS[key] || PRESETS.clear;
-			if (instant) Object.assign(this.cur, this.target);
+			if (instant) { Object.assign(this.cur, this.target); this.cur.snowGround = this.snowGroundTarget(); }
+		}
+		// pora roku: jesienią spadające liście, zimą lekka pokrywa śnieżna także bez opadu (nie w deszczu)
+		setSeason(season) {
+			this.season = season || 'summer';
+		}
+		snowGroundTarget() {
+			return Math.max(this.target.snowGround, this.season === 'winter' && this.target.rain < 0.5 ? 0.45 : 0);
+		}
+		/* Błyskawice (burza – lightning): co 5–21 s wyładowanie w losowym kierunku 0,4–5,5 km od kamery: błysk (flash 0…1 –
+		   scena rozjaśnia niebo i światło), kanał błyskawicy (bliżej niż 3,5 km, ok. 0,3 s) i grzmot z opóźnieniem
+		   odległość / 343 m/s (takeThunder – main.js odtwarza) */
+		updateLightning(dt, camera) {
+			this.flash = 0;
+			if (!this.bolts) { this.bolts = []; this.thunder = []; this.nextBolt = 3; }
+			if (this.cur.lightning > 0.5) {
+				this.nextBolt -= dt;
+				if (this.nextBolt <= 0) {
+					this.nextBolt = 5 + Math.random() * 16;
+					const dist = 400 + Math.pow(Math.random(), 0.7) * 5100, ang = Math.random() * Math.PI * 2;
+					const power = Math.max(0.15, 1 - dist / 6000);
+					this.bolts.push({ t: 0, power, dist, ang, mesh: dist < 3500 ? this.boltMesh(camera, dist, ang) : null });
+					this.thunder.push({ delay: dist / 343, gain: power, dist });
+				}
+			}
+			for (const b of this.bolts) {
+				b.t += dt;
+				// dwa–trzy rozbłyski w ciągu ok. 0,35 s
+				const t = b.t, f = Math.exp(-t * 14) + (t > 0.11 ? 0.7 * Math.exp(-(t - 0.11) * 16) : 0) + (t > 0.24 ? 0.45 * Math.exp(-(t - 0.24) * 18) : 0);
+				this.flash = Math.max(this.flash, Math.min(1, f * b.power));
+				if (b.mesh) b.mesh.material.opacity = Math.min(1, f * 1.2);
+			}
+			this.bolts = this.bolts.filter((b) => {
+				if (b.t < 0.6) return true;
+				if (b.mesh) { this.scene.remove(b.mesh); b.mesh.geometry.dispose(); b.mesh.material.dispose(); }
+				return false;
+			});
+		}
+		takeThunder() { const t = this.thunder || []; this.thunder = []; return t; }
+		// kanał błyskawicy: łamana z rozgałęzieniem od podstawy chmur (ok. 900 m) do ziemi, wstęga zwrócona do kamery
+		boltMesh(camera, dist, ang) {
+			const R = Math.min(dist, 2600); // dalej – i tak za mgłą
+			const base = new T.Vector3(camera.x + Math.sin(ang) * R, 0, camera.z - Math.cos(ang) * R);
+			const top = 900, ground = camera.y - 40;
+			const side = new T.Vector3(Math.cos(ang), 0, Math.sin(ang));
+			const w = 2.2 + R / 700;
+			const pos = [];
+			const strip = (pts, wid) => {
+				for (let i = 0; i + 1 < pts.length; i++) {
+					const a = pts[i], b = pts[i + 1];
+					const ax = side.clone().multiplyScalar(wid / 2);
+					pos.push(a.x - ax.x, a.y, a.z - ax.z, a.x + ax.x, a.y, a.z + ax.z, b.x + ax.x, b.y, b.z + ax.z);
+					pos.push(a.x - ax.x, a.y, a.z - ax.z, b.x + ax.x, b.y, b.z + ax.z, b.x - ax.x, b.y, b.z - ax.z);
+				}
+			};
+			const main = [];
+			let p = new T.Vector3(base.x + (Math.random() - 0.5) * 200, top, base.z + (Math.random() - 0.5) * 200);
+			const n = 16;
+			for (let i = 0; i <= n; i++) {
+				main.push(p.clone());
+				const k = i / n;
+				p = new T.Vector3(p.x + side.x * (Math.random() - 0.5) * 120 + (base.x - p.x) * 0.15, top + (ground - top) * ((i + 1) / n), p.z + side.z * (Math.random() - 0.5) * 120 + (base.z - p.z) * 0.15);
+				if (k > 0.2 && k < 0.6 && Math.random() < 0.25) {
+					// rozgałęzienie
+					const br = [main[main.length - 1].clone()];
+					let q = br[0].clone();
+					for (let j = 0; j < 5; j++) { q = new T.Vector3(q.x + side.x * (Math.random() - 0.3) * 90, q.y - 40 - Math.random() * 50, q.z + side.z * (Math.random() - 0.3) * 90); br.push(q.clone()); }
+					strip(br, w * 0.5);
+				}
+			}
+			strip(main, w);
+			const g = new T.BufferGeometry();
+			g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+			const m = new T.Mesh(g, new T.MeshBasicMaterial({ color: new T.Color(2.2, 2.3, 2.6), transparent: true, opacity: 1, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, fog: false }));
+			m.frustumCulled = false;
+			m.renderOrder = 1050;
+			this.scene.add(m);
+			return m;
 		}
 
 		/* Pojazdy, w których nie pada: cars – wagony ({ group, len, H }), wybierane najbliższe kamery (do 8); macierze
@@ -214,9 +312,10 @@
 			this.box.y += (vert - this.box.y) * kb;
 			this.center.set(focus.x, Math.min(camera.y, focus.y) - 5 + this.box.y / 2, focus.z);
 			const k = Math.min(1, dt * 0.5);
-			for (const p of ['cover', 'shadow', 'haze', 'rain', 'snow', 'fogNear', 'fogFar', 'wind', 'sun']) this.cur[p] += (this.target[p] - this.cur[p]) * k;
+			for (const p of ['cover', 'shadow', 'haze', 'rain', 'snow', 'fogNear', 'fogFar', 'wind', 'sun', 'lightning']) this.cur[p] += (this.target[p] - this.cur[p]) * k;
+			this.updateLightning(dt, camera);
 			// śnieg osiada powoli (ok. pół minuty) i jeszcze wolniej topnieje
-			const sg = this.target.snowGround;
+			const sg = this.snowGroundTarget();
 			this.cur.snowGround += (sg - this.cur.snowGround) * Math.min(1, dt * (sg > this.cur.snowGround ? 0.06 : 0.02));
 			// nawierzchnia moknie i schnie wolniej niż pada
 			this.cur.wet += (this.target.wet - this.cur.wet) * Math.min(1, dt * 0.08);
@@ -226,7 +325,9 @@
 			// warstwa przy kamerze: gęste krople przelatujące tuż przed obiektywem
 			this.nearCenter.copy(camera);
 			const nearBox = new T.Vector3(36, 30, 36);
-			for (const [m, a, ctr, bx] of [[this.rain, this.cur.rain * 0.32 * open, this.center, this.box], [this.rainNear, this.cur.rain * 0.28 * open, this.nearCenter, nearBox], [this.snow, this.cur.snow * 0.95 * open, this.center, this.box]]) {
+			// spadające liście: tylko pojedyncze (więcej przy wietrze) – jesień widać głównie po liściach leżących na ziemi
+			const leafA = this.season === 'autumn' ? (0.06 + 0.16 * Math.min(1, this.cur.wind || 0)) * open * (1 - Math.min(1, this.cur.snow)) : 0;
+			for (const [m, a, ctr, bx] of [[this.rain, Math.min(1.35, this.cur.rain) * 0.32 * open, this.center, this.box], [this.rainNear, Math.min(1.35, this.cur.rain) * 0.28 * open, this.nearCenter, nearBox], [this.snow, this.cur.snow * 0.95 * open, this.center, this.box], [this.leaves, leafA, this.center, this.box]]) {
 				const u = m.material.uniforms;
 				u.uT.value = this.time;
 				u.uCenter.value.copy(ctr);

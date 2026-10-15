@@ -287,7 +287,7 @@
 			<section class="tab hidden" id="tab-cond">
 				<h3>Pogoda</h3>
 				<div class="tiles" id="weather-tiles"></div>
-				<select id="opt-weather" class="hidden"><option value="auto">jak w scenariuszu</option><option value="clear">słonecznie</option><option value="cloudy">pochmurno</option><option value="rain">deszcz</option><option value="fog">mgła</option><option value="snow">śnieg</option></select>
+				<select id="opt-weather" class="hidden"><option value="auto">jak w scenariuszu</option><option value="clear">słonecznie</option><option value="cloudy">pochmurno</option><option value="rain">deszcz</option><option value="storm">burza</option><option value="fog">mgła</option><option value="snow">śnieg</option></select>
 				<h3>Pora dnia (odjazd)</h3>
 				<div class="tiles" id="time-tiles"></div>
 				<select id="opt-time" class="hidden"><option value="auto">jak w scenariuszu</option><option value="05:20">świt (5:20)</option><option value="08:00">rano (8:00)</option><option value="12:00">południe (12:00)</option><option value="16:00">popołudnie (16:00)</option><option value="19:50">zachód słońca (19:50)</option><option value="23:00">noc (23:00)</option><option value="custom">własna godzina…</option></select>
@@ -410,13 +410,18 @@
 			<section class="pause-sec">
 				<h3>Pogoda</h3>
 				<div class="tiles pause-tiles" id="pause-weather-tiles"></div>
-				<select id="pause-weather" class="hidden"><option value="auto">jak w scenariuszu</option><option value="clear">słonecznie</option><option value="cloudy">pochmurno</option><option value="rain">deszcz</option><option value="fog">mgła</option><option value="snow">śnieg</option></select>
+				<select id="pause-weather" class="hidden"><option value="auto">jak w scenariuszu</option><option value="clear">słonecznie</option><option value="cloudy">pochmurno</option><option value="rain">deszcz</option><option value="storm">burza</option><option value="fog">mgła</option><option value="snow">śnieg</option></select>
 			</section>
 			<section class="pause-sec">
 				<h3>Pora dnia <small>przestawia bieżącą godzinę jazdy</small></h3>
 				<div class="tiles pause-tiles" id="pause-time-tiles"></div>
 				<select id="pause-time" class="hidden"><option value="auto">jak w scenariuszu</option><option value="05:20">świt (5:20)</option><option value="08:00">rano (8:00)</option><option value="12:00">południe (12:00)</option><option value="16:00">popołudnie (16:00)</option><option value="19:50">zachód słońca (19:50)</option><option value="23:00">noc (23:00)</option><option value="custom">własna godzina…</option></select>
 				<label class="row-opt pause-custom hidden" id="pause-custom-row">Własna godzina <input type="time" id="pause-time-custom" value="21:30"></label>
+			</section>
+			<section class="pause-sec">
+				<h3>Pora roku <small id="pause-season-note">roślinność, liście, śnieg i przyczepność</small></h3>
+				<div class="tiles pause-tiles" id="pause-season-tiles"></div>
+				<select id="pause-season" class="hidden"><option value="spring">wiosna</option><option value="summer">lato</option><option value="autumn">jesień (liście na torach)</option><option value="winter">zima (słabsza przyczepność)</option></select>
 			</section>
 			<button id="btn-resume" class="primary pause-resume">Wznów (Esc)</button>
 			<div class="pause-actions">
@@ -461,6 +466,12 @@
 	<script src="routes/torun-chelmza.js"></script>
 	<script src="routes/gliwice-katowice.js"></script>
 	<script src="routes/rybnik-katowice.js"></script>
+	<!-- horyzont z prawdziwego terenu (tools/horizon.js) i jego obliczenia (Generator) -->
+	<script src="routes/horizon/gliwice-zabrze.js"></script>
+	<script src="routes/horizon/torun-chelmza.js"></script>
+	<script src="routes/horizon/gliwice-katowice.js"></script>
+	<script src="routes/horizon/rybnik-katowice.js"></script>
+	<script src="js/horizon-data.js"></script>
 	<script src="js/gen/sources.js"></script>
 	<script src="js/osm-route.js"></script>
 	<script src="js/sim.js"></script>
@@ -468,6 +479,7 @@
 	<script src="js/route-check.js"></script>
 	<script src="js/scenario.js"></script>
 	<script src="js/scenarios.js"></script>
+	<script src="js/audio-samples.js"></script>
 	<script src="js/audio.js"></script>
 	<script src="vendor/three.global.js"></script>
 	<script src="js/3d/sky.js"></script>
@@ -476,6 +488,7 @@
 	<script src="js/3d/sunfx.js"></script>
 	<script src="js/3d/horizon.js"></script>
 	<script src="js/3d/weather.js"></script>
+	<script src="js/3d/water.js"></script>
 	<script src="js/3d/props.js"></script>
 	<script src="js/3d/world.js"></script>
 	<script src="js/3d/real-env.js"></script>

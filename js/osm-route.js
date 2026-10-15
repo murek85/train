@@ -3658,6 +3658,35 @@
 			if (plkLens.length) def.platformLength = Math.max(120, Math.min(400, Math.round(Math.min(...plkLens))));
 			def.source += ', PKP PLK (Regulamin sieci)';
 		}
+		/* horyzont z prawdziwego terenu (js/horizon-data.js): powiązanie układu gry z mapą (punkty przebiegu co ok. 1 km)
+		   i sylwetka terenu do 60 km z siatki wysokości co 4 km (opts.horizonElev – Open-Meteo); błąd – trasa bez
+		   horyzontu (pagórki) */
+		if (opts.horizonElev) {
+			try {
+				const RT = (typeof globalThis !== 'undefined' && globalThis.TrainRoutes) || (isNode ? require('./routes.js') : null);
+				const HD = (typeof globalThis !== 'undefined' && globalThis.TrainHorizonData) || (isNode ? require('./horizon-data.js') : null);
+				if (RT && HD) {
+					const prep = RT.prepare(def), tp = {}, pairs = [];
+					for (let k = 0; k < n; k += 50) {
+						const s2 = S(k * STEP);
+						if (s2 > prep.length) break;
+						RT.trackPoint(prep, s2, tp);
+						const ll = P.ll(pts[k][0], pts[k][1]);
+						pairs.push([[tp.x, tp.z], [ll.lat, ll.lon]]);
+					}
+					const geo = HD.fitGeo(pairs);
+					def.geo = { lat0: geo.lat0, lon0: geo.lon0, c: +geo.c.toFixed(6), s: +geo.s.toFixed(6), flip: geo.flip, tx: Math.round(geo.tx), ty: Math.round(geo.ty) };
+					const g = HD.gridPoints(HD.bounds(prep, geo), 4000);
+					log(`Horyzont: wysokości terenu do 60 km wokół trasy (${g.pts.length} punktów)…`);
+					const vals = await opts.horizonElev(g.pts, log);
+					def.horizon = HD.compute(prep, geo, HD.gridSampler(g, vals));
+					const max = Math.max(...def.horizon.anchors.flatMap((a) => a.slice(1))) / 100;
+					log(`Horyzont: ${def.horizon.anchors.length} profili, najwyżej ${max.toFixed(1)}° nad poziomem.`);
+				}
+			} catch (e) {
+				log(`Horyzont: nie udało się (${e.message}) – trasa z pagórkami w tle.`);
+			}
+		}
 		log(`Gotowe: ${def.title}, ${lengthKm.toFixed(1)} km, ${route.length} stacji, ${signals.length} semaforów, ${bridges.length} mostów/wiaduktów.`);
 		return def;
 	}
@@ -3682,7 +3711,8 @@
 		const SRC = (typeof globalThis !== 'undefined' && globalThis.TrainSources) || (isNode ? require('./gen/sources.js') : null);
 		const bdot = opts.bdot === false || !environment || !SRC ? null : opts.bdot || ((pts, l) => SRC.bdotForRoute(pts, { log: l, cache: opts.fileCache }));
 		const plk = opts.plk === false || !SRC ? null : opts.plk || ((l) => SRC.plkData({ log: l, cache: opts.fileCache }));
-		const build = (data) => buildRoute(data, Object.assign({}, opts, { elevation: (pts, l) => elevations(pts, l), environment, dem, lidar, bdot, plk }));
+		const horizonElev = opts.horizon === false ? null : opts.horizonElev || ((pts, l) => elevations(pts, l));
+		const build = (data) => buildRoute(data, Object.assign({}, opts, { elevation: (pts, l) => elevations(pts, l), environment, dem, lidar, bdot, plk, horizonElev }));
 		let data = await fetchCorridor(a, b, log, opts.line);
 		if (opts.onData) opts.onData(data);
 		if (!opts.line) return build(data);
