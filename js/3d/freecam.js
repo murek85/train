@@ -86,9 +86,16 @@
 			f.x = tp.x; f.z = tp.z;
 			p = { s: p.s, d: Math.sign(p.d) * MAX_D };
 		}
+		// tunel na trasie z mapy: kamera, która wleciała portalem, porusza się we wnętrzu (podłoga, strop, ściany)
+		const tun = w.freeTunnel ? w.freeTunnel(p.s, f.y) : null;
+		if (tun && (p.d < tun.l || p.d > tun.r)) {
+			R.sidePoint(route, p.s, Math.max(tun.l, Math.min(tun.r, p.d)), tp);
+			f.x = tp.x; f.z = tp.z;
+			p = { s: p.s, d: Math.max(tun.l, Math.min(tun.r, p.d)) };
+		}
 		f.s = p.s; f.d = p.d;
-		const ground = w.terrainY(f.s, f.d);
-		f.y = Math.max(ground + MIN_H, Math.min(ground + 900, f.y));
+		const ground = tun ? tun.floor : w.terrainY(f.s, f.d);
+		f.y = Math.max(ground + MIN_H, Math.min(tun ? tun.ceil : ground + 900, f.y));
 		const cp = Math.cos(f.pitch);
 		const c = this.camera;
 		c.position.set(f.x, f.y, f.z);

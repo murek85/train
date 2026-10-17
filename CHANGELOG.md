@@ -4,6 +4,697 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.43.3 – 17 października 2026
+
+Pasek generowania w tym samym miejscu w menu i w grze.
+
+### Pasek generowania (`style.css`, `main.js`)
+- `#gen-bg`: jedno położenie (prawy górny róg, 58 px od góry, do 340 px szerokości) w menu i w jeździe; bez klasy
+  `in-game`.
+
+## 0.43.2 – 17 października 2026
+
+Przycisk „Pokaż przebieg” na pasku generowania.
+
+### Pasek generowania (`main.js`)
+- Przycisk `open` („Pokaż przebieg”) tylko w menu (z jazdy nie ma przejścia do ekranu generatora), także po zakończeniu
+  generowania.
+
+## 0.43.1 – 17 października 2026
+
+Podmenu generatora: Nowa trasa i Moje trasy.
+
+### Podmenu generatora (`index.html`, `main.js`, `style.css`)
+- Ekrany: `scr-genmenu` (podmenu), `scr-gen` (nowa trasa: formularz, karta postępu, przebieg generowania),
+  `scr-routes` (moje trasy). Pasek generowania w tle ukryty tylko na ekranie nowej trasy.
+- Przeciągnięte pliki tras – ekran „Moje trasy”; Esc z ekranów generatora – podmenu.
+
+## 0.43.0 – 17 października 2026
+
+Generator tras w tle z paskiem postępu, jeden ekran generatora i tras.
+
+### Generator w tle (`js/gen-worker.js`, `main.js`, `index.html`, `style.css`, `osm-route.js`, `gen/sources.js`)
+- Nowy wątek `gen-worker.js` (Web Worker): `routes.js`, `physics.js`, `sim.js`, `horizon-data.js`, `gen/sources.js`,
+  `osm-route.js`, `route-check.js`; generowanie (także trasa w drugą stronę), próba `prepare`, kontrola trasy;
+  pamięć podręczna plików źródeł i kafelków NMPT w tej samej bazie IndexedDB. Adresy względne (pośrednik serwera gry)
+  rozwiązywane względem strony gry; w aplikacji desktopowej NMPT przez grę (`desktopProxy` → `window.desktop.fetchText`).
+- `osm-route.js`, `gen/sources.js`: rozpoznanie Node bez wątku przeglądarki (`importScripts`); dane RINF w wątku –
+  `importScripts`.
+- `main.js`: zadanie dla wątku, postęp z komunikatów generatora (`GEN_STEPS`), karta `#gen-status` i pasek `#gen-bg`
+  (poza ekranem generatora; w jeździe – prawy górny róg), „Anuluj” (zakończenie wątku), zapis gotowej trasy na liście
+  i w bazie, komunikat w czasie jazdy. Ekrany `scr-gen` i `scr-routes` połączone.
+- `pairOf`: para kierunków tylko z tego samego źródła (wbudowane / z generatora).
+
+## 0.42.6 – 17 października 2026
+
+Okienko wczytywania przy zmianie stacji początkowej.
+
+### Wczytywanie przy zmianie stacji początkowej (`main.js`)
+- Zmiana `opt-start` w menu – `selectRoute` (etapy z `routeLoading`, doczytanie świata podglądu) zamiast samego
+  `buildMenu` i `startDemo`; tytuł w okienku – przebieg od wybranej stacji.
+
+## 0.42.5 – 17 października 2026
+
+Schemat linii zamiast kafelków stacji początkowej.
+
+### Schemat linii stacji początkowej (`style.css`, `index.html`, `main.js`)
+- `#start-tiles.run-line`: siatka o `--n` kolumnach (równe odstępy), linia i odcinek jazdy (`--a` – numer stacji
+  początkowej) jako pseudoelementy; nazwy na przemian nad i pod linią (do dwóch kolumn szerokości), skrajne wyrównane do
+  brzegów; kilometr w podpowiedzi. `#run-info` – podsumowanie przebiegu.
+
+## 0.42.4 – 17 października 2026
+
+Przyciski i kafelki przebiegu, jednolity wygląd list w menu.
+
+### Pola w menu (`style.css`, `index.html`, `main.js`)
+- `select`: własny wygląd (`appearance: none`), strzałka z SVG, stany najechania, fokus (bursztynowa ramka), wyłączenia;
+  ciemne opcje listy.
+- Przebieg: `#dir-seg` (przyciski jak `.seg`) i `#start-tiles` (kafelki jak pogoda); wybór przez ukryte listy `opt-dir`
+  i `opt-start` (te same zdarzenia `change` co dotąd).
+- `.row-opt.sel-opt`: etykieta i lista w kolumnach (Napęd, Hamulec).
+
+## 0.42.3 – 17 października 2026
+
+Poświata świateł aut nocą, wszystkie przystanki przy ulicach.
+
+### Światła i przystanki (`street-life.js`, `real-env.js`)
+- `drawStreetGlows`: przy każdym aucie cztery kwadraty z teksturą poświaty (reflektory i światła tylne) zwrócone do
+  kamery; siła wg kąta między kierunkiem światła a kamerą, wielkość rośnie z odległością (do 900 m).
+- `envBusStops`: kandydaci do 22 m od przystanku (od najbliższego) – pierwszy ciąg z miejscem poza skrzyżowaniem
+  (dawniej tylko najbliższy do 15 m; na zbyt krótkim przystanek przepadał).
+
+## 0.42.2 – 17 października 2026
+
+Światła aut nocą, więcej przystanków, poprawki skrętów i mijania.
+
+### Ruch uliczny – poprawki (`street-life.js`, `real-env.js`, `world.js`)
+- Światła nocą: instancje płaskich plam (tekstura owalu z miękkim brzegiem, mieszanie addytywne) na jezdni – przed autem
+  (14 m, od maski) i za nim (czerwona); siła wg zmroku (`dark` przekazywany do `updateStreetLife`).
+- `envBusStops`: także drogi dojazdowe (z dopłatą 3 m do odległości – ulica ma pierwszeństwo), krótki ciąg – przystanek
+  w jego środku. Autobusy wjeżdżają na drogi dojazdowe z przystankami i pojawiają się także na nich.
+- `streetConflict`: ten sam pas wlotu – bez kolizji (odstęp jak za autem); sąsiednie pasy tego samego wlotu – kolizja
+  wg zbliżenia torów przejazdu.
+- Wąska jezdnia dwukierunkowa (do 5,5 m): do 15 km/h, gdy auto z naprzeciwka jest bliżej niż 30 m.
+
+## 0.42.1 – 17 października 2026
+
+Poprawka: gra nie wczytywała się po zmianie stacji początkowej.
+
+### Świat przy innej stacji początkowej (`scene.js`, `world.js`)
+- Semafory i stacje świata odwołują się do list trasy po numerach. Trasa przycięta do stacji początkowej (`route.from`) ma
+  mniej semaforów odjazdowych i inne numery stacji, a świat nie był przebudowywany, bo identyfikator trasy był ten sam.
+  Klucz świata to teraz `id@from`.
+- `updateDyn`: semafor spoza listy trasy jazdy jest pomijany (zabezpieczenie).
+
+## 0.42.0 – 17 października 2026
+
+Ruch uliczny (auta, ciężarówki, autobusy) i ruch pieszy na trasach z mapy.
+
+### Ruch uliczny i pieszy (`js/3d/street-life.js`, `real-env.js`, `world.js`, `main.js`, `osm-route.js`)
+- Nowy moduł `street-life.js`. Sieć: ciągi i skrzyżowania z `envStreets` (eksport `World.streetUtil`), pasy wg kierunku
+  (`one`, `flip`) i liczby pasów, łączniki przez skrzyżowania (krzywe Béziera, prędkość z promienia łuku), łączniki przez
+  przejazdy kolejowe (końce ulicy z `envCrossingPath`, linia zatrzymania 2,6 m przed sygnalizatorem).
+- Auta: kolejka odcinków (pas → łącznik → pas), wybór wylotu (na wprost częściej, ciężarówki i autobusy – drogi wyższych
+  klas), odstęp od auta przed sobą, zgoda na wjazd (`streetMayEnter`: sygnalizacja `tlState`, A-7, prawa ręka, lewoskręt
+  ustępuje, kolizyjne tory przejazdu, miejsce za skrzyżowaniem; po 8 s czekania na nadjeżdżających – jedzie). Zebry –
+  także na następnym odcinku. Ślepy koniec: daleko od kamery – znika, blisko – zawraca.
+- Piesi: chodniki (`ch.sw`), łuki chodników na narożnikach (`c.cv`), przejścia (zajętość `z.busy`), przejazdy, przystanki
+  (czekający, wsiadanie, wysiadanie).
+- Rysowanie instancjami (osobno lakier, szyby, reszta; ciężarówka i autobus – nowe bryły), postacie z `peopleMeshes`.
+  Koszt ok. 0,3–0,4 ms na klatkę.
+- `world.js`: aktualizacja w `update`, czyszczenie przy zmianie trasy; własne auta przejazdu ukryte, gdy przez przejazd
+  jeździ ruch uliczny. Błąd w ruchu ulicznym wyłącza tylko ten ruch.
+- Generator: przystanki `env.bs` (`highway=bus_stop`, `public_transport=platform` + `bus=yes`), dopobieranie do zapisanych
+  danych (`fetchBusStops`, flaga `_bus`). `envBusStops` przypisuje przystanki do ciągów; znak D-15 w atlasie znaków
+  i wiata.
+- Generator w grze: opcja „Także trasa w drugą stronę” (`genOne` dwa razy, stacje krańcowe zamienione).
+- Przebudowane trasy wbudowane (z przystankami; także zmiany generatora od poprzedniej przebudowy).
+
+## 0.41.0 – 17 października 2026
+
+Wybór stacji początkowej i kierunku jazdy (Zabrze → Gliwice).
+
+### Stacja początkowa i kierunek (`routes.js`, `main.js`, `index.html`, `routes/zabrze-gliwice.js`)
+- `R.prepare(def, cfg, from)` pomija stacje przed `from` (po poprawkach trasy, najdalej przedostatnia). Kilometraż,
+  geometria i otoczenie zostają bez zmian. Tytuł i nazwa pociągu są od nowej stacji, a `route.from` przechowuje numer.
+- `main.js`: stacja początkowa zapamiętana dla każdej trasy (`startSt`). Klucze przygotowanej trasy, rozkładu i rekordu
+  (`best.<id>@<from>`) uwzględniają stację początkową. Zapis gry przechowuje `from`, a scenariusz zawsze startuje od
+  stacji 0.
+- Para kierunków: `def.reverse` albo trasa rzeczywista z zamienionymi stacjami krańcowymi. Na liście map jest pierwsza
+  z pary, a przełącznik „Kierunek” jest w sekcji „Przebieg”.
+- Trasa z generatora bez pary: przycisk „W drugą stronę” uruchamia generator z zamienionymi stacjami, z tą samą linią.
+- Nowa trasa wbudowana Zabrze – Gliwice (generator z danych Gliwice – Zabrze, linia 137) z horyzontem.
+
+## 0.40.15 – 17 października 2026
+
+Zapowiedzi głosowe na peronach Warszawy Śródmieście.
+
+### Zapowiedzi na peronach stacji innej linii (`life.js`, `main.js`, `audio.js`, `real-env.js`, `scene.js`)
+- `Life.localAnnounce`: zapowiedź przyjazdu ok. 350 m przed zatrzymaniem i odjazdu ok. 12 s przed odjazdem. Głośność
+  zależy od odległości kamery (`life.listener`) od środka peronu: pełna do 40 m, zanika do 260 m. Zdarzenia trafiają do
+  `life.events`.
+- `main.js` `announce(text, gain, station)`: gong i głos mają głośność `gain`. Tekst z nazwą stacji pokazuje się tylko
+  z bliska (gain ≥ 0,5). Zapowiedź na peronie czyta głos także w trybie kamery swobodnej.
+- `audio.chime(gain)`, `audio.playVoice(..., gain)`: głośność gongu i głosu Piper. Głos systemu ma głośność × gain.
+- `envLocalTracks`: nazwa stacji z `env.os` (do 400 m od środka peronu).
+
+## 0.40.14 – 17 października 2026
+
+Wszystkie tory i perony Warszawy Śródmieście.
+
+### Pełne Śródmieście (`osm-route.js`, trasa Warszawa Wschodnia – Warszawa Zachodnia)
+- Tory w długim tunelu (bit 16) brane są do 60 m od osi naszej linii. Wcześniej limit wynosił 40 m i tor 4 linii 448,
+  leżący ok. 49 m od osi, był pomijany.
+- Perony podziemne w tunelu naszej linii brane są do 70 m od osi (obrys, linia, relacja). Wcześniej limit wynosił
+  45/60 m i peron 3 był pomijany.
+- Peron podziemny daleko od osi zostaje tylko wtedy, gdy w ¼, ½ i ¾ jego długości biegnie przy krawędzi (do 4 m) tor
+  w tunelu z danych. Bez takiego toru to stacja w osobnym tunelu, np. WKD Śródmieście obok Centralnej.
+- Przebudowana trasa Warszawa Wschodnia – Warszawa Zachodnia z zapisanych danych. Obudowa tunelu poszerza się do toru 4
+  i peronu 3, a pociągi podmiejskie (`envLocalTracks`) jeżdżą po obu torach.
+
+## 0.40.13 – 17 października 2026
+
+Pociągi podmiejskie zatrzymujące się na Warszawie Śródmieście.
+
+### Pociągi podmiejskie na peronach w tunelu (`real-env.js`, `life.js`, `scene.js`)
+- `envLocalTracks`: wybiera tory z mapy przy peronach w tunelu innej linii. Peron musi mieć od 80 m i leżeć poza
+  peronami stacji trasy. Tor biegnie wzdłuż krawędzi peronu, do 3,5 m od niej, i nie jest torem naszej linii ani torem
+  pociągów z przeciwka. Zwraca odsunięcie i wysokość toru (`envRowY`) w miejscu s.
+- `Life.updateLocals`: działa, gdy peron jest do 1,5 km od pociągu gracza. Pociąg (EN57/EN76 KM, 27WE SKM, EN71) wjeżdża
+  z 800 m, hamuje (0,65 m/s²) i staje środkiem przy środku peronu. Stoi 25–45 s, potem odjeżdża (0,6 m/s², do 65 km/h).
+  Wagony poza końcem toru z mapy są ukryte. Model buduje się raz na tor.
+
+## 0.40.12 – 17 października 2026
+
+Pasażerowie na peronach Warszawy Śródmieście.
+
+### Pasażerowie na peronach w tunelu (`real-env.js`, `world.js`)
+- `envCrowd`: na peronach z mapy w tunelu (od 80 m) ok. 14 osób czeka przy krawędziach, połowa ławek jest zajęta,
+  a 5 osób spaceruje. Używa modeli ludzi z `World.peopleMeshes`, z kolorami `World.PEOPLE` i `World.SKIN`.
+- `updateCrowd` (dyn `crowd`): spacerowicze idą wzdłuż peronu, omijają schody i robią przerwy. Animacja ma tryby: chód,
+  siedzenie, stanie.
+
+## 0.40.11 – 17 października 2026
+
+Wspólny pomost torów stacji na wiadukcie, schody i wejścia na Śródmieściu.
+
+### Wspólny pomost torów, schody na Śródmieściu (`real-env.js`)
+- `buildEnvTracks`: gdy tor na pomoście ma obok, 3–7 m dalej, drugi taki tor na tej samej wysokości (±0,6 m), płyta po
+  tej stronie biegnie do połowy odstępu, bez gzymsu.
+- `envRowY`: zasada „tor ukośny pod naszym mostem – nie wyżej niż dno obniżenia” nie dotyczy torów z mostem w danych.
+  Tory stacji na wiadukcie, ukośne na rozjazdach, były wcześniej sprowadzane do ulicy pod spodem.
+- Perony z mapy w tunelu (od 80 m): schody do stropu hali na ok. 1/5 i 4/5 peronu (bieg w osi peronu, ściany,
+  poręcze) i pawilon wejściowy na powierzchni (teren z pomiaru) z nazwą stacji. Ławki omijają schody.
+
+## 0.40.10 – 17 października 2026
+
+Tunel średnicowy: jaśniejszy, perony bez latarni ulicznych, ławki na Śródmieściu.
+
+### Tunel średnicowy i Śródmieście (`real-env.js`, `world.js`)
+- Perony z mapy w tunelu (`envTunnelK` > 0,5): zamiast latarni na słupie jest światło pod stropem (`always`, pula
+  świateł). Między światłami co 30 m stoją ławki parami (plecami do siebie) i kosz.
+- Obudowa tunelu: jaśniejsza posadzka (#6a665f, w hali #958f85; wcześniej #4a4743) i ściany, poświata materiału 1,0
+  (wcześniej 0,7).
+- Co druga lampa na ścianie (co 30 m) to światło punktowe z puli, zawsze włączone. `buildEnvTunnel` dostaje `dyn`
+  kawałka.
+
+## 0.40.9 – 17 października 2026
+
+Filary mostów i wiaduktów naszej linii poza drogami i torami.
+
+### Filary mostów naszej linii (`world.js`)
+- `buildViaduct`: filar pośredni nie stoi na drodze pod pomostem (poniżej 2 m pod szyną) ani na torze z mapy
+  (do 2,4 m od filara, ponad 3 m niżej; `envRowY`). Przesuwa się wzdłuż mostu do 6 m, a gdy nie ma miejsca, jest
+  pomijany. Wcześniej filary stały co 10 m bez sprawdzania, poza środkowymi 7 m.
+- `buildBridge`: do sprawdzania dróg pod filarem doszły tory innych linii.
+- Audyt obiektów (`envAudit`, Gliwice – Katowice) nie znalazł filarów na torach ani drogach przy wiaduktach nad naszą
+  linią. Te sprawdzały już miejsce na filar (`pierFree`).
+
+## 0.40.8 – 17 października 2026
+
+Poprawki Torunia: przejazd, stacja w wykopie, wiadukty, tory na moście.
+
+### Toruń – Chełmża: przejazd, stacja w wykopie, wiadukty, tory na moście (`real-env.js`, `world.js`, `osm-route.js`)
+- Drogi przy przejeździe kolejowym: pomijany jest tylko punkt na drodze przez przejazd (`envCrossingPath`, połowa
+  szerokości + 1,5 m). Wcześniej znikała każda droga do 12 m od przejazdu i 40 m od osi.
+- Spłaszczanie terenu stacji przy pomiarze NMT: do skraju korony po danej stronie (`envShoulder`) + 1 m, zanik na 6 m.
+  Wcześniej 24–44 m.
+- Wiadukt drogowy (`overpassPlan`): za przedłużeniem nad wykopem pomost dochodzi do ulicy w poziomie pomostu (do 1,2 m),
+  jeśli leży ona do 6 m dalej.
+- Generator: tory biegnące wzdłuż (|Δd| ≤ 0,35·|Δs|) w obrębie mostu naszej linii (±5 m), do 60 m od osi, różniące się
+  od naszej szyny o mniej niż 3 m, dostają jej poziom z przejściem 30 m. Trasa Toruń – Chełmża zbudowana ponownie.
+
+## 0.40.7 – 17 października 2026
+
+Poprawka: drogi nachodzące na siebie.
+
+### Drogi nachodzące na siebie (`real-env.js`)
+- `envIndex` (wysokości dróg `roadZ`, przed ograniczeniem pochylenia 12%): punkt drogi, której pas zachodzi na pas
+  równoległej drogi wyższej o 0,3–2,5 m, dostaje jej poziom. Warunki: |cos| ≥ 0,9, osie bliżej niż suma połówek
+  szerokości + 1 m, rzut z zapasem 3 m za końcami odcinka. Do własnej wysokości droga wraca na 15 m.
+- Wcześniej maska dróg brała w pasie wyższą jezdnię, a pas przecinał komórki ukośnie, więc niższa droga przeskakiwała
+  między poziomami co 2 m. Toruń – Chełmża: z 29 punktów zostało 6 (4 m przy węźle trzech dróg).
+- Przegląd profili tras wbudowanych: tory z mapy 0–3 „wycieczki” na trasę, drogi głównie serwisowe 1,5–3 m. Bez zmian
+  filtrów generatora.
+
+## 0.40.6 – 17 października 2026
+
+Wiadukty innych linii: poziomy pomost i rampy torów.
+
+### Wiadukty innych linii nad naszą (`osm-route.js`)
+- Dotyczy `env.ro`, gdy pomiar powierzchni nie pokazuje pomostu: `roz` < 0, a profil przy torze (do 6 m) leży
+  poniżej 5,5 m nad naszą szyną. Profil `roh` jest wtedy poziomy, 7,6 m nad naszą szyną, jak w grze bez pomiaru.
+- Tory dochodzące do końców pomostu (do 4 m) wznoszą się do szyny na pomoście (0,6 m pod wierzchem) rampą 3% wzdłuż
+  torów. Tor wyżej z pomiaru zostaje bez zmian. Podniesienie przechodzi na tory połączone dalszym końcem.
+- Ponownie zbudowane z zapisanych danych wszystkie trasy wbudowane. Gliwice – Katowice: 2 tory pod naszym mostem
+  i 10 odcinków ramp. Rybnik – Katowice: 4 odcinki ramp. Gliwice – Zabrze: 2 tory pod mostem.
+
+## 0.40.5 – 17 października 2026
+
+Poprawka: tory innej linii pod mostem naszej linii.
+
+### Tory z mapy pod naszym mostem (`osm-route.js`)
+- Tor przecinający oś naszej linii ukośnie (|Δd| > 0,25·|Δs|) w obrębie jej mostu (±3 m) ma w przecięciu co najmniej
+  7 m pod naszą szyną: prześwit 6,2 m i konstrukcja. Rampa 2% w obie strony i dalszy ciąg toru jak przy krzyżowaniach
+  torów (`lower`). Znacznik mostu na ukośnych odcinkach dochodzących do osi (do 2 m) pod naszym mostem jest
+  usuwany, bo pomost wypadał na naszym poziomie.
+- `levelBeside` działa tylko tam, gdzie sam tor biegnie wzdłuż (|Δd| ≤ 0,15·|Δs|). Tor ukośny przy osi był
+  wcześniej podnoszony do poziomu torów obok.
+- `routes/gliwice-zabrze.js` zbudowana ponownie z zapisanych danych: dwa tory na km 4,24 krzyżują oś na wysokości
+  20,1 m, a nie 26,0–26,8 m.
+
+## 0.40.4 – 17 października 2026
+
+Toruń – Chełmża wygenerowana na nowo.
+
+### Trasa wbudowana Toruń – Chełmża (`routes/torun-chelmza.js`, `routes/horizon/torun-chelmza.js`)
+- Wygenerowana od nowa (dane z 17.10.2026; skład `dd`, 6:40, poziom średni): 8 stacji i przystanków, 23,1 km,
+  271 torów z mapy, w tym 28 dalej niż 110 m. Horyzont dopasowany do 8 stacji (błąd średni 55 m).
+
+## 0.40.3 – 17 października 2026
+
+Poprawka: kierunek sygnalizatorów i znaków drogowych.
+
+### Sygnalizacja uliczna (`real-env.js`)
+- `post()` (słupek znaku lub sygnalizatora przy ciągu): kierunek jazdy wyznacza odcinek ta → tb, ułożony już według
+  `dir`. Dodatkowe mnożenie przez `dir` odwracało sygnalizatory i znaki na wlotach z `dir = −1` (jazda ku początkowi
+  ciągu).
+
+## 0.40.2 – 17 października 2026
+
+Tory z mapy do 250 m od trasy.
+
+### Zasięg torów z mapy (`osm-route.js`, `real-env.js`, `tools/osm-route.js`)
+- `RAIL_D = 250` (dawniej 110 m): tory z mapy, rozjazdy i kozły oporowe. Sieć trakcyjna nad innymi torami (słupy
+  i przewody) też do 250 m, dawniej 60 m. Bramownica semaforów bez zmian.
+- Trasy wbudowane (bez `torun-chelmza`) zbudowane ponownie z zapisanych danych. Przybyło od kilku do ok. 130 torów
+  na trasę, a pliki urosły o 1–3%.
+- `tools/osm-route.js`: `--save-env` zapisuje znaczniki `_masts`, `_streets`, `_pois`, bo zapytanie otoczenia
+  zawiera już maszty, przejścia, parkingi i punkty usług. Przy `--env-data` dane nie są wtedy dopobierane z Overpass,
+  co wcześniej dublowało elementy.
+
+## 0.40.1 – 16 października 2026
+
+Kamera zewnętrzna w tunelu (za pociągiem, z boku, przy torze, przy wózku).
+
+### Kamera w tunelu (`scene.js`)
+- `tunnelClamp(sim, mode)` działa dla widoków `follow`, `side`, `trackside` i `bogie`, gdy pociąg jest w tunelu
+  (czoło lub koniec między portalami, 5 m od nich).
+  - Położenie kamery na trasie (s, d) bierze się z rzutu na oś toru: 6 kroków po stycznej.
+  - W obrębie tunelu (`freeTunnel`) kamera jest ograniczana do obudowy: d między ścianami (0,4 m od nich), y pod
+    stropem; przy torze 1,7 m nad szyną, z boku 1,2–3,2 m. Potem jest kierowana na pociąg.
+  - W widoku z boku odległość uciętą przez ścianę kamera przenosi wzdłuż składu, najwyżej 25 m.
+- Widok przy wózku: w tunelu podłożem jest poziom toru, a nie teren (ulica nad tunelem).
+
+## 0.40.0 – 16 października 2026
+
+Nowe trasy wbudowane (Warszawa, Trójmiasto, Orzesze – Mikołów) i odświeżone trasy śląskie.
+
+### Trasy wbudowane (`routes/`, `index.html`)
+- Wygenerowane od nowa (`tools/osm-route.js`, dane z 16.10.2026):
+  - `gliwice-zabrze`, z poprawkami z poprzedniej wersji;
+  - `gliwice-katowice`;
+  - `rybnik-katowice`.
+- Nowe:
+  - `orzesze-mikolow` – z danych korytarza Rybnik – Katowice;
+  - `warszawa-wschodnia-zachodnia`;
+  - `gdynia-gdansk`.
+
+  Wszystkie mają horyzonty (`tools/horizon.js`) i są dopisane do `index.html` i do testu horyzontu.
+- Generator: profil RINF w tunelu po obniżeniu pod przykrycie 6,5 m jest najwyżej 14‰. Przykrycie ustępuje
+  pochyleniu, bo w Warszawie za wschodnim portalem wychodziło 16–18‰, a w RINF najwyżej 12,4‰.
+
+## 0.39.4 – 16 października 2026
+
+Poprawki: perony Powiśla, wyższe tunele, budynek przy portalu.
+
+### Perony przy przesuniętych torach, wysokość tunelu, budynki przy portalu (`osm-route.js`, `real-env.js`)
+- Generator:
+  - po każdym `levelBeside` peron, którego najbliższy tor (do 9 m) przesunięto, a leży pod jego szyną albo ponad 1,5 m
+    nad nią, dostaje 0,76 m nad szyną;
+  - pomiar peronu ponad 1,5 m pod torami (inny poziom stacji) nie dotyczy peronu między torami tego poziomu, po obu
+    stronach do 9 m – na Powiślu pomiar wypadł 2 m niżej.
+- `envTunnelH`: 6,8 m (hala 7,6 m), przy płytkim przykryciu najniżej 6 m; teren nad stropem jest podnoszony jak dotąd.
+- Budynek przy portalu bierze podstawę z terenu nad samą obudową, a nie ze stropu przy wykopie. Wcześniej najniższy
+  punkt obrysu nad wykopem zapadał budynek ok. 1 m w teren nad tunelem.
+
+## 0.39.3 – 16 października 2026
+
+Tunele: obudowa od zewnątrz, budynki nad tunelem i przy portalu.
+
+### Tunele: obudowa od zewnątrz, budynki nad tunelem (`real-env.js`)
+- `buildEnvTunnel` rysuje też obudowę od zewnątrz: ściany 0,4 m za wnętrzem, od 1,5 m pod główką szyny, i strop
+  0,15 m nad wnętrzem (beton, `World.tunnelOutM`). Wnętrze ma ciemny materiał z poświatą i przez dziurę w terenie
+  obok płytkiego tunelu widać je było jako czarne pasy.
+- `envOverTunnel(s, d, y, ext)` ustawia podstawę budynku w punktach nad obudową (do 2 m za ścianą): nie niżej niż
+  strop + 0,5 m. Budynek z częścią nad obudową liczy się do 15 m przed portalem i nie jest „zadaszeniem nad
+  torami” (`overTrack`).
+
+## 0.39.2 – 16 października 2026
+
+Poprawka generatora: tory przy Warszawie Powiślu na poziomie sąsiednich.
+
+### Generator: tory obok torów na poziomie linii (`osm-route.js`)
+- Reguła `levelBeside` działa w obie strony: tor równoległy do 6 m od toru na poziomie naszej linii (do 1,5 m od niej),
+  różniący się o ponad 1 m (dawniej: wyżej o ponad 2 m), jest przesuwany do poziomu sąsiada. Obejmuje też tory na
+  mostach (bez tunelu, bit 16). Rampa 60 m działa w obie strony.
+- Reguła działa po pomiarze NMT i ponownie po poprawkach z NMPT (pomosty, krzyżowania), przed wyrównaniem styków
+  i zapadlisk. Dawniej poprawki z NMPT cofały ją na moście przy Powiślu.
+- Test (`real-route.test.js`): tor z pomiarem 4 m niżej (ulica pod wiaduktem) jest podniesiony do poziomu sąsiada.
+
+## 0.39.1 – 16 października 2026
+
+Oświetlenie stadionów nocą.
+
+### Oświetlenie stadionu (`real-env.js`)
+- Naświetlacze to pas pod obrzeżem otworu dachu i od strony boiska, osobna siatka z materiałem kloszy latarń (nocą
+  jasne).
+- Światła (`envLampSink`, pula świateł punktowych i mapa nocna) to siatka 4 × 3 nad boiskiem i punkty co 30 m nad
+  przejściem między kondygnacjami trybun. Mają zasięg 0,55 dłuższego wymiaru boiska albo 24 m i barwę zimnobiałą.
+- Dach to osobna siatka z materiałem bez mapy nocnej. Plamy świateł liczone są w rzucie z góry, więc wcześniej
+  rozjaśniały dach nad trybunami.
+
+## 0.39.0 – 16 października 2026
+
+Stadiony: trybuny, dach z otworem i boisko z liniami (np. PGE Narodowy).
+
+### Stadiony (`osm-route.js`, `real-env.js`)
+- Generator: rodzaj budynku 7 to stadion. Warunek: `building=stadium` albo największy budynek (od 5000 m²) ze środkiem
+  w obszarze `leisure=stadium` (np. budynek z BDOT10k). Nazwa pochodzi z obszaru, przeznaczenie 23. Domyślna wysokość
+  24 m, potem z NMPT.
+- `env.sp` opisuje boisko: indeks budynku, s, d, kierunek dłuższego boku ×1000, połowy długości i szerokości (dm).
+  Boisko bierze się z największego `leisure=pitch` w obrysie (do połowy pola budynku), z prostokąta wzdłuż osi
+  głównych; wymiary są przyjmowane tylko w granicach 60–125 × 35–90 m. Bez boiska: 105 × 68 m wzdłuż osi obrysu.
+- Świat (`envStadium`): pierścienie to przeskalowany obrys. Wewnętrzny jest najmniejszy, w którym mieści się boisko
+  z obrzeżem; za duże boisko generator pomniejsza. Elementy:
+  - bandy, schodkowe trybuny w dwóch kondygnacjach (do 28 stopni) z przejściem i pasem lóż;
+  - dach od ściany do otworu (32% szerokości trybun), z obrzeżem;
+  - elewacja przeszklona dołem, z żebrami co 7 m;
+  - murawa w pasach, linie, bramki z siatką.
+
+  Murawa leży ponad terenem pod boiskiem.
+- Test (`real-route.test.js`): budynek w obszarze stadionu ma rodzaj 7 i nazwę, a boisko wymiary z mapy.
+
+## 0.38.3 – 16 października 2026
+
+Poprawka generatora: cieki pod ziemią (Kanał Kamionkowski przy Warszawie Stadion).
+
+### Generator: cieki pod ziemią (`gen/sources.js`, `osm-route.js`)
+- BDOT10k: cieki (SWRS, SWKN, SWRM) z `polozenie` „pod powierzchnią” albo `cechaGeometrii` „sztuczny łącznik” dostają
+  `tunnel=culvert`, `layer=-1`. Takie cieki nie są rysowane i nie dostają mostu. Sztuczny łącznik to odcinek dorysowany
+  dla ciągłości sieci.
+- Odcinki cieków BDOT10k do 15 m od cieku OSM pod ziemią (przepust, kolektor) są też pod ziemią; generator dzieli je
+  punktami co 5 m. Na rastrze zagospodarowania obszar wody do 25 m od cieku pod ziemią jest pomijany. Przykład: Kanał
+  Kamionkowski przy Warszawie Stadion. W BDOT10k jest tam kanałem „na powierzchni” i obszarem wody, a w OSM –
+  „Kolektorem Stadionowym” pod torami.
+- Test (`real-route.test.js`): obszar wody wzdłuż kolektora pod torem znika, staw obok zostaje.
+
+## 0.38.2 – 16 października 2026
+
+Poprawka generatora: WKD przy Warszawie Ochocie na poziomie torów linii 448.
+
+### Generator: wysokości torów obok naszej linii przy tunelu (`osm-route.js`)
+- Tory w tunelu naszej linii (bit 16) mają w `env.th` poziom naszej linii, a nie pomiar NMT ulicy nad tunelem. Dawniej
+  wyrównanie styków (wyższy z poziomów) przenosiło ten pomiar przez krótki odcinek przy portalu na tor wychodzący z tunelu.
+  Na Ochocie WKD była 6,5 m wyżej i zjeżdżała w dół 3% na 200 m.
+- Tor z pomiarem ponad 2 m wyżej niż sąsiedni tor oddalony do 6 m, równoległy, na poziomie naszej linii, obniżany jest do
+  poziomu sąsiada. Warunek: odcinek od 40 m albo cały krótki tor. Do własnego pomiaru wraca rampą 60 m. Dwa przebiegi
+  (drugi tor pary). Pomiar NMT trafia tu w przykrycie lub skarpę: WKD przy Ochocie, 3,2 m nad torem linii 448.
+- Test (`real-route.test.js`): tor 4 m obok przykrytego toru, z pomiarem 4 m wyżej – obniżony.
+
+## 0.38.1 – 16 października 2026
+
+Poprawka generatora: tory w przykrytym wykopie obok naszej linii (Warszawa Ochota).
+
+### Generator: tory w przykrytym wykopie obok naszej linii (`osm-route.js`)
+- Tor pod ziemią według danych (layer < 0) przykryty w pomiarze NMT, równoległy do naszej linii i do 25 m od niej, poza
+  naszym tunelem – zostaje, na poziomie naszej linii (dawniej pominięty jako tunel innej linii: Ochota – tor linii 448
+  przy peronie wyspowym na 120 m).
+- Test (`real-route.test.js`): przykryty tor tuż obok naszego poza tunelem zostaje.
+
+## 0.38.0 – 16 października 2026
+
+Generator: dane PKP PLK do rozpoznawania przystanków, RINF (ERA) – pochylenia i tunele.
+
+### Generator: dane PKP PLK i RINF (`osm-route.js`, `gen/sources.js`, `tools/rinf.js`, `gen/rinf-pl.js`)
+- Wykaz posterunków PKP PLK wczytywany przed wyborem stacji: przystanek, który w wykazie leży tylko przy liniach, którymi
+  przebieg w tym miejscu (±400 m, numery ref torów) nie biegnie – pominięty (uwaga `station-other`); przy naszej linii –
+  zostaje; bez wpisu – dotychczasowa reguła odległości od torów.
+- `tools/rinf.js`: wyciąg ze zrzutu grafu wiedzy ERA (Zenodo, CC BY 4.0, czytany strumieniowo) – pochylenia linii
+  (‰ od km, tor N) i tunele (linia, km, długość) zarządcy PKP PLK → `js/gen/rinf-pl.js` (ok. 660 KB, w przeglądarce
+  wczytywany dopiero przy generowaniu – `TrainSources.rinfData`).
+- Tunele z RINF (linia przebiegu, kilometraż z PKP PLK): brak w OSM – dodany (uwaga `tunnel-rinf`), inne położenie
+  portali (> 60 m) – uwaga.
+- Profil RINF: po sprawdzeniu zgodności z pomiarem na otwartych odcinkach (mediana odchyłki do 1,5 m na 500 m) – kształt
+  w tunelach i na mostach od 150 m, końce na wysokości z pomiaru (różnica do 2 m albo 0,4% rozłożona liniowo; większa –
+  uwaga `rinf-profile`); w tunelu tor co najmniej 6,5 m pod terenem.
+- Źródła danych trasy i ekranu generatora: RINF – © ERA (CC BY 4.0); narzędzie CLI: `--no-rinf`.
+- Test (`real-route.test.js`): przystanek innej linii wg PKP PLK, tunel z RINF, profil w tunelu.
+
+## 0.37.1 – 16 października 2026
+
+Poprawki tuneli i torów pod ziemią (wlot tunelu, Stadion, tory innych tuneli).
+
+### Tunele i tory na trasach z mapy – poprawki (`common.js`, `real-env.js`, `world.js`, `osm-route.js`)
+- Otwory portali (`uPortalA/B`, `envPortalUniforms`): shader terenu odrzuca piksele w otworze portalu (szerokość obudowy,
+  od 0,5 m nad główką szyny do stropu, ±0,6 m od ściany czołowej) – siatka wysokości nie ma dziury, a skok terenu z dna
+  wykopu nad strop stał w otworze jak ściana.
+- Tory na moście: generator – nie niżej niż teren z pomiaru pod torem; świat – pomiar ponad 1,5 m pod terenem pomijany
+  (poziom naszej linii), także dla starszych plików.
+- Tory przy naszym tunelu: poza obudową i pod terenem z pomiaru – nie rysowane, bez rowu w terenie i kozłów
+  (`envBuriedNearTunnel`); tor zaczynający się do 30 m od portalu i tam ponad 3 m nad naszym torem – biegnie dalej we
+  własnym tunelu, nie rysowany (`envRowFromTunnel`, bez sieci trakcyjnej).
+
+## 0.37.0 – 16 października 2026
+
+Tunele i tory pod ziemią na trasach z mapy (po przeglądzie tunelu średnicowego w Warszawie).
+
+### Tunele i tory pod ziemią (`real-env.js`, `world.js`, `osm-route.js`)
+- Obudowa: szerokość wnętrza 4,5 m od osi (dwa tory – 9,6 m po lewej), tory w tunelu 3,4 m od skrajnego; chodnik
+  służbowy 0,9 m, koryta kablowe (1,75 i 2,2 m), lampy co 15 m na zmianę po obu stronach, lampki ewakuacyjne co 50 m;
+  poświata obudowy mocniejsza.
+- Sieć trakcyjna: strop tunelu jako ograniczenie wysokości przęsła (jak spód wiaduktu) – lina nośna pod stropem, wspornik
+  przy nim; przewody także nad torami w tunelu (bit 16).
+- Semafory w tunelu: przy prawej ścianie (`envSignalSpot` – `wall`), bez masztu, na wsporniku.
+- Portale: przejście terenu nad strop w obrębie obudowy (+2 m) ostre (`envTunnelSharp`), dodatkowe wiersze siatki terenu
+  0,5 m przed i za ścianą czołową (`ribbonRows` – lista kilometraży); obok obudowy dalej łagodnie (12 m).
+- Hala stacji podziemnej: kolumny w osi peronu (co 12 m, z pominięciem schodów, tablic, ławek i gablot), reklamy na ścianie.
+- Generator: tor pod ziemią według danych w obrębie tunelu naszej linii – do 45 m od osi w obudowie, dalej pominięty, bez
+  progu długości; tor na moście równoległy do naszego (do 30 m, poziom do 5 m od naszego, nasza linia bez mostu) – na
+  naszym poziomie; most bez prześwitu (mediana poniżej 2 m, od 40 m) – zwykły tor z pomiaru.
+- Świat: tor na moście kształtuje teren tam, gdzie leży mniej niż 2,5 m nad terenem z pomiaru (maska jezdni/torów).
+- Mosty drogowe: profil pomostu z NMPT – obwiednia dolna (6%) – bez garbów od pylonów i lin.
+- Test (`real-route.test.js`): krótka bocznica w tunelu (bit 16), tor osobnego tunelu obok (pominięty).
+
+## 0.36.1 – 16 października 2026
+
+Wygenerowane trasy na osobnym ekranie obok Generatora tras.
+
+### Wygenerowane trasy – osobny ekran (`index.html`, `style.css`, `main.js`)
+- Ekran `scr-routes` (menu: „Wygenerowane trasy” obok „Generatora tras”): lista tras (przewijana), import, eksport
+  zaznaczonych; przejścia „Generator tras →” i z generatora „Wygenerowane trasy →”; upuszczone pliki tras otwierają ten
+  ekran. Generator – dwie kolumny (nowa trasa, przebieg z wyższym dziennikiem).
+- Wiersz trasy: zaznaczenie, nazwa i długość, przyciski po prawej (Wybierz, Kontrola, Horyzont, Usuń).
+
+## 0.36.0 – 16 października 2026
+
+Semafory dla pociągów z przeciwka na mijankach.
+
+### Ruch na linii: semafory pociągów z przeciwka (`traffic.js`, `world.js`, `real-env.js`, `scene.js`)
+- `traffic.js`: miejsce oczekiwania na odcinek jednotorowy – semafor `SIG_GAP` = 60 m od końca odcinka (przed rozjazdem),
+  czoło 12 m przed nim (`HOLD_GAP`; dawniej 30 m od odcinka, przy zwrotnicy); osobowy po postoju przy peronie tej mijanki
+  (do 500 m przed semaforem) czeka przy peronie; `oppSignal(k)` – „go”, gdy odcinek przydzielono pociągowi przed
+  semaforem.
+- Świat: semafory (ten sam model, obrócony, tabliczka D1, D2…) przy końcach odcinków jednotorowych, przy torze mijanki
+  (`envLaneNear` – wspólne z rysowaniem pociągów z przeciwka), na zewnątrz od toru; światło zielone albo czerwone wg
+  `oppSignal`.
+- Test (`traffic.test.js`): czekający pociąg z przeciwka – przed semaforem (który pokazuje „stój”), przy peronie albo
+  w kolejce za innym.
+
+## 0.35.1 – 16 października 2026
+
+Poprawki po przeglądzie trasy warszawskiej: hala Dworca Centralnego, przystanek Warszawa Ochota.
+
+### Trasy z mapy: poprawki (`real-env.js`, `osm-route.js`)
+- Budynki z mapy nad osią toru: w tunelu (`envTunnelK` > 0,5) bez reguły „hala peronowa” (sam dach na słupach) –
+  zwykła bryła ze ścianami.
+- Stacje innych linii (`otherLine`): także węzeł do 8 m od obcego toru, gdy nasz jest dalej niż 9 m i co najmniej 4 m
+  dalej (dawniej tylko przewaga ponad 15 m); uwaga PKP PLK o brakującym przystanku pomijana dla stacji innej linii.
+
+## 0.35.0 – 16 października 2026
+
+Przegląd trasy Warszawa Wschodnia – Warszawa Zachodnia: tunel średnicowy, tory i perony pod ziemią, ulice nad tunelem.
+
+### Trasy z mapy: miasto nad tunelem (`osm-route.js`, `real-env.js`, `scene.js`)
+- Tory w tunelach (bit 16 w `env.t`): długi tunel – w tunelu naszej linii do 40 m od osi (poza nim pominięty); tory pod
+  ziemią według danych bez długiego tunelu (layer < 0, krótki tunel, location=underground – robocza flaga 32) – pomiar
+  NMT na torze i 12 m po bokach: wykop (oś ponad 2,5 m niżej niż wyższa strona) zostaje, przykryte ciągi od 60 m – tunel
+  (w naszym tunelu bit 16, poza nim pominięte); każdy tor we wnętrzu naszego tunelu (od 20 m za portalami, do 45 m od
+  osi) – bit 16. Bez siatki terenu – tylko reguła wnętrza tunelu.
+- Świat: tory z bitem 16 na poziomie naszej linii (bez pomiaru, bez kształtowania terenu, dróg i wiaduktów, bez słupów
+  sieci, wagonów i oświetlenia bocznic); `envTrackY` w obrębie obudowy tunelu – poziom naszej linii (perony, wagony,
+  kozły, rozjazdy, ruch na innych torach). Obudowa (`envTunnelSides`) obejmuje tory i perony w tunelu; wysokość stropu
+  (`envTunnelH`) wg przykrycia: 0,8 m pod terenem, 5,2–6,2 m (hala 7 m), teren nad stropem co najmniej 0,35 m.
+- Perony: metro i tramwaj pominięte (także relacje); perony podziemne w tunelu naszej linii (do 45 m) zachowane, bez
+  pomiaru NMT – w grze na poziomie torów, z halą (`envTunnelPlatforms`, `envHallK`), nazwą ze stacji innej linii
+  (`env.os` – stacje pominięte przez generator); hala – osobny materiał z poświatą (bez posadzki).
+- Generator: ulice nad wnętrzem tunelu bez odstępu od osi (`lineRuns` – `tunFree`), budynki nad tunelem dopuszczone;
+  obniżenia z pomiaru (mosty) przycinane do portali; stacje w tunelu bez pomiaru NMPT; uwagi PKP PLK zgłaszane po
+  utworzeniu listy uwag (dawniej błąd „issue before initialization” i trasa bez danych PLK).
+- AO (`scene.js` `camInTunnel`) wyłączone, gdy kamera jest we wnętrzu tunelu.
+- Test (`real-route.test.js`): tor w tunelu wspólnym, łącznica bez znacznika tunelu, WKD przykryta poza tunelem, tor
+  w wykopie, peron metra, peron innej linii w tunelu, `env.os`.
+
+## 0.34.0 – 16 października 2026
+
+Stacje podziemne na trasach z mapy.
+
+### Stacje podziemne (`world.js`, `real-env.js`, `freecam.js`)
+- Rozpoznanie (`envUnderground`): trasa z pomiarem terenu i środek peronu w tunelu (`envTunnelK` > 0,5).
+- Obudowa (`buildEnvTunnel`, `envHallK`): w obrębie peronu (± 6–12 m) zamiast sklepienia płaski strop 7 m z małymi fazami,
+  kolory hali (płytki, cokół, strop); pasy świetlówek (instancje) nad osią peronu i torami; bez lamp tunelowych w hali.
+  Posadzka obudowy (osobny pas 0,55 m pod główką szyny) w całym tunelu. Szerokość wnętrza – `envTunnelSides`.
+- Stacja (`buildStation`): bez latarń, wiat i dworca z gry; pas peronu do ściany hali, tablice z nazwą na ścianie co 30 m;
+  oprawy pod stropem (`userData.always`) – w puli świateł także w dzień, bez mapy nocnej (`updateLamps`); dwa biegi
+  schodów (1/4 i 3/4 peronu, do stropu, bez ławek i gablot na nich; wąski peron wyspowy < 5 m – bez schodów), pawilony
+  na terenie z pomiaru nad wyjściem schodów; wyjście pasażerów u stóp schodów.
+- Kamera swobodna (`freeTunnel`): w tunelu poniżej stropu – podłoga, strop i ściany zamiast terenu.
+- Poprawka: maska jezdni kawałka nie liczy się rekurencyjnie (tor z mapy w strefie stacji podziemnej → teren →
+  maska); w trakcie jej budowy teren kawałka bez jezdni (`rmBusy`).
+
+## 0.33.0 – 15 października 2026
+
+Generator tras: tunele, stacje innych linii, wykopy (po analizie trasy Warszawa Wschodnia – Warszawa Zachodnia).
+
+### Generator tras: tunele i stacje (`osm-route.js`)
+- Tunele: odrzucany tylko krótki (< 80 m) albo krótki przy stacji (< 300 m z końcem w strefie peronów); wyznaczane
+  przed otoczeniem (`tunnelRaw`). Z pomiaru NMT: tor co najmniej 7,5 m pod terenem (wymóg rośnie przez 250 m od
+  portalu, tylko gdzie teren nie leży poniżej toru), portale przesunięte tam, gdzie teren jest ≥ 3 m nad torem
+  (uwaga `tunnel-nmt`), tunel bez przykrycia – usunięty.
+- Stacje (`otherKind`, `otherLine`): pomijane metro, kolej lekka, tramwaj (tagi węzła) i stacje, których najbliższy tor
+  nie należy do przebiegu, jest wyraźnie bliżej i ma inny numer linii (`ref`); uwaga `station-other`.
+- Wykop a most: przy obniżeniu względem przebiegu toru dodatkowy pomiar NMT 12 i 20 m po obu stronach – teren wyżej
+  niż oś (o ponad 1,5 m) to wykop (uwaga `cut-nmt`), bez mostu.
+- Obiekty przy tunelu: ulice przecinające oś nad tunelem – zwykłe drogi (bez wiaduktu, bez przerwy przy osi), tory
+  przecinające nasz w tunelu pominięte, bez automatycznych wiaduktów w tunelu; tory w długich tunelach tylko do 6,5 m
+  od osi, perony podziemne dalej niż 9 m od osi – pomijane.
+- Świat (`real-env.js` `buildEnvTunnel`, `envTunnelK`): na trasach z pomiarem terenu obudowa tunelu (ściany,
+  sklepienie, lampy co 30 m, poszerzenie przy peronach) budowana w kawałkach świata, portale do terenu; nad tunelem
+  teren z pomiaru także przy osi i nad stacją podziemną, ulice nad osią.
+- Test (`real-route.test.js`): linia z tunelem i przystankiem w nim, stacja metra, stacja innej linii, ulica nad
+  tunelem, wykop i dolina w NMT – poprzednia wersja generatora go nie przechodzi.
+
+## 0.32.0 – 15 października 2026
+
+Etap D – wydajność po etapie 11 (odłożone scalanie modelu pociągu gracza, atlas tablic).
+
+### Wydajność (etap D – po etapie 11)
+- Bryły cieni (`train.js` `shadowProxies`, `shadowMerge`): pociąg gracza – jedna scalona bryła na wagon i na pantograf
+  (przebudowywana przy ruchu), rysowana tylko w mapach cieni (`onBeforeRender` – zakres 0, `onBeforeShadow` – pełny);
+  cienie pociągu 510–780 → 5–8 wywołań na klatkę.
+- Scalanie pociągu gracza (`compactPlayer`): ruchome podgrupy (skrzydła drzwi, zestawy kołowe, ramiona wycieraczek,
+  pantografy – też w `setPanto`) scalane każda wewnątrz siebie, reszta wagonu poza nimi, wnętrzem (`room`) i LOD.
+- Wspólne materiały taboru (`vcConvert`): kolor, chropowatość i metaliczność w wierzchołkach (`color`, `aRM`), jeden
+  materiał na wariant łatki – pociąg gracza i pociągi tła (`compact`); wagon tła ok. 58 → 37 siatek.
+- Atlasy (`real-env.js`): szyldy budynków (`signCell` – strony 1024 × 1024), znaki A-7/D-1/D-6/B-18 z tyłami
+  (`signAtlas`), studzienki i kratki (`roadWearFlush`) – jedna siatka na kawałek (`quadMesh`).
+- Pociągi tła (`compact`): bryły cieni na wagon (`shadowProxies` – też dla pociągów tła; tylko najdokładniejszy poziom
+  szczegółów, dawniej wszystkie naraz), zabrudzenie bazowe w wierzchołkach (`aRM.z` zamiast stałej w shaderze – części
+  zestawu kołowego jedną siatką); EU07 + 4 wagony przy stacji: ok. 410 → ok. 150 wywołań (cienie 256 → 7).
+- Wnętrze kabiny (`cab.js`): części o wspólnym materiale scalone (151 → 46 siatek, ok. 150 wywołań rysowania mniej
+  w widoku z kabiny), nastawnik i kran hamulca – każdy wewnątrz siebie; porównanie: perfOpt `{"cabMerge":false}`.
+- Zasłona słońca w kabinie (`scene.js` `sunOccluder`): nieprzezroczyste trójkąty do 6,5 m od oka w kostkach 1,5 m –
+  promień ok. 0,6 ms (dawniej cały wagon, ok. 7 ms co 4. klatkę).
+- Pomiar (Gliwice, dzień, średnia): kabina 14,7 → 11,1 ms procesora, 1047 → 874 wywołania; widok zza pociągu
+  ok. 13,4 → 9,4 ms, 1761 → 723 wywołania.
+
+### Menu
+- Ustawienia w zakładkach (jak w Pograniczu, wygląd jak zakładki gry jednoosobowej): Dźwięk (głośność, grupy
+  dźwięków), Zapowiedzi (tryb, głos – silnik, głos, tempo, wysokość, głośność), Grafika (jakość, renderer, pociągi tła);
+  pod nazwą podsumowanie, ostatnia zakładka zapamiętana (`setTab`), okno stałej wysokości.
+
+## 0.31.0 – 15 października 2026
+
+Etap 11 – zima w symulacji.
+
+### Zima w symulacji (etap 11)
+- Zdarzenie `frozen` (`scenario.js`, `sim.freezeSignal`, `checkFrozen`): semafor „stój” przez `duration` s od zbliżenia
+  się pociągu w ruchu na 1,5 km; komunikaty dyżurnego (zamarznięta, rozmrożona); w zapisie gry (pola 5–6 semafora).
+  W zdarzeniach losowych zimą (50 %, semafor wjazdowy albo ostatni przed stacją), też w zadaniu dnia.
+- Oblodzona sieć (`icePatches`, `updateIce`): zimą, pojazd elektryczny – odcinki 300–1200 m; przerwy w styku
+  0,1–0,35 s bez siły pociągowej, zdarzenie `iceArc` (iskry `trainModel.iceArc`, dźwięk `spark`), komunikat raz na odcinek.
+- Testy: zamarznięta zwrotnica na trasach testowych, losowanie zimą, odcinki i łuki oblodzonej sieci.
+
+## 0.30.0 – 15 października 2026
+
+Etap 11 – zima w ruchu.
+
+### Zima w ruchu (etap 11)
+- Wzbijany śnieg (`weather.js` `updateKick`, `setTrain`): bufor cząstek (2400 × jakość) liczony na procesorze; emisja
+  przy wózkach wagonów do 160 m od kamery i przed pługiem czoła, siła wg pokrywy (`snowGround`) i prędkości (10–60 km/h).
+- Szron (`train.js` `WET_FRAG`, `uFrost`, `uDefrost`): kryształki z żyłkowanego szumu; na szybie czołowej odmrażanie od
+  osi wycieraczek do końca pola wycieraczek (ok. 1 min), boczne – płaty; `frostTarget` z pory roku (scene.js).
+- Zaspy (`World.driftMesh`, `driftMat` – wysokość `aDrift` obniżana w shaderze przy małej pokrywie): wały na ramionach
+  podsypki (`buildTrackDrifts`, przerwy na stacjach, przejazdach, mostach, przy innych torach, rozjazdach, drogach) i pod
+  ścianami budynków od strony wiatru (`buildEnvBuildings`).
+- Szadź: kolor przewodów (`World.wireMat`) zimą wg pokrywy, nocą przygaszony.
+- Wiosna (`Weather.melting`): pokrywa 0,3 na starcie, topnienie ok. 8 min, mokra nawierzchnia.
+
+## 0.29.0 – 15 października 2026
+
+Etap 11 – noc.
+
+### Noc (etap 11)
+- Mapa światła nocnego (`World.updateNightMap`): kanwa 1024 × 512 – plamy wszystkich lamp w promieniu ok. 256 m od
+  kamery (lewa połowa) i same oprawy (prawa), co 0,5 s albo po przesunięciu o 16 m; uniformy `uNightTex`, `uNightBox`,
+  `uNightK` we wspólnym `U`.
+- Shader (`NIGHT_GLSL` po `emissivemap_fragment`): światło z mapy × kolor podłoża (powierzchnie w górę w pełni, ściany
+  częściowo); odbicia opraw w mokrym – promień odbity do wysokości 6,5 m, 8 próbek co 1,8 m po ziemi (smuga).
+- Barwa i zasięg lampy (`userData.tint`, `reach`); dawne plamy-nalepki wyłączone, światła punktowe słabsze (34).
+- Łuna miasta (`sky.js` `cityGlow`): wg liczby latarni w okolicy (`world.urban`), mocniejsza przy zachmurzeniu i mgle;
+  pas nad horyzontem, spody chmur, mgła; gwiazdy przyćmione.
+
+## 0.28.0 – 15 października 2026
+
+Etap 11, krok G5 – część 4 (ulice) i drobne zmiany.
+
+### Ulice (etap 11, G5 – część 4)
+- Znaki pionowe (`real-env.js` `streetFurnFlush`, tarcze z kanwy `streetSign`): A-7 na wlotach podporządkowanych (przy
+  linii warunkowego zatrzymania), D-1 ok. 14 m przed skrzyżowaniem na części wlotów drogi z pierwszeństwem, D-6 przed
+  zebrami po prawej stronie obu kierunków; słupek `post()` – na chodniku 1,1 m za krawężnikiem albo 0,55 m od jezdni.
+- Sygnalizacja (`junctionLights`, `junctionGroups`, `tlState`): skrzyżowania z co najmniej dwoma wlotami dróg
+  wojewódzkich lub ważniejszych i trzema powiatowymi (75 % – stale dla węzła); przejścia z `crossing=traffic_signals`
+  z mapy (`zByChunk` – flaga `sig`). Fazy: wloty naprzeciw siebie razem, cykl 60 s z czerwonym+żółtym; soczewki – kolor
+  egzemplarza (`updateTLights`, typ `tlights` w `updateDyn`); linia zatrzymania P-14 na wlotach z sygnalizacją.
+- Latarnie (`lampGeo`, `envLampMeshes`): bryła scalona (cokół, słup stożkowy, wysięgnik `TubeGeometry` po łuku, oprawa),
+  typ `main` (8,6 m, LED) przy drogach do powiatowych i na obiektach, `res` (6,4 m, kopułka) na osiedlowych.
+
+### Pozostałe
+- Pora roku w pauzie (`sim.setSeason`, `renderer.reseason`) i kafelki pory roku w zakładce Warunki (`SEASON_SKY`).
+- `npm run web` (`tools/web.js`): folder `web/maszynista/` i `web/maszynista-<wersja>.zip`.
+- Śnieg (`WEATHER_GLSL`): wzór płatów z szumu gradientowego `gPerlin` (4 skale, obrócone, bez kierunku siatki),
+  `gHash` bez sinusa; `patch(…, { noSnow })` – ludzie bez śniegu.
+
 ## 0.27.0 – 15 października 2026
 
 Poprawki po etapie 11 (śnieg, liście, budynki wg rodzaju).

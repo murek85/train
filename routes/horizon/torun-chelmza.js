@@ -1,5 +1,5 @@
 /* Horyzont trasy Toruń Główny – Chełmża – sylwetka dalekiego terenu (2,5–60 km) co ok. 3 km trasy, 180 kierunków,
-   kąty w setnych stopnia. Wygenerowano: 2026-10-15 (node tools/horizon.js).
+   kąty w setnych stopnia. Wygenerowano: 2026-10-17 (node tools/horizon.js).
    Dane: kafle terenu AWS Terrain Tiles (SRTM, GMTED i inne – © Mapzen i dostawcy), stacje – © współtwórcy OpenStreetMap. */
 (function (h) {
 	if (typeof module === 'object' && module.exports) module.exports = h;

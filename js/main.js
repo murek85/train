@@ -78,27 +78,7 @@
 		put: (d) => dbRun('routes', 'readwrite', (st) => st.put(d)),
 		del: (id) => dbRun('routes', 'readwrite', (st) => st.delete(id)),
 	};
-	const tileDB = {
-		all: async () => {
-			const keys = await dbRun('nmpt', 'readonly', (st) => st.getAllKeys());
-			const vals = await dbRun('nmpt', 'readonly', (st) => st.getAll());
-			return new Map(keys.map((k, i) => [k, vals[i]]));
-		},
-		put: (k, t) => dbRun('nmpt', 'readwrite', (st) => st.put(t, k)),
-	};
-	// pobrane pliki oficjalnych źródeł (paczki BDOT10k, arkusze PLK) – według adresu
-	const fileDB = {
-		get: async (url) => { try { const v = await dbRun('files', 'readonly', (st) => st.get(url)); return v ? new Uint8Array(v) : null; } catch (e) { return null; } },
-		put: async (url, bytes) => { try { await dbRun('files', 'readwrite', (st) => st.put(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), url)); } catch (e) { /* brak miejsca */ } },
-	};
-	// model powierzchni NMPT dla generatora: kafelki z pamięci, nowe zapisywane od razu (wartości jako Int16Array)
-	async function nmptSurface() {
-		let tiles = new Map();
-		try { tiles = await tileDB.all(); } catch (e) { /* bez pamięci */ }
-		return (pts, l) => window.TrainOSM.nmptSampler(pts, l, tiles, (all, k, T) => {
-			tileDB.put(k, Object.assign({}, T, { v: Int16Array.from(T.v) })).catch(() => {});
-		});
-	}
+	// kafelki NMPT i pobrane pliki źródeł generatora – w wątku generatora (js/gen-worker.js), ta sama baza
 	const plain = (d) => Object.assign({}, d, { custom: undefined });
 	async function loadCustom() {
 		let list = [];
@@ -117,7 +97,7 @@
 			startDemo();
 		}
 		buildMenu();
-		if (!$('scr-gen').classList.contains('hidden')) buildGenScreen();
+		if (!$('scr-routes').classList.contains('hidden')) buildGenScreen();
 		if (!$('saves').classList.contains('hidden')) buildSaves(); // zapisy na trasach z generatora – już dostępne
 	}
 	function forgetRoute(id) {
@@ -146,18 +126,43 @@
 	function cfgFor(def) {
 		return R.normConfig(def, trainCfg);
 	}
-	function routeFor(def, cfg) {
+	/* from – stacja początkowa (numer w trasie): domyślnie wybór z menu (jazda swobodna), ze składem podanym wprost
+	   (scenariusz) – od pierwszej stacji */
+	function routeFor(def, cfg, from) {
 		const c = cfg ? R.normConfig(def, cfg) : cfgFor(def);
-		const key = `${def.id}|${R.configKey(c)}`;
-		if (!prepared[key]) prepared[key] = R.prepare(def, c);
+		const f = from === undefined ? (cfg ? 0 : startOf(def)) : from;
+		const key = `${def.id}|${R.configKey(c)}|${f}`;
+		if (!prepared[key]) prepared[key] = R.prepare(def, c, f);
 		return prepared[key];
 	}
+	// ---------- przebieg: stacja początkowa i kierunek (zakładka „Warunki”) ----------
+	// stacja początkowa trasy (numer; ostatnia stacja wykluczona) – zapamiętana osobno dla każdej trasy
+	function startOf(def) {
+		const k = Number(load('startSt', {})[def.id]) || 0;
+		return Math.max(0, Math.min(k, def.stations.length - 2));
+	}
+	function setStart(id, k) {
+		const m = load('startSt', {});
+		if (k > 0) m[id] = k; else delete m[id];
+		save('startSt', m);
+	}
+	/* trasa w drugą stronę: wskazana w opisie (reverse) albo trasa rzeczywista z zamienionymi stacjami krańcowymi (np.
+	   Gliwice – Zabrze i Zabrze – Gliwice); na liście map tylko pierwsza z pary, kierunek – w „Warunkach” */
+	function pairOf(def) {
+		if (!def) return null;
+		if (def.reverse) { const p = defs.find((x) => x.id === def.reverse); if (p) return p; }
+		if (!def.real) return null;
+		const a = def.stations[0].name, b = def.stations[def.stations.length - 1].name;
+		// para z tego samego źródła (wbudowana z wbudowaną, z generatora z wygenerowaną) – własna trasa nie chowa się za wbudowaną
+		return defs.find((x) => x !== def && x.real && !!x.custom === !!def.custom && x.stations[0].name === b && x.stations[x.stations.length - 1].name === a) || null;
+	}
+	const secondary = (def) => { const p = pairOf(def); return !!p && defs.indexOf(p) < defs.indexOf(def); };
 	function routeById(id) { return routeFor(defById(id)); }
 	// trasa bieżącej jazdy: scenariusz (jego trasa i skład) albo wybór z menu
 	function rideDef() { return scen ? defById(scen.route) : defById(selected); }
 	function rideRoute() { return scen ? routeFor(defById(scen.route), scen.train) : routeById(selected); }
 	function timetable(route) {
-		const key = `${route.id}|${route.configKey}`;
+		const key = `${route.id}|${route.configKey}|${route.from || 0}`;
 		if (!timetables[key]) timetables[key] = buildTimetable(route);
 		return timetables[key];
 	}
@@ -193,7 +198,7 @@
 	function bestKey(route) {
 		const c = route.config, lead = c.emu || c.loco;
 		const kind = c.emu === 'EN57' ? 'ezt' : route.freight ? 'freight-' + lead : lead === 'EU07' ? 'ic' : lead === 'SM42' ? 'dd' : lead;
-		return `best.${route.id}.${kind}`;
+		return `best.${route.id}${route.from ? '@' + route.from : ''}.${kind}`;
 	}
 
 	// ---------- menu ----------
@@ -209,9 +214,11 @@
 		if (!defs.length) list.innerHTML = '<p class="empty">Brak tras. Wygeneruj trasę z prawdziwej linii w menu „Generator tras”.</p>';
 		$('btn-start').disabled = !defs.length;
 		for (const d of defs) {
+			if (secondary(d)) continue; // trasa w drugą stronę – wybór kierunku w „Warunkach”
 			const stops = d.stations.filter((s) => s.stop !== false).length;
 			const b = document.createElement('button');
-			b.className = 'route' + (d.id === selected ? ' sel' : '');
+			const pair = pairOf(d), mine = d.id === selected || (!!pair && pair.id === selected);
+			b.className = 'route' + (mine ? ' sel' : '');
 			const badge = d.custom ? '<span class="badge custom">wygenerowana</span>' : d.real ? '<span class="badge">rzeczywista</span>' : '';
 			const sus = suspectGrades(d);
 			const warn = sus ? `<span class="badge warn" title="Pochylenie ${sus.g}‰ na ${sus.len} m od km ${sus.km} – na liniach kolejowych ponad 30‰ prawie nie występuje. Trasa wygenerowana przy błędzie usługi wysokości (NMT): tor w fikcyjnym jarze lub na garbie. Wygeneruj ją ponownie.">⚠ wysokości</span>` : '';
@@ -221,7 +228,7 @@
 				<p>${esc(d.desc)}</p>
 				<div class="meta">${((d.stations[d.stations.length - 1].pos + 35) / 1000).toFixed(1)} km · ${d.stations.length} stacji (${stops} postojów) · perony ${d.platformLength} m · odjazd ${fmtClock(depClock(d)).slice(0, 5)}${el}</div>
 				${d.source ? `<div class="src">${esc(d.source)}</div>` : ''}`;
-			b.addEventListener('click', () => { if (d.id !== selected) selectRoute(d.id); });
+			b.addEventListener('click', () => { if (!mine) selectRoute(d.id); });
 			list.appendChild(b);
 		}
 		buildCondTab();
@@ -237,7 +244,7 @@
 		const wsel = $('opt-weather'), tsel = $('opt-time');
 		const wName = wsel.options[wsel.selectedIndex].text, tName = tsel.value === 'auto' ? fmtClock(depClock(def)).slice(0, 5) : tsel.value === 'custom' ? $('opt-time-custom').value : tsel.value;
 		$('summary').innerHTML = `<b>${esc(route.title)}</b> · ${esc(t.name)}${route.freight ? ' (towarowy)' : ''} · ${Math.round(route.trainLength)} m, ${Math.round(t.mass / 1000)} t · odjazd ${tName}, ${wName} · ~<b>${duration} min</b>${best !== null ? ` · rekord: <b>${best}</b>` : ''}`;
-		$('sum-map').textContent = def.title;
+		$('sum-map').textContent = route.title;
 		$('sum-train').textContent = t.name;
 		const tr = Number($('opt-traffic').value);
 		$('sum-cond').textContent = `${wName}, ${tName}${tr ? ', ruch ' + ['', 'mały', 'średni', 'duży'][tr] : ''}${$('opt-events').checked ? ', zdarzenia losowe' : ''}`;
@@ -486,7 +493,57 @@
 			box.appendChild(b);
 		}
 	}
+	// przebieg: kierunek (trasa z parą) i stacja początkowa; trasa z generatora bez pary – przycisk „w drugą stronę”
+	function buildRunOpts() {
+		const def = defById(selected);
+		if (!def) return;
+		const pair = pairOf(def), dir = $('opt-dir'), st = $('opt-start');
+		$('dir-row').classList.toggle('hidden', !pair);
+		if (pair) {
+			const both = defs.indexOf(def) < defs.indexOf(pair) ? [def, pair] : [pair, def];
+			dir.innerHTML = both.map((d) => `<option value="${esc(d.id)}">${esc(d.stations[0].name)} → ${esc(d.stations[d.stations.length - 1].name)}</option>`).join('');
+			dir.value = def.id;
+		}
+		const fixed = routeFor(def, null, 0).stations; // stacje po poprawkach trasy (bez przycięcia)
+		st.innerHTML = fixed.slice(0, -1).map((s, i) => `<option value="${i}">${esc(s.name)} (km ${(s.pos / 1000).toFixed(1).replace('.', ',')})</option>`).join('');
+		st.value = String(startOf(def));
+		st.disabled = fixed.length < 3;
+		// przyciski kierunku i kafelki stacji (wybór – przez ukryte listy, jak kafelki pogody)
+		const pick = (sel, v) => { if (sel.value === v) return; sel.value = v; sel.dispatchEvent(new Event('change')); };
+		const seg = $('dir-seg');
+		seg.innerHTML = '';
+		if (pair) for (const o of dir.options) {
+			const b = document.createElement('button');
+			b.type = 'button';
+			b.className = o.value === dir.value ? 'sel' : '';
+			b.innerHTML = `<b>${esc(o.text)}</b>`;
+			b.addEventListener('click', () => pick(dir, o.value));
+			seg.appendChild(b);
+		}
+		/* schemat linii: kropki stacji w równych odstępach, nazwy na przemian nad i pod linią (przy wielu stacjach – bez
+		   nakładania); kilometr w podpowiedzi i w podsumowaniu pod schematem */
+		const line = $('start-tiles'), cur = startOf(def), n = fixed.length, km = (x) => (x / 1000).toFixed(1).replace('.', ',');
+		line.innerHTML = '';
+		line.style.setProperty('--n', n);
+		line.style.setProperty('--a', cur);
+		fixed.forEach((s, i) => {
+			const b = document.createElement('button');
+			b.type = 'button';
+			const last = i === n - 1;
+			b.className = i === cur ? 'sel' : i < cur ? 'skip' : 'on';
+			b.disabled = last;
+			b.title = `${s.name} – km ${km(s.pos)}${last ? ' (stacja końcowa – nie może być początkową)' : ''}`;
+			b.innerHTML = `<span class="nm ${i % 2 ? 'dn' : 'up'}">${esc(s.name)}</span><i></i>`;
+			if (!last) b.addEventListener('click', () => pick(st, String(i)));
+			line.appendChild(b);
+		});
+		const a = fixed[cur], z = fixed[n - 1], stops = fixed.slice(cur + 1, n - 1).filter((s) => s.stop !== false).length;
+		$('run-info').innerHTML = `Start: <b>${esc(a.name)}</b> (km ${km(a.pos)}) → ${esc(z.name)} · ${km(z.pos - a.pos)} km · ${stops ? `${stops} ${plural(stops, 'postój', 'postoje', 'postojów')} po drodze` : 'bez postojów po drodze'}`;
+		$('run-hint').textContent = (n < 3 ? 'Trasa ma tylko stację początkową i końcową. ' : 'Kliknij stację na schemacie, aby zacząć jazdę od niej. ')
+			+ 'W scenariuszach jazda zawsze od pierwszej stacji.';
+	}
 	function buildCondTab() {
+		buildRunOpts();
 		tiles('weather-tiles', 'opt-weather', WEATHER_SKY);
 		tiles('time-tiles', 'opt-time', TIME_SKY);
 		tiles('season-tiles', 'opt-season', SEASON_SKY);
@@ -510,7 +567,6 @@
 
 	// ---------- generator tras (dane rzeczywiste) ----------
 	const GEN_EXAMPLES = [];
-	let genBusy = false;
 	function genLog(text, cls) {
 		const box = $('gen-log');
 		if (box.querySelector('.muted')) box.innerHTML = '';
@@ -546,7 +602,7 @@
 			cb.checked = exportSel.has(d.id);
 			cb.addEventListener('change', () => { if (cb.checked) exportSel.add(d.id); else exportSel.delete(d.id); row.classList.toggle('sel', cb.checked); updateExportUI(); });
 			const info = document.createElement('div');
-			info.style.cssText = 'display:contents';
+			info.className = 'gen-info';
 			info.innerHTML = `<b>${esc(d.title)}</b><span>${((d.stations[d.stations.length - 1].pos - d.stations[0].pos) / 1000).toFixed(1)} km · ${d.stations.length} st.</span>`;
 			const play = document.createElement('button');
 			play.textContent = 'Wybierz';
@@ -591,7 +647,11 @@
 				}
 				hz.disabled = false;
 			});
-			row.append(cb, info, play, chk, hz, del);
+			// nazwa i długość w pierwszym wierszu, przyciski pod spodem (kolumna tras obok generatora)
+			const btns = document.createElement('div');
+			btns.className = 'gen-btns';
+			btns.append(play, chk, hz, del);
+			row.append(cb, info, btns);
 			list.appendChild(row);
 			list.appendChild(rep);
 		}
@@ -688,10 +748,10 @@
 				done.push(def);
 			}
 		}
-		if (!$('scr-gen').classList.contains('hidden')) buildGenScreen();
+		if (!$('scr-routes').classList.contains('hidden')) buildGenScreen();
 		buildMenu();
 		ioMsg((done.length ? `<span class="ok">Zaimportowano: ${done.map((d) => esc(d.title || d.id)).join(', ')}.</span>` : '') + errs.map((m) => `<div class="err">${esc(m)}</div>`).join(''));
-		if (done.length === 1 && $('scr-gen').classList.contains('hidden')) pickRoute(done[0].id);
+		if (done.length === 1 && $('scr-routes').classList.contains('hidden')) pickRoute(done[0].id);
 		return done;
 	}
 
@@ -701,49 +761,144 @@
 		menuScreen('single');
 		selectRoute(id);
 	}
-	async function runGenerator() {
-		if (genBusy) return;
+	/* ---------- generowanie w tle ----------
+	   Generator działa w osobnym wątku (js/gen-worker.js) – budowa otoczenia i pomiary to kilkadziesiąt sekund obliczeń,
+	   gra w tym czasie działa normalnie (menu, jazda). Postęp: etapy z komunikatów generatora (GEN_STEPS), pasek w prawym
+	   górnym rogu (#gen-bg, w menu i w jeździe w tym samym miejscu) – poza ekranem generatora, na nim karta postępu (#gen-status) i pełny przebieg. Gotowa trasa trafia
+	   na listę od razu; „Anuluj” przerywa wątek. */
+	let genWorker = null, genJob = null, genTimer = 0, genSeq = 0;
+	const GEN_STEPS = [
+		[/^Szukam stacji/, 0.02], [/^Pobieram tory/, 0.05], [/^Wyznaczam przebieg/, 0.14], [/^(Regulamin sieci|PKP PLK)/, 0.2],
+		[/^Pobieram (otoczenie|maszty|punkty|przejścia|przystanki)/, 0.25], [/^(Powiaty|BDOT10k)/, 0.33], [/^Otoczenie: \d/, 0.45],
+		[/^Pobieram wysokości toru/, 0.5], [/^Pobieram ukształtowanie terenu/, 0.56], [/^Pobieram wysokości torów/, 0.64],
+		[/^Pobieram wysokości dróg/, 0.7], [/^Mierzę perony/, 0.76], [/^(Model powierzchni|NMPT:)/, 0.86], [/^Horyzont/, 0.9], [/^Gotowe:/, 0.95], [/^Kontrola trasy/, 0.97],
+	];
+	const fmtSec = (s) => (s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`);
+	function genProgress(text) {
+		const J = genJob;
+		if (!J) return;
+		let f = null;
+		for (const [re, v] of GEN_STEPS) if (re.test(text)) f = v;
+		if (f !== null) J.frac = Math.max(J.frac, (J.part + f) / J.parts);
+		if (!/^…nadal/.test(text) && !/^⚠/.test(text)) J.stage = text.length > 110 ? text.slice(0, 108) + '…' : text;
+		updateGenUI();
+	}
+	// karta postępu (ekran generatora) i pasek w prawym górnym rogu (poza nim) – ta sama treść
+	function genCardHtml(J, compact) {
+		const secs = Math.round(((J.end || Date.now()) - J.t0) / 1000);
+		const head = J.running ? `Generowanie trasy ${esc(J.title)}` : J.cancelled ? `Przerwano: ${esc(J.title)}` : J.err && !J.done.length ? `Nie udało się: ${esc(J.title)}` : `Gotowe: ${J.done.map((d) => esc(d.title)).join(', ')}`;
+		const fail = !J.running && !J.done.length; // błąd albo przerwanie przed pierwszą gotową trasą
+		const stage = J.running ? esc(J.stage || 'Start…') : J.err ? esc(J.err) : fail ? 'Nic nie zapisano.' : `Trasa jest na liście „Moje trasy”${mode === 'menu' ? '' : ' – wybierzesz ją w menu'}.`;
+		const pct = Math.round((J.running || fail ? J.frac : 1) * 100);
+		let btns = '';
+		if (J.running) btns = `<button type="button" data-act="cancel">Anuluj</button>`;
+		else {
+			if (mode === 'menu') for (const d of J.done) btns += `<button type="button" class="primary" data-act="pick" data-id="${esc(d.id)}">Jedź: ${esc(d.title)}</button>`;
+			btns += `<button type="button" data-act="close" title="Zamknij">✕</button>`;
+		}
+		// pasek poza ekranem nowej trasy (tylko w menu – z jazdy nie ma przejścia): ekran z kartą postępu i pełnym przebiegiem
+		if (compact && mode === 'menu') btns = `<button type="button" data-act="open" title="Ekran „Nowa trasa”: postęp i wszystkie komunikaty generatora">Pokaż przebieg</button>` + btns;
+		return `<div class="gs-head"><b>${head}</b><span>${fmtSec(secs)}${J.running ? ` · ${pct}%` : ''}</span></div>
+			<div class="gs-stage${J.err && !J.running ? ' err' : ''}">${stage}</div>
+			<div class="gs-bar${J.running ? ' run' : ''}${fail ? ' err' : ''}"><i style="width:${pct}%"></i></div>
+			<div class="gs-btns">${btns}</div>`;
+	}
+	function updateGenUI() {
+		const J = genJob, onGen = mode === 'menu' && screen === 'gen';
+		$('gen-run').disabled = !!(J && J.running);
+		$('gen-run').textContent = J && J.running ? 'Generowanie trwa…' : 'Generuj trasę';
+		const card = $('gen-status'), bar = $('gen-bg');
+		card.classList.toggle('hidden', !J);
+		bar.classList.toggle('hidden', !J || onGen || !!J.dismissed); // wartość logiczna – undefined przełączałoby klasę
+		if (!J) return;
+		card.innerHTML = genCardHtml(J, false);
+		if (!onGen && !J.dismissed) bar.innerHTML = genCardHtml(J, true);
+	}
+	function genAction(e) {
+		const b = e.target.closest('button[data-act]');
+		if (!b) return;
+		const act = b.dataset.act;
+		if (act === 'cancel') genCancel();
+		else if (act === 'close') { if (genJob) genJob.dismissed = true; if (!(genJob && genJob.running)) genJob = null; updateGenUI(); }
+		else if (act === 'open') { if (mode === 'menu') menuScreen('gen'); }
+		else if (act === 'pick') { const id = b.dataset.id; if (genJob && !genJob.running) genJob = null; updateGenUI(); if (defs.some((d) => d.id === id)) pickRoute(id); }
+	}
+	function genCancel() {
+		if (!genJob || !genJob.running) return;
+		if (genWorker) genWorker.terminate();
+		genWorker = null;
+		genJob.running = false;
+		genJob.cancelled = true;
+		genJob.end = Date.now();
+		genLog('Generowanie przerwane.', 'err');
+		clearInterval(genTimer);
+		updateGenUI();
+	}
+	// gotowa trasa z wątku: na listę (zastępuje tę samą trasę wygenerowaną wcześniej), zapis, uwagi i wynik kontroli
+	async function genStore(def, rc, ms) {
+		def.custom = true;
+		// nie nadpisujemy tras dołączonych do gry
+		if (BUILTIN.has(def.id)) def.id += '-gen';
+		const old = defs.findIndex((d) => d.id === def.id);
+		if (old >= 0) defs[old] = def; else defs.push(def);
+		for (const k of Object.keys(prepared)) if (k.startsWith(def.id + '|')) delete prepared[k];
+		for (const k of Object.keys(timetables)) if (k.startsWith(def.id + '|')) delete timetables[k];
+		let stored = true;
+		try { await routeDB.put(plain(def)); } catch (e) { stored = false; }
+		genLog(`Zapisano trasę „${def.title}” (${Math.round(ms / 1000)} s)${stored ? '' : ' – tylko do końca sesji (brak miejsca w pamięci przeglądarki)'} – jest na liście „Moje trasy”.`, 'ok');
+		for (const x of (def.issues || []).filter((q) => q.lvl === 'warn')) genLog(`⚠ km ${(x.pos / 1000).toFixed(2)}: ${x.m}`, 'err');
+		if (rc.error) genLog('Kontrola trasy: ' + rc.error, 'err');
+		else {
+			const w = rc.list.filter((x) => x.lvl === 'warn');
+			genLog(`Kontrola trasy: ${w.length ? `${w.length} ${plural(w.length, 'błąd', 'błędy', 'błędów')}` : 'bez błędów'}${rc.list.length - w.length ? `, ${rc.list.length - w.length} ${plural(rc.list.length - w.length, 'uwaga', 'uwagi', 'uwag')}` : ''}.`, w.length ? 'err' : 'ok');
+			for (const x of w) genLog(`⚠ km ${(x.pos / 1000).toFixed(2)}: ${x.m}`, 'err');
+		}
+		if (mode === 'menu') { buildGenScreen(); buildMenu(); }
+		else if (hud) hud.toast(`Trasa „${def.title}” jest gotowa – wybierzesz ją w menu.`, 'info');
+	}
+	function genOnMessage(e) {
+		const m = e.data, J = genJob;
+		if (m.type === 'rpc') {
+			// aplikacja desktopowa: NMPT przez proces główny
+			const reply = (result, error) => genWorker && genWorker.postMessage({ type: 'rpc-reply', rid: m.rid, result, error });
+			if (m.method === 'fetchText' && window.desktop && window.desktop.fetchText) window.desktop.fetchText(m.args[0]).then((r) => reply(r), (err) => reply(null, err.message || String(err)));
+			else reply(null, 'nieznane zapytanie');
+			return;
+		}
+		if (!J || m.id !== J.id) return;
+		if (m.type === 'log') { genLog(m.text); genProgress(m.text); }
+		else if (m.type === 'route') { J.done.push(m.def); J.part = Math.min(J.parts - 1, J.part + 1); genStore(m.def, m.check, m.ms); updateGenUI(); }
+		else if (m.type === 'error') { J.err = m.message; genLog(m.message, 'err'); }
+		else if (m.type === 'end') {
+			J.running = false;
+			J.end = Date.now();
+			J.dismissed = false;
+			clearInterval(genTimer);
+			updateGenUI();
+		}
+	}
+	function runGenerator() {
+		if (genJob && genJob.running) return;
 		const from = $('gen-from').value.trim(), to = $('gen-to').value.trim(), line = $('gen-line').value.trim();
 		if (!from || !to) { genLog('Wpisz stację początkową i końcową.', 'err'); return; }
-		genBusy = true;
-		$('gen-run').disabled = true;
+		if (typeof Worker === 'undefined') { genLog('Ta przeglądarka nie obsługuje generowania w tle (Web Worker).', 'err'); return; }
 		$('gen-log').innerHTML = '';
-		const t0 = performance.now();
-		try {
-			const dem = $('gen-env').checked && $('gen-dem').checked;
-			const surface = dem && $('gen-nmpt').checked ? await nmptSurface() : undefined;
-			const official = $('gen-official').checked;
-			const def = await window.TrainOSM.generate({ from, to, line: line || null, environment: $('gen-env').checked ? undefined : false, dem: dem ? undefined : false, surface, bdot: official ? undefined : false, plk: official ? undefined : false, fileCache: fileDB, log: (m) => genLog(m) });
-			// próba przygotowania trasy w grze (wyłapuje dane, których silnik nie przyjmie)
-			R.prepare(def, { train: 'ezt', cars: 1 });
-			def.custom = true;
-			// ta sama trasa wygenerowana ponownie zastępuje poprzednią; nie nadpisujemy tras dołączonych do gry
-			if (BUILTIN.has(def.id)) def.id += '-gen';
-			const old = defs.findIndex((d) => d.id === def.id);
-			if (old >= 0) defs[old] = def; else defs.push(def);
-			for (const k of Object.keys(prepared)) if (k.startsWith(def.id + '|')) delete prepared[k];
-			for (const k of Object.keys(timetables)) if (k.startsWith(def.id + '|')) delete timetables[k];
-			let stored = true;
-			try { await routeDB.put(plain(def)); } catch (e) { stored = false; }
-			genLog(`Zapisano trasę „${def.title}” (${((performance.now() - t0) / 1000).toFixed(0)} s)${stored ? '' : ' – tylko do końca sesji (brak miejsca w pamięci przeglądarki)'} – jest na liście „Wygenerowane trasy”.`, 'ok');
-			// trasa trafia na listę „Wygenerowane trasy” (tam „Wybierz”); w przebiegu – tylko ostrzeżenia do sprawdzenia
-			for (const x of (def.issues || []).filter((q) => q.lvl === 'warn')) genLog(`⚠ km ${(x.pos / 1000).toFixed(2)}: ${x.m}`, 'err');
-			// kontrola trasy (js/route-check.js): błędy danych, przejazd automatem
-			const rc = checkRoute(def);
-			if (rc.error) genLog('Kontrola trasy: ' + rc.error, 'err');
-			else {
-				const w = rc.list.filter((x) => x.lvl === 'warn');
-				genLog(`Kontrola trasy: ${w.length ? `${w.length} ${plural(w.length, 'błąd', 'błędy', 'błędów')}` : 'bez błędów'}${rc.list.length - w.length ? `, ${rc.list.length - w.length} ${plural(rc.list.length - w.length, 'uwaga', 'uwagi', 'uwag')}` : ''}.`, w.length ? 'err' : 'ok');
-				for (const x of w) genLog(`⚠ km ${(x.pos / 1000).toFixed(2)}: ${x.m}`, 'err');
-			}
-			buildGenScreen();
-			buildMenu();
-		} catch (e) {
-			genLog(e.message || String(e), 'err');
-		} finally {
-			genBusy = false;
-			$('gen-run').disabled = false;
+		$('gen-details').open = true;
+		if (!genWorker) {
+			genWorker = new Worker('js/gen-worker.js');
+			genWorker.onmessage = genOnMessage;
+			genWorker.onerror = (e) => { if (genJob && genJob.running) { genJob.err = e.message || 'błąd wątku generatora'; genLog(genJob.err, 'err'); genOnMessage({ data: { type: 'end', id: genJob.id } }); } };
 		}
+		const both = $('gen-both').checked;
+		genJob = { id: ++genSeq, title: `${from} – ${to}`, t0: Date.now(), frac: 0, part: 0, parts: both ? 2 : 1, stage: '', done: [], running: true, err: null };
+		genWorker.postMessage({
+			type: 'job', id: genJob.id, list: [{ from, to, line }], both,
+			opts: { env: $('gen-env').checked, dem: $('gen-dem').checked, nmpt: $('gen-nmpt').checked, official: $('gen-official').checked },
+			base: location.href, desktop: !!(window.desktop && window.desktop.fetchText),
+		});
+		clearInterval(genTimer);
+		genTimer = setInterval(updateGenUI, 1000);
+		updateGenUI();
 	}
 
 	/* Wybór mapy z okienkiem wczytywania: przygotowanie trasy, rozkład jazdy (przejazd automatem) i budowa świata
@@ -773,7 +928,9 @@
 		const quit = () => { if (seq === loadSeq) routeLoading(null); };
 		selected = id;
 		save('route', selected);
-		routeLoading('Przygotowanie trasy…', 0.05, def.title);
+		// tytuł przebiegu (od wybranej stacji początkowej)
+		const k = startOf(def), title = k > 0 ? `${def.stations[k].name} – ${def.stations[def.stations.length - 1].name}` : def.title;
+		routeLoading('Przygotowanie trasy…', 0.05, title);
 		await nextFrame();
 		if (!live()) return quit();
 		buildMenu();
@@ -852,7 +1009,10 @@
 		screen = name;
 		$('scr-main').classList.toggle('hidden', name !== 'main');
 		$('scr-single').classList.toggle('hidden', name !== 'single');
+		$('scr-genmenu').classList.toggle('hidden', name !== 'genmenu');
 		$('scr-gen').classList.toggle('hidden', name !== 'gen');
+		$('scr-routes').classList.toggle('hidden', name !== 'routes');
+		updateGenUI(); // pasek generowania w tle – poza ekranem generatora
 		$('scr-news').classList.toggle('hidden', name !== 'news');
 		$('scr-scen').classList.toggle('hidden', name !== 'scen');
 		$('scr-hist').classList.toggle('hidden', name !== 'hist');
@@ -865,8 +1025,27 @@
 		settingsFrom = from;
 		const gpu = renderer.gpuName();
 		$('gpu-info').textContent = gpu ? 'Karta graficzna: ' + gpu : '';
+		showSetTab(setTab);
+		setSummary();
 		showOverlay('settings');
 	}
+	/* zakładki ustawień (Dźwięk, Zapowiedzi, Grafika): ostatnio otwarta zapamiętana; pod nazwą – podsumowanie */
+	let setTab = load('setTab', 'sound');
+	function showSetTab(name) {
+		if (!$('set-tab-' + name)) name = 'sound';
+		setTab = name;
+		save('setTab', name);
+		document.querySelectorAll('#set-tabs button').forEach((b) => b.classList.toggle('sel', b.dataset.tab === name));
+		for (const t of ['sound', 'voice', 'gfx']) $('set-tab-' + t).classList.toggle('hidden', t !== name);
+	}
+	function setSummary() {
+		$('sum-set-sound').textContent = $('set-sound').checked ? `głośność ${$('set-volume').value}%` : 'wyciszony';
+		const how = $('set-announce').value;
+		$('sum-set-voice').textContent = how === 'voice' ? `z głosem · ${$('set-voice-engine').value === 'piper' ? 'Piper' : 'głosy systemu'}` : how === 'off' ? 'wyłączone' : 'gong i tekst';
+		$('sum-set-gfx').textContent = `jakość ${$('opt-quality').selectedOptions[0].text} · ${Math.round(Number($('set-scale').value) * 100)}%`;
+	}
+	document.querySelectorAll('#set-tabs button').forEach((b) => b.addEventListener('click', () => showSetTab(b.dataset.tab)));
+	for (const ev of ['input', 'change']) $('settings').addEventListener(ev, setSummary);
 	function closeSettings() {
 		showOverlay(settingsFrom);
 	}
@@ -879,15 +1058,18 @@
 
 	/* Zapowiedź (sim.js announce): gong, tekst (toast) i – w ustawieniu „głos” – synteza mowy przeglądarki (głos polski,
 	   jeśli jest); przy wyciszeniu – tylko tekst */
-	function announce(text) {
+	/* gain – głośność (zapowiedź na peronie stacji, przy której jest kamera – pociągi podmiejskie, life.js; tekst tylko
+	   z bliska, z nazwą stacji) */
+	function announce(text, gain = 1, station = null) {
 		const how = $('set-announce').value;
 		if (how === 'off') return;
-		audio.play('chime');
-		hud.toast(text, 'announce');
-		if (how !== 'voice' || muted || mode !== 'play') return;
+		audio.chime(gain);
+		if (gain >= 0.5) hud.toast(station ? `${station}: ${text}` : text, 'announce');
+		// głos: w jeździe; zapowiedź na peronie (station) – także z kamery swobodnej (stoi się na peronie)
+		if (how !== 'voice' || muted || !(mode === 'play' || (station && mode === 'free'))) return;
 		// po gongu (ok. 1,4 s); Piper – synteza od razu, odtworzenie nie wcześniej niż po gongu
-		if (voiceEngine() === 'piper') speakPiper(text, performance.now() + 1400);
-		else setTimeout(() => speak(text), 1400);
+		if (voiceEngine() === 'piper') speakPiper(text, performance.now() + 1400, gain);
+		else setTimeout(() => speak(text, 0, gain), 1400);
 	}
 	const voiceEngine = () => ($('set-voice-engine').value === 'piper' && window.TrainPiper && window.Worker ? 'piper' : 'system');
 	/* Piper (js/tts-piper.js): wybrany głos wczytywany (przy pierwszym użyciu – pobierany) w tle, z postępem w ustawieniach;
@@ -918,20 +1100,20 @@
 		el.textContent = text || '';
 		el.classList.toggle('err', !!err);
 	}
-	async function speakPiper(text, at) {
+	async function speakPiper(text, at, gain = 1) {
 		const TP = window.TrainPiper, id = $('set-voice').value;
 		if (!TP || TP.loaded !== id) {
 			piperLoad();
-			setTimeout(() => speak(text), Math.max(0, at - performance.now())); // jeszcze nie gotowy – głos systemu
+			setTimeout(() => speak(text, 0, gain), Math.max(0, at - performance.now())); // jeszcze nie gotowy – głos systemu
 			return;
 		}
 		const rate = Number($('set-voice-rate').value) || 1, pitch = Number($('set-voice-pitch').value) || 1;
 		try {
 			const r = await TP.synth(text, pitch / rate);
-			setTimeout(() => { if (!muted && $('set-announce').value === 'voice') audio.playVoice(r.pcm, r.sampleRate, pitch); }, Math.max(0, at - performance.now()));
+			setTimeout(() => { if (!muted && $('set-announce').value === 'voice') audio.playVoice(r.pcm, r.sampleRate, pitch, gain); }, Math.max(0, at - performance.now()));
 		} catch (e) {
 			console.warn('Piper:', e);
-			setTimeout(() => speak(text), Math.max(0, at - performance.now()));
+			setTimeout(() => speak(text, 0, gain), Math.max(0, at - performance.now()));
 		}
 	}
 	/* synteza mowy: głos wybrany w ustawieniach (nazwa głosu systemu; brak – pierwszy polski), tempo, wysokość,
@@ -950,7 +1132,7 @@
 	/* tries – ile razy już dokańczano; przeglądarka bywa, że kończy wypowiedź przedwcześnie (Brave: przy kliknięciu
 	   i obracaniu kamery) – gdy gra jej nie przerywała, a zostało więcej niż jedno słowo, reszta czytana od ostatniego
 	   słowa (najwyżej 3 razy) */
-	function speak(text, tries = 0) {
+	function speak(text, tries = 0, gain = 1) {
 		const sp = window.speechSynthesis;
 		if (!sp) return;
 		const u = new SpeechSynthesisUtterance(text);
@@ -959,7 +1141,7 @@
 		if (v) u.voice = v;
 		u.rate = Number($('set-voice-rate').value) || 0.95;
 		u.pitch = Number($('set-voice-pitch').value) || 1;
-		u.volume = Math.min(1, (Number($('set-volume').value) / 100) * (Number($('set-mix-voice').value) / 100) * 1.2);
+		u.volume = Math.min(1, (Number($('set-volume').value) / 100) * (Number($('set-mix-voice').value) / 100) * 1.2) * gain;
 		/* odwołanie do wypowiedzi do jej końca – w Chromium (przeglądarka, Electron) wypowiedź bez odwołania bywa zwalniana
 		   przez odśmiecanie pamięci w trakcie czytania i mowa urywa się (np. przy kliknięciu, gdy gra tworzy nowe obiekty) */
 		speaking.add(u);
@@ -973,7 +1155,7 @@
 			// zostało więcej niż jedno słowo (przy zwykłym końcu ostatnie zdarzenie słowa wskazuje ostatnie słowo)
 			if (at > 0 && /\s/.test(rest)) {
 				console.info(`Synteza mowy: wypowiedź urwana (${e.type}${e.error ? ' ' + e.error : ''}) po ${at}/${text.length} znakach – dokańczam.`);
-				setTimeout(() => speak(rest, tries + 1), 150);
+				setTimeout(() => speak(rest, tries + 1, gain), 150);
 			}
 		};
 		sp.speak(u);
@@ -1049,6 +1231,7 @@
 		if ($('set-announce').value !== 'voice') stopSpeech();
 		// głos zapowiedzi: ustawienia widoczne przy „gong, tekst i głos”
 		$('voice-opts').classList.toggle('hidden', $('set-announce').value !== 'voice');
+		$('voice-off-hint').classList.toggle('hidden', $('set-announce').value === 'voice');
 		const vr = $('set-voice-rate'), vp = $('set-voice-pitch');
 		vr.nextElementSibling.textContent = '×' + Number(vr.value).toFixed(2).replace('.', ',');
 		vp.nextElementSibling.textContent = Number(vp.value).toFixed(2).replace('.', ',');
@@ -1142,7 +1325,7 @@
 		const r = sim.route, nx = r.stations[sim.next];
 		const data = {
 			v: SAVE_V, saved: Date.now(),
-			route: r.id, title: r.title, train: r.train.name, cfg: r.config, cfgKey: r.configKey, sig: routeSig(r),
+			route: r.id, from: r.from || 0, title: r.title, train: r.train.name, cfg: r.config, cfgKey: r.configKey, sig: routeSig(r),
 			startClock: r.startClock, weather: rideWeather || $('opt-weather').value, ca: !!sim.opts.czuwak, assist: !!renderer.assist, timeScale,
 			scen: scen ? scen.id : null, events: rideEvents, brake: sim.opts.brake, shp: !!sim.opts.shp, drive: sim.opts.drive, season: sim.opts.season,
 			traffic: rideTraffic ? rideTraffic.level : 0, trafficSeed: rideTraffic ? rideTraffic.seed : 1, trafficPen: !!sim.opts.trafficPenalty, dispatch: !!sim.opts.dispatch,
@@ -1170,7 +1353,7 @@
 		const prevCfg = trainCfg;
 		trainCfg = d.cfg;
 		try {
-			const route = routeFor(defById(d.route));
+			const route = d.scen ? routeFor(defById(d.route), d.cfg, 0) : routeFor(defById(d.route), null, d.from || 0);
 			if (route.configKey !== d.cfgKey || routeSig(route) !== d.sig || !Array.isArray(d.timetable) || d.timetable.length !== route.stations.length) {
 				throw new Error('trasa albo skład zmieniły się od zapisu.');
 			}
@@ -1188,6 +1371,7 @@
 			trainMode = modeOf(trainCfg);
 			save('route', selected);
 		}
+		if (!scen) setStart(d.route, d.from || 0); // stacja początkowa zapisanej jazdy
 		$('opt-ca').checked = d.ca;
 		$('opt-assist').checked = d.assist;
 		$('opt-weather').value = $('pause-weather').value = d.weather || 'auto';
@@ -1205,6 +1389,7 @@
 		if (sim) autoSave(); // przerwana jazda (z pauzy) – do autozapisu; po końcu trasy zapis się nie zmienia
 		exitFree();
 		mode = 'menu';
+		updateGenUI();
 		renderer.inputEnabled = false;
 		renderer.rotKey = 0;
 		renderer.resetView();
@@ -1230,7 +1415,7 @@
 	// snap – zapis gry (loadGame): jazda od zapisanego miejsca zamiast od początku trasy
 	function startGame(snap) {
 		if (!(snap && snap.sim)) snap = null;
-		if (!defs.length || !selected) { menuScreen('gen'); buildGenScreen(); return; } // bez tras – do generatora
+		if (!defs.length || !selected) { menuScreen('gen'); return; } // bez tras – do generatora (nowa trasa)
 		if (mode === 'loading') return;
 		const def = rideDef(), route = rideRoute(), t = route.train;
 		const dep = snap ? snap.clock : scen ? hm(scen.clock) : depClock(def), h = Math.floor(dep / 3600) % 24;
@@ -1263,6 +1448,7 @@
 	}
 	function finishLoading() {
 		mode = 'play';
+		updateGenUI();
 		renderer.inputEnabled = true;
 		const route = sim.route;
 		const rname = route.freight ? route.name.replace(/^(Osobowy|Pospieszny|Pociąg)\b/i, 'Towarowy') : route.name;
@@ -1290,9 +1476,9 @@
 		let run = null;
 		rideEvents = null;
 		// zadanie dnia: zdarzenia losowane z ziarna daty po przygotowaniu trasy
-		if (scen) run = SC.runner(scen.daily ? Object.assign({}, scen, { events: SC.randomEvents(route, scen.seed, scen.weather).events }) : scen, route);
+		if (scen) run = SC.runner(scen.daily ? Object.assign({}, scen, { events: SC.randomEvents(route, scen.seed, scen.weather, scen.season).events }) : scen, route);
 		else if (snap ? snap.events : $('opt-events').checked) {
-			rideEvents = snap && snap.events ? snap.events : SC.randomEvents(route, Date.now() % 1e9, $('opt-weather').value);
+			rideEvents = snap && snap.events ? snap.events : SC.randomEvents(route, Date.now() % 1e9, $('opt-weather').value, $('opt-season').value);
 			run = SC.runner(rideEvents, route);
 		}
 		// hamulec i SHP: z zapisu albo z opcji („Pomoc”)
@@ -1717,6 +1903,7 @@
 					else if (e.type === 'dismiss') hud.dismiss(e.key);
 					else if (e.type === 'sound') audio.play(e.name);
 					else if (e.type === 'arc' && renderer.trainModel && renderer.trainModel.arcBurst) renderer.trainModel.arcBurst();
+				else if (e.type === 'iceArc' && renderer.trainModel && renderer.trainModel.iceArc) { renderer.trainModel.iceArc(); audio.play('spark'); }
 					else if (e.type === 'departed') autoSave();
 					else if (e.type === 'radio') hud.radio(e.from, e.text, e.ack);
 					else if (e.type === 'announce') announce(e.text);
@@ -1749,6 +1936,9 @@
 			else if (!(mode === 'pause' && pauseFromFree)) hud.update(sim, timeScale); // HUD jazdy schowany w trybie kamery
 			renderer.miniRect = false; // w grze trasa jest na osi czasu w lewym panelu
 			renderer.draw(sim, mode === 'pause' ? 0 : dt, 0);
+			// zapowiedzi na peronach stacji innej linii (pociągi podmiejskie – life.js), przy których jest kamera
+			const lev = renderer.life.events;
+			if (lev && lev.length) { for (const e of lev.splice(0)) if (mode === 'play' || mode === 'free') announce(e.text, e.gain, e.station || 'Peron'); }
 			if (mode === 'play') autoDetail(raw);
 		}
 		requestAnimationFrame(frame);
@@ -1842,7 +2032,7 @@
 		if (mode === 'menu') {
 			if (e.code === 'Enter' && screen === 'single') { scen = null; startGame(); }
 			if ((e.code === 'Delete' || e.code === 'Backspace') && screen === 'single' && singleTab === 'train' && !$('car-actions').classList.contains('hidden') && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); detachCar(); }
-			if (e.code === 'Escape' && screen !== 'main') menuScreen('main');
+			if (e.code === 'Escape' && screen !== 'main') menuScreen(screen === 'gen' || screen === 'routes' ? 'genmenu' : 'main');
 			return;
 		}
 		if (mode === 'end') {
@@ -2049,7 +2239,23 @@
 	$('opt-events').checked = load('opt.events', false);
 	$('opt-events').addEventListener('change', () => { save('opt.events', $('opt-events').checked); buildMenu(); });
 	$('single-back').addEventListener('click', () => menuScreen('main'));
-	$('btn-gen').addEventListener('click', () => { buildGenScreen(); menuScreen('gen'); });
+	/* generator tras: podmenu – nowa trasa (formularz, postęp) albo moje trasy (lista, import, eksport) */
+	const openGenMenu = () => {
+		const n = defs.filter((d) => d.custom).length;
+		$('gen-mine-sum').textContent = n ? `${n} ${plural(n, 'trasa', 'trasy', 'tras')} – wybór, kontrola, import i eksport` : 'brak – wygenerowane i zaimportowane trasy pojawią się tutaj';
+		menuScreen('genmenu');
+	};
+	const openMine = () => { buildGenScreen(); menuScreen('routes'); };
+	$('btn-gen').addEventListener('click', openGenMenu);
+	$('genmenu-back').addEventListener('click', () => menuScreen('main'));
+	$('btn-gen-new').addEventListener('click', () => menuScreen('gen'));
+	$('btn-gen-mine').addEventListener('click', openMine);
+	$('gen-to-mine').addEventListener('click', openMine);
+	$('routes-to-new').addEventListener('click', () => menuScreen('gen'));
+	$('routes-back').addEventListener('click', openGenMenu);
+	$('gen-status').addEventListener('click', genAction);
+	$('gen-bg').addEventListener('click', genAction);
+	// wygenerowane trasy – osobny ekran; przejścia między nim a generatorem
 	// import i eksport tras: przyciski w generatorze, przeciąganie plików na okno menu
 	$('gen-import').addEventListener('click', () => $('gen-file').click());
 	$('gen-file').addEventListener('change', async (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) await importFiles(fs); });
@@ -2074,11 +2280,11 @@
 			const fs = [...e.dataTransfer.files].filter((f) => /\.(trasa|json|js|gz)$/i.test(f.name));
 			if (!fs.length) return;
 			buildGenScreen();
-			menuScreen('gen');
+			menuScreen('routes');
 			await importFiles(fs);
 		});
 	}
-	$('gen-back').addEventListener('click', () => menuScreen('main'));
+	$('gen-back').addEventListener('click', openGenMenu);
 	/* Scenariusze (js/scenarios.js): karta z opisem, trasą, składem, celami i najlepszym wynikiem (gwiazdki) */
 	function trainLabel(c) {
 		const S = R.STOCK;
@@ -2149,13 +2355,24 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.27.0';
+	$('version').textContent = 'wersja 0.43.3';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');
 	$('opt-season').value = load('opt.season', 'summer');
 	$('opt-drive').addEventListener('change', () => { save('opt.drive', $('opt-drive').value); buildMenu(); });
 	$('opt-season').addEventListener('change', () => { save('opt.season', $('opt-season').value); buildMenu(); });
+	// przebieg: kierunek – druga trasa z pary (wczytanie jak przy wyborze z listy); stacja początkowa – podgląd od niej
+	$('opt-dir').addEventListener('change', () => { if ($('opt-dir').value !== selected) selectRoute($('opt-dir').value); });
+	// inna stacja początkowa – świat od nowa (scene.js: klucz trasy z route.from): wczytywanie z okienkiem jak przy wyborze trasy
+	$('opt-start').addEventListener('change', () => {
+		setStart(selected, Number($('opt-start').value) || 0);
+		if (mode === 'menu') selectRoute(selected);
+		else buildMenu();
+	});
+	// generator: także trasa w drugą stronę (opcja zapamiętana)
+	$('gen-both').checked = load('gen.both', false);
+	$('gen-both').addEventListener('change', () => save('gen.both', $('gen-both').checked));
 	/* pora roku z pauzy: zapamiętana jak w menu; w trakcie jazdy – przyczepność, odcinki „liście na torze” i świat od nowa
 	   (renderer.reseason; budowa w pauzie bez limitu czasu – seasonBuild) */
 	$('pause-season').addEventListener('change', () => {
@@ -2170,6 +2387,16 @@
 		buildPause();
 	});
 	$('opt-traffic').value = String(load('opt.traffic', 2));
+	// ruch uliczny (street-life.js): 0 brak, 1 mały, 2 średni, 3 duży – od razu w świecie (także w podglądzie menu)
+	$('opt-street').value = String(load('opt.street', 2));
+	const streetVal = () => {
+		const v = Number($('opt-street').value);
+		$('opt-street-val').textContent = ['brak', 'mały', 'średni', 'duży'][v];
+		renderer.world.streetLevel = v;
+	};
+	streetVal();
+	$('opt-street').addEventListener('input', streetVal);
+	$('opt-street').addEventListener('change', () => { save('opt.street', Number($('opt-street').value)); buildMenu(); });
 	$('opt-traffic-pen').checked = load('opt.trafficPen', false);
 	$('opt-dispatch').checked = load('opt.dispatch', true);
 	$('opt-dispatch').addEventListener('change', () => save('opt.dispatch', $('opt-dispatch').checked));

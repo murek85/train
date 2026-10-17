@@ -5,7 +5,7 @@ const path = require('node:path');
 const R = require('../js/routes.js');
 const P = require('../js/physics.js');
 const { Sim, autopilot, buildTimetable } = require('../js/sim.js');
-const { Traffic } = require('../js/traffic.js');
+const { Traffic, SIG_GAP, HOLD_GAP } = require('../js/traffic.js');
 
 function real(id, cfg) {
 	const def = require(path.join('..', 'routes', id + '.js'));
@@ -166,6 +166,16 @@ test('krzyżowania na liniach jednotorowych: odcinki z mapy, bez spotkań na jed
 			}
 			const opp = act.filter((t) => t.dir < 0).sort((x, y) => x.s - y.s);
 			for (let k = 1; k < opp.length; k++) assert.ok(opp[k].s > opp[k - 1].s + opp[k - 1].len, `${id}: pociągi z przeciwka najechały na siebie`);
+			/* pociąg z przeciwka czekający na krzyżowanie: przed semaforem swojego kierunku (12 m), przy peronie albo za
+			   innym pociągiem z przeciwka; semafor „stój” */
+			for (const t of opp) {
+				if (t.v !== 0 || t.hold < 0 || t.dwellUntil !== null) continue;
+				const sec = traffic.secs[t.hold], atSig = Math.abs(t.s - (sec.b + HOLD_GAP)) < 1;
+				const atPf = route.stations.some((x) => Math.abs(t.s - (x.platformStart + 10)) < 3);
+				const queued = opp.some((o) => o !== t && o.s < t.s && t.s - (o.s + o.len) < 120);
+				assert.ok(atSig || atPf || queued, `${id}: pociąg z przeciwka czeka w ${Math.round(t.s)} (semafor ${sec.b + SIG_GAP})`);
+				if (atSig) assert.equal(traffic.oppSignal(t.hold), 'stop');
+			}
 		}
 		assert.equal(sim.status, 'ended', `${id} poziom ${level}: ${sim.failReason || 'nie dojechał (zakleszczenie?)'}`);
 		crossings += sim.stats.crossings || 0;

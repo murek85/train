@@ -221,3 +221,37 @@ test('zadanie dnia: powtarzalne z daty, skład pasuje do linii, automat przejeż
 		assert.equal(SC.runner(ev, route).goals().length, 2);
 	}
 });
+
+test('zima: zamarznięta zwrotnica – semafor wjazdowy „stój”, komunikaty dyżurnego, potem wjazd', () => {
+	let tried = 0;
+	for (const def of ROUTES) {
+		const route = R.prepare(def);
+		const i = route.signals.findIndex((x) => x.type !== 'starter' && x.pos > route.stations[0].pos + 1000 && route.stations.some((s) => s.pos > x.pos && s.pos - x.pos < 1500));
+		if (i < 0) continue;
+		tried++;
+		const ev = { id: 't', events: [{ when: { start: true }, type: 'frozen', signal: i, duration: 150 }] };
+		const sim = new Sim(route, { czuwak: false, timetable: buildTimetable(route), scenario: SC.runner(ev, route) });
+		const texts = [];
+		let stoppedRed = false;
+		for (let k = 0; sim.status === 'running' && k < 300000; k++) {
+			autopilot(sim);
+			sim.update(0.05);
+			const sig = sim.signals[i];
+			if (sig.red && !sig.passed && sim.st.v < 0.05 && sig.pos - sim.st.pos < 400) stoppedRed = true;
+			for (const e of sim.events) if (e.type === 'radio') texts.push(e.text);
+			sim.events.length = 0;
+		}
+		assert.equal(sim.status, 'ended', `${route.id}: ${sim.failReason}`);
+		assert.ok(texts.some((t) => /zamarznięta zwrotnica/.test(t)), route.id);
+		assert.ok(texts.some((t) => /rozmrożona/.test(t)), route.id);
+		assert.ok(stoppedRed, `${route.id}: postój przed semaforem`);
+	}
+	assert.ok(tried > 0);
+});
+
+test('zdarzenia losowe zimą: czasem zamarznięta zwrotnica, latem nigdy', () => {
+	const route = R.prepare(ROUTES[0]);
+	const kinds = (season) => [...Array(40).keys()].flatMap((seed) => SC.randomEvents(route, seed + 1, 'clear', season).events.map((e) => e.type));
+	assert.ok(kinds('winter').includes('frozen'));
+	assert.ok(!kinds('summer').includes('frozen'));
+});

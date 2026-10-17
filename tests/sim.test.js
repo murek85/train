@@ -400,3 +400,39 @@ test('pora roku w trakcie jazdy: przyczepność i odcinki „liście na torze”
 	sim.setSeason('spring');
 	assert.equal(sim.leaves.length, 0);
 });
+
+test('zima: oblodzona sieć – odcinki tylko zimą (pojazd elektryczny), łuki i chwilowe przerwy w zasilaniu', () => {
+	const route = routes.find((r) => r.train.electric && r.electrified !== false && r.length > 6000) || routes[0];
+	assert.equal(new Sim(route, { czuwak: false, season: 'summer' }).ice.length, 0);
+	const sim = new Sim(route, { czuwak: false, season: 'winter', weather: 'snow' });
+	assert.ok(sim.ice.length > 0, 'odcinki oblodzonej sieci');
+	let arcs = 0;
+	for (let k = 0; sim.status === 'running' && k < 300000; k++) {
+		autopilot(sim);
+		sim.update(0.05);
+		arcs += sim.events.filter((e) => e.type === 'iceArc').length;
+		sim.events.length = 0;
+	}
+	assert.equal(sim.status, 'ended', sim.failReason);
+	assert.ok(arcs > 0, 'łuki na oblodzonym przewodzie');
+	sim.setSeason('summer');
+	assert.equal(sim.ice.length, 0);
+});
+
+test('jazda od wybranej stacji: stacje wcześniejsze pominięte, kilometraż bez zmian, przejazd do końca', () => {
+	const def = require('../routes/gliwice-katowice.js');
+	const cfg = R.normConfig(def, { emu: 'EN57', n: 1 });
+	const full = R.prepare(def, cfg), part = R.prepare(def, cfg, 2);
+	assert.equal(part.from, 2);
+	assert.equal(part.stations.length, full.stations.length - 2);
+	assert.equal(part.stations[0].name, full.stations[2].name);
+	assert.equal(part.stations[0].pos, full.stations[2].pos);
+	assert.equal(part.length, full.length);
+	assert.match(part.title, new RegExp('^' + full.stations[2].name));
+	// najdalej przedostatnia stacja
+	assert.equal(R.prepare(def, cfg, 99).stations.length, 2);
+	const sim = new Sim(part, { czuwak: false, timetable: buildTimetable(part) });
+	assert.equal(Math.round(sim.st.pos), Math.round(part.stations[0].pos));
+	drive(sim, 400000);
+	assert.equal(sim.status, 'ended');
+});

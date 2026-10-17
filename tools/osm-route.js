@@ -14,7 +14,8 @@
    Oficjalne źródła: BDOT10k (GUGiK – budynki, jezdnie, tereny, lasy, wody zamiast OSM) i PKP PLK (Regulamin sieci –
    prędkości, kilometraż, perony); --data-cache katalog – pobrane paczki i arkusze; --no-bdot, --no-plk – bez nich
    --fixes plik.json | routes/plik.js – poprawki (sekcja fixes) nakładane w grze; z pliku trasy – jego sekcja fixes
-   (ponowne generowanie zachowuje poprawki). Na końcu wypisywane są uwagi generatora (miejsca do sprawdzenia). */
+   (ponowne generowanie zachowuje poprawki). RINF (ERA, js/gen/rinf-pl.js): pochylenia w tunelach i na mostach,
+   brakujące tunele; --no-rinf – bez nich. Na końcu wypisywane są uwagi generatora (miejsca do sprawdzenia). */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -65,6 +66,12 @@ function args(argv) {
 			d._streets = 1;
 			fs.writeFileSync(a['env-data'], JSON.stringify(d));
 		}
+		// przystanki autobusowe – dopobranie do starszych danych
+		if (!d._bus) {
+			d.elements.push(...(await OSM.fetchBusStops(poly, l)));
+			d._bus = 1;
+			fs.writeFileSync(a['env-data'], JSON.stringify(d));
+		}
 		// punkty usług (rodzaj budynków) – dopobranie do starszych danych
 		if (!d._pois) {
 			d.elements.push(...(await OSM.fetchPois(poly, l)));
@@ -75,7 +82,8 @@ function args(argv) {
 	};
 	else opts.environment = async (poly, l) => {
 		const d = await OSM.fetchEnvironment(poly, l);
-		if (a['save-env']) fs.writeFileSync(a['save-env'], JSON.stringify(d));
+		// zapytanie otoczenia obejmuje już maszty, przejścia, parkingi i punkty usług – zapisane dane bez dopobierania
+		if (a['save-env']) fs.writeFileSync(a['save-env'], JSON.stringify(Object.assign({ _masts: 1, _streets: 1, _pois: 1, _bus: 1 }, d)));
 		return d;
 	};
 	// ukształtowanie terenu wokół trasy: zapisane dane (--dem-data) albo pobranie (z zapisem --save-dem)
@@ -105,6 +113,8 @@ function args(argv) {
 	} : null;
 	if (!flags.includes('--no-bdot')) opts.bdot = (pts, l) => SRC.bdotForRoute(pts, { log: l, cache: fileCache });
 	if (!flags.includes('--no-plk')) opts.plk = (l) => SRC.plkData({ log: l, cache: fileCache });
+	// RINF (ERA): pochylenia linii i tunele z wyciągu js/gen/rinf-pl.js (tools/rinf.js); --no-rinf – bez nich
+	if (!flags.includes('--no-plk') && !flags.includes('--no-rinf')) opts.rinf = () => SRC.rinfData();
 	// NMPT GUGiK z pamięcią pobranych kafelków
 	if (!flags.includes('--no-nmpt') && opts.lidar !== false) {
 		const tiles = new Map(a['nmpt-cache'] && fs.existsSync(a['nmpt-cache']) ? JSON.parse(fs.readFileSync(a['nmpt-cache'], 'utf8')) : []);

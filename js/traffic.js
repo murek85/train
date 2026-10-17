@@ -21,7 +21,11 @@
 	const DWELL = 35; // postój pociągu tła, s
 	const STOP_GAP = 15; // zatrzymanie przed semaforem „stój”, m
 	const BLOCKED_AFTER = 25; // pociąg za graczem stoi tyle s przed semaforem zajętym przez gracza – zdarzenie
-	const HOLD_GAP = 30; // pociąg z przeciwka czeka czołem tyle m przed odcinkiem jednotorowym
+	/* pociąg z przeciwka czeka na krzyżowanie przed własnym semaforem przy końcu mijanki (w świecie – semafor dla jego
+	   kierunku): semafor SIG_GAP m od końca odcinka jednotorowego (przed rozjazdem, tory już rozsunięte – odcinki co 50 m),
+	   czoło 12 m przed nim; dawniej 30 m od odcinka – przy zwrotnicy, bez semafora */
+	const SIG_GAP = 60;
+	const HOLD_GAP = SIG_GAP + 12;
 	const DECIDE = 1500; // decyzja o wjeździe na odcinek jednotorowy – z tej odległości, m
 	const HELD_AFTER = 20; // pociąg z przeciwka czeka tyle s na krzyżowanie z graczem – komunikat dyżurnego
 
@@ -280,7 +284,11 @@
 					if (!why) { this.secs[k].users.push(tr.id); tr.granted.push(k); tr.holdT = 0; tr.why = null; }
 					else {
 						tr.hold = k;
-						target = Math.min(target, brakeTo(0, front - (this.secs[k].b + HOLD_GAP)));
+						// osobowy po postoju przy peronie tej mijanki czeka przy peronie (nie podjeżdża pod semafor)
+						const holdAt = this.secs[k].b + HOLD_GAP;
+						let stay = false;
+						if (tr.stops) for (const x of st) { const p = x.platformStart + 10; if (Math.abs(front - p) < 3 && p > holdAt && p - holdAt < 500) stay = true; }
+						target = Math.min(target, stay ? 0 : brakeTo(0, front - holdAt));
 					}
 				}
 			}
@@ -304,6 +312,19 @@
 			else tr.v = Math.max(target, tr.v - b * 1.6 * dt);
 			if (target < 0.05 && tr.v < 0.3) tr.v = 0;
 			tr.s += dir * tr.v * dt;
+		}
+
+		/* semafor dla pociągów z przeciwka przy końcu mijanki k (świat): 'go' – odcinek przydzielony pociągowi, który
+		   jeszcze nie minął semafora, inaczej 'stop' */
+		oppSignal(k) {
+			const x = this.secs[k];
+			if (!x) return 'stop';
+			const pos = x.b + SIG_GAP;
+			for (const id of x.users) {
+				const o = this.trains.find((t) => t.id === id);
+				if (o && o.active && !o.gone && o.s > pos - 5) return 'go';
+			}
+			return 'stop';
 		}
 
 		update(sim, dt) {
@@ -387,5 +408,5 @@
 		}
 	}
 
-	return { Traffic, NAMES, CONSISTS, DIESEL, DWELL };
+	return { Traffic, NAMES, CONSISTS, DIESEL, DWELL, SIG_GAP, HOLD_GAP };
 });

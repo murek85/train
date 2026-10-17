@@ -438,8 +438,12 @@
 	}
 
 	// cfg (opcjonalnie): konfiguracja składu (normConfig; także stary zapis { train, cars }) – domyślnie skład ze scenariusza
-	function prepare(def0, cfg) {
-		const def = applyFixes(def0);
+	// from (opcjonalnie): numer stacji, od której zaczyna się jazda (jazda swobodna) – stacje wcześniejsze pominięte, geometria
+	// i otoczenie bez zmian (kilometraż jak w całej trasie); najdalej przedostatnia stacja
+	function prepare(def0, cfg, from = 0) {
+		let def = applyFixes(def0);
+		const k = Math.max(0, Math.min(from | 0, def.stations.length - 2));
+		if (k > 0) def = Object.assign({}, def, { stations: def.stations.slice(k), title: `${def.stations[k].name} – ${def.stations[def.stations.length - 1].name}`, name: def.name.replace(/^(\S+).*/, `$1 ${def.stations[k].name} – ${def.stations[def.stations.length - 1].name}`) });
 		const c = normConfig(def, cfg);
 		const train = makeConsist(c);
 		const trainLength = trainLengthOf(train);
@@ -514,6 +518,7 @@
 
 		const route = {
 			id: def.id,
+			from: k, // stacja początkowa jazdy (numer w całej trasie)
 			config: c,
 			configKey: configKey(c),
 			freight: !!train.freight,

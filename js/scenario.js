@@ -16,6 +16,8 @@
      delay   { extra, why }               – odjazd ze stacji początkowej opóźniony o extra s
      outage  { from, to, duration }       – brak napięcia w sieci na odcinku przez duration s
      weather { key, text }                – zmiana pogody (clear | cloudy | rain | fog | snow)
+     frozen  { signal, duration }         – zamarznięta zwrotnica: semafor (wjazdowy) „stój” przez duration s od
+                                            zbliżenia się pociągu (1,5 km, w ruchu), komunikaty dyżurnego
    Krok samouczka: { text, until, when } – warunki: nazwy z COND (np. 'leverUp', 'near:1:1500', 'stopped:1').
    Cel: { type, max | min } – typy w GOALS. Gwiazdki: ukończenie – 1, cele – do 2 kolejnych. */
 (function (root, factory) {
@@ -173,6 +175,11 @@
 					sim.events.push({ type: 'weather', key: e.key });
 					if (e.text) radio(e.text, e.ack);
 					break;
+				case 'frozen': {
+					const i = signalIndex(sim, e.signal);
+					if (i >= 0) sim.freezeSignal(i, e.duration || 180);
+					break;
+				}
 				default:
 					throw new Error('Scenariusz: nieznane zdarzenie ' + e.type);
 			}
@@ -254,7 +261,7 @@
 		'zgłoszono zwierzęta w pobliżu toru – proszę zachować ostrożność.',
 		'proszę o informację po przyjeździe na stację końcową, jazda bez zmian.',
 	];
-	function randomEvents(route, seed, weather) {
+	function randomEvents(route, seed, weather, season) {
 		const r = rng(seed), pick = (a) => a[Math.floor(r() * a.length)];
 		const st = route.stations, last = st.length - 1, events = [];
 		// odcinki między stacjami (bez pierwszych i ostatnich 600 m)
@@ -293,6 +300,13 @@
 		if ((weather === 'clear' || weather === 'cloudy' || weather === 'auto') && r() < 0.3) {
 			const key = pick(['rain', 'fog', 'rain']);
 			events.push({ when: { at: Math.round(st[0].pos + (st[last].pos - st[0].pos) * (0.3 + r() * 0.3)) }, type: 'weather', key });
+		}
+		// zima: zamarznięta zwrotnica przed stacją (semafor wjazdowy na dalszej części trasy) – postój 2–5 min
+		if (season === 'winter') {
+			// semafor wjazdowy (trasy z mapy) albo ostatni semafor przed stacją (do 1,5 km przed nią)
+			const before = (x) => st.some((s) => s.type !== 'halt' && s.pos > x.pos && s.pos - x.pos < 1500);
+			const entries = route.signals.map((x, i) => ({ x, i })).filter(({ x }) => (x.kind === 'entry' || (x.type !== 'starter' && x.kind !== 'intermediate' && before(x))) && x.pos > st[0].pos + 2000 && x.pos < st[last].pos);
+			if (entries.length && r() < 0.5) events.push({ when: { start: true }, type: 'frozen', signal: pick(entries).i, duration: 120 + Math.round(r() * 6) * 30 });
 		}
 		while (events.length < 2) {
 			const at = Math.round(st[0].pos + (st[last].pos - st[0].pos) * (0.15 + r() * 0.6));

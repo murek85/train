@@ -371,11 +371,13 @@
 			this.clear();
 			this.route = route;
 			if (this.envIndex) this.envIndex(route); // trasa rzeczywista: budynki, drogi, wody, zagospodarowanie (real-env.js)
+			if (this.envPortalUniforms) this.envPortalUniforms();
 			this.warm = true;
 		}
 
 		clear() {
 			this.abortJob();
+			if (this.streetLifeReset) this.streetLifeReset();
 			for (const ch of this.chunks.values()) this.dropChunk(ch);
 			this.chunks.clear();
 			this.zones = [];
@@ -554,7 +556,13 @@
 				const ext = big ? 170 : 100;
 				if (s < st.platformStart - ext || s > st.platformEnd + ext) continue;
 				const ws = smoothstep(st.platformStart - ext, st.platformStart - ext + 55, s) * (1 - smoothstep(st.platformEnd + ext - 55, st.platformEnd + ext, s));
-				const wd = this.env
+				// pomiar terenu (NMT): tylko torowisko stacji z peronami – do skraju korony po danej stronie (envShoulder) + 1 m,
+				// zanik na 6 m; dawniej 24–44 m, a na stacji w wykopie teren obok spłaszczony do poziomu toru zostawiał ulicę na
+				// skraju wykopu na „murku” (Toruń Miasto, peron po drugiej stronie)
+				const shE = this.env && this.env.dem && this.env.dem.lidar && this.envShoulder ? this.envShoulder(s) : null;
+				const wd = shE
+					? 1 - smoothstep((d >= 0 ? shE.r : shE.l) + 1, (d >= 0 ? shE.r : shE.l) + 7, Math.abs(d))
+					: this.env
 					? (d >= 0 ? 1 - smoothstep(24, 44, d) : 1 - smoothstep(18, 34, -d))
 					: d >= 0 ? 1 - smoothstep(big ? 200 : 125, big ? 240 : 155, d) : 1 - smoothstep(big ? 28 : 16, big ? 48 : 32, -d);
 				f = Math.max(f, ws * wd);
@@ -659,15 +667,17 @@
 		}
 
 		// ribbon krokami (wiersz na krok) – siatka terenu kawałka to kilka tysięcy węzłów (budowa w kilku klatkach)
+		// ds – krok wierszy (m) albo lista kilometraży wierszy (rosnąco, np. z dodatkowymi przy portalach tuneli)
 		*ribbonRows(s0, s1, ds, cols, yfn, colorFn, rowFn, shiftFn, matFn) {
-			const rows = Math.max(2, Math.ceil((s1 - s0) / ds) + 1);
+			const sList = Array.isArray(ds) ? ds : null;
+			const rows = sList ? sList.length : Math.max(2, Math.ceil((s1 - s0) / ds) + 1);
 			const pos = new Float32Array(rows * cols.length * 3);
 			const col = colorFn ? new Float32Array(rows * cols.length * 3) : null;
 			const rowA = rowFn ? new Float32Array(rows * cols.length * 2) : null;
 			const matA = matFn ? new Float32Array(rows * cols.length * 3) : null;
 			let k = 0;
 			for (let i = 0; i < rows; i++) {
-				const s = Math.min(s1, s0 + i * ds);
+				const s = sList ? sList[i] : Math.min(s1, s0 + i * ds);
 				R.trackPoint(this.route, s, tp);
 				const cx = Math.cos(tp.heading), cz = Math.sin(tp.heading);
 				const sh = shiftFn ? shiftFn(s) : 0;
@@ -818,6 +828,96 @@
 			g.updateMatrixWorld(true);
 		}
 
+		/* Zaspy (zima): bryły śniegu z pasów – każdy pas to łamana w świecie (punkty { x, y, z, nx, nz } – podstawa
+		   i kierunek w poprzek) z przekrojem prof ([odsunięcie w m, wysokość 0…1]) i wysokością H w punkcie. Atrybut aDrift
+		   (wysokość nad podstawą): shader obniża bryłę pod ziemię, gdy pokrywy śnieżnej mało (uSnow) – zaspy rosną i topnieją
+		   razem z pokrywą. */
+		static driftMat() {
+			if (World.driftM) return World.driftM;
+			const m = NS.util.patch(new T.MeshStandardMaterial({ color: '#eef2f8', roughness: 0.78 }), 'lit');
+			const prev = m.onBeforeCompile;
+			m.onBeforeCompile = (sh, r) => {
+				prev(sh, r);
+				sh.vertexShader = sh.vertexShader
+					.replace('#include <common>', '#include <common>\nattribute float aDrift;')
+					.replace('#include <begin_vertex>', `#include <begin_vertex>
+					{ float dk = 1.0 - smoothstep(0.12, 0.55, uSnow); transformed.y -= (aDrift + 0.1) * dk; }`);
+			};
+			const key = m.customProgramCacheKey();
+			m.customProgramCacheKey = () => key + '-drift';
+			m.userData.shared = true;
+			World.driftM = m;
+			return m;
+		}
+		static driftMesh(strips) {
+			// siatka z indeksami (wspólne wierzchołki – gładkie cieniowanie zaokrąglonych zasp)
+			const pos = [], dr = [], idx = [];
+			for (const { pts, prof } of strips) {
+				if (pts.length < 2) continue;
+				const base = pos.length / 3, np = prof.length;
+				for (const p of pts) for (const [o, hf] of prof) {
+					pos.push(p.x + p.nx * o, p.y + hf * p.H - (p.slope || 0) * o, p.z + p.nz * o); // slope – spadek podłoża w poprzek (m/m)
+					dr.push(hf * p.H);
+				}
+				for (let k = 0; k + 1 < pts.length; k++) for (let j = 0; j + 1 < np; j++) {
+					const a = base + k * np + j, b = a + np;
+					idx.push(a, b, b + 1, a, b + 1, a + 1);
+				}
+			}
+			if (!pos.length) return null;
+			const g = new T.BufferGeometry();
+			g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+			g.setAttribute('aDrift', new T.Float32BufferAttribute(dr, 1));
+			g.setIndex(idx);
+			g.computeVertexNormals();
+			// obieg trójkątów zależy od kierunku łamanej – normalne zawsze w górę
+			const nm = g.attributes.normal.array;
+			for (let q = 0; q < nm.length; q += 3) if (nm[q + 1] < 0) { nm[q] = -nm[q]; nm[q + 1] = -nm[q + 1]; nm[q + 2] = -nm[q + 2]; }
+			const m = new T.Mesh(g, World.driftMat());
+			m.material.side = T.DoubleSide;
+			m.receiveShadow = true;
+			m.userData.drift = true;
+			return m;
+		}
+		/* wały śniegu odgarniętego z toru (pługi, przejazdy pociągów): na ramionach podsypki po obu stronach toru, przerwy
+		   na stacjach, przejazdach, mostach, w tunelach, przy innych torach i rozjazdach; wysokość falująca 0,15–0,35 m */
+		buildTrackDrifts(group, s0, s1) {
+			const r = this.route, h = (s) => R.heightAt(r, s), strips = [];
+			const prof = [[-0.65, 0], [-0.45, 0.35], [-0.22, 0.78], [0.05, 1], [0.3, 0.82], [0.52, 0.42], [0.72, 0]];
+			const sides = r.double && !this.env ? [-1 * (2.95 - SECOND), 2.95] : [-2.95, 2.95];
+			const bad = (s, d) => {
+				for (const st of r.stations) if (s > st.platformStart - 30 && s < st.platformEnd + 30) return true;
+				for (const c of r.crossings) if (Math.abs(s - c.pos) < 10) return true;
+				for (const b of r.bridges) if (s > b.from - 6 && s < b.to + 6) return true;
+				for (const t of r.tunnels) if (s > t.from - 4 && s < t.to + 4) return true;
+				if (this.env) {
+					if (this.envTrackGap(s, d) < 2.2 && Math.abs(d) > 2.2) return true;
+					if (this.envOnSwitch && this.envOnSwitch(s, d)) return true;
+					if (this.onRoad(s, d)) return true;
+				}
+				return false;
+			};
+			for (const d of sides) {
+				let pts = [];
+				const flush = () => { if (pts.length > 3) strips.push({ pts, prof }); pts = []; };
+				for (let s = s0; s <= s1 + 0.01; s += 2) {
+					if (bad(s, d)) { flush(); continue; }
+					const sg = Math.sign(d);
+					R.sidePoint(r, s, d, tp);
+					const x = tp.x, z = tp.z;
+					R.sidePoint(r, s, d + sg, tp);
+					const nx = tp.x - x, nz = tp.z - z;
+					// podstawa na skarpie podsypki (jak bal() w budowie toru: 0,31 m pod główką przy 2,15 m, spadek 0,48)
+					const base = h(s) - 0.31 - (Math.abs(d) - (r.double && !this.env && d < 0 ? Math.abs(SECOND) : 0) - 2.15) * 0.48;
+					const H = 0.14 + 0.22 * vnoise(s * 0.05 + d, d * 0.3);
+					pts.push({ x, y: base - 0.04, z, nx, nz, H, slope: 0.48 });
+				}
+				flush();
+			}
+			const m = World.driftMesh(strips);
+			if (m) group.add(m);
+		}
+
 		excluded(s, d) {
 			const r = this.route, ad = this.eff(d);
 			if (ad < 11) return true;
@@ -880,8 +980,21 @@
 			};
 			const colsA = cols === TERRAIN_D ? null : this.envTerrainCols(c - 1), colsB = cols === TERRAIN_D ? null : this.envTerrainCols(c + 1);
 			const tY = (s, d) => (colsA && s === s0 ? edgeY(s, d, colsA) : colsB && s === s1 ? edgeY(s, d, colsB) : mY(s, d));
+			/* wiersze terenu co 4 m, przy portalach tuneli (trasa z mapy) dodatkowo 0,5 m przed i za ścianą czołową – skok
+			   terenu z dna wykopu nad strop schowany za ścianą (dawniej pochylnia przez 4–12 m widoczna we wlocie) */
+			let tRows = 4;
+			if (this.env && this.env.dem && r.tunnels.length) {
+				const extra = [];
+				for (const t of r.tunnels) for (const p of [t.from, t.to]) for (const x of [p - 0.5, p + 0.5]) if (x > s0 + 0.2 && x < s1 - 0.2) extra.push(x);
+				if (extra.length) {
+					const L = [];
+					for (let s = s0; s < s1 - 0.01; s += 4) L.push(s);
+					L.push(s1);
+					tRows = L.concat(extra).sort((a, b) => a - b).filter((x, i, A) => i === 0 || x - A[i - 1] > 0.2 || x === s1);
+				}
+			}
 			const terrain = new T.Mesh(
-				yield* this.ribbonRows(s0, s1, 4, cols, tY, (s, d, y) => this.terrainColor(s, d, y), (s, d) => this.rowWeights(s, d), null, (s, d) => this.terrainMat(s, d)),
+				yield* this.ribbonRows(s0, s1, tRows, cols, tY, (s, d, y) => this.terrainColor(s, d, y), (s, d) => this.rowWeights(s, d), null, (s, d) => this.terrainMat(s, d)),
 				M.terrain,
 			);
 			terrain.receiveShadow = true;
@@ -901,6 +1014,7 @@
 			);
 			ballast.receiveShadow = true;
 			group.add(ballast);
+			if (this.season === 'winter') this.buildTrackDrifts(group, s0, s1);
 			// szyny: profil (stopka, szyjka, główka) – rdzawe boki, błyszcząca wytarta główka
 			const PROF = [[-0.075, -0.2], [-0.0749, -0.185], [-0.012, -0.17], [-0.0119, -0.05], [-0.036, -0.04], [-0.0359, -0.004]];
 			const prof = PROF.concat(PROF.slice().reverse().map(([d, y]) => [-d, y]));
@@ -961,6 +1075,17 @@
 
 			r.stations.forEach((st, i) => { if (inRange((st.platformStart + st.platformEnd) / 2)) this.buildStation(group, dyn, st, i); });
 			r.signals.forEach((sig, i) => { if (inRange(sig.pos)) this.buildSignal(group, dyn, sig, i); });
+			/* semafory dla pociągów z przeciwka przy końcach mijanek (linie z odcinkami jednotorowymi): przed rozjazdem, po
+			   prawej stronie toru mijanki w ich kierunku (u nas – po lewej), zwrócone w ich stronę; „stój”, dopóki odcinek
+			   nie zostanie przydzielony (traffic.js oppSignal) */
+			const TT = typeof window !== 'undefined' ? window.TrainTraffic : null;
+			if (r.single && this.env && TT) r.single.forEach(([, b], k) => {
+				const pos = b + TT.SIG_GAP;
+				if (!inRange(pos) || pos > r.length - 20) return;
+				// tor mijanki – ten sam, po którym jedzie pociąg z przeciwka (scene.js)
+				const lane = this.envLaneNear(pos);
+				this.buildSignal(group, dyn, { pos, d: lane < 0 ? lane - 3.0 : lane + 3.0, label: 'D' + (k + 1), opp: true }, k, true);
+			});
 			for (const w of this.warnDiscs()) if (inRange(w.pos)) this.buildWarnDisc(group, dyn, w);
 			for (let i = 1; i < r.limits.length; i++) {
 				const l = r.limits[i], down = l.speed < r.limits[i - 1].speed;
@@ -972,7 +1097,9 @@
 				if (inRange(cr.hornFrom)) this.buildBoard(group, cr.hornFrom, boardTexture('W6', '#ffffff', 'sq'));
 			});
 			r.bridges.forEach((b) => { if (inRange((b.from + b.to) / 2)) (b.kind === 'viaduct' ? this.buildViaduct(group, b) : this.buildBridge(group, b)); });
-			r.tunnels.forEach((t) => { if (inRange((t.from + t.to) / 2)) this.buildTunnel(group, dyn, t); });
+			// trasa rzeczywista: obudowa tunelu w każdym kawałku jego część (długie tunele miejskie), portale w swoich kawałkach
+			if (this.env && this.env.dem) r.tunnels.forEach((t) => { if (t.to >= s0 && t.from < s1) this.buildEnvTunnel(group, t, s0, s1, dyn); });
+			else r.tunnels.forEach((t) => { if (inRange((t.from + t.to) / 2)) this.buildTunnel(group, dyn, t); });
 
 			if (this.haloSize) group.traverse((o) => { if (o.userData.lampHalo) o.scale.set(this.haloSize, this.haloSize, 1); });
 			yield;
@@ -1632,6 +1759,12 @@
 			const concrete = matS('#b8b2a6', { roughness: 0.9, surf: 'concrete' });
 			const glows = [];
 			const lamps = [];
+			// stacja podziemna (peron w tunelu na trasie z mapy): bez latarń i wiat, światła hali, schody na powierzchnię
+			const under = !!(this.env && this.envUnderground && this.envUnderground(st));
+			// biegi schodów (od 1/4 i 3/4 peronu ku jego końcom, 10,8 m) – bez ławek i gablot na nich
+			// wąski peron wyspowy (< 5 m): bez schodów na peronie (zostają pawilony nad końcami peronu)
+			const stairsOn = under && !(st.platform && st.platform.island && (st.platform.width || 6) < 5);
+			const onStairs = (z) => stairsOn && [-1, 1].some((e) => (z - e * len * 0.25) * e > -1.5 && (z - e * len * 0.25) * e < 12);
 
 			// perony: prawy (tor gracza) i lewy (drugi tor)
 			// trasa rzeczywista: jeden peron przy torze pociągu – strona, odległość krawędzi i szerokość z mapy
@@ -1688,7 +1821,7 @@
 				const lampX = (z) => (P.island ? xm(z) : P.back);
 				const sxAt = (z) => lampX(z) - P.sgn * 0.55; // pod wysięgnikiem latarni
 				zs.forEach((z, k) => {
-					if (underRoof(z)) return;
+					if (under || underRoof(z)) return;
 					lamps.push(this.platformLamp(g, lampX(z), z, P.sgn));
 					// pod wysięgnikiem (łuk 0,2–0,7 m od słupa, ok. 4,5 m nad główką szyny): zawiesia do rury wysięgnika
 					if (k % 2 === 1) this.hangSign(g, this.platformTexture(P.sgn > 0 ? 1 : 2), 0.6, 0.42, lampX(z) - P.sgn * 0.45, 3.05, z, 4.47);
@@ -1740,7 +1873,47 @@
 				const sz = big && P.sgn > 0 ? 0 : -len * 0.15;
 				// prawdziwe zadaszenie z mapy (trasa rzeczywista) zastępuje wiatę z gry (dach rysuje buildEnvRoofs)
 				const realRoof = hasReal;
-				if (!realRoof && big && P.island) {
+				if (under) {
+					// hala stacji podziemnej: tablice z nazwą na ścianie za peronem (co ok. 30 m), oprawy świetlówek pod stropem
+					// świecą zawsze (światła z puli – także w dzień)
+					const wx = P.island ? null : P.sgn * (P.edge + P.width + 1.38);
+					// peron dochodzi do ściany hali (pas 1,6 m za tylną krawędzią)
+					if (wx !== null) {
+						g.add(this.platformSlab(1.6, 0.22, len, P.sgn * (P.edge + P.width + 0.8), 0.65, 0, mid, PM.top));
+						g.add(box(1.6, 1.3, len, PM.wall, P.sgn * (P.edge + P.width + 0.8), -0.11, 0));
+					}
+					if (wx !== null) for (let z = -len / 2 + 20; z < len / 2 - 10; z += 30) this.nameBoard(g, st.name, 5.0, 0.9, wx, 3.6, z, false);
+					// reklamy na ścianie hali (podświetlane plansze) między tablicami z nazwą
+					if (wx !== null) {
+						const ADS = ['#c8402f', '#2f6fc8', '#e0a52a', '#3a9a5b', '#8b4fc1', '#d8d4cc'];
+						for (let z = -len / 2 + 35; z < len / 2 - 15; z += 30) {
+							const c = new T.Color(ADS[Math.floor(hash(st.pos * 0.1 + z) * ADS.length)]);
+							g.add(box(0.06, 1.7, 3.2, mat('#2a2d31'), wx + P.sgn * 0.02, 2.4, z));
+							g.add(box(0.05, 1.5, 3.0, new T.MeshBasicMaterial({ color: c.multiplyScalar(0.9) }), wx - P.sgn * 0.02, 2.4, z));
+						}
+					}
+					// kolumny stropu w osi szerokiego peronu (co 12 m; bez schodów, tablic i gablot)
+					if ((PL ? PL.width : P.width) >= 6) {
+						const colM = matS('#cfc9bd', { roughness: 0.7 });
+						for (let z = -len / 2 + 8; z < len / 2 - 6; z += 12) {
+							if (onStairs(z) || [-len * 0.38, len * 0.38].some((q) => Math.abs(q - z) < 3.2)) continue;
+							// ławki (co 26 / 40 m od −len/2 + 18) i gabloty (co 70 m od −len/2 + 40) w tej samej osi
+							const near = (z0, st2) => { const k = (z - z0) / st2; return Math.abs(k - Math.round(k)) * st2 < 2.6; };
+							if (near(-len / 2 + 18, big ? 26 : 40) || near(-len / 2 + 19.5, big ? 26 : 40) || near(-len / 2 + 40, 70)) continue;
+							const x = P.c + (P.island ? 0 : P.sgn * 0.6);
+							g.add(box(0.55, 6.3, 0.55, colM, x, 0.76 + 3.15, z));
+						}
+					}
+					for (let z = -len / 2 + 10; z < len / 2; z += 20) {
+						const o = new T.Object3D();
+						o.position.set(P.c, 6.4, z);
+						o.userData.always = true;
+						o.userData.power = 1.1;
+						o.userData.drop = 0.3;
+						g.add(o);
+						lamps.push(o);
+					}
+				} else if (!realRoof && big && P.island) {
 					// peron wyspowy: dwie połowy wiaty plecami do siebie (słupy i szklana ściana w osi peronu, dach nad oboma
 					// krawędziami – pochylony ku osi, z rynną pośrodku)
 					const xc = xm(sz);
@@ -1753,7 +1926,7 @@
 				const bz = [];
 				for (let z = -len / 2 + 18; z < len / 2 - 10; z += big ? 26 : 40) if (Math.abs(z - sz) > sl / 2 + 2) bz.push(z);
 				if (big) bz.push(sz - sl * 0.18, sz + sl * 0.18);
-				const clear = (z) => nz.every((q) => Math.abs(q - z) > 3.2) && tz.every((q) => Math.abs(q - z) > 2.2);
+				const clear = (z) => !onStairs(z) && nz.every((q) => Math.abs(q - z) > 3.2) && tz.every((q) => Math.abs(q - z) > 2.2);
 				for (const z of bz) {
 					if (!clear(z) || !clear(z + 1.5)) continue;
 					const x0 = xm(z), bs = P.island ? [[x0 - P.sgn * 0.6, P.sgn], [x0 + P.sgn * 0.6, -P.sgn]] : [[x0, P.sgn]];
@@ -1766,6 +1939,7 @@
 				if (!big && !P.island) this.haltPlatformExtras(g, P, len, mid, st);
 				// gabloty z rozkładem jazdy (na peronie wyspowym – dwustronne)
 				for (const z of tz) {
+					if (onStairs(z)) continue;
 					const bx = xm(z);
 					g.add(box(0.08, 1.9, 0.08, steel, bx, 1.7, z - 0.65));
 					g.add(box(0.08, 1.9, 0.08, steel, bx, 1.7, z + 0.65));
@@ -1778,7 +1952,7 @@
 			const bz = -(len / 2 - 22);
 			const realB = this.env && big ? this.envStationBuilding(i) : null;
 			// dworzec z gry po stronie peronu (przy peronie wyspowym – brak, przy lewym – obrócony)
-			const genB = big && !realB && !(PL && P0.island);
+			const genB = big && !realB && !under && !(PL && P0.island); // stacja podziemna – bez dworca przy torze
 			if (genB) {
 				const sub = new T.Group();
 				sub.userData.rigid = true; // budynek w całości (bez wyginania)
@@ -1791,6 +1965,49 @@
 				const last = this.route.stations[this.route.stations.length - 1].name;
 				this.infoDisplay(g, P0.back - P0.sgn * 1.0, -len * 0.15 + 9, last === st.name ? this.route.stations[0].name : last);
 				if (!this.env) this.pedCrossing(g, sides, len, mid);
+			}
+
+			/* stacja podziemna: schody z peronu do stropu (dwa wyjścia, ok. 1/4 i 3/4 peronu, przy tylnej ścianie albo w osi
+			   peronu wyspowego) i pawilony wejściowe na powierzchni nad nimi (teren z pomiaru); wyjście pasażerów – u stóp
+			   schodów */
+			let underExit = null;
+			if (under) {
+				const P = P0, steps = 36, rise = 6.2 / steps, run = 0.3, w = 2.6; // do stropu hali (7 m nad główką szyny)
+				const sx = P.island ? P.c : P.sgn * (P.edge + P.width - w / 2 - 0.3);
+				const stepM = matS('#a9a59c', { roughness: 0.85 }), railM = mat('#6d747c');
+				for (const z0 of stairsOn ? [-len * 0.25, len * 0.25] : [-len / 2 + 2, len / 2 - 2]) {
+					// biegną w stronę bliższego końca peronu (dół schodów od strony środka peronu)
+					const dir = z0 < 0 ? -1 : 1;
+					for (let k = 0; k < (stairsOn ? steps : 0); k++) {
+						const h = (k + 1) * rise;
+						g.add(box(w, h, run, stepM, sx, 0.76 + h / 2, z0 + dir * (k + 0.5) * run));
+					}
+					const L = steps * run, zc = z0 + (dir * L) / 2;
+					for (const e of stairsOn ? [-1, 1] : []) {
+						g.add(box(0.12, 6.24, L, mat('#cfcac0'), sx + e * (w / 2 + 0.06), 0.76 + 3.12, zc)); // ściany biegu (do stropu)
+						g.add(box(0.06, 0.06, L + 0.4, railM, sx + e * (w / 2 - 0.08), 0.76 + 2.6 + 0.95, zc)); // poręcz (umownie wzdłuż)
+					}
+					if (!underExit && stairsOn) underExit = { x: sx, z: z0 - dir * 0.8 };
+					// pawilon wejściowy na powierzchni nad górnym końcem schodów
+					const sTop = mid - (z0 + dir * L), gy = this.demGround ? this.demGround(sTop, sx) : null;
+					if (gy !== null && Number.isFinite(gy)) {
+						const pg = new T.Group();
+						this.place(pg, sTop, sx);
+						pg.position.y = gy;
+						const glass = World.materials().glass;
+						pg.add(box(4.2, 0.35, 6.4, mat('#8d9096'), 0, 3.15, 0)); // dach
+						for (const e of [-1, 1]) pg.add(box(0.12, 3.0, 6.0, glass, e * 2.0, 1.5, 0)); // ściany szklane
+						pg.add(box(4.0, 3.0, 0.12, glass, 0, 1.5, -dir * 3.0));
+						for (const [x, z] of [[-2, -3.1], [2, -3.1], [-2, 3.1], [2, 3.1]]) pg.add(box(0.16, 3.1, 0.16, mat('#5c6168'), x, 1.55, z));
+						this.nameBoard(pg, st.name, 3.6, 0.55, 0, 3.65, 0, false);
+						const lamp = new T.Object3D();
+						lamp.position.set(0, 2.8, 0);
+						lamp.userData.power = 0.7;
+						pg.add(lamp);
+						lamps.push(lamp);
+						group.add(pg);
+					}
+				}
 			}
 
 			// wskaźnik W4
@@ -1861,7 +2078,7 @@
 			// wyjście: drzwi dworca z gry, przy dworcu z mapy – w jego stronę (koniec peronu najbliżej budynku)
 			// przystanek: wyjście pochylnią na początku peronu
 			const xBack = P0.back - P0.sgn * 0.5;
-			const exit = realB || (big && !genB) ? { x: xBack, z: realB ? Math.max(-len / 2 + 8, Math.min(len / 2 - 8, mid - realB.cs)) : len / 2 - 4 }
+			const exit = underExit ? underExit : realB || (big && !genB) ? { x: xBack, z: realB ? Math.max(-len / 2 + 8, Math.min(len / 2 - 8, mid - realB.cs)) : len / 2 - 4 }
 				: big ? (P0.sgn > 0 ? { x: 11.5, z: bz + 2.5 } : { x: -11.5, z: -(bz + 2.5) })
 				: P0.island ? { x: P0.c, z: len / 2 - 3 } : { x: P0.back - P0.sgn * 1.3, z: len / 2 + 4 };
 			// tablica „Wyjście” ze strzałką – na peronie przy wyjściu, podwieszona w poprzek peronu
@@ -2966,13 +3183,14 @@
 			return World.SG;
 		}
 
-		buildSignal(group, dyn, sig, idx) {
+		buildSignal(group, dyn, sig, idx, opp) {
 			this.signalGeos();
 			const G = World.SG;
 			const g = new T.Group();
 			// trasa rzeczywista: maszt w wolnym miejscu obok torów z mapy, między torami albo bramownica nad torami
-			const spot = this.env ? this.envSignalSpot(sig.pos, sig) : { d: sig.d !== undefined ? sig.d : 3.4 };
+			const spot = this.env && !opp ? this.envSignalSpot(sig.pos, sig) : { d: sig.d !== undefined ? sig.d : 3.4 };
 			this.place(g, sig.pos, spot.d);
+			if (opp) g.rotation.y += Math.PI; // semafor dla kierunku przeciwnego – zwrócony w drugą stronę
 			const steel = matS('#9aa0a6', { roughness: 0.45, metalness: 0.6 });
 			const white = mat('#eeeeee'), red = mat('#c62828'), black = matS('#121212', { roughness: 0.5, metalness: 0.2 });
 			const mastG = new T.Group();
@@ -2981,6 +3199,12 @@
 				mastG.visible = false;
 				this.envGantry(g, spot.l - spot.d, spot.r - spot.d, 7.1, steel);
 				g.add(box(0.1, 0.5, 0.1, steel, 1.6, 6.8, -0.12));
+			}
+			// przy ścianie tunelu: bez masztu, wspornik od ściany do głowicy
+			if (spot.wall) {
+				mastG.visible = false;
+				g.add(box(0.45, 0.12, 0.12, steel, 0.22, 4.25, -0.2));
+				g.add(box(0.12, 1.6, 0.12, steel, 0.4, 4.25, -0.2));
 			}
 			// fundament
 			mastG.add(box(0.8, 0.5, 0.8, mat('#9e9a92', { roughness: 0.95 }), 0, -0.05, 0));
@@ -3004,7 +3228,7 @@
 			for (const x of [-0.39, 0.39]) mastG.add(box(0.03, 0.7, 0.03, steel, x, 3.9, -0.33));
 			mastG.add(box(0.8, 0.03, 0.03, steel, 0, 4.25, -0.33));
 			// głowica (podgrupa w skali 0,7): tarcza tła z obwódką, komory świateł, poświata
-			const hy = spot.gantry ? 6.0 : 4.9; // środek głowicy
+			const hy = spot.gantry ? 6.0 : spot.wall ? 4.3 : 4.9; // środek głowicy
 			const HS = 0.7;
 			const head = new T.Group();
 			// na bramownicy: głowica 1,6 m w prawo od osi toru (poza przewodem jezdnym i pantografem)
@@ -3012,7 +3236,7 @@
 			head.position.set(hx, hy, 0);
 			head.scale.setScalar(HS);
 			g.add(head);
-			if (!spot.gantry) g.add(box(0.12, 0.5, 0.12, steel, 0, hy - 1.38 * HS - 0.1, -0.1));
+			if (!spot.gantry && !spot.wall) g.add(box(0.12, 0.5, 0.12, steel, 0, hy - 1.38 * HS - 0.1, -0.1));
 			const rim = new T.Mesh(G.shield, white);
 			rim.scale.set(1.08, 1.04, 1);
 			head.add(rim);
@@ -3067,7 +3291,7 @@
 			glow2.position.set(0, lamps[3].position.y, 0.5);
 			head.add(glow2);
 			g.traverse((o) => { if (o.isMesh) { o.castShadow = this.shadows; o.receiveShadow = true; } });
-			dyn.push({ type: 'signal', index: idx, lamps, glow, glow2, pas, key: null });
+			dyn.push({ type: opp ? 'oppSignal' : 'signal', index: idx, lamps, glow, glow2, pas, key: null });
 			group.add(g);
 		}
 
@@ -3427,10 +3651,31 @@
 					g.add(wing);
 				}
 			}
-			// filary pośrednie (poza jezdnią pod środkiem)
+			// filary pośrednie (poza jezdnią pod środkiem); trasa rzeczywista: nie na drodze pod pomostem ani na torze innej linii
+			// pod spodem (ponad 3 m niżej) – przesunięte wzdłuż mostu do 6 m, inaczej pominięte (dawniej stawały na ulicach i torach)
+			const pierBlocked = (zz) => {
+				if (!this.env) return false;
+				const s = mid - zz;
+				for (const sx of [-1, 1]) {
+					const d = cx + sx * (wide / 2 - 1.6);
+					for (let o = -1.5; o <= 1.5; o += 0.75) {
+						const rl = this.roadLevel ? this.roadLevel(s + o, d) : undefined;
+						if (this.onRoad && this.onRoad(s + o, d) && (rl === undefined || rl < h0 - 2)) return true;
+						if (this.envTracksAt && this.envTracksAt(s + o).some((t) => Math.abs(t.d - d) < 2.4 && this.envRowY(t.i, t.k, s + o, t.d) < h0 - 3)) return true;
+					}
+				}
+				return false;
+			};
 			if (len > 26) {
-				for (let z = -len / 2 + 9; z < len / 2 - 8; z += 10) {
+				for (let z0 = -len / 2 + 9; z0 < len / 2 - 8; z0 += 10) {
+					let z = z0;
 					if (Math.abs(z) < 7) continue;
+					if (pierBlocked(z)) {
+						let nz = null;
+						for (let o = 1; o <= 6 && nz === null; o++) for (const sg of [1, -1]) if (nz === null && Math.abs(z + sg * o) >= 7 && Math.abs(z + sg * o) <= len / 2 - 3 && !pierBlocked(z + sg * o)) nz = z + sg * o;
+						if (nz === null) continue;
+						z = nz;
+					}
 					const yb = this.terrainY(mid - z, 0) - h0;
 					const hh = Math.max(1, -1.5 - yb);
 					for (const sx of [-1, 1]) {
@@ -3490,6 +3735,8 @@
 						const s = mid - zz;
 						for (let o = -pw / 2 - 1.5; o <= pw / 2 + 1.5; o += 1) for (const dd of [-wide / 2, 0, wide / 2]) {
 							if ((this.onRoad && this.onRoad(s + o, cx + dd)) || (this.roadLevel && this.roadLevel(s + o, cx + dd) !== undefined)) return true;
+							// tor innej linii pod mostem (ponad 3 m niżej)
+							if (this.envTracksAt && this.envTracksAt(s + o).some((t) => Math.abs(t.d - (cx + dd)) < 2.4 && this.envRowY(t.i, t.k, s + o, t.d) < R.heightAt(this.route, s) - 3)) return true;
 						}
 						return false;
 					};
@@ -3594,11 +3841,16 @@
 		updateLamps(dark, haze) {
 			const M = World.M;
 			const night = dark > 0.15 ? Math.min(1, (dark - 0.1) * 1.5) : 0;
+			// szadź na przewodach sieci trakcyjnej (zima, ze śniegiem): jaśniejsze, nocą przygaszone (linie nie są oświetlane)
+			if (World.wireMat) {
+				const rime = this.season === 'winter' ? 0.6 * Math.min(1, NS.util.U.uSnow.value * 1.6) : 0;
+				World.wireMat.color.setHex(0x2a2a2a).lerp(tmpColor.setRGB(0.8, 0.84, 0.88), rime * (1 - 0.75 * Math.min(1, dark)));
+			}
 			if (night > 0) M.lampLens.color.setRGB(1, 0.82, 0.55).multiplyScalar(1 + 3.5 * night);
 			else M.lampLens.color.set('#d8d4c8');
 			M.lampHalo.opacity = 0.75 * night;
 			M.lampHalo.color.setRGB(1, 0.8, 0.55).multiplyScalar(1.6);
-			M.lampPool.opacity = 0.42 * night;
+			M.lampPool.opacity = 0; // plamy światła – z mapy nocnej (updateNightMap) w shaderach podłoża
 			// w mgle, deszczu i śniegu światło rozprasza się w powietrzu – szersza, miękka poświata
 			const hz = Math.min(1, haze);
 			M.lampHalo.opacity = (0.75 + 0.2 * hz) * night;
@@ -3608,34 +3860,91 @@
 				for (const ch of this.chunks.values()) ch.group.traverse((o) => { if (o.userData.lampHalo) o.scale.set(hs, hs, 1); });
 			}
 			const pool = this.lightPool;
-			if (!night) {
-				for (const l of pool) l.intensity = 0;
-				return;
-			}
+			NS.util.U.uNightK.value = night;
+			/* światła stacji podziemnych (userData.always): świecą także w dzień; nie trafiają do mapy nocnej (plamy na
+			   ulicach nad stacją) */
 			const cand = [];
 			for (const ch of this.chunks.values()) {
 				for (const d of ch.dyn) {
 					// lampy semaforów mają własne poświaty – pula świateł jest tylko dla latarń, wiat i kinkietów
-					if (!d.lamps || d.type === 'signal') continue;
+					if (!d.lamps || d.type === 'signal' || d.type === 'oppSignal' || d.type === 'warnDisc') continue;
 					for (const lens of d.lamps) {
+						const always = !!lens.userData.always;
+						if (!night && !always) continue;
 						lens.getWorldPosition(V3);
 						const dd = V3.distanceToSquared(this.viewPos);
-						if (dd < 260 * 260) cand.push({ dd, x: V3.x, y: V3.y - (lens.userData.drop || 0.4), z: V3.z, k: lens.userData.power || 1 });
+						if (dd < 360 * 360) cand.push({ dd, x: V3.x, y: V3.y - (lens.userData.drop || 0.4), z: V3.z, k: lens.userData.power || 1, tint: lens.userData.tint, reach: lens.userData.reach, always });
 					}
 				}
 			}
+			if (night) this.updateNightMap(cand.filter((c) => !c.always));
 			cand.sort((a, b) => a.dd - b.dd);
 			pool.forEach((l, k) => {
 				const c = cand[k];
 				if (!c) { l.intensity = 0; return; }
 				l.position.set(c.x, c.y, c.z);
-				l.intensity = 52 * night * c.k;
+				l.intensity = 34 * (c.always ? 1 : night) * c.k; // plamy na ziemi – z mapy nocnej; punktowe dla ścian, pociągów i drobiazgów
 			});
+		}
+
+		/* mapa światła nocnego (shader – common.js NIGHT_GLSL): 512 × 512 m wokół kamery (siatka co 16 m, bez pływania), co
+		   0,5 s albo po przesunięciu. Lewa połowa: plama każdej latarni (promień zasięgu, barwa – LED ciepłobiała, sodowa
+		   pomarańczowa), prawa: sama oprawa (do odbić w mokrym). urban – ile latarni w okolicy (łuna miasta na niebie). */
+		updateNightMap(cand) {
+			const N = 512, SZ = 512;
+			const x0 = Math.round(this.viewPos.x / 16) * 16 - SZ / 2, z0 = Math.round(this.viewPos.z / 16) * 16 - SZ / 2;
+			let nm = this.nightMap;
+			if (!nm) {
+				const cv = document.createElement('canvas');
+				cv.width = N * 2;
+				cv.height = N;
+				const tex = new T.CanvasTexture(cv);
+				tex.flipY = false;
+				tex.generateMipmaps = false;
+				tex.minFilter = T.LinearFilter;
+				tex.colorSpace = T.NoColorSpace;
+				nm = this.nightMap = { cv, g: cv.getContext('2d'), tex, t: -1, x0: NaN, z0: NaN, n: -1 };
+				NS.util.U.uNightTex.value = tex;
+			}
+			if (this.time - nm.t < 0.5 && nm.x0 === x0 && nm.z0 === z0 && nm.n === cand.length) return;
+			nm.t = this.time;
+			nm.x0 = x0;
+			nm.z0 = z0;
+			nm.n = cand.length;
+			const g = nm.g, k = N / SZ;
+			g.globalCompositeOperation = 'source-over';
+			g.fillStyle = '#000';
+			g.fillRect(0, 0, N * 2, N);
+			g.globalCompositeOperation = 'lighter';
+			let near = 0;
+			for (const c of cand) {
+				const u = (c.x - x0) * k, v = (c.z - z0) * k;
+				if (u < -30 || v < -30 || u > N + 30 || v > N + 30) continue;
+				if (c.dd < 200 * 200) near++;
+				const tint = c.tint || '255,196,130', r = (c.reach || 7) * k, a = Math.min(0.8, 0.55 * c.k + 0.15);
+				let gr = g.createRadialGradient(u, v, 0, u, v, r);
+				gr.addColorStop(0, `rgba(${tint},${a})`);
+				gr.addColorStop(0.45, `rgba(${tint},${a * 0.55})`);
+				gr.addColorStop(1, `rgba(${tint},0)`);
+				g.fillStyle = gr;
+				g.fillRect(u - r, v - r, r * 2, r * 2);
+				const re = 3 * k;
+				gr = g.createRadialGradient(N + u, v, 0, N + u, v, re);
+				gr.addColorStop(0, `rgba(${tint},1)`);
+				gr.addColorStop(1, `rgba(${tint},0)`);
+				g.fillStyle = gr;
+				g.fillRect(N + u - re, v - re, re * 2, re * 2);
+			}
+			nm.tex.needsUpdate = true;
+			NS.util.U.uNightBox.value.set(x0, z0, SZ);
+			this.urban = Math.min(1, near / 90);
 		}
 
 		update(sim, dt, dark, haze) {
 			if (!this.route) return;
 			this.time += dt;
+			// ruch uliczny i pieszy na trasie rzeczywistej (street-life.js)
+			if (this.env && this.updateStreetLife) this.updateStreetLife(sim, dt, dark);
 			// swobodna kamera: świat wokół kamery (streamS – jej kilometraż), w obie strony po równo
 			const free = this.streamS !== null && this.streamS !== undefined;
 			const front = free ? this.streamS : sim.st.pos;
@@ -4049,7 +4358,8 @@
 			if (d.type === 'signal') {
 				/* sygnał wg Ie-1 (sim.js SIGNALS): górna lampa (zielona / pomarańczowa, ciągła albo migająca ok. 1 raz na
 				   sekundę) albo czerwona, dolna pomarańczowa i pas – przy ograniczeniu prędkości przy semaforze */
-				const sig = sim.signals[d.index], S = TrainSimSignals()[sig.code];
+				const sig = sim.signals[d.index], S = sig && TrainSimSignals()[sig.code];
+				if (!S) return; // semafor spoza trasy jazdy (świat z innej stacji początkowej)
 				const phase = Math.floor(this.time / 0.5) % 2 === 0;
 				const flashOn = !S.flash || phase, whiteOn = !!S.white && phase; // sygnał zastępczy – białe migające
 				const key = sig.code + (flashOn ? '' : '-') + (whiteOn ? 'w' : '');
@@ -4075,9 +4385,28 @@
 					if (S.pas) d.pas.material.color.multiplyScalar(3);
 				}
 				d.glow.material.opacity = d.glow2.material.opacity = 0.55 + dark * 0.45;
+			} else if (d.type === 'oppSignal') {
+				// semafor pociągów z przeciwka: zielone (wolna droga na odcinek jednotorowy) albo czerwone
+				const go = sim.traffic && sim.traffic.oppSignal ? sim.traffic.oppSignal(d.index) === 'go' : false;
+				const key = go ? 'go' : 'stop';
+				if (key !== d.key) {
+					d.key = key;
+					const on = go ? 0 : 2;
+					d.lamps.forEach((l, k) => {
+						const name = ['green', 'yellow', 'red', 'yellow2', 'white'][k];
+						l.material.color.setHex(k === on ? ASPECT_COLOR[name] : l.userData.dark);
+						if (k === on) l.material.color.multiplyScalar(4);
+					});
+					d.glow.visible = true;
+					d.glow.material.color.setHex(ASPECT_COLOR[go ? 'green' : 'red']).multiplyScalar(1.6);
+					d.glow.position.y = d.lamps[on].position.y;
+					d.glow2.visible = false;
+				}
+				d.glow.material.opacity = 0.55 + dark * 0.45;
 			} else if (d.type === 'warnDisc') {
 				// tarcza ostrzegawcza: sygnał wg semafora wjazdowego (Os1 – stój, Os2 – wolna, Os3 – 100, Os4 – 40/60 km/h)
-				const sig = sim.signals[d.index], S = TrainSimSignals()[sig.code];
+				const sig = sim.signals[d.index], S = sig && TrainSimSignals()[sig.code];
+				if (!S) return; // semafor spoza trasy jazdy (świat z innej stacji początkowej)
 				const stop = !S || S.top === 'red', own = S && S.own;
 				const k = stop || (own && own < 100) ? 1 : 0, flash = !stop && !!own;
 				const on = !flash || Math.floor(this.time / 0.5) % 2 === 0;
@@ -4113,8 +4442,12 @@
 				if (this.time >= d.next && sp && Math.abs(front - sp.pos) < 1500) { d.next = this.time + 5; this.drawBoard(d, sim); }
 			} else if (d.type === 'herd') {
 				this.updateHerd(d, dt);
+			} else if (d.type === 'crowd') {
+				if (this.updateCrowd) this.updateCrowd(d, dt);
 			} else if (d.type === 'traffic' || d.type === 'walkers') {
 				this.updateStreet(d, dt);
+			} else if (d.type === 'tlights') {
+				this.updateTLights(d);
 			} else if (d.type === 'crossing') {
 				const cr = d.cr;
 				// sygnalizacja: pociąg gracza albo inny pociąg – z przeciwka (malejący kilometraż) albo pociąg tła w kierunku
@@ -4135,6 +4468,11 @@
 					d.glows[k].material.opacity = on ? 0.9 : 0;
 				});
 				// trasa rzeczywista: auta po ulicy z mapy (w – droga przebyta w kierunku jazdy), prawym pasem
+				// ruch uliczny (street-life.js) jeździ też przez ten przejazd – własne auta przejazdu ukryte
+				if (d.path && this.slife && this.env.snet && this.env.snet.xcr.has(cr)) {
+					for (const car of d.cars) car.obj.visible = false;
+					return;
+				}
 				if (d.path) {
 					const P = d.path;
 					for (const car of d.cars) {
@@ -4217,8 +4555,10 @@
 	const TrainSimSignals = () => window.TrainSim.SIGNALS;
 
 	// przełączniki diagnostyczne (porównanie wydajności; localStorage „maszynista.perfOpt”, np. {"merge":false} – od uruchomienia)
-	World.opt = { merge: true, lod: true };
+	World.opt = { merge: true, lod: true, cabMerge: true };
 	try { Object.assign(World.opt, JSON.parse(localStorage.getItem('maszynista.perfOpt') || '{}')); } catch (e) { /* brak dostępu do localStorage */ }
 	NS.World = World;
-	World.TERRAIN_D = TERRAIN_D; // kolumny siatki terenu (odsunięcia od osi), wiersze co 4 m
+	World.TERRAIN_D = TERRAIN_D;
+	World.PEOPLE = PEOPLE; // kolory ubrań i skóry ludzi (tłum na peronach z mapy – real-env.js)
+	World.SKIN = SKIN; // kolumny siatki terenu (odsunięcia od osi), wiersze co 4 m
 })();

@@ -103,6 +103,90 @@
 			} else if (this.other) this.other.model.dispose();
 			if (this.pool) { for (const m of this.pool) m.dispose(); this.pool = []; }
 			this.other = null;
+			for (const L of this.locals || []) if (L.model) L.model.dispose();
+			this.locals = [];
+		}
+
+		/* Pociągi podmiejskie na peronach w tunelu innej linii (np. Warszawa Śródmieście): po torze z mapy przy peronie
+		   (world.envLocalTracks) co 1,5–3 min pociąg na przemian z obu stron – hamuje, staje środkiem przy środku peronu,
+		   stoi pół minuty i odjeżdża. Tylko wygląd, tylko gdy peron jest do 1,5 km od pociągu gracza; wagony poza końcami
+		   toru z mapy (albo dalej niż 800 m od peronu) ukryte – pociąg wjeżdża z tunelu i w nim znika. */
+		setLocals(tracks) {
+			for (const L of this.locals || []) if (L.model) L.model.dispose();
+			this.locals = tracks.map((t, k) => ({ ...t, eA: Math.max(t.sA, t.stop - 800), eB: Math.min(t.sB, t.stop + 800), k, state: 'idle', wait: 10 + k * 25 + Math.random() * 20, dir: k % 2 ? -1 : 1, model: null, s: 0, v: 0 }));
+		}
+		/* zapowiedź na peronie (gong i głos – main.js): głośność wg odległości słuchacza (kamera) od środka peronu – pełna do
+		   40 m, zanika do 260 m; dalej bez zapowiedzi. Zdarzenia w this.events (odbiera main.js). */
+		localAnnounce(L, text) {
+			const ear = this.listener;
+			if (!ear) return;
+			const p = {};
+			R.sidePoint(this.route, L.stop, L.lane(L.stop), p);
+			const dist = Math.hypot(p.x - ear.x, p.z - ear.z), gain = Math.max(0, Math.min(1, 1 - (dist - 40) / 220));
+			if (gain < 0.05) return;
+			(this.events || (this.events = [])).push({ type: 'announce', text, gain, station: L.name });
+		}
+		updateLocals(sim, dt, dark) {
+			const CONSISTS = [{ emu: 'EN57', ev: 'km', n: 2 }, { emu: 'EN76', ev: 'km', n: 1 }, { emu: '27WE', ev: 'skm', n: 1 }, { emu: 'EN71', ev: 'pkp', n: 1 }];
+			const st = this.route.stations;
+			// przewoźnik i stacja docelowa (koniec trasy w kierunku jazdy)
+			const who = (L) => (L.cfg && L.cfg.ev === 'skm' ? 'Szybkiej Kolei Miejskiej' : 'Kolei Mazowieckich');
+			const dest = (L) => (L.dir > 0 ? st[st.length - 1] : st[0]).name;
+			const ref = sim.st.pos;
+			for (const L of this.locals) {
+				const near = Math.abs(L.stop - ref) < 1500;
+				if (L.state === 'idle') {
+					if (L.model) for (const c of L.model.cars) c.group.visible = false;
+					L.wait -= dt;
+					if (L.wait > 0 || !near) continue;
+					// nowy pociąg: model budowany raz na tor (przy zmianie składu – od nowa)
+					const cfg = CONSISTS[Math.floor(Math.random() * CONSISTS.length)];
+					if (!L.model || L.cfgKey !== JSON.stringify(cfg)) {
+						if (L.model) L.model.dispose();
+						const train = R.makeConsist(cfg), st = this.route.stations;
+						L.model = new NS.TrainModel(this.scene, train, { player: false, shadows: this.shadows, seed: L.k * 31.7 + Math.random() * 100, destination: (L.dir > 0 ? st[st.length - 1] : st[0]).name });
+						if (this.details) addPeople(L.model, L.k + 7, true);
+						L.model.compact();
+						L.cfgKey = JSON.stringify(cfg);
+						L.cfg = cfg;
+						L.len = train.cars.reduce((a, b) => a + b, 0) + train.gap * (train.cars.length - 1);
+					}
+					L.dir = -L.dir;
+					L.s = L.dir > 0 ? L.eA + 2 : L.eB - 2;
+					L.v = 14;
+					L.state = 'in';
+				}
+				const target = L.stop + (L.dir * L.len) / 2; // czoło – skład środkiem przy środku peronu
+				if (L.state === 'in') {
+					const rest = (target - L.s) * L.dir;
+					// zapowiedź przyjazdu: ok. 45 s przed zatrzymaniem (ok. 350 m), raz na przyjazd
+					if (!L.said && rest < 350) {
+						L.said = true;
+						this.localAnnounce(L, `Pociąg ${who(L)} do stacji ${dest(L)} wjedzie na tor przy peronie. Prosimy zachować ostrożność i nie zbliżać się do krawędzi peronu.`);
+					}
+					L.v = Math.min(L.v, Math.sqrt(Math.max(0, 2 * 0.65 * rest)));
+					if (rest < 0.3 || L.v < 0.05) { L.s = target; L.v = 0; L.state = 'dwell'; L.wait = 25 + Math.random() * 20; }
+				} else if (L.state === 'dwell') {
+					L.wait -= dt;
+					// zapowiedź odjazdu: ok. 12 s przed odjazdem
+					if (L.said && L.wait < 12) {
+						L.said = false;
+						this.localAnnounce(L, `Pociąg ${who(L)} do stacji ${dest(L)} odjedzie z toru przy peronie. Prosimy odsunąć się od krawędzi peronu. Życzymy przyjemnej podróży.`);
+					}
+					if (L.wait <= 0) L.state = 'out';
+				} else if (L.state === 'out') L.v = Math.min(18, L.v + 0.6 * dt);
+				L.s += L.dir * L.v * dt;
+				const rear = L.s - L.dir * L.len;
+				if (L.state === 'out' && (L.dir > 0 ? rear > L.eB : rear < L.eA)) { L.state = 'idle'; L.wait = 90 + Math.random() * 90; continue; }
+				if (!near) { for (const c of L.model.cars) c.group.visible = false; continue; }
+				L.model.updateOther(this.route, L.s, L.dir, L.lane, dark, L.y);
+				let off = 0;
+				for (const c of L.model.cars) {
+					const cs = L.s - L.dir * (off + c.len / 2);
+					off += c.len + L.model.train.gap;
+					c.group.visible = cs > L.eA && cs < L.eB;
+				}
+			}
 		}
 
 		/* Ruch na linii (sim.traffic, js/traffic.js): modele najbliższych pociągów tła – najwyżej this.limit naraz (do
@@ -205,6 +289,7 @@
 		update(sim, dt, dark, focus, weather) {
 			if (!this.route) return;
 			// ruch na linii – pociągi tła z symulacji; bez niego – losowy pociąg z przeciwka (tylko wygląd)
+			if (this.locals && this.locals.length) this.updateLocals(sim, dt, dark);
 			if (sim.traffic) this.updateTraffic(sim, dark);
 			else if (this.route.double || this.lane) {
 				if (!this.other) {

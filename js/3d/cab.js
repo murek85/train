@@ -541,6 +541,15 @@
 					o.castShadow = false;
 				}
 			});
+			/* scalenie nieruchomych części wnętrza o wspólnym materiale (ok. 150 siatek – ok. 150 wywołań rysowania na klatkę
+			   w widoku z kabiny); dźwignie (nastawnik, kran hamulca) scalane każda wewnątrz siebie. Lampki, ekrany i tabliczki
+			   mają własne materiały (zmieniane w jeździe) – zostają osobno, szyby (przezroczyste) i pudło też. */
+			const moving = new Set([this.lever, this.brakeHandle]);
+			if (!(NS.World && NS.World.opt && NS.World.opt.cabMerge === false)) { // perfOpt {"cabMerge":false} – porównanie
+				NS.util.mergeMeshes(g, (o) => moving.has(o));
+				for (const o of moving) NS.util.mergeMeshes(o);
+			}
+			g.traverse((o) => { if (o.isMesh && o.userData.ownGeometry) this.own.push(o.geometry); });
 			this.t = 0;
 			this.maxDial = Math.ceil(Math.round(model.train.vmax * 3.6) / 20) * 20 + 20;
 		}

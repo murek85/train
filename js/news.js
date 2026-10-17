@@ -4,6 +4,555 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.43.3',
+			date: '17 października 2026',
+			groups: [
+				['Generator tras', [
+					'Pasek generowania trasy w tle jest zawsze w prawym górnym rogu – w menu w tym samym miejscu i tej samej wielkości co w czasie jazdy.',
+				]],
+			],
+		},
+		{
+			version: '0.43.2',
+			date: '17 października 2026',
+			groups: [
+				['Generator tras', [
+					'Przycisk „Szczegóły” na pasku generowania nazywa się teraz „Pokaż przebieg” i jest tylko w menu: otwiera ekran „Nowa trasa” z kartą postępu i wszystkimi komunikatami generatora (także po zakończeniu, np. po błędzie). W czasie jazdy był widoczny, ale nic nie robił.',
+				]],
+			],
+		},
+		{
+			version: '0.43.1',
+			date: '17 października 2026',
+			groups: [
+				['Menu', [
+					'„Generator tras” w menu głównym otwiera podmenu z dwiema opcjami: „Nowa trasa” (formularz i postęp generowania) oraz „Moje trasy” (lista wygenerowanych i zaimportowanych tras z liczbą tras, wybór, kontrola, horyzont, import i eksport). Między ekranami – skróty w nagłówku; „Wróć” i Esc wracają do podmenu.',
+				]],
+			],
+		},
+		{
+			version: '0.43.0',
+			date: '17 października 2026',
+			groups: [
+				['Generator tras', [
+					'Generator i lista tras są na jednym ekranie „Generator tras”: po lewej nowa trasa, po prawej „Twoje trasy” (wybór, kontrola, horyzont, import i eksport). Przycisk „Wygenerowane trasy” w menu głównym zniknął.',
+					'Generowanie działa w tle, w osobnym wątku – gra się nie zacina i można w tym czasie grać. Postęp widać na pasku (w menu na dole po lewej, w czasie jazdy w prawym górnym rogu): etap, procent, czas, „Szczegóły” i „Anuluj”. Po zakończeniu – „Jedź: …” (w menu) albo komunikat w czasie jazdy.',
+					'Na ekranie generatora: karta postępu i rozwijany pełny przebieg generowania.',
+					'Wygenerowana trasa nie chowa się już za trasą wbudowaną w drugą stronę (np. własna Gliwice – Zabrze i wbudowana Zabrze – Gliwice) – pary kierunków tylko z tego samego źródła.',
+				]],
+			],
+		},
+		{
+			version: '0.42.6',
+			date: '17 października 2026',
+			groups: [
+				['Menu', [
+					'Zmiana stacji początkowej pokazuje okienko wczytywania (przygotowanie trasy, rozkład jazdy, budowa świata – z paskiem postępu) z nazwą przebiegu, jak przy wyborze trasy. Dawniej świat budował się bez okienka i menu na chwilę zamierało.',
+				]],
+			],
+		},
+		{
+			version: '0.42.5',
+			date: '17 października 2026',
+			groups: [
+				['Menu', [
+					'Stacja początkowa: zamiast siatki kafelków – schemat linii w jednym wierszu (stacje jako kropki, nazwy na przemian nad i pod linią, odcinek jazdy na bursztynowo, pominięte stacje wyszarzone). Kliknięcie kropki albo nazwy wybiera stację. Pod schematem podsumowanie: start, stacja końcowa, długość i liczba postojów po drodze.',
+				]],
+			],
+		},
+		{
+			version: '0.42.4',
+			date: '17 października 2026',
+			groups: [
+				['Menu', [
+					'Przebieg w „Warunkach”: kierunek jazdy wybiera się przełącznikiem z dwoma przyciskami, a stację początkową – kafelkami stacji z kilometrem (stacja końcowa wyszarzona).',
+					'Listy rozwijane w menu (napęd, hamulec, jakość grafiki, zapowiedzi…) mają jednolity ciemny wygląd ze strzałką i podświetleniem; dawniej po najechaniu myszą robiły się białe. Napęd i hamulec są wyrównane.',
+				]],
+			],
+		},
+		{
+			version: '0.42.3',
+			date: '17 października 2026',
+			groups: [
+				['Ruch uliczny', [
+					'Nocą reflektory i światła tylne aut świecą – poświata widoczna także z daleka, najjaśniejsza, gdy światło świeci w stronę kamery.',
+					'Wszystkie przystanki autobusowe z mapy stoją przy ulicach (np. Gliwice – Zabrze: 85 z 85).',
+				]],
+			],
+		},
+		{
+			version: '0.42.2',
+			date: '17 października 2026',
+			groups: [
+				['Ruch uliczny', [
+					'Nocą auta oświetlają jezdnię: ciepła plama światła reflektorów przed autem i czerwona poświata świateł tylnych za nim (mocniejsza, gdy auto stoi).',
+					'Więcej przystanków autobusowych na ulicach – także przy drogach dojazdowych (zatoki i pętle autobusowe) i na krótkich odcinkach ulic; np. Gliwice – Zabrze: 81 z 85 przystanków z mapy (wcześniej 54).',
+					'Auta skręcające jednocześnie z dwóch pasów jednego wlotu nie najeżdżają na siebie.',
+					'Na wąskich drogach dwukierunkowych auta mijają się z naprzeciwka powoli.',
+				]],
+			],
+		},
+		{
+			version: '0.42.1',
+			date: '17 października 2026',
+			groups: [
+				['Poprawki', [
+					'Gra czasem się nie wczytywała (błąd „Cannot read properties of undefined (reading \'code\')”) po zmianie stacji początkowej albo przy wczytaniu zapisu z inną stacją początkową. Teraz świat buduje się od nowa dla wybranej stacji.',
+				]],
+			],
+		},
+		{
+			version: '0.42.0',
+			date: '17 października 2026',
+			groups: [
+				['Ruch uliczny i pieszy', [
+					'Na trasach z mapy jeżdżą auta osobowe, dostawczaki, ciężarówki i autobusy. Ruch jest prawostronny, zgodny z kierunkiem ulic (jednokierunkowe tylko zgodnie z kierunkiem) i z liczbą pasów z mapy.',
+					'Kierowcy stają na czerwonym (te same fazy co sygnalizatory w grze), ustępują pierwszeństwa na wlotach z A-7, na skrzyżowaniach równorzędnych przepuszczają jadących z prawej, a skręcający w lewo – jadących z naprzeciwka. Na skrzyżowanie wjeżdżają tylko wtedy, gdy za nim jest miejsce.',
+					'Przed przejściami dla pieszych auta zatrzymują się, gdy pieszy jest na pasach; z sygnalizacją – według świateł.',
+					'Przed przejazdem kolejowym auta czekają w kolejce, gdy nadjeżdża pociąg (Twój albo inny); po jego przejeździe ruszają.',
+					'Autobusy zatrzymują się na przystankach z mapy (znak D-15 i wiata). Przy przystankach czekają pasażerowie: wsiadają do autobusu, a część wysiada i idzie chodnikiem.',
+					'Piesi chodzą chodnikami, skręcają za róg na skrzyżowaniach, przechodzą przez pasy (z sygnalizacją – na zielonym, bez – gdy nic nie nadjeżdża) i przez przejazd kolejowy, czekając przy opuszczonych rogatkach. Przy stacjach jest ich więcej.',
+					'Nowa opcja „Ruch uliczny” w zakładce „Warunki” (brak, mały, średni, duży). Liczba aut i pieszych oraz zasięg rosną z jakością grafiki (od ok. 15 aut i 20 pieszych do 300 m od kamery do 50 aut i 70 pieszych do 600 m).',
+				]],
+				['Generator tras', [
+					'Trasę w drugą stronę zaznacza się teraz w generatorze: opcja „Także trasa w drugą stronę”. Przyciski „W drugą stronę” w „Warunkach” i na liście wygenerowanych tras zostały usunięte.',
+					'Generator pobiera przystanki autobusowe z mapy. Wszystkie trasy wbudowane zostały przebudowane z przystankami.',
+				]],
+			],
+		},
+		{
+			version: '0.41.0',
+			date: '17 października 2026',
+			groups: [
+				['Przebieg jazdy', [
+					'Nowa sekcja „Przebieg” w zakładce „Warunki”. Można w niej wybrać stację, z której rusza pociąg (każdą oprócz końcowej), i jechać od niej do końca trasy. Wybór działa w jeździe swobodnej; scenariusze zawsze zaczynają się od pierwszej stacji.',
+					'Zmiana kierunku jazdy: trasa Gliwice – Zabrze ma wersję w drugą stronę (Zabrze → Gliwice), wybieraną w „Przebiegu”. Na liście map trasa jest jedna.',
+					'Trasy z generatora można wygenerować w drugą stronę przyciskiem „W drugą stronę” na liście wygenerowanych tras albo w „Przebiegu”.',
+				]],
+			],
+		},
+		{
+			version: '0.40.15',
+			date: '17 października 2026',
+			groups: [
+				['Trasy z mapy – stacje podziemne', [
+					'Na peronach Warszawy Śródmieście słychać zapowiedzi: gong i komunikat o wjeździe pociągu podmiejskiego (SKM, Koleje Mazowieckie) i o jego odjeździe, z nazwą przewoźnika i stacji docelowej. Zapowiedzi słychać, gdy kamera jest przy peronie – im dalej, tym ciszej (do ok. 260 m). Działają też z kamery swobodnej.',
+				]],
+			],
+		},
+		{
+			version: '0.40.14',
+			date: '17 października 2026',
+			groups: [
+				['Trasy z mapy – stacje podziemne', [
+					'Warszawa Śródmieście ma wszystkie tory i perony: tor 4 i peron 3 przy dalszej ścianie tunelu. Pociągi podmiejskie zatrzymują się przy obu torach.',
+					'Peron WKD Śródmieście, leżący w osobnym tunelu, nie jest już rysowany w tunelu średnicowym.',
+				]],
+			],
+		},
+		{
+			version: '0.40.13',
+			date: '17 października 2026',
+			groups: [
+				['Trasy z mapy – stacje podziemne', [
+					'Na Warszawie Śródmieście zatrzymują się pociągi podmiejskie (SKM, Koleje Mazowieckie): co 1,5–3 minuty wjeżdżają na przemian z obu stron, stoją przy peronie około pół minuty i odjeżdżają w tunel.',
+				]],
+			],
+		},
+		{
+			version: '0.40.12',
+			date: '17 października 2026',
+			groups: [
+				['Trasy z mapy – stacje podziemne', [
+					'Na peronach Warszawy Śródmieście i innych podziemnych peronach z mapy są pasażerowie: czekają przy krawędzi, siedzą na ławkach i spacerują wzdłuż peronu, omijając schody.',
+				]],
+			],
+		},
+		{
+			version: '0.40.11',
+			date: '17 października 2026',
+			groups: [
+				['Trasy z mapy – mosty i stacje podziemne', [
+					'Tory stacji na wiadukcie mają wspólny pomost bez ścianek między torami. Wcześniej każdy tor miał osobny pomost z gzymsami, a tory nad ulicą pod wiaduktem schodziły w dół, np. Toruń Główny.',
+					'Na peronach Warszawy Śródmieście są schody do wyjść i szklane pawilony wejściowe na powierzchni.',
+				]],
+			],
+		},
+		{
+			version: '0.40.10',
+			date: '17 października 2026',
+			groups: [
+				['Tunele i stacje podziemne', [
+					'Na peronach w tunelu, np. Warszawa Śródmieście i Centralna, nie stoją już uliczne latarnie na słupach. Światło pada spod stropu, a na peronach Śródmieścia stoją ławki i kosze.',
+					'Tunel jest jaśniejszy. Posadzka między torami nie wygląda już jak czarna dziura, a lampy na ścianach oświetlają ściany, tory i pociąg.',
+				]],
+			],
+		},
+		{
+			version: '0.40.9',
+			date: '17 października 2026',
+			groups: [
+				['Trasy z mapy – mosty i wiadukty', [
+					'Filary wiaduktów i mostów naszej linii nie stoją już na ulicach ani na torach innych linii przechodzących pod spodem. Filar przesuwa się wzdłuż mostu w wolne miejsce, a gdy go nie ma, w tym miejscu jest przęsło.',
+				]],
+			],
+		},
+		{
+			version: '0.40.8',
+			date: '17 października 2026',
+			groups: [
+				['Trasy z mapy – poprawki (Toruń – Chełmża)', [
+					'Ulice biegnące wzdłuż toru przy przejeździe kolejowym nie mają już przerw po obu stronach skrzyżowania.',
+					'Na stacjach w wykopie teren obok torów nie jest spłaszczany do poziomu toru w szerokim pasie. Ulica na skraju wykopu leży na skarpie, a nie na „murku”, np. Toruń Miasto.',
+					'Wiadukty drogowe nad torem w wykopie dochodzą do ulic na obu końcach, bez szczeliny nad skarpą.',
+					'Tory stacji na wiadukcie naszej linii mają jeden poziom. Wcześniej część wznosiła się ponad nasz tor, a część schodziła w ulicę pod spodem, np. Toruń Główny.',
+				]],
+			],
+		},
+		{
+			version: '0.40.7',
+			date: '17 października 2026',
+			groups: [
+				['Trasy z mapy – poprawki', [
+					'Drogi biegnące tuż obok siebie na trochę różnych wysokościach (np. dojazd wzdłuż ulicy) nie przeskakują już co kilka metrów między dwoma poziomami.',
+				]],
+			],
+		},
+		{
+			version: '0.40.6',
+			date: '17 października 2026',
+			groups: [
+				['Trasy z mapy – wiadukty innych linii', [
+					'Wiadukty innych linii nad naszą mają poziomy pomost, a tory tej linii wjeżdżają na niego po nasypie (rampa ok. 3%). Wcześniej pomost wisiał nad torami, a tory dochodziły do przyczółków po ziemi, np. Gliwice – Katowice przed Katowicami.',
+					'Trasy wbudowane wygenerowane ponownie z tą poprawką i z poprawką torów pod naszymi mostami.',
+				]],
+			],
+		},
+		{
+			version: '0.40.5',
+			date: '17 października 2026',
+			groups: [
+				['Trasy z mapy – poprawki', [
+					'Tory innej linii przechodzące ukośnie pod mostem naszej linii biegną pod przęsłem, ok. 7 m pod naszą szyną. Wcześniej pomiar terenu na naszym nasypie wynosił je na nasz poziom, np. Gliwice – Zabrze na km 4,24.',
+					'Trasa Gliwice – Zabrze wygenerowana ponownie z tą poprawką.',
+				]],
+			],
+		},
+		{
+			version: '0.40.4',
+			date: '17 października 2026',
+			groups: [
+				['Trasy wbudowane', [
+					'Trasa Toruń Główny – Chełmża wygenerowana na nowo z aktualnych danych, z torami z mapy do 250 m od trasy, i z nowym horyzontem.',
+				]],
+			],
+		},
+		{
+			version: '0.40.3',
+			date: '17 października 2026',
+			groups: [
+				['Trasy z mapy – poprawki', [
+					'Sygnalizatory na skrzyżowaniach i przy przejściach nie są już czasem obrócone tyłem do nadjeżdżających. Ta sama poprawka dotyczy znaków przy wlotach i przejściach (A-7, D-1, D-6).',
+				]],
+			],
+		},
+		{
+			version: '0.40.2',
+			date: '17 października 2026',
+			groups: [
+				['Trasy z mapy – szerszy pas torów', [
+					'Tory z mapy sięgają do 250 m od toru pociągu, wcześniej do 110 m. Widać całe stacje towarowe, bocznice zakładów i równoległe linie dalej od trasy, razem z rozjazdami, kozłami, wagonami i siecią trakcyjną.',
+					'Trasy wbudowane wygenerowane ponownie z tym zasięgiem (bez Torunia – Chełmży).',
+				]],
+			],
+		},
+		{
+			version: '0.40.1',
+			date: '16 października 2026',
+			groups: [
+				['Kamera w tunelu', [
+					'Widoki zewnętrzne działają w tunelu: za pociągiem, z boku, przy torze i przy wózku. Kamera zostaje we wnętrzu tunelu, między ścianami i pod stropem, i patrzy na pociąg. Wcześniej wychodziła nad teren, na ulicę nad tunelem.',
+					'Widok z boku w tunelu pokazuje skład ukośnie od ściany, bo na pełną odległość z boku nie ma miejsca.',
+				]],
+			],
+		},
+		{
+			version: '0.40.0',
+			date: '16 października 2026',
+			groups: [
+				['Trasy wbudowane – nowe i odświeżone', [
+					'Nowe trasy wbudowane: Warszawa Wschodnia – Warszawa Zachodnia (tunel średnicowy, Centralna pod ziemią), Gdynia Główna – Gdańsk Główny (13 stacji i przystanków wzdłuż Trójmiasta) i Orzesze Jaśkowice – Mikołów.',
+					'Trasy Gliwice – Zabrze, Gliwice – Katowice i Rybnik – Katowice wygenerowane na nowo z aktualnych danych: tory i stacje z mapy, ukształtowanie terenu, budynki, zagospodarowanie, wykaz PKP PLK i profil z RINF.',
+					'Nowe trasy mają horyzont z prawdziwego terenu.',
+				]],
+			],
+		},
+		{
+			version: '0.39.4',
+			date: '16 października 2026',
+			groups: [
+				['Trasy z mapy – poprawki', [
+					'Perony Warszawy Powiśle są znów widoczne. Leżały pod torami, bo ich wysokość liczona była od toru przed jego poprawieniem.',
+					'Tunele są wyższe: 6–6,8 m nad szyną zamiast 5,2–6,2 m, w hali stacji 7,6 m.',
+					'Budynek nad wschodnim wylotem tunelu średnicowego (przy Powiślu) nie jest już zapadnięty w teren nad tunelem.',
+				]],
+			],
+		},
+		{
+			version: '0.39.3',
+			date: '16 października 2026',
+			groups: [
+				['Trasy z mapy – tunele', [
+					'Przy ulicy nad płytkim tunelem nie ma już czarnych pasów. Tam, gdzie teren obok tunelu schodzi poniżej stropu, widać betonową obudowę od zewnątrz, a nie ciemne wnętrze.',
+					'Budynki nad tunelem stoją na stropie i nie zwisają w wylot. Wcześniej przy zachodnim portalu tunelu średnicowego parter budynku wisiał pod wiaduktem nad torami.',
+					'Budynek przy samym portalu (np. pawilon stacji Warszawa Powiśle) stoi na poziomie ulicy nad wylotem, a nie jako zadaszenie na słupach nad torami.',
+				]],
+			],
+		},
+		{
+			version: '0.39.2',
+			date: '16 października 2026',
+			groups: [
+				['Generator tras – poprawki', [
+					'Przy Warszawie Powiślu skrajny tor linii 448 nie leży już 3 m pod peronem. Biegnie na poziomie sąsiedniego toru, także na moście.',
+					'Tory biegnące tuż obok innych są wyrównywane do ich poziomu, gdy pomiar terenu pokazuje różnicę ponad 1 m w dół albo w górę (np. pomiar trafił w ulicę pod wiaduktem).',
+				]],
+			],
+		},
+		{
+			version: '0.39.1',
+			date: '16 października 2026',
+			groups: [
+				['Trasy z mapy – stadiony nocą', [
+					'Stadiony są nocą oświetlone. Wokół otworu w dachu świeci pierścień naświetlaczy, widoczny też z daleka, a murawa i trybuny są jasne.',
+				]],
+			],
+		},
+		{
+			version: '0.39.0',
+			date: '16 października 2026',
+			groups: [
+				['Trasy z mapy – stadiony', [
+					'Stadiony mają własny model zamiast bryły z oknami: dwie kondygnacje trybun z przejściem i lożami, bandy reklamowe i dach z otworem nad boiskiem. Elewacja ma pionowe żebra.',
+					'W środku jest boisko z pasami murawy, liniami (pola karne, koło środkowe) i bramkami. Wymiary i kierunek boiska pochodzą z mapy, a bez danych przyjmowane jest boisko 105 × 68 m wzdłuż osi stadionu.',
+					'Stadion rozpoznawany jest po budynku oznaczonym jako stadion albo jako największy budynek w obszarze stadionu. Ma nazwę z mapy, np. PGE Narodowy przy Warszawie Stadion.',
+				]],
+			],
+		},
+		{
+			version: '0.38.3',
+			date: '16 października 2026',
+			groups: [
+				['Generator tras – poprawki', [
+					'Przy Warszawie Stadion nie płynie już kanał pod peronami i ulicami. Kanał Kamionkowski biegnie tam pod ziemią, w Kolektorze Stadionowym, i nie potrzebuje mostu.',
+					'Cieki i przepusty, które według BDOT10k biegną pod ziemią, nie są już rysowane jako woda na powierzchni.',
+				]],
+			],
+		},
+		{
+			version: '0.38.2',
+			date: '16 października 2026',
+			groups: [
+				['Generator tras – poprawki', [
+					'Tory WKD przy Warszawie Ochocie nie leżą już na nasypie przyklejonym do torów linii 448. Biegną obok, na tym samym poziomie, a pod górę idą dopiero w stronę Zachodniej.',
+					'Tory wychodzące z tunelu nie przejmują wysokości ulicy nad tunelem.',
+				]],
+			],
+		},
+		{
+			version: '0.38.1',
+			date: '16 października 2026',
+			groups: [
+				['Generator tras – poprawki', [
+					'Tory w tym samym wykopie co nasza linia, nad którymi stoi przykrycie (plac, pomost), nie znikają już jako „tunel innej linii”. Na przykład peron wyspowy Warszawy Ochoty ma znów tory po obu stronach.',
+				]],
+			],
+		},
+		{
+			version: '0.38.0',
+			date: '16 października 2026',
+			groups: [
+				['Generator tras – dane PKP PLK i RINF', [
+					'Przystanki innych linii są rozpoznawane według wykazu posterunków PKP PLK, a nie odległości od torów. Na przykład Ochota, Śródmieście, Stadion i Powiśle należą do linii 448, więc nie trafiają na trasę linii 2.',
+					'Nowe źródło: RINF, rejestr infrastruktury Europejskiej Agencji Kolejowej (dane PKP PLK). Daje oficjalne pochylenia linii i wykaz tuneli.',
+					'W tunelach i na długich mostach profil toru pochodzi z oficjalnych pochyleń. Pomiar terenu nie widzi tam toru, więc dotąd tor biegł prosto między portalami.',
+					'Tunel z RINF, którego brakuje w OSM, jest dodawany z uwagą generatora. Różne położenie portali też jest zgłaszane w uwagach.',
+				]],
+			],
+		},
+		{
+			version: '0.37.1',
+			date: '16 października 2026',
+			groups: [
+				['Tunele i tory na trasach z mapy – poprawki', [
+					'Otwór portalu tunelu nie jest już zasłonięty terenem (wcześniej tory wjeżdżały w płaską ścianę).',
+					'Tory linii 448 przy Stadionie nie są zakopane w terenie (wysokość toru na długim „moście” nie spada pod teren).',
+					'Tory osobnych tuneli obok naszego (np. WKD przy parkingu koło Centralnej, tory za zachodnim wyjazdem z tunelu) nie wychodzą na powierzchnię i nie wspinają się na poziom ulicy. Działa to także dla tras wygenerowanych wcześniej.',
+				]],
+			],
+		},
+		{
+			version: '0.37.0',
+			date: '16 października 2026',
+			groups: [
+				['Tunele na trasach z mapy', [
+					'Tunel jest szerszy, ma chodnik służbowy, koryta kablowe na ścianach, lampy po obu stronach i zielone lampki ewakuacyjne. Jest też jaśniejszy.',
+					'Sieć trakcyjna biegnie w tunelu pod stropem, także nad torami innych linii. Wcześniej lina nośna znikała w stropie.',
+					'Semafory w tunelu wiszą na wspornikach przy ścianie, bez masztu wchodzącego w ścianę.',
+					'Przy portalach teren przechodzi nad strop tuż za ścianą czołową, więc we wlocie nie widać już pochyłego terenu.',
+					'Hala stacji podziemnej ma kolumny w osi peronu i podświetlane reklamy na ścianach.',
+				]],
+				['Trasy z mapy – tory i mosty', [
+					'Tory oznaczone w danych jako most, ale bez prześwitu pod spodem (np. linia 448 przy Stadionie), nie są już zakopane w terenie. Perony przy nich są widoczne.',
+					'Krótkie tory pod ziemią w tunelu (bocznice, łącznice) leżą w obudowie, a tory osobnych tuneli obok (np. WKD przy Śródmieściu) nie wychodzą na powierzchnię z kozłami.',
+					'Mosty drogowe nie falują: pylony i liny mostów wantowych (np. most Świętokrzyski) nie są brane za pomost.',
+				]],
+			],
+		},
+		{
+			version: '0.36.1',
+			date: '16 października 2026',
+			groups: [
+				['Generator tras', [
+					'Wygenerowane trasy mają osobny ekran: w menu przycisk „Wygenerowane trasy” obok „Generatora tras”, przejścia między nimi jednym kliknięciem. Import i eksport tras są na nowym ekranie, a przeciągnięte pliki tras też go otwierają.',
+				]],
+			],
+		},
+		{
+			version: '0.36.0',
+			date: '16 października 2026',
+			groups: [
+				['Ruch na linii', [
+					'Na mijankach linii jednotorowych stoją semafory dla pociągów z przeciwka. Pokazują „stój”, a „wolną drogę”, gdy pociąg może wjechać na odcinek jednotorowy.',
+					'Pociąg z przeciwka czekający na krzyżowanie z pociągiem gracza staje przed tym semaforem, a nie tuż przy zwrotnicy.',
+					'Osobowy z przeciwka, który zatrzymał się przy peronie mijanki, czeka na krzyżowanie przy peronie.',
+				]],
+			],
+		},
+		{
+			version: '0.35.1',
+			date: '16 października 2026',
+			groups: [
+				['Trasy z mapy – poprawki', [
+					'Budynek nad tunelem (np. hala Dworca Centralnego) jest zwykłym budynkiem ze ścianami, a nie dachem na słupach jak hala peronowa.',
+					'Przystanek innej linii tuż obok naszych torów (np. Warszawa Ochota na linii 448 przy torach linii 2) jest pomijany. Jego peron stoi przy swoich torach z właściwą nazwą, zamiast wymyślonego peronu przy torze obok.',
+				]],
+			],
+		},
+		{
+			version: '0.35.0',
+			date: '16 października 2026',
+			groups: [
+				['Trasy z mapy – miasto nad tunelem', [
+					'Tory innych linii pod ziemią są w tunelu: w tunelu średnicowym tory podmiejskie i dalekobieżne biegną we wspólnej obudowie na poziomie naszego toru. Wcześniej leżały na ulicy albo były przykryte terenem.',
+					'Tory, które według mapy biegną pod ziemią bez znacznika tunelu (np. WKD pod Alejami Jerozolimskimi), generator rozpoznaje z pomiaru terenu. Tor w wykopie zostaje na powierzchni, przykryty znika.',
+					'Perony metra nie trafiają już na trasę (wcześniej leżały na powierzchni). Perony innej linii we wspólnym tunelu, np. Warszawa Śródmieście obok Centralnej, mają halę ze świetlówkami i właściwą nazwę.',
+					'Ulice biegnące wzdłuż tunelu (np. Aleje Jerozolimskie) nie mają dziury nad torem. Budynki mogą stać nad tunelem.',
+					'Strop tunelu nie wystaje nad teren przy płytkim przykryciu (przy portalu). Most z pomiaru kończy się przed portalem, a nie biegnie przez cały tunel.',
+					'Hala stacji podziemnej i tunel nie są już czarne w widoku z zewnątrz (wyłączone zacienianie otoczenia w tunelu).',
+					'Generator: poprawiony błąd, przez który przy podaniu numeru linii znikały dane PKP PLK.',
+				]],
+			],
+		},
+		{
+			version: '0.34.0',
+			date: '16 października 2026',
+			groups: [
+				['Stacje podziemne', [
+					'Stacja z peronem w tunelu (np. Warszawa Śródmieście na trasie z mapy) ma halę: jasne ściany z płytek, płaski strop i pasy świetlówek nad peronem i torem, oświetlenie także w dzień.',
+					'Na peronie stacji podziemnej nie ma latarń ani wiat. Nazwa stacji jest na tablicach na ścianie hali, widocznych z pociągu.',
+					'Ze stacji podziemnej prowadzą na powierzchnię schody, a nad nimi stoją przeszklone pawilony wejściowe z nazwą stacji. Wysiadający idą do schodów.',
+					'W tunelu jest posadzka (bez trawy i gruntu spod tunelu).',
+					'Kamera swobodna, która wjedzie portalem do tunelu, porusza się w jego wnętrzu i w hali stacji.',
+				]],
+			],
+		},
+		{
+			version: '0.33.0',
+			date: '15 października 2026',
+			groups: [
+				['Generator tras – tunele i stacje', [
+					'Tunele z mapy nie znikają, gdy portal leży przy stacji (np. tunel średnicowy w Warszawie): tor biegnie pod ziemią, co najmniej ok. 7,5 m pod ulicą, a portale stoją tam, gdzie teren naprawdę przykrywa tor.',
+					'Na trasę trafiają tylko stacje tej linii: bez stacji metra, kolei lekkiej (WKD) i stacji przy torach innych linii – np. Warszawa Śródmieście zamiast stacji metra „Centrum”.',
+					'Wykop nie jest już brany za most: generator sprawdza teren po bokach toru.',
+					'Nad tunelem ulice biegną po powierzchni (bez wiaduktów nad torem), bez fałszywych wiaduktów nad innymi tunelami; tory i perony innych linii pod ziemią nie leżą na powierzchni.',
+					'W grze tunel na trasie z mapy ma betonową obudowę z lampami i portale pod terenem – miasto nad nim zostaje (dawniej sztuczne wzgórze).',
+				]],
+			],
+		},
+		{
+			version: '0.32.0',
+			date: '15 października 2026',
+			groups: [
+				['Wydajność', [
+					'Płynniejsza gra: w kabinie ok. 25 % krótsza klatka, w widoku zza pociągu ok. 30 % – wyraźnie mniej pracy przy każdej klatce.',
+					'Cienie pociągu liczone ze scalonej bryły – setki drobnych części nie rysują się już osobno w każdej warstwie cieni.',
+					'Model pociągu gracza i pociągów tła scalony: części różniące się tylko kolorem łączone w jedną bryłę; drzwi, koła, wycieraczki i pantografy dalej się ruszają.',
+					'Szyldy, znaki drogowe, studzienki i kratki ściekowe – z jednej tekstury zbiorczej zamiast setek osobnych.',
+					'Wnętrze kabiny scalone: ok. 150 części → ok. 45 (dźwignie dalej się ruszają, lampki i ekrany działają jak dawniej).',
+					'Pociągi tła stojące przy stacji: cienie jedną bryłą na wagon, koła scalone – pociąg 5-wagonowy rysuje się ok. 2,7 raza taniej.',
+					'Koniec przycięć co kilka klatek w kabinie w słoneczny dzień (sprawdzanie, czy dach zasłania słońce, było bardzo kosztowne).',
+				]],
+				['Menu', [
+					'Ustawienia w zakładkach: Dźwięk, Zapowiedzi i Grafika – z podsumowaniem pod nazwą, ostatnio otwarta zakładka zapamiętana.',
+				]],
+			],
+		},
+		{
+			version: '0.31.0',
+			date: '15 października 2026',
+			groups: [
+				['Zima w symulacji', [
+					'Zamarznięta zwrotnica: zimą czasem semafor wjazdowy stacji pokazuje „stój” – dyżurny wywołuje przez radiotelefon, po rozmrożeniu (2–5 min) zgoda na wjazd.',
+					'Oblodzona sieć trakcyjna: na niektórych odcinkach pantograf iskrzy i trzaska, a zasilanie na chwilę zanika – jedź łagodnie.',
+				]],
+			],
+		},
+		{
+			version: '0.30.0',
+			date: '15 października 2026',
+			groups: [
+				['Zima w ruchu', [
+					'Pociąg wzbija śnieg leżący na torze: kłęby spod wózków i fontanna przed pługiem, tym większe, im szybciej jedzie.',
+					'Szyby kabiny oszronione: nawiew szybko odmraża pole wycieraczek, w narożnikach i na szybach bocznych zostają kryształki lodu.',
+					'Zaspy: wały odgarniętego śniegu wzdłuż toru i zaspy pod ścianami budynków od strony wiatru – rosną i topnieją razem z pokrywą śnieżną.',
+					'Szadź na przewodach sieci trakcyjnej.',
+					'Wiosną na początku jazdy leżą jeszcze resztki śniegu – topnieją przez kilka minut, ziemia mokra od roztopów.',
+				]],
+			],
+		},
+		{
+			version: '0.29.0',
+			date: '15 października 2026',
+			groups: [
+				['Noc', [
+					'Latarnie oświetlają ziemię wokół siebie: jasne plamy na jezdniach, chodnikach, peronach i trawie – na śniegu wyraźnie jaśniejsze.',
+					'Na mokrej nawierzchni odbicia lamp ciągną się smugami w stronę patrzącego, jak na prawdziwym asfalcie po deszczu.',
+					'Nad miastem ciepła łuna przy horyzoncie, przy zachmurzeniu chmury podświetlone od spodu; w mieście mniej gwiazd.',
+					'Latarnie przy głównych drogach świecą ciepłą bielą (LED), na osiedlach – pomarańczowo (lampy sodowe).',
+				]],
+			],
+		},
+		{
+			version: '0.28.0',
+			date: '15 października 2026',
+			groups: [
+				['Ulice', [
+					'Znaki pionowe: „ustąp pierwszeństwa” na wlotach podporządkowanych, „droga z pierwszeństwem” przed skrzyżowaniami, „przejście dla pieszych” przy zebrach – po prawej stronie jadących.',
+					'Sygnalizacja świetlna na skrzyżowaniach ważniejszych ulic i na przejściach z sygnalizacją z mapy – światła zmieniają się w cyklu (z czerwonym i żółtym przed zielonym), przed sygnalizatorem linia zatrzymania.',
+					'Nowe latarnie: przy głównych drogach wysokie słupy z łukowym wysięgnikiem i płaską oprawą LED, na osiedlach niższe z oprawą kopułkową.',
+				]],
+				['Menu i pauza', [
+					'Pora roku do zmiany w pauzie (świat przebudowuje się wokół pociągu) i jako kafelki w zakładce Warunki.',
+					'Wersja przeglądarkowa do wgrania na serwer: npm run web (folder i archiwum ZIP).',
+				]],
+				['Śnieg', [
+					'Leżący śnieg w nieregularnych płatach różnej wielkości – bez kwadratów i bez powtarzającego się wzoru.',
+					'Śnieg nie osiada na ludziach.',
+				]],
+			],
+		},
+		{
 			version: '0.27.0',
 			date: '15 października 2026',
 			groups: [

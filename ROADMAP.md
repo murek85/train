@@ -69,8 +69,11 @@ wymagania dla wszystkich jakości); kolejność G1 → G2 → G3 → G4 → G5 �
 | **G2 – 0.17.0 ✓** | Horyzont z prawdziwego terenu: dla tras rzeczywistych sylwetka 5–60 km z danych wysokości (np. Copernicus 30 m, pobierane w Generatorze); płasko – bez gór, linia lasu, zabudowy, kominów, hałd w mgiełce; trasy z gry – ustawienie góry / pagórki / płasko. |
 | **G3 – 0.18.0 ✓** | Niebo i chmury (warstwy oświetlone słońcem, zachmurzenie wg pogody, świt i zmierzch), deszcz (smugi, mokra nawierzchnia z odbiciami), śnieg (płatki, zalegający śnieg), woda (fale, odbicia, brzegi, nurt rzek), miękkie cienie. |
 | **G4 – 0.19.0–0.23.0 ✓** (lokomotywy, wagony, perony i wiaty, tarcze i sieć, rozjazdy) | Modele kolejowe wg zdjęć: lokomotywy i EZT, wagony, perony, wiaty, zadaszenia, semafory, tarcze, sieć trakcyjna, rozjazdy. |
-| **G5** (drzewa – 0.24.0 ✓, samochody – 0.25.0 ✓, ludzie i budynki – 0.26.0 ✓) | Modele otoczenia wg zdjęć: drzewa (gatunki, pory roku), samochody, ulice (krawężniki, oznakowanie, latarnie, znaki), ludzie, budynki. |
+| **G5** (drzewa – 0.24.0 ✓, samochody – 0.25.0 ✓, ludzie i budynki – 0.26.0 ✓, ulice – 0.28.0 ✓) | Modele otoczenia wg zdjęć: drzewa (gatunki, pory roku), samochody, ulice (krawężniki, oznakowanie, latarnie, znaki), ludzie, budynki. |
 | **D1** | Dźwięk: pociągi, ludzie na peronach, otoczenie, grzmot, deszcz o dach kabiny – nagrania CC0 + synteza. |
+| **N – 0.29.0 ✓** | Noc: światło latarni na ziemi (mapa światła nocnego – plamy na śniegu, asfalcie, peronach), odbicia lamp w mokrej nawierzchni (smugi), łuna miasta na niebie i chmurach, gwiazdy przyćmione w mieście. |
+| **Z1 – 0.30.0 ✓** | Zima w ruchu: śnieg wzbijany przez pociąg (wózki, pług), szron na szybach kabiny (nawiew odmraża pole wycieraczek), zaspy (wały przy torze, pod ścianami budynków), szadź na sieci; wiosną resztki śniegu topnieją, roztopy. |
+| **Z2 – 0.31.0 ✓** | Zima w symulacji: zamarznięta zwrotnica (zdarzenie losowe zimą – semafor wjazdowy „stój”, dyżurny, wjazd po rozmrożeniu), oblodzona sieć (łuki, chwilowe przerwy w zasilaniu). |
 
 ---
 
@@ -124,6 +127,15 @@ odłożone optymalizacje: wspólne materiały z kolorem w wierzchołkach, scalan
 Kabina (Rybnik, deszcz, średnia): 20,2 → ok. 12,4 ms na klatkę (procesor 17,5 → ok. 10,4 ms). Zostaje: scalanie
 modelu pociągu gracza (ruchome części: drzwi, pantografy, wycieraczki), trasy dłuższe niż 70 km i linie bez sieci
 w generatorze.
+
+**Stan po etapie 11 (15 października 2026, wersja 0.32.0)** – pomiar po G5, nocy i zimie (Gliwice, stacja, dzień,
+jakość średnia): noc i zima prawie bez kosztu (< 1 ms). Zrobione odłożone: scalenie modelu pociągu gracza (ruchome
+podgrupy scalone każda osobno, bryły cieni – jedna na wagon i pantograf), wspólne materiały taboru z kolorem,
+chropowatością i metalicznością w wierzchołkach (też pociągi tła), atlasy tablic (szyldy, znaki, studzienki), zasłona
+słońca w kabinie na lekkiej bryle. Kabina: 14,7 → 11,1 ms procesora, 1047 → 874 wywołania, GPU 7,1 → 6,4 ms; widok zza
+pociągu: ok. 13,4 → 9,4 ms, 1761 → 723 wywołania. Wnętrze kabiny scalone (151 → 46 siatek), pociąg tła przy stacji
+ok. 410 → 150 wywołań (cienie bryłą na wagon). Zostaje: szyby i wnętrza wagonów tła (różne materiały, przezroczyste),
+gęstość szczegółów świata.
 
 ### Etapy
 

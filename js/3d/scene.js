@@ -411,7 +411,7 @@
 
 		setWeather(key) {
 			this.weatherKey = key;
-			if (this.routeId) this.weather.set(key, this.routeId, false);
+			if (this.routeId) this.weather.set(key, this.routeId.replace(/@\d+$/, ''), false);
 		}
 
 		/* zmiana pory roku w trakcie jazdy (pauza): sam świat od nowa (roślinność, liście, śnieg) – pociąg, kabina i ruch bez
@@ -430,12 +430,15 @@
 			// pora roku (kolory roślinności, liście) – inna niż przy budowie świata: świat od nowa
 			const season = (sim.opts && sim.opts.season) || 'summer';
 			const leaves = JSON.stringify(sim.leaves || []);
-			if (this.routeId !== sim.route.id || !this.world.route || this.world.season !== season || this.world.leafKey !== leaves) {
+			/* świat od nowa także przy innej stacji początkowej (route.from): semafory i stacje świata odwołują się do list
+			   trasy po numerach, a przycięta trasa ma ich mniej (dawniej: błąd „sig.code” i gra się nie wczytywała) */
+			const rKey = sim.route.id + '@' + (sim.route.from || 0);
+			if (this.routeId !== rKey || !this.world.route || this.world.season !== season || this.world.leafKey !== leaves) {
 				this.world.season = season;
 				this.world.leafPatches = sim.leaves || [];
 				this.world.leafKey = leaves;
 				this.world.setRoute(sim.route);
-				this.routeId = sim.route.id;
+				this.routeId = rKey;
 			} else this.world.warm = true;
 			this.weather.setSeason(season);
 			this.horizon.setRoute(sim.route);
@@ -445,6 +448,7 @@
 			this.cab = new NS.CabInterior(this.trainModel);
 			this.life.reset(sim.route, { shadows: this.quality.shadow >= 2048 });
 			this.life.prewarm(sim); // modele pociągów tła na ekranie wczytywania (pula)
+			this.life.setLocals(this.world.env ? this.world.envLocalTracks() : []); // pociągi podmiejskie na peronach w tunelu
 			/* trasa rzeczywista: pociągi z przeciwka po prawdziwym torze z mapy (nie po torze z gry); linia jednotorowa
 			   (route.single): na odcinku jednotorowym – po torze pociągu gracza, na mijance – po torze bocznym, przejście
 			   przy rozjeździe (R.laneWeight) */
@@ -458,10 +462,7 @@
 				this.life.laneRawY = laneY;
 				/* mijanka bez toru z mapy wybranego dla pociągów z przeciwka (tor urwany, odstawione wagony): najbliższy
 				   wybrany tor do 300 m dalej albo 4,5 m od osi – pociąg czekający na krzyżowanie nie znika */
-				const near = (s) => {
-					for (let k = 25; k <= 300; k += 25) for (const x of [s - k, s + k]) { const d = lane(x); if (!Number.isNaN(d)) return d; }
-					return 4.5;
-				};
+				const near = (s) => this.world.envLaneNear(s);
 				this.life.lane = (s) => {
 					const w = R.laneWeight(rt, s);
 					if (w <= 0) return 0;
@@ -495,6 +496,7 @@
 			const pos = sim.st.pos, tl = sim.route.tunnels || [];
 			this.weather.shelterTarget = !this.free && this.camMode === 'cab' && tl.some((t) => pos > t.from + 10 && pos < t.to - 5) ? 1 : 0;
 			if (this.trainModel) this.weather.setCars(this.trainModel.cars, this.camera.position);
+			this.weather.setTrain(this.trainModel && this.trainModel.cars, sim.st.v);
 			const W = this.weather.update(dt, this.camera.position, this.focus);
 			const pal = this.sky.palette(e);
 			const zen = this.env.zenith.copy(pal.zenith), hor = this.env.horizon.copy(pal.horizon), sunCol = this.env.sunColor.copy(pal.sunlight);
@@ -503,7 +505,13 @@
 			if (fl > 0.001) { zen.lerp(tmpC.setRGB(0.75, 0.8, 0.95), fl * 0.65); hor.lerp(tmpC.setRGB(0.8, 0.84, 0.95), fl * 0.6); }
 			const dayK = smoothstep(-0.04, 0.22, e);
 			const gray = this.hazeColor.copy(hor).lerp(tmpC.setRGB(0.5, 0.53, 0.57), 0.65).multiplyScalar(0.3 + 0.7 * smoothstep(-0.15, 0.3, e));
-			this.sky.update({ camera: this.camera, time: this.time, e, sunDir: this.sunDir, moonDir: this.moonDir, zenith: zen, horizon: hor, sunlight: sunCol, haze: W.haze, hazeColor: gray, cover: W.cover });
+			/* łuna miasta nocą: wg liczby latarni w okolicy (World.updateNightMap – urban), mocniej przy zachmurzeniu, mgle
+			   i opadzie (światło odbite od chmur i rozproszone w powietrzu); pomarańczowa od lamp sodowych */
+			const urban = this.world.urban || 0, nightK = 1 - smoothstep(-0.12, 0.02, e);
+			const glowK = urban * nightK * (0.018 + 0.05 * Math.min(1, W.cover + W.haze));
+			const cityGlow = this.cityGlow || (this.cityGlow = new T.Color());
+			cityGlow.setRGB(1.0, 0.56, 0.28).multiplyScalar(glowK);
+			this.sky.update({ camera: this.camera, time: this.time, e, sunDir: this.sunDir, moonDir: this.moonDir, zenith: zen, horizon: hor, sunlight: sunCol, haze: W.haze, hazeColor: gray, cover: W.cover, cityGlow, urban: urban * nightK });
 			this.sky.clouds(this.time, W.shadow * clamp01((e + 0.02) / 0.15));
 			this.sky.renderClouds(this.gl, this.time); // panorama chmur wolumetrycznych (co ok. 0,4 s)
 
@@ -532,6 +540,8 @@
 			const fog = this.scene.fog;
 			// o zmierzchu mgła chłodnieje (zamiast przejmować pomarańcz zachodu)
 			fog.color.copy(hor).lerp(zen, 0.45 * (1 - dayK)).lerp(gray, Math.min(1, 0.25 + W.haze));
+			// nocą w mieście mgła i oddal w ciepłej poświacie
+			fog.color.r += cityGlow.r * 0.6; fog.color.g += cityGlow.g * 0.6; fog.color.b += cityGlow.b * 0.6;
 			// mniejszy zasięg świata (jakość niska, dopasowanie w grze) – mgła bliżej, bez pustki za ostatnim kawałkiem
 			const fr = Math.min(1, Math.max(0.6, (this.world.detail || 1) * (this.world.detailDyn || 1)) / 0.95);
 			fog.near = W.fogNear * fr;
@@ -563,14 +573,16 @@
 				if (this.sunBlockedN++ % 4 === 0) {
 					this.sunRay.set(this.camera.getWorldPosition(this.sunRayO || (this.sunRayO = new T.Vector3())), this.sunDir);
 					this.sunRay.camera = this.camera; // w grupie pojazdu są też sprite'y (światła)
-					let hits = [];
-					try { hits = this.sunRay.intersectObject(this.cab.car.group, true); } catch (err) { hits = []; }
-					const hit = hits.find((h) => {
-						if (!h.object.isMesh) return false;
-						const m = Array.isArray(h.object.material) ? h.object.material[h.face ? h.face.materialIndex : 0] : h.object.material;
-						return m && m.visible !== false && !(m.transparent && m.opacity < 0.5);
-					});
-					this.sunBlockedV = !!hit;
+					let hit = false;
+					try {
+						const occ = this.sunOccluder(this.cab.car);
+						if (occ) {
+							const mw = this.cab.car.group.matrixWorld;
+							for (const c of occ.children) c.matrixWorld.copy(mw);
+							hit = this.sunRay.intersectObjects(occ.children, false).length > 0;
+						}
+					} catch (err) { hit = false; }
+					this.sunBlockedV = hit;
 				}
 				sunBlocked = this.sunBlockedV;
 			}
@@ -585,6 +597,100 @@
 			this.e = e;
 			this.dayK = dayK;
 			this.W = W;
+		}
+
+		/* Zasłona słońca w kabinie: nieprzezroczyste trójkąty wagonu (pudło, wnętrze kabiny – bez szyb) do 6,5 m od oka
+		   (promień sięga 6 m), zebrane raz w układzie wagonu – promień do słońca sprawdzany tylko na nich (dawniej na całym wagonie: setki tysięcy
+		   trójkątów, ok. 7 ms co 4. klatkę). Od nowa przy innym wagonie z kabiną, przebudowie kabiny albo przesunięciu
+		   oka o ponad 2,5 m (zebrane w czasie przejścia kamery do kabiny – puste). */
+		// kamera we wnętrzu tunelu trasy z mapy (pod stropem obudowy)
+		/* kamera zewnętrzna (za pociągiem, z boku, przy torze, przy wózku), gdy pociąg jest w tunelu: wewnątrz obudowy –
+		   między ścianami i pod stropem (dawniej trzymała się 1,5 m nad terenem, czyli nad ulicą nad tunelem), skierowana
+		   na pociąg. Położenie kamery na trasie (s, d) – rzut na oś toru (kilka kroków po stycznej). */
+		tunnelClamp(sim, mode) {
+			const w = this.world, route = sim.route, cam = this.camera.position;
+			if (!w || !w.freeTunnel || !route.tunnels || !route.tunnels.length) return;
+			const front = sim.st.pos, tail = front - sim.L;
+			if (!route.tunnels.some((t) => front > t.from + 5 && tail < t.to - 5)) return;
+			const t = this.tcp || (this.tcp = {});
+			let s = front - sim.L / 2;
+			for (let i = 0; i < 6; i++) {
+				R.trackPoint(route, s, t);
+				s += (cam.x - t.x) * Math.sin(t.heading) - (cam.z - t.z) * Math.cos(t.heading);
+			}
+			R.trackPoint(route, s, t);
+			const d = (cam.x - t.x) * Math.cos(t.heading) + (cam.z - t.z) * Math.sin(t.heading);
+			let box = w.freeTunnel(s, -Infinity);
+			if (!box) return;
+			const dc = Math.max(box.l, Math.min(box.r, d));
+			// z boku: odległość ucięta przez ścianę przenosi się wzdłuż składu (widok ukośny zamiast dachu tuż przed kamerą)
+			if (mode === 'side' && dc !== d) {
+				const s2 = s + Math.min(25, (Math.abs(d) - Math.abs(dc)) * 0.8);
+				const b2 = w.freeTunnel(s2, -Infinity);
+				if (b2) { s = s2; box = b2; }
+			}
+			const y = mode === 'trackside' ? box.floor + 1.7 : mode === 'side' ? Math.max(box.floor + 1.2, Math.min(box.floor + 3.2, cam.y)) : Math.max(box.floor + 0.3, Math.min(box.ceil - 0.2, cam.y));
+			if (dc === d && y === cam.y) return;
+			R.sidePoint(route, s, Math.max(box.l, Math.min(box.r, dc)), t);
+			cam.set(t.x, y, t.z);
+			const f = this.focus;
+			this.camera.lookAt(f.x, f.y + (mode === 'bogie' ? 0 : 1.8), f.z);
+		}
+
+		camInTunnel(sim) {
+			const w = this.world;
+			if (!w || !w.freeTunnel || !sim) return false;
+			const s = this.free ? this.free.s : sim.st.pos;
+			return !!w.freeTunnel(s, this.camera.position.y);
+		}
+
+		sunOccluder(car) {
+			if (!car) return null;
+			const key = this.cab ? this.cab.group.children.length : -1;
+			car.group.updateMatrixWorld(true);
+			const inv = new T.Matrix4().copy(car.group.matrixWorld).invert(), M = new T.Matrix4();
+			const eye = this.camera.getWorldPosition(new T.Vector3()).applyMatrix4(inv);
+			// ta sama kabina i oko w pobliżu miejsca zbierania (przejście kamery do kabiny, rozglądanie się) – bez zmian
+			const O = this.sunOcc;
+			if (O && O.car === car && O.key === key && O.eye.distanceTo(eye) < 2.5) return O.mesh;
+			if (O && O.mesh) for (const c of O.mesh.children) c.geometry.dispose();
+			this.sunOcc = { car, key, eye, mesh: null };
+			// trójkąty w kostkach 1,5 m (każda – osobna siatka ze sferą ograniczającą: promień sprawdza tylko kostki na drodze)
+			const v = [new T.Vector3(), new T.Vector3(), new T.Vector3()], cells = new Map();
+			car.group.traverse((o) => {
+				if (!o.isMesh || o.isInstancedMesh || o.userData.shadowProxy || !o.geometry.attributes.position) return;
+				for (let p = o; p && p !== car.group; p = p.parent) if (!p.visible) return;
+				const g = o.geometry, P = g.attributes.position, idx = g.index, mats = Array.isArray(o.material) ? o.material : null;
+				const groups = mats && g.groups.length ? g.groups : [{ start: 0, count: idx ? idx.count : P.count, materialIndex: 0 }];
+				M.multiplyMatrices(inv, o.matrixWorld);
+				for (const gr of groups) {
+					const m = mats ? mats[gr.materialIndex] : o.material;
+					if (!m || m.visible === false || (m.transparent && m.opacity < 0.5)) continue;
+					const end = Math.min(gr.start + gr.count, idx ? idx.count : P.count);
+					for (let i = gr.start; i + 2 < end; i += 3) {
+						for (let j = 0; j < 3; j++) v[j].fromBufferAttribute(P, idx ? idx.getX(i + j) : i + j).applyMatrix4(M);
+						if (Math.min(v[0].distanceTo(eye), v[1].distanceTo(eye), v[2].distanceTo(eye)) > 6.5) continue;
+						const ck = [0, 1, 2].map((a) => Math.floor((v[0].getComponent(a) + v[1].getComponent(a) + v[2].getComponent(a)) / 4.5)).join(',');
+						let pos = cells.get(ck);
+						if (!pos) cells.set(ck, (pos = []));
+						pos.push(v[0].x, v[0].y, v[0].z, v[1].x, v[1].y, v[1].z, v[2].x, v[2].y, v[2].z);
+					}
+				}
+			});
+			if (!cells.size) return null;
+			const mat = this.sunOccMat || (this.sunOccMat = new T.MeshBasicMaterial({ side: T.DoubleSide }));
+			const grp = new T.Group();
+			grp.matrixAutoUpdate = false;
+			for (const pos of cells.values()) {
+				const geo = new T.BufferGeometry();
+				geo.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+				geo.computeBoundingSphere();
+				const m = new T.Mesh(geo, mat);
+				m.matrixAutoUpdate = false;
+				grp.add(m);
+			}
+			this.sunOcc.mesh = grp;
+			return grp;
 		}
 
 		// ---- sterowanie kamerą przez gracza: obrót wokół punktu przed pociągiem, pochylenie, oddalenie ----
@@ -853,6 +959,7 @@
 			} else if (mode === 'trackside' || mode === 'roof' || mode === 'bogie' || mode === 'rear') {
 				this.specialView(mode, sim, tp);
 			}
+			if (mode === 'follow' || mode === 'side' || mode === 'trackside' || mode === 'bogie') this.tunnelClamp(sim, mode);
 			// płynne przejście z poprzedniego ujęcia (wygładzone, ok. 0,7 s)
 			if (this.trans) {
 				this.trans.t += dt > 0 ? dt : 1 / 60;
@@ -910,7 +1017,9 @@
 				cam.position.copy(center).add(off);
 				const s0 = front - (c.len / 2 + bz);
 				R.trackPoint(route, s0, tp);
-				cam.position.y = Math.max(cam.position.y, this.world.terrainY(s0, 0) + 0.25);
+				// w tunelu podłoże to poziom toru (teren nad tunelem to ulica)
+				const inTun = this.world.freeTunnel && this.world.freeTunnel(s0, -Infinity);
+				cam.position.y = Math.max(cam.position.y, (inTun ? R.heightAt(route, s0) : this.world.terrainY(s0, 0)) + 0.25);
 				cam.lookAt(center);
 				this.focus.copy(center);
 			} else if (mode === 'trackside') {
@@ -1032,6 +1141,9 @@
 			this.resize(hudH);
 			// pociąg ustawiany przed kamerą – kamera w kabinie nie może być o klatkę spóźniona
 			this.trainModel.weather = this.W; // deszcz i śnieg – częstsze łuki na pantografie
+			// szron na szybach kabiny: zimą, późną jesienią nocą (przymrozek)
+			const season = this.world.season || 'summer';
+			this.trainModel.frostTarget = season === 'winter' ? 1 : season === 'autumn' && this.dark > 0.5 ? 0.4 : 0;
 			this.trainModel.update(sim, this.dark, dt);
 			this.updateCamera(sim, dt);
 			this.cab.update(sim, dt, this.dark);
@@ -1045,6 +1157,7 @@
 			const W = this.W || { haze: 0, snow: 0, rain: 0 };
 			this.world.update(sim, dt, this.dark, W.haze + W.snow * 0.6 + W.rain * 0.4);
 			if (P) lap('świat');
+			this.life.listener = this.camera.position; // słuchacz zapowiedzi na peronach (pociągi podmiejskie)
 			this.life.update(sim, dt, this.dark, this.focus, this.W || { rain: 0, snow: 0 });
 			this.updateAssist(sim);
 			if (P) lap('ruch');
@@ -1072,7 +1185,8 @@
 					   (kamera ponad 12 m nad pociągiem), bo przy płaskim spojrzeniu przyciemniało rozległe płaszczyzny;
 					   po zejściu kamery cieniowanie nagle słabło. Płaskie spojrzenie wygasza teraz shader AO (post.js);
 					   w kabinie bez AO (wnętrze widziane z bliska). */
-					ao: q.ao && this.viewMode !== 'cab',
+					// w tunelu (trasa z mapy) bez AO: w zamkniętej obudowie zaciemniało strop i ściany do czerni
+					ao: q.ao && this.viewMode !== 'cab' && !this.camInTunnel(sim),
 					aoRadius: 2.2,
 					aoStrength: 1.2,
 					aoFade: 140,

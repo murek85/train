@@ -504,6 +504,60 @@
 		}
 	}
 
+	/* Wspólne materiały taboru z kolorem w wierzchołkach: części różniące się tylko kolorem (lakier, metal, guma – setki
+	   osobnych materiałów) dostają jeden materiał na rodzaj powierzchni (wariant łatki, zabrudzenie, spoiny, połysk),
+	   kolor przechodzi do atrybutu color – potem scalanie łączy je w jedną siatkę (pociąg tła: 27 siatek jednego
+	   rodzaju w wagonie → 1–3). Bez materiałów animowanych (światła, wnętrza, szyby – inne typy lub przezroczyste). */
+	const vcTrainMats = new Map();
+	function vcConvert(root, keep) {
+		const skip = new Set();
+		if (keep) root.traverse((o) => { if (o !== root && keep(o)) o.traverse((x) => skip.add(x)); });
+		root.traverse((o) => {
+			if (!o.isMesh || o.isInstancedMesh || skip.has(o)) return;
+			const m = o.material;
+			if (Array.isArray(m) || !m.isMeshStandardMaterial || m.map || m.vertexColors || m.transparent || m.alphaTest || !o.geometry.attributes.position) return;
+			const pk = m.customProgramCacheKey ? m.customProgramCacheKey() : '', mt = /^train2-train-([\d.]+)-([01])$/.exec(pk);
+			if (!mt) return;
+			/* chropowatość, metaliczność i zabrudzenie bazowe też w wierzchołkach (aRM) – jeden materiał na rodzaj powierzchni
+			   (np. części zestawu kołowego o różnym zabrudzeniu – jedna siatka) */
+			const key = [mt[2], m.type, m.clearcoat || 0, m.clearcoatRoughness || 0, m.envMapIntensity, m.side, m.emissive.getHex(), m.emissiveIntensity, m.flatShading ? 1 : 0].join('|');
+			let vm = vcTrainMats.get(key);
+			if (!vm) {
+				const P = { color: '#ffffff', vertexColors: true, roughness: 1, metalness: 1, envMapIntensity: m.envMapIntensity, side: m.side, emissive: m.emissive.clone(), emissiveIntensity: m.emissiveIntensity, flatShading: m.flatShading };
+				if (m.isMeshPhysicalMaterial) Object.assign(P, { clearcoat: m.clearcoat, clearcoatRoughness: m.clearcoatRoughness });
+				// zabrudzenie 0,987 – znacznik w kodzie shadera, zastępowany odczytem z wierzchołków (vRM.z)
+				vm = patch(m.isMeshPhysicalMaterial ? new T.MeshPhysicalMaterial(P) : new T.MeshStandardMaterial(P), 'train', { grime: 0.987, panels: mt[2] === '1' });
+				const prev = vm.onBeforeCompile, ck = vm.customProgramCacheKey();
+				vm.onBeforeCompile = (sh, r) => {
+					prev(sh, r);
+					sh.vertexShader = sh.vertexShader
+						.replace('#include <common>', '#include <common>\nattribute vec3 aRM; varying vec3 vRM;')
+						.replace('#include <begin_vertex>', '#include <begin_vertex>\nvRM = aRM;');
+					sh.fragmentShader = sh.fragmentShader
+						.replace('#include <common>', '#include <common>\nvarying vec3 vRM;')
+						.replace('float g = 0.987 *', 'float g = vRM.z *')
+						.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = vRM.x;')
+						.replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = vRM.y;');
+				};
+				vm.customProgramCacheKey = () => ck + '-rm';
+				vm.userData.vc = true;
+				vcTrainMats.set(key, vm);
+			}
+			const g = o.geometry.clone();
+			g.userData = {};
+			const n = g.attributes.position.count, c = new Float32Array(n * 3);
+			for (let i = 0; i < n; i++) { c[i * 3] = m.color.r; c[i * 3 + 1] = m.color.g; c[i * 3 + 2] = m.color.b; }
+			g.setAttribute('color', new T.BufferAttribute(c, 3));
+			const rm = new Float32Array(n * 3), gr = +mt[1];
+			for (let i = 0; i < n; i++) { rm[i * 3] = m.roughness; rm[i * 3 + 1] = m.metalness; rm[i * 3 + 2] = gr; }
+			g.setAttribute('aRM', new T.BufferAttribute(rm, 3));
+			if (o.userData.ownGeometry) o.geometry.dispose();
+			o.geometry = g;
+			o.userData.ownGeometry = true;
+			o.material = vm;
+		});
+	}
+
 	const ploughGeos = new Map();
 	// lakier z bezbarwną powłoką (połysk i odbicia nieba)
 	const paints = new Map();
@@ -666,7 +720,7 @@
 	const WET_GLSL = `
 		uniform vec3 uWP[2]; uniform vec3 uWU[2]; uniform vec3 uWV[2]; uniform float uWS[2];
 		uniform float uWL; uniform float uWD; uniform float uA0[2]; uniform float uSweep[2]; uniform float uWA[24]; uniform float uSA[24]; uniform float uWG; uniform float uSG;
-		uniform float uWR; uniform float uSR;
+		uniform float uWR; uniform float uSR; uniform float uFrost; uniform float uDefrost;
 		uniform vec3 uFwd; uniform vec3 uOrg; uniform vec2 uFlow; uniform float uStretch;
 		varying vec3 vWN;
 		varying vec3 vWG;
@@ -756,6 +810,21 @@
 			float snow = smoothstep(1.0 - sCov, 1.0 - sCov + 0.18, sn) * step(0.01, sa);
 			diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.94, 0.98), snow);
 			diffuseColor.a = max(diffuseColor.a, snow * 0.93);
+			/* szron: kryształki jak paprocie (żyłkowany szum), gęstszy przy brzegach płatów; na szybie czołowej nawiew
+			   odmraża pole od osi wycieraczek coraz dalej (uDefrost – promień w m), szyby boczne – płaty zostają */
+			if (uFrost > 0.01) {
+				vec2 fq = qS * 9.0;
+				float fw = wgN(fq * 0.5 + 3.7);
+				float fern = 1.0 - abs(2.0 * wgN(fq * 2.3 + fw * 2.0) - 1.0);
+				float crys = fern * fern * 0.55 + wgN(fq * 6.0) * 0.3 + fw * 0.15;
+				float reach = 1e3;
+				if (!sideG) for (int i = 0; i < 2; i++) { vec3 dd = vWG - uWP[i]; reach = min(reach, length(vec2(dot(dd, uWU[i]), dot(dd, uWV[i])))); }
+				float thaw = sideG ? 0.2 + 0.6 * wgN(qS * 1.4 + 5.0) : smoothstep(uDefrost + 0.2, uDefrost - 0.1, reach + (wgN(qS * 3.0) - 0.5) * 0.3);
+				float fcov = uFrost * 0.42 * (1.0 - thaw);
+				float frost = smoothstep(1.0 - fcov, 1.0 - fcov + 0.22, crys) * step(0.02, fcov);
+				diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.84, 0.89, 0.95), frost * 0.6);
+				diffuseColor.a = max(diffuseColor.a, frost * 0.45);
+			}
 		}`;
 	function wetGlass(material, U) {
 		const prev = material.onBeforeCompile;
@@ -1165,7 +1234,7 @@
 				this.glassU = {
 					uWP: { value: [V3(), V3()] }, uWU: { value: [V3(), V3()] }, uWV: { value: [V3(), V3()] }, uWS: { value: [1, 1] },
 					uWL: { value: 0 }, uWD: { value: 0 }, uA0: { value: [0, 0] }, uSweep: { value: [2.5, 2.5] }, uWA: { value: new Float32Array(24) }, uSA: { value: new Float32Array(24) },
-					uWG: { value: 0 }, uSG: { value: 0 }, uWR: { value: 0 }, uSR: { value: 0 },
+					uWG: { value: 0 }, uSG: { value: 0 }, uWR: { value: 0 }, uSR: { value: 0 }, uFrost: { value: 0 }, uDefrost: { value: 0 },
 					uFwd: { value: new T.Vector3(0, 0, -1) }, uOrg: { value: new T.Vector3() }, uFlow: { value: new T.Vector2() }, uStretch: { value: 1 },
 				};
 				wetGlass(this.cabGlass, this.glassU);
@@ -1195,6 +1264,7 @@
 				BEVEL = false;
 			}
 			for (const c of this.cars) scene.add(c.group);
+			if (this.player) { this.compactPlayer(); this.shadowProxies(); }
 			this.pA = {};
 			this.pB = {};
 			this.sparkT = 0;
@@ -1211,6 +1281,62 @@
 				lead.group.add(g);
 				return g;
 			});
+		}
+
+		/* Cień składu jedną bryłą na wagon: setki drobnych części rzucały cień osobno w każdej kaskadzie (widok zza pociągu
+		   – ok. 780 wywołań rysowania na klatkę, połowa wszystkich). Zamiast nich scalona bryła w układzie wagonu, rysowana
+		   tylko w mapach cieni (w obrazie zakres rysowania 0 – onBeforeRender, w cieniach pełny – onBeforeShadow; warstwy
+		   nie wystarczą: three.js wybiera obiekty do cieni wg warstw kamery głównej). Pantografy (ruchome) rzucają cień jak
+		   dotąd, drzwi i wycieraczki – w położeniu spoczynkowym. */
+		/* scalona bryła cienia części grupy root (w jej układzie) – części bez własnego cienia; skip – pominięte obiekty,
+		   track – zapamiętać części (pantografy przebudowywane przy ruchu – nie) */
+		shadowMerge(root, skip, track = true) {
+			const m = new T.Matrix4(), inv = new T.Matrix4(), im = new T.Matrix4(), v = new T.Vector3();
+			root.updateMatrixWorld(true);
+			inv.copy(root.matrixWorld).invert();
+			const pos = [];
+			/* poziomy szczegółów: do bryły tylko najdokładniejszy (dawniej wszystkie naraz – te same części kilka razy),
+			   pozostałe bez cienia */
+			const lodLow = new Set();
+			root.traverse((o) => {
+				if (o.isLOD) o.levels.forEach((l, i) => { if (i > 0) l.object.traverse((x) => { lodLow.add(x); if (x.isMesh) x.castShadow = false; }); });
+			});
+			root.traverse((o) => {
+				if (!o.isMesh || !o.castShadow || o.userData.shadowProxy || lodLow.has(o) || (skip && skip.has(o)) || !o.geometry.attributes.position) return;
+				const p = o.geometry.attributes.position, idx = o.geometry.index, cnt = idx ? idx.count : p.count;
+				for (let k = 0, n = o.isInstancedMesh ? o.count : 1; k < n; k++) {
+					m.multiplyMatrices(inv, o.matrixWorld);
+					if (o.isInstancedMesh) { o.getMatrixAt(k, im); m.multiply(im); }
+					for (let q = 0; q < cnt; q++) { v.fromBufferAttribute(p, idx ? idx.getX(q) : q).applyMatrix4(m); pos.push(v.x, v.y, v.z); }
+				}
+				o.castShadow = false;
+				if (track && this.shadowParts) this.shadowParts.push(o);
+			});
+			if (!pos.length) return null;
+			const geo = new T.BufferGeometry();
+			geo.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+			geo.computeBoundingSphere();
+			const sh = new T.Mesh(geo, this.shadowProxyMat);
+			sh.castShadow = true;
+			sh.receiveShadow = false;
+			sh.onBeforeRender = (r, sc, c, g) => { g.drawRange.count = 0; };
+			sh.onBeforeShadow = (r, o, c, shc, g) => { g.drawRange.count = Infinity; };
+			sh.userData.shadowProxy = true;
+			root.add(sh);
+			return sh;
+		}
+		shadowProxies() {
+			// pantografy pociągu gracza ruszają się – osobna bryła; w pociągach tła stoją – w bryle wagonu
+			const skip = new Set();
+			if (this.player) for (const P of this.pantoSets || []) P.pg.traverse((o) => skip.add(o));
+			if (!this.shadowProxyMat) {
+				this.shadowProxyMat = new T.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+				this.ownMats.push(this.shadowProxyMat);
+			}
+			this.shadowParts = []; // części bez własnego cienia (porównanie wydajności: maszynista.renderer.trainModel)
+			for (const car of this.cars) this.shadowMerge(car.group, skip, this.player);
+			// pantografy: własna bryła, przebudowywana przy ruchu (setPanto)
+			if (this.player) for (const P of this.pantoSets || []) this.shadowMerge(P.pg, null, false);
 		}
 
 		// koniec budowy wagonu: scalenie części, drobne detale w LOD, okluzja i znacznik układu wagonu (aWear)
@@ -3313,6 +3439,32 @@
 			for (const ws of this.wheelsets) ws.rotation.x = (-dir * frontS) / (ws.userData.r || WHEEL_R);
 		}
 
+		/* Pociąg gracza: scalenie części z zachowaniem ruchomych podgrup – skrzydła drzwi, zestawy kołowe, ramiona wycieraczek
+		   i pantografy (przebudowywane – scalane w setPanto) scalone każde wewnątrz siebie; reszta wagonu poza nimi, poza
+		   wnętrzem przełączanym z kabiną (room) i poziomami szczegółów (LOD). Pudło (kilka materiałów) zostaje osobno.
+		   Widok zza pociągu: ok. 180 → kilkadziesiąt wywołań rysowania. */
+		compactPlayer() {
+			const moving = new Set(this.wheelsets);
+			for (const S of this.doorSets || []) for (const L of S.leaves) moving.add(L.leaf);
+			for (const W of this.wiperSets || []) moving.add(W.G);
+			for (const P of this.pantoSets || []) moving.add(P.pg);
+			let n = 0;
+			for (const car of this.cars) {
+				if (car.room) moving.add(car.room);
+				vcConvert(car.group, (o) => o === car.room);
+				n += NS.util.mergeMeshes(car.group, (o) => moving.has(o) || o.isLOD);
+				car.group.traverse((o) => { if (o.isLOD) for (const l of o.levels) n += NS.util.mergeMeshes(l.object); });
+			}
+			for (const o of moving) if (o.isObject3D && !(this.pantoSets || []).some((P) => P.pg === o)) {
+				// ramię wycieraczki obraca się wewnątrz uchwytu – scalane osobno (R), uchwyt (G) bez ramienia
+				const W = (this.wiperSets || []).find((w) => w.G === o);
+				if (W) { n += NS.util.mergeMeshes(W.R); n += NS.util.mergeMeshes(W.G, (x) => x === W.R); }
+				else n += NS.util.mergeMeshes(o);
+			}
+			for (const P of this.pantoSets || []) n += NS.util.mergeMeshes(P.pg);
+			return n;
+		}
+
 		/* Pociąg tła / wagony na bocznicy: scalenie części każdego wagonu (bez animacji drzwi, pantografów, wycieraczek) –
 		   osobno zostają zestawy kołowe (obracają się – scalone wewnątrz) i poziomy szczegółów (LOD – scalone wewnątrz
 		   każdego poziomu). Tylko dla pociągów innych niż pociąg gracza. */
@@ -3322,12 +3474,16 @@
 			const wheels = new Set(this.wheelsets);
 			let n = 0;
 			for (const car of this.cars) {
+				vcConvert(car.group);
 				n += NS.util.mergeMeshes(car.group, (o) => wheels.has(o) || o.isLOD);
 				// wnętrza poziomów szczegółów (przełączane całe) – osobno
 				car.group.traverse((o) => { if (o.isLOD) for (const l of o.levels) n += NS.util.mergeMeshes(l.object); });
 			}
 			// zestawy kołowe obracają się w całości – części każdego scalone
 			for (const ws of this.wheelsets) n += NS.util.mergeMeshes(ws);
+			/* cień jedną bryłą na wagon (pociąg 5-wagonowy przy stacji: ok. 250 wywołań rysowania w cieniach → kilkanaście);
+			   koła w położeniu z chwili scalenia – obrót zestawów niewidoczny w cieniu */
+			if (this.shadows !== false) this.shadowProxies();
 			return n;
 		}
 
@@ -3380,6 +3536,13 @@
 			const clamp = (x, m) => Math.max(0, Math.min(m, x));
 			U.uWG.value = clamp(U.uWG.value + dW, 4);
 			U.uSG.value = clamp(U.uSG.value + dS, 3);
+			/* szron: od początku jazdy przy mrozie; nawiew odmraża szybę czołową od osi wycieraczek (na starcie 0,6 m, po ok.
+			   1 min całe pole wycieraczek – narożniki szyby zostają oszronione), boczne też; bez mrozu szron znika w ok. pół minuty */
+			const fT = this.frostTarget || 0;
+			// przed odjazdem maszynista odmraża szybę – pole przy wycieraczkach czyste od początku
+			if (this.frostInit === undefined) { this.frostInit = true; U.uFrost.value = fT; U.uDefrost.value = 0.6; }
+			U.uFrost.value += (fT - U.uFrost.value) * Math.min(1, dt * (fT > U.uFrost.value ? 0.01 : 0.05));
+			U.uDefrost.value = fT > 0 ? Math.min(Math.max(0.6, U.uWL.value + 0.05), U.uDefrost.value + dt * 0.008) : 0.6;
 			// ślad na obrysie przetartego pola: rośnie, gdy wycieraczki zgarniają wodę albo śnieg (każdy ruch pióra),
 			// schnie / topnieje powoli, gdy opad ustaje
 			const sweeping = this.wiperMode > 0 || this.wPh > 0;
@@ -3482,7 +3645,16 @@
 				P.pg.clear();
 				P.build(h);
 				P.h = h;
+				if (this.player) NS.util.mergeMeshes(P.pg);
+				if (this.shadowParts) this.shadowMerge(P.pg, null, false);
 			}
+		}
+		// łuk na oblodzonym przewodzie (ślizgacz traci styk): krótki błysk z odpryskami
+		iceArc() {
+			if (!this.spark) return;
+			this.spark.burst = 6 + Math.floor(Math.random() * 8);
+			this.spark.series = Math.random() < 0.5 ? 1 : 0;
+			this.sparkT = Math.max(this.sparkT, 0.06 + Math.random() * 0.1);
 		}
 		// łuk przy opuszczeniu pantografu pod obciążeniem: seria jasnych wyładowań
 		arcBurst() {

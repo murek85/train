@@ -155,6 +155,8 @@
 		<div class="free-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / strzałki – ruch · <kbd>Q</kbd>/<kbd>E</kbd> – w dół / w górę · <kbd>Shift</kbd> – szybciej · przeciągnij myszą – rozglądanie · kółko – wysokość · <kbd>P</kbd> – pauza (pora dnia, pogoda) · <kbd>F</kbd> / <kbd>Esc</kbd> – powrót do jazdy</div>
 	</div>
 
+	<!-- generowanie trasy w tle (js/gen-worker.js): postęp widoczny w menu i w czasie jazdy -->
+	<div id="gen-bg" class="gen-bg hidden" role="status" aria-live="polite"></div>
 	<div id="route-loading" class="route-loading hidden" role="status" aria-live="polite">
 		<div class="rl-box">
 			<div class="rl-head"><span class="rl-spin"></span><b id="rl-head">Wczytywanie trasy</b></div>
@@ -198,15 +200,24 @@
 			<div class="news-list" id="news-list"></div>
 		</div>
 
+		<!-- generator tras: podmenu (nowa trasa, moje trasy) i ich ekrany -->
+		<div class="panel menu-main hidden" id="scr-genmenu">
+			<div class="panel-head"><button class="back" id="genmenu-back">← Wróć</button><h2>Generator tras</h2></div>
+			<p class="tagline">Trasy z prawdziwych linii kolejowych – z OpenStreetMap i danych oficjalnych.</p>
+			<nav class="menu-buttons">
+				<button id="btn-gen-new" class="primary big">Nowa trasa<small>stacje, linia, dane – generowanie w tle</small></button>
+				<button id="btn-gen-mine" class="big">Moje trasy<small id="gen-mine-sum">wygenerowane i zaimportowane</small></button>
+			</nav>
+		</div>
+
 		<div class="panel wide hidden" id="scr-gen">
-			<div class="panel-head"><button class="back" id="gen-back">← Wróć</button><h2>Generator tras</h2></div>
+			<div class="panel-head"><button class="back" id="gen-back">← Wróć</button><h2>Nowa trasa</h2><button id="gen-to-mine" class="head-link">Moje trasy →</button></div>
 			<p class="hint">Trasa z prawdziwej linii kolejowej: tory, stacje i przystanki, ograniczenia prędkości, semafory z nazwami, łuki,
 				mosty i wiadukty z OpenStreetMap oraz profil wysokości z modelu terenu. Rozkład jazdy liczony jest z fizyki pociągu.
 				Potrzebny jest internet; serwery danych bywają przeciążone – wtedy generator sam ponawia próby.</p>
 			<div class="gen-grid">
 				<section class="pick">
-					<h3>Nowa trasa</h3>
-					<label class="gen-field">Stacja początkowa <input id="gen-from" type="text" placeholder="np. Gliwice" autocomplete="off"></label>
+										<label class="gen-field">Stacja początkowa <input id="gen-from" type="text" placeholder="np. Gliwice" autocomplete="off"></label>
 					<label class="gen-field">Stacja końcowa <input id="gen-to" type="text" placeholder="np. Katowice" autocomplete="off"></label>
 					<label class="gen-field">Numer linii (opcjonalnie) <input id="gen-line" type="text" placeholder="np. 137" autocomplete="off"></label>
 					<p class="hint">Nazwy jak w rozkładzie jazdy, z polskimi znakami. Stacje do 70 km od siebie (w linii prostej).
@@ -215,13 +226,25 @@
 					<label class="gen-check"><input type="checkbox" id="gen-dem" checked> Ukształtowanie terenu – nasypy, wykopy, wzniesienia (pomiar NMT GUGiK, ok. 1–2 min; poza Polską dłużej)</label>
 					<label class="gen-check"><input type="checkbox" id="gen-official" checked> Dane oficjalne – BDOT10k (GUGiK: budynki, drogi, tereny, lasy, wody) i PKP PLK (prędkości, perony); pierwsze pobranie ok. 15 MB na powiat</label>
 					<label class="gen-check"><input type="checkbox" id="gen-nmpt" checked> Budynki, drzewa i wiadukty z pomiaru (NMPT GUGiK – wolny serwer: pierwsze pobranie ok. 1 min na 3 km trasy, potem z pamięci)</label>
+					<label class="gen-check"><input type="checkbox" id="gen-both"> Także trasa w drugą stronę – druga trasa z zamienionymi stacjami (kierunek jazdy wybierasz potem w „Warunkach”; drugie tyle czasu, pliki z pamięci)</label>
 					<div class="gen-examples" id="gen-examples"></div>
 					<button id="gen-run" class="primary">Generuj trasę</button>
 				</section>
 				<section class="pick">
-					<h3>Przebieg</h3>
-					<div id="gen-log" class="gen-log"><div class="muted">Wpisz stacje i kliknij „Generuj trasę”.</div></div>
-					<h3>Wygenerowane trasy</h3>
+					<h3>Postęp</h3>
+					<div id="gen-status" class="gen-status hidden"></div>
+					<details class="gen-details" id="gen-details" open><summary>Przebieg generowania</summary>
+						<div id="gen-log" class="gen-log"><div class="muted">Wpisz stacje i kliknij „Generuj trasę”. Generowanie trwa w tle – w tym czasie możesz grać; postęp widać na pasku w prawym górnym rogu ekranu.</div></div>
+					</details>
+				</section>
+			</div>
+			<p class="hint source">Dane: © współtwórcy OpenStreetMap (licencja ODbL), Copernicus DEM (przez Open-Meteo), NMT, NMPT i BDOT10k – GUGiK, PKP PLK (Regulamin sieci), RINF – © Europejska Agencja Kolejowa (ERA, CC BY 4.0).</p>
+		</div>
+
+		<div class="panel wide hidden" id="scr-routes">
+			<div class="panel-head"><button class="back" id="routes-back">← Wróć</button><h2>Moje trasy</h2><button id="routes-to-new" class="head-link">Nowa trasa →</button></div>
+				<section class="pick">
+										<p class="hint">Trasy z generatora i zaimportowane z plików. Pliki tras (.trasa, .json, .js) można też przeciągnąć na okno.</p>
 					<div class="gen-io">
 						<button id="gen-import" title="Wczytaj trasę z pliku .trasa, .json albo routes/*.js – można też przeciągnąć pliki na okno">Importuj trasę…</button>
 						<label class="gen-check gen-all"><input type="checkbox" id="gen-sel-all"> zaznacz wszystkie</label>
@@ -231,8 +254,6 @@
 					<div id="gen-io-msg" class="gen-io-msg"></div>
 					<div id="gen-list" class="gen-list"></div>
 				</section>
-			</div>
-			<p class="hint source">Dane: © współtwórcy OpenStreetMap (licencja ODbL), Copernicus DEM (przez Open-Meteo).</p>
 		</div>
 
 		<div class="panel wide hidden" id="scr-single">
@@ -285,6 +306,17 @@
 				</div>
 			</section>
 			<section class="tab hidden" id="tab-cond">
+				<h3>Przebieg</h3>
+				<div id="dir-row">
+					<div class="run-sub">Kierunek jazdy</div>
+					<div class="seg run-dir" id="dir-seg"></div>
+				</div>
+				<div class="run-sub">Stacja początkowa</div>
+				<div class="run-line" id="start-tiles"></div>
+				<div class="run-info" id="run-info"></div>
+				<select id="opt-dir" class="hidden"></select>
+				<select id="opt-start" class="hidden"></select>
+				<p class="hint" id="run-hint"></p>
 				<h3>Pogoda</h3>
 				<div class="tiles" id="weather-tiles"></div>
 				<select id="opt-weather" class="hidden"><option value="auto">jak w scenariuszu</option><option value="clear">słonecznie</option><option value="cloudy">pochmurno</option><option value="rain">deszcz</option><option value="storm">burza</option><option value="fog">mgła</option><option value="snow">śnieg</option></select>
@@ -298,6 +330,9 @@
 				<h3>Ruch na linii</h3>
 				<label class="row-opt">Inne pociągi <input type="range" id="opt-traffic" min="0" max="3" step="1"> <b id="opt-traffic-val"></b></label>
 				<p class="hint">Pociągi przed Tobą i za Tobą jadą po Twoim torze – semafor pokazuje „stój”, gdy odstęp za nim jest zajęty. Przy punktualnej jeździe nie wchodzą Ci w drogę.</p>
+				<h3>Ruch uliczny</h3>
+				<label class="row-opt">Auta i piesi <input type="range" id="opt-street" min="0" max="3" step="1"> <b id="opt-street-val"></b></label>
+				<p class="hint">Na trasach z mapy: auta, dostawczaki i ciężarówki jeżdżą zgodnie z kierunkiem ulic, stają na czerwonym, ustępują pierwszeństwa i pieszym na pasach, czekają przed zamkniętym przejazdem kolejowym; piesi chodzą chodnikami i przechodzą przez pasy. Liczba i zasięg rosną z jakością grafiki.</p>
 				<h3>Zdarzenia</h3>
 				<div class="options">
 					<label><input type="checkbox" id="opt-events"> Zdarzenia losowe – komunikaty dyżurnego ruchu, ograniczenia doraźne, wydłużone postoje, zanik napięcia w sieci, zmiana pogody</label>
@@ -311,8 +346,8 @@
 					<label><input type="checkbox" id="opt-traffic-pen"> Kara za zatrzymanie pociągu jadącego za Tobą (−10 pkt) – gdy Twoje opóźnienie zatrzyma go przed semaforem</label>
 					<label><input type="checkbox" id="opt-dispatch" checked> Rutynowe komunikaty dyżurnego ruchu – odjazd, pociąg na odstępie przed Tobą, przyjęcie na stację końcową</label>
 					<label><input type="checkbox" id="opt-shp"> SHP – 200 m przed semaforem lampka i sygnał: potwierdź spacją w ciągu 3,5 s, inaczej hamowanie nagłe</label>
-					<label class="row-opt">Napęd <select id="opt-drive"><option value="simple">prosty – nastawnik J1…J5</option><option value="series">wg serii – rozruch oporowy (EU07, EN57…), falownik (Elfy, ED250), spalinowy (SM42…)</option></select></label>
-					<label class="row-opt">Hamulec <select id="opt-brake"><option value="simple">prosty – nastawnik z pozycjami hamowania H1…H4</option><option value="air">zespolony – zawór maszynisty (Q / A), ciśnienia, fala hamowania</option></select></label>
+					<label class="row-opt sel-opt">Napęd <select id="opt-drive"><option value="simple">prosty – nastawnik J1…J5</option><option value="series">wg serii – rozruch oporowy (EU07, EN57…), falownik (Elfy, ED250), spalinowy (SM42…)</option></select></label>
+					<label class="row-opt sel-opt">Hamulec <select id="opt-brake"><option value="simple">prosty – nastawnik z pozycjami hamowania H1…H4</option><option value="air">zespolony – zawór maszynisty (Q / A), ciśnienia, fala hamowania</option></select></label>
 				</div>
 				<h3>Sterowanie</h3>
 				<div class="help-grid">
@@ -361,19 +396,30 @@
 	<div id="settings" class="overlay hidden">
 		<div class="panel">
 			<div class="panel-head"><button class="back" id="settings-back">← Wróć</button><h2>Ustawienia</h2></div>
-			<section class="set">
-				<h3>Dźwięk</h3>
+			<!-- zakładki (jak w menu gry jednoosobowej): numer, nazwa, podsumowanie; ostatnio otwarta – zapamiętana -->
+			<nav class="tabs" id="set-tabs">
+				<button data-tab="sound" class="sel"><i>1</i><span>Dźwięk</span><small id="sum-set-sound"></small></button>
+				<button data-tab="voice"><i>2</i><span>Zapowiedzi</span><small id="sum-set-voice"></small></button>
+				<button data-tab="gfx"><i>3</i><span>Grafika</span><small id="sum-set-gfx"></small></button>
+			</nav>
+			<section class="tab set-tab" id="set-tab-sound">
+				<h3>Głośność</h3>
 				<label class="row-opt"><input type="checkbox" id="set-sound" checked> Dźwięk włączony <kbd>M</kbd></label>
 				<label class="row-opt vol-opt">Głośność ogólna <input type="range" id="set-volume" min="0" max="100" step="5"> <span id="set-volume-val">80%</span></label>
-				<!-- głośność grup dźwięków (względem ogólnej) -->
+				<h3>Grupy dźwięków <small>względem głośności ogólnej</small></h3>
 				<label class="row-opt vol-opt mix-opt">Pociąg – silniki, toczenie, hamulce <input type="range" id="set-mix-train" min="0" max="100" step="5"> <span></span></label>
 				<label class="row-opt vol-opt mix-opt">Syreny <input type="range" id="set-mix-horn" min="0" max="100" step="5"> <span></span></label>
 				<label class="row-opt vol-opt mix-opt">Otoczenie – wiatr, deszcz, ptaki, miasto, inne pociągi, przejazdy <input type="range" id="set-mix-amb" min="0" max="100" step="5"> <span></span></label>
 				<label class="row-opt vol-opt mix-opt">Sygnały – gong, radiotelefon, czuwak, SHP, drzwi <input type="range" id="set-mix-sig" min="0" max="100" step="5"> <span></span></label>
-				<label class="row-opt vol-opt mix-opt">Głos zapowiedzi (synteza mowy) <input type="range" id="set-mix-voice" min="0" max="100" step="5"> <span></span></label>
+			</section>
+			<section class="tab set-tab hidden" id="set-tab-voice">
+				<h3>Zapowiedzi</h3>
 				<label class="row-opt">Zapowiedzi na stacjach i w pociągu <select id="set-announce"><option value="text">gong i tekst</option><option value="voice">gong, tekst i głos (synteza mowy)</option><option value="off">wyłączone</option></select></label>
-				<!-- głos zapowiedzi (synteza mowy): wybór głosu systemu, odsłuch, tempo i wysokość -->
+				<p class="hint" id="voice-off-hint">Ustawienia głosu (silnik mowy, głos, tempo, głośność) – po wybraniu zapowiedzi z głosem.</p>
+				<!-- głos zapowiedzi (synteza mowy): głośność, wybór głosu, odsłuch, tempo i wysokość -->
 				<div id="voice-opts">
+					<h3>Głos <small>synteza mowy</small></h3>
+					<label class="row-opt vol-opt mix-opt">Głośność głosu <input type="range" id="set-mix-voice" min="0" max="100" step="5"> <span></span></label>
 					<label class="row-opt vol-opt mix-opt">Silnik mowy <select id="set-voice-engine"><option value="system">głosy systemu (przeglądarka)</option><option value="piper">Piper – naturalne głosy polskie (pobierane, ok. 63 MB)</option></select> <span></span></label>
 					<label class="row-opt vol-opt mix-opt">Głos <select id="set-voice"></select> <button id="set-voice-test" type="button" title="Odsłuchaj przykładową zapowiedź">▶</button></label>
 					<p class="hint mix-opt voice-status" id="voice-status"></p>
@@ -382,21 +428,20 @@
 					<label class="row-opt vol-opt mix-opt">Wysokość głosu <input type="range" id="set-voice-pitch" min="0.5" max="1.5" step="0.05"> <span></span></label>
 				</div>
 			</section>
-			<section class="set">
-				<h3>Grafika</h3>
+			<section class="tab set-tab hidden" id="set-tab-gfx">
+				<h3>Jakość</h3>
 				<label class="row-opt">Jakość <select id="opt-quality"><option value="low">niska</option><option value="medium">średnia</option><option value="high">wysoka</option></select></label>
 				<p class="hint" id="quality-hint"></p>
-			</section>
-			<section class="set">
+				<button id="set-autoq" class="small">Dobierz jakość automatycznie</button>
+				<label class="row-opt"><input type="checkbox" id="set-autodetail" checked> Automatyczne dopasowanie szczegółów – gdy w czasie jazdy długo spada płynność, zmniejsza się zasięg świata</label>
 				<h3>Renderer</h3>
 				<label class="row-opt">Rozdzielczość renderowania <select id="set-scale"><option value="0.5">50%</option><option value="0.67">67%</option><option value="0.85">85%</option><option value="1">100%</option></select></label>
 				<label class="row-opt"><input type="checkbox" id="set-aa" checked> Wygładzanie krawędzi (MSAA)</label>
 				<label class="row-opt"><input type="checkbox" id="set-shadows" checked> Cienie</label>
-				<label class="row-opt"><input type="checkbox" id="set-autodetail" checked> Automatyczne dopasowanie szczegółów – gdy w czasie jazdy długo spada płynność, zmniejsza się zasięg świata</label>
-				<button id="set-autoq" class="small">Dobierz jakość automatycznie</button>
-				<label class="row-opt">Pociągi tła rysowane jednocześnie – najwyżej <select id="set-traffic-max"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="8">8</option></select></label>
-				<label class="row-opt"><input type="checkbox" id="set-traffic-people"> Pociągi tła z maszynistą i pasażerami w oknach</label>
 				<label class="row-opt"><input type="checkbox" id="set-fps"> Licznik klatek na sekundę</label>
+				<h3>Pociągi tła</h3>
+				<label class="row-opt">Rysowane jednocześnie – najwyżej <select id="set-traffic-max"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="8">8</option></select></label>
+				<label class="row-opt"><input type="checkbox" id="set-traffic-people"> Z maszynistą i pasażerami w oknach</label>
 				<p class="hint" id="gpu-info"></p>
 			</section>
 		</div>
@@ -464,14 +509,22 @@
 	<script src="js/physics.js"></script>
 	<script src="js/routes.js"></script>
 	<script src="routes/gliwice-zabrze.js"></script>
+	<script src="routes/zabrze-gliwice.js"></script>
 	<script src="routes/torun-chelmza.js"></script>
 	<script src="routes/gliwice-katowice.js"></script>
 	<script src="routes/rybnik-katowice.js"></script>
+	<script src="routes/orzesze-mikolow.js"></script>
+	<script src="routes/warszawa-wschodnia-zachodnia.js"></script>
+	<script src="routes/gdynia-gdansk.js"></script>
 	<!-- horyzont z prawdziwego terenu (tools/horizon.js) i jego obliczenia (Generator) -->
 	<script src="routes/horizon/gliwice-zabrze.js"></script>
+	<script src="routes/horizon/zabrze-gliwice.js"></script>
 	<script src="routes/horizon/torun-chelmza.js"></script>
 	<script src="routes/horizon/gliwice-katowice.js"></script>
 	<script src="routes/horizon/rybnik-katowice.js"></script>
+	<script src="routes/horizon/orzesze-mikolow.js"></script>
+	<script src="routes/horizon/warszawa-wschodnia-zachodnia.js"></script>
+	<script src="routes/horizon/gdynia-gdansk.js"></script>
 	<script src="js/horizon-data.js"></script>
 	<script src="js/gen/sources.js"></script>
 	<script src="js/osm-route.js"></script>
@@ -493,6 +546,7 @@
 	<script src="js/3d/props.js"></script>
 	<script src="js/3d/world.js"></script>
 	<script src="js/3d/real-env.js"></script>
+	<script src="js/3d/street-life.js"></script>
 	<script src="js/3d/train.js"></script>
 	<script src="js/3d/life.js"></script>
 	<script src="js/3d/cab.js"></script>

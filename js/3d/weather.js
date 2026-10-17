@@ -100,6 +100,22 @@
 			gl_PointSize = clamp((4.0 + 26.0 * vPh) * 6.0 / max(1.0, -mv.z), 1.0, 22.0);
 		}`;
 
+	/* śnieg wzbijany przez pociąg: kłęby puchu (rosną i bledną z wiekiem), miękkie krążki */
+	const KICK_VS = `attribute float aLife; uniform float uScale; varying float vL;
+		void main() {
+			vL = aLife;
+			vec4 mv = modelViewMatrix * vec4(position, 1.0);
+			gl_Position = projectionMatrix * mv;
+			gl_PointSize = clamp((0.4 + 1.4 * (1.0 - aLife)) * uScale / max(0.5, -mv.z), 0.0, 120.0);
+		}`;
+	const KICK_FS = `uniform float uLight; uniform float uOpacity; varying float vL;
+		void main() {
+			float r = length(gl_PointCoord - 0.5);
+			float a = smoothstep(0.5, 0.1, r) * vL * vL * uOpacity;
+			if (a < 0.003) discard;
+			gl_FragColor = vec4(vec3(0.93, 0.95, 1.0) * uLight, a);
+		}`;
+
 	class Weather {
 		constructor(scene) {
 			this.scene = scene;
@@ -196,6 +212,93 @@
 				m.renderOrder = 1100;
 				this.scene.add(m);
 			}
+			// wzbijany śnieg: bufor cząstek liczonych na procesorze (setTrain – wagony i prędkość)
+			if (this.kick) { this.scene.remove(this.kick); this.kick.geometry.dispose(); this.kick.material.dispose(); }
+			const kn = Math.round(2400 * Math.max(0.4, scale));
+			const kg = new T.BufferGeometry();
+			kg.setAttribute('position', new T.BufferAttribute(new Float32Array(kn * 3), 3).setUsage(T.DynamicDrawUsage));
+			kg.setAttribute('aLife', new T.BufferAttribute(new Float32Array(kn), 1).setUsage(T.DynamicDrawUsage));
+			kg.boundingSphere = new T.Sphere(new T.Vector3(), 1e6);
+			this.kick = new T.Points(kg, new T.ShaderMaterial({
+				uniforms: { uLight: { value: 1 }, uOpacity: { value: 0.6 }, uScale: { value: 800 } },
+				vertexShader: KICK_VS, fragmentShader: KICK_FS, transparent: true, depthWrite: false, fog: true,
+			}));
+			this.kick.material.fog = false;
+			this.kick.frustumCulled = false;
+			this.kick.renderOrder = 1090;
+			this.kick.visible = false;
+			this.scene.add(this.kick);
+			this.kickV = new Float32Array(kn * 3);
+			this.kickT = new Float32Array(kn * 2); // wiek, długość życia
+			this.kickN = kn;
+			this.kickI = 0;
+			this.kickAcc = 0;
+		}
+
+		/* pociąg gracza dla wzbijanego śniegu: wagony (grupa – układ wagonu, len) i prędkość (m/s, ujemna – jazda wstecz) */
+		setTrain(cars, v) {
+			this.trainCars = cars || [];
+			this.trainV = v || 0;
+		}
+		/* śnieg leżący na torze (snowGround) wzbijany przez pociąg od ok. 10 km/h (w pełni od 60 km/h): spod wózków (na boki i do góry, porywany
+		   za pociągiem) i przed pługiem czołowego wagonu (fontanna na boki); puch zwalnia w powietrzu, opada powoli,
+		   niesiony wiatrem. Tylko wagony do 160 m od kamery. */
+		updateKick(dt, camera) {
+			const K = this.kick;
+			if (!K) return;
+			const pos = K.geometry.attributes.position, life = K.geometry.attributes.aLife;
+			const P = pos.array, L = life.array, V = this.kickV, A = this.kickT, n = this.kickN;
+			const v = this.trainV || 0, sp = Math.abs(v), dir = v < 0 ? -1 : 1;
+			const kk = Math.max(0, Math.min(1, (this.cur.snowGround - 0.15) / 0.5)) * Math.max(0, Math.min(1, (sp - 3) / 14)) * (1 - this.shelter);
+			let alive = false;
+			// ruch istniejących
+			const drag = Math.exp(-1.4 * dt), wx = (this.cur.wind || 0) * 1.2;
+			for (let i = 0; i < n; i++) {
+				if (A[i * 2] >= A[i * 2 + 1]) { L[i] = 0; continue; }
+				A[i * 2] += dt;
+				const j = i * 3;
+				V[j] = V[j] * drag + wx * dt; V[j + 1] = V[j + 1] * drag - 1.6 * dt; V[j + 2] *= drag;
+				P[j] += V[j] * dt; P[j + 1] += V[j + 1] * dt; P[j + 2] += V[j + 2] * dt;
+				L[i] = Math.max(0, 1 - A[i * 2] / A[i * 2 + 1]);
+				alive = true;
+			}
+			if (kk > 0.01 && this.trainCars && this.trainCars.length) {
+				const m = new T.Matrix4(), o = new T.Vector3(), ax = new T.Vector3(), az = new T.Vector3();
+				const emit = (car, lx, lz, front) => {
+					const i = this.kickI;
+					this.kickI = (i + 1) % n;
+					const j = i * 3, r = Math.random, side = r() < 0.5 ? -1 : 1;
+					o.set(lx * side, 0.25 + r() * 0.3, lz).applyMatrix4(m);
+					P[j] = o.x; P[j + 1] = o.y; P[j + 2] = o.z;
+					// prędkość: porywany za pociągiem (wagony) albo wyrzucany przed pługiem (czoło); na boki i w górę
+					const fwd = front ? sp * (0.35 + 0.2 * r()) : sp * (0.15 + 0.35 * r()), lat = (front ? 2.5 + 4 * r() : 0.8 + 2.4 * r()) * side, up = front ? 2 + 3 * r() : 0.6 + 2.2 * r();
+					V[j] = az.x * fwd * dir + ax.x * lat; V[j + 1] = up; V[j + 2] = az.z * fwd * dir + ax.z * lat;
+					A[i * 2] = 0; A[i * 2 + 1] = (front ? 1.2 : 1.0) + r() * 1.4;
+				};
+				this.kickAcc += dt;
+				const rate = 1 / 60; // krok emisji
+				while (this.kickAcc >= rate) {
+					this.kickAcc -= rate;
+					this.trainCars.forEach((car, ci) => {
+						if (!car || !car.group) return;
+						car.group.updateMatrixWorld();
+						m.copy(car.group.matrixWorld);
+						o.setFromMatrixPosition(m);
+						if (o.distanceToSquared(camera) > 160 * 160) return;
+						ax.setFromMatrixColumn(m, 0).normalize();
+						az.setFromMatrixColumn(m, 2).normalize().multiplyScalar(-1); // przód wagonu – oś −z
+						const hl = (car.len || 20) / 2, nb = Math.round(kk * 4 + Math.random() * 0.7);
+						for (let q = 0; q < nb; q++) emit(car, 0.3 + Math.random() * 1.2, (Math.random() < 0.5 ? -1 : 1) * (hl - 3) + (Math.random() - 0.5) * 2.6, false);
+						// czoło pociągu (pierwszy wagon przy jeździe naprzód, ostatni wstecz): śnieg spod pługa
+						const lead = dir > 0 ? ci === 0 : ci === this.trainCars.length - 1;
+						if (lead) for (let q = 0; q < Math.round(kk * 7 + Math.random()); q++) emit(car, 0.2 + Math.random() * 1.3, -dir * hl - dir * 0.6, true);
+					});
+				}
+				alive = true;
+			}
+			pos.needsUpdate = life.needsUpdate = alive;
+			K.visible = alive;
+			K.material.uniforms.uLight.value = Math.max(0.12, this.light);
 		}
 
 		setQuality(particles) {
@@ -208,7 +311,13 @@
 			if (key === 'auto') key = ROUTE_DEFAULT[routeId] || 'clear';
 			this.key = key;
 			this.target = PRESETS[key] || PRESETS.clear;
-			if (instant) { Object.assign(this.cur, this.target); this.cur.snowGround = this.snowGroundTarget(); }
+			if (instant) {
+				Object.assign(this.cur, this.target);
+				this.cur.snowGround = this.snowGroundTarget();
+				// wiosna: na początku jazdy resztki śniegu (płaty w zagłębieniach), topnieją przez kilka minut, ziemia mokra
+				this.melting = this.season === 'spring' && !this.target.snow && this.target.rain < 0.5;
+				if (this.melting) this.cur.snowGround = 0.3;
+			}
 		}
 		// pora roku: jesienią spadające liście, zimą lekka pokrywa śnieżna także bez opadu (nie w deszczu)
 		setSeason(season) {
@@ -315,10 +424,13 @@
 			for (const p of ['cover', 'shadow', 'haze', 'rain', 'snow', 'fogNear', 'fogFar', 'wind', 'sun', 'lightning']) this.cur[p] += (this.target[p] - this.cur[p]) * k;
 			this.updateLightning(dt, camera);
 			// śnieg osiada powoli (ok. pół minuty) i jeszcze wolniej topnieje
-			const sg = this.snowGroundTarget();
-			this.cur.snowGround += (sg - this.cur.snowGround) * Math.min(1, dt * (sg > this.cur.snowGround ? 0.06 : 0.02));
-			// nawierzchnia moknie i schnie wolniej niż pada
-			this.cur.wet += (this.target.wet - this.cur.wet) * Math.min(1, dt * 0.08);
+			const sg = this.snowGroundTarget(), melt = this.melting && this.season === 'spring' && sg < this.cur.snowGround;
+			// wiosenne topnienie: wolno (resztki śniegu znikają w ok. 8 min)
+			this.cur.snowGround += (sg - this.cur.snowGround) * Math.min(1, dt * (sg > this.cur.snowGround ? 0.06 : melt ? 0.0045 : 0.02));
+			if (this.cur.snowGround < 0.01) this.melting = false;
+			// nawierzchnia moknie i schnie wolniej niż pada; topniejący śnieg – mokro (roztopy)
+			const wetT = Math.max(this.target.wet, melt ? 0.25 + 1.2 * this.cur.snowGround : 0);
+			this.cur.wet += (wetT - this.cur.wet) * Math.min(1, dt * 0.08);
 			// tunel: opad gaśnie w ciągu ok. 0,5 s po wjeździe, wraca po wyjeździe
 			this.shelter += (this.shelterTarget - this.shelter) * Math.min(1, dt * 3);
 			const open = 1 - this.shelter;
@@ -346,6 +458,7 @@
 			su.uOpacity.value = this.cur.rain * 0.8 * open;
 			su.uLight.value = this.light;
 			this.splash.visible = this.cur.rain * open > 0.05;
+			this.updateKick(dt, camera);
 			return this.cur;
 		}
 	}

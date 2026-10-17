@@ -348,7 +348,7 @@ kbd {
 .mix-opt { padding-left: 14px; font-size: 13px; line-height: 1.25; }
 .row-opt.vol-opt select { width: 100%; min-width: 0; }
 #set-voice-test { padding: 3px 0; }
-#voice-opts.hidden, #voice-all-row.hidden { display: none; }
+#voice-opts.hidden, #voice-all-row.hidden, #voice-off-hint.hidden { display: none; }
 .voice-status { margin: -2px 0 8px; font-size: 12px; min-height: 0; }
 .voice-status:empty { display: none; }
 .voice-status.err { color: #ff8a7a; }
@@ -431,14 +431,56 @@ h2 { margin: 0 0 8px; }
 .options input { accent-color: var(--amber); }
 .selects { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
 .selects label { display: flex; align-items: center; gap: 8px; color: #c3cad5; }
+/* listy rozwijane: własny wygląd (bez systemowego – w Chromium po najechaniu jasne tło), strzałka, podświetlenie jak
+   przyciski, ciemna lista opcji */
 select {
 	font: inherit;
 	color: var(--text);
-	background: var(--panel-2);
+	background: var(--panel-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238f9bad' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 10px center;
 	border: 1px solid var(--line);
-	border-radius: 6px;
-	padding: 4px 8px;
+	border-radius: 8px;
+	padding: 6px 30px 6px 10px;
+	-webkit-appearance: none;
+	appearance: none;
+	cursor: pointer;
+	max-width: 100%;
+	transition: border-color 0.12s, background-color 0.12s;
 }
+select:hover { border-color: #4b5a70; background-color: #253043; }
+select:focus { outline: none; border-color: var(--amber); }
+select:disabled { opacity: 0.55; cursor: default; }
+select option { background: var(--panel-2); color: var(--text); }
+/* przebieg (zakładka „Warunki”): kierunek – przełącznik, stacja początkowa – kafelki stacji */
+.run-dir { margin-bottom: 10px; }
+/* wiersze „etykieta – lista” jeden pod drugim: listy w jednej kolumnie */
+.row-opt.sel-opt { display: grid; grid-template-columns: 80px minmax(0, max-content); }
+.run-dir button b { font-weight: 600; }
+/* stacja początkowa: schemat linii – stacje jako kropki na linii (równe odstępy), nazwy na przemian nad i pod linią;
+   odcinek jazdy (od wybranej stacji do końca) na bursztynowo, pominięte stacje wyszarzone */
+.run-line { position: relative; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); margin: 4px 0 4px; }
+.run-line::before, .run-line::after { content: ''; position: absolute; top: 50%; height: 3px; margin-top: -1.5px; border-radius: 2px; }
+.run-line::before { left: calc(50% / var(--n)); right: calc(50% / var(--n)); background: var(--line); }
+.run-line::after { left: calc((var(--a) + 0.5) * 100% / var(--n)); right: calc(50% / var(--n)); background: var(--amber); opacity: 0.75; }
+.run-line button { position: relative; z-index: 1; display: grid; grid-template-rows: 20px 18px 20px; justify-items: center; align-items: center; min-width: 0; padding: 0; background: none; border: 0; border-radius: 0; color: var(--text); }
+.run-line button:hover, .run-line button:active { background: none; transform: none; }
+.run-line button i { grid-row: 2; width: 12px; height: 12px; border-radius: 50%; background: var(--panel); border: 2px solid #5a6578; transition: transform 0.1s; }
+.run-line button .nm { font-size: 12px; white-space: nowrap; max-width: 200%; overflow: hidden; text-overflow: ellipsis; color: #c3cad5; }
+.run-line button .nm.up { grid-row: 1; align-self: end; }
+.run-line button .nm.dn { grid-row: 3; align-self: start; }
+.run-line button:first-child .nm { justify-self: start; }
+.run-line button:last-child .nm { justify-self: end; }
+.run-line button:hover i { border-color: var(--amber); transform: scale(1.25); }
+.run-line button:hover .nm { color: var(--text); }
+.run-line button.on i { border-color: var(--amber); background: #3a2c10; }
+.run-line button.skip .nm { color: var(--muted); }
+.run-line button.sel i { width: 16px; height: 16px; background: var(--amber); border-color: var(--amber); box-shadow: 0 0 0 3px rgba(255, 176, 32, 0.25); }
+.run-line button.sel .nm { color: var(--amber); font-weight: 600; }
+.run-line button:disabled { cursor: default; }
+.run-line button:disabled i { border-radius: 2px; border-color: var(--amber); background: var(--panel); }
+.run-line button:disabled:hover i { transform: none; }
+.run-info { color: #c3cad5; font-size: 13px; margin: 2px 0 6px; }
+.run-info b { color: var(--amber); }
+.run-sub { color: var(--muted); font-size: 12.5px; margin: 2px 0 6px; }
 #btn-start { width: 100%; padding: 12px; font-size: 16px; }
 
 .help { margin-top: 14px; color: #c3cad5; }
@@ -483,6 +525,8 @@ select {
 /* ---------- menu główne i ustawienia ---------- */
 .menu-main { width: min(440px, 100%); }
 .menu-buttons { display: flex; flex-direction: column; gap: 10px; margin: 18px 0 8px; }
+.menu-buttons button small { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--muted); }
+.menu-buttons button.primary small { color: rgba(255, 255, 255, 0.8); }
 button.big { padding: 14px 18px; font-size: 17px; text-align: left; }
 .version { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
 .panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
@@ -494,6 +538,12 @@ button.back { padding: 6px 12px; }
 .row-opt input[type="range"] { flex: 1; accent-color: var(--amber); }
 .row-opt input[type="checkbox"] { accent-color: var(--amber); }
 .hint { color: var(--muted); font-size: 12px; margin: 0 0 6px; }
+/* ustawienia w zakładkach (jak w Pograniczu): okno stałej wysokości – zmiana zakładki nie przesuwa okna, treść
+   zakładki przewijana; podtytuły sekcji w zakładce (.tab h3) */
+#settings .panel { display: flex; flex-direction: column; height: min(640px, 100%); overflow: hidden; }
+#set-tabs { grid-template-columns: repeat(3, 1fr); flex-shrink: 0; }
+#settings .set-tab .mix-opt { padding-left: 0; }
+#settings .set-tab button.small { margin: 0 0 10px; }
 #fps {
 	position: fixed;
 	top: 60px;
@@ -622,7 +672,11 @@ body.radio-on .order:not(.hidden) ~ #toasts { top: 200px; }
 /* ---------- gra jednoosobowa: wybór mapy, pociągu, składu ---------- */
 .panel.wide { width: min(940px, 100%); }
 /* generator tras */
-.gen-grid { display: grid; grid-template-columns: 1fr 1.1fr; gap: 18px; }
+.gen-grid { display: grid; grid-template-columns: 1fr 1.1fr; gap: 18px; align-items: start; }
+#gen-to-routes { width: 100%; }
+/* wygenerowane trasy – osobny ekran (lista przewijana) */
+#scr-routes .gen-list { max-height: min(600px, 64vh); overflow-y: auto; padding-right: 2px; }
+.panel-head .head-link { margin-left: auto; padding: 5px 12px; font-size: 12px; }
 .gen-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; color: #c3cad5; font-size: 13px; }
 .gen-field input {
 	background: #0f141c;
@@ -646,10 +700,29 @@ body.radio-on .order:not(.hidden) ~ #toasts { top: 200px; }
 	padding: 8px 10px;
 	font: 12px/1.5 ui-monospace, Consolas, monospace;
 	color: #b9c2ce;
-	max-height: 170px;
+	max-height: min(320px, 40vh);
+	min-height: 80px;
 	overflow-y: auto;
-	margin-bottom: 10px;
+	margin: 6px 0 10px;
 }
+/* generowanie w tle: karta postępu na ekranie generatora (#gen-status) i pasek w prawym górnym rogu (#gen-bg) poza nim – w menu i w jeździe w tym samym miejscu */
+.gen-status { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.gen-details { margin-top: 10px; }
+.gen-details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.gen-bg { position: fixed; right: 16px; top: 58px; z-index: 45; width: min(340px, calc(100vw - 32px)); padding: 8px 10px; border: 1px solid #3a4558; border-radius: 10px; background: rgba(20, 26, 36, 0.94); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); }
+.gs-head { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.gs-head b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs-head span { color: var(--muted); white-space: nowrap; }
+.gs-stage { color: #c3cad5; font-size: 12px; margin: 3px 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs-stage.err { color: #ff6b5e; white-space: normal; }
+.gs-bar { height: 5px; border-radius: 3px; background: #0b0f15; overflow: hidden; }
+.gs-bar i { display: block; height: 100%; background: var(--amber); border-radius: 3px; transition: width 0.6s; }
+.gs-bar.run i { background-image: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.45) 50%, rgba(255, 255, 255, 0) 100%); background-size: 60px 100%; background-repeat: no-repeat; animation: gs-shine 1.4s linear infinite; background-color: var(--amber); }
+.gs-bar.err i { background: #c0392b; }
+@keyframes gs-shine { from { background-position: -60px 0; } to { background-position: 420px 0; } }
+.gs-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-top: 8px; }
+.gs-btns:empty { display: none; }
+.gs-btns button { padding: 4px 10px; font-size: 12px; }
 .gen-log .muted { color: var(--muted); }
 .gen-log .err { color: #ff6b5e; }
 .gen-log .ok { color: #6be08a; }
@@ -680,9 +753,11 @@ body.radio-on .order:not(.hidden) ~ #toasts { top: 200px; }
 .gen-io-msg .ok { color: #6be08a; }
 .gen-io-msg .err { color: #ff6b5e; }
 body.drop-routes::after { content: 'Upuść pliki tras (.trasa, .json, .js), aby je zaimportować'; position: fixed; inset: 12px; z-index: 9999; display: flex; align-items: center; justify-content: center; border: 3px dashed var(--amber); border-radius: 16px; background: rgba(10, 14, 20, 0.82); color: #fff; font-size: 20px; font-weight: 600; pointer-events: none; }
-.gen-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; background: #141a24; border: 1px solid #222b38; font-size: 13px; }
-.gen-item b { flex: 1; font-weight: 600; }
+.gen-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: #141a24; border: 1px solid #222b38; font-size: 13px; }
+.gen-item .gen-info { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.gen-item b { font-weight: 600; }
 .gen-item span { color: var(--muted); font-size: 12px; }
+.gen-item .gen-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .gen-item button { padding: 3px 9px; font-size: 12px; }
 .badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 9px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.03em; vertical-align: middle; background: #1d3a2a; color: #7fe0a0; }
 .badge.custom { background: #2a2f45; color: #a9b6ff; }

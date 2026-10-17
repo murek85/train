@@ -13,7 +13,7 @@
 	else root.TrainSources = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
 	'use strict';
-	const isNode = typeof window === 'undefined';
+	const isNode = typeof window === 'undefined' && typeof importScripts !== 'function';
 	const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 	const UA = 'maszynista-route-generator/0.1';
 
@@ -206,9 +206,13 @@
 		if (cls === 'PTSO_A') { t.landuse = 'landfill'; return t; }
 		if (cls === 'PTWZ_A') { t.landuse = 'quarry'; return t; }
 		if (cls === 'BUSP_A') { t.leisure = /zabaw/.test(rodzaj) ? 'playground' : 'pitch'; return t; }
-		if (cls === 'SWRS_L') { t.waterway = /rzeka/.test(rodzaj) ? 'river' : 'stream'; return t; }
-		if (cls === 'SWKN_L') { t.waterway = 'canal'; return t; }
-		if (cls === 'SWRM_L') { t.waterway = 'ditch'; return t; }
+		if (cls === 'SWRS_L' || cls === 'SWKN_L' || cls === 'SWRM_L') {
+			t.waterway = cls === 'SWKN_L' ? 'canal' : cls === 'SWRM_L' ? 'ditch' : /rzeka/.test(rodzaj) ? 'river' : 'stream';
+			/* ciek pod ziemią (przepust, kolektor) albo „sztuczny łącznik” – odcinek dorysowany dla ciągłości sieci (przez
+			   jezioro albo kanał zakryty; np. Kanał Kamionkowski pod torami przy Warszawie Stadion) – bez wody na powierzchni */
+			if (/pod powierzchni/.test(field(f, 'polozenie') || '') || /łącznik/.test(field(f, 'cechaGeometrii') || '')) { t.tunnel = 'culvert'; t.layer = '-1'; }
+			return t;
+		}
 		return null;
 	}
 	/* Obiekty BDOT10k z paczki powiatu (ZIP) jako obiekty OSM (way z geometrią w stopniach), tylko w pasie maxD od
@@ -377,5 +381,27 @@
 		return data;
 	}
 
-	return { unzip, xlsxRows, to1992, from1992, countiesAt, bdotUrl, bdotElements, bdotForRoute, plkAnnexUrls, plkData, fetchBytes };
+	/* RINF (ERA, zarządca PKP PLK): pochylenia linii i tunele z wyciągu js/gen/rinf-pl.js (tools/rinf.js) – w Node przez
+	   require, w przeglądarce wczytywany przy pierwszym użyciu (plik ok. 0,7 MB, nie przy starcie gry) */
+	let rinfP = null;
+	function rinfData() {
+		const G = typeof globalThis !== 'undefined' ? globalThis : window;
+		if (G.TrainRinf) return Promise.resolve(G.TrainRinf);
+		if (typeof module === 'object' && module.exports && typeof require === 'function') return Promise.resolve(require('./rinf-pl.js'));
+		// wątek generatora (js/gen-worker.js): ścieżka względem pliku wątku
+		if (typeof importScripts === 'function') {
+			try { importScripts('gen/rinf-pl.js'); } catch (e) { return Promise.reject(new Error('nie udało się wczytać danych RINF')); }
+			return G.TrainRinf ? Promise.resolve(G.TrainRinf) : Promise.reject(new Error('brak danych RINF'));
+		}
+		if (!rinfP) rinfP = new Promise((res, rej) => {
+			const sc = document.createElement('script');
+			sc.src = 'js/gen/rinf-pl.js';
+			sc.onload = () => (G.TrainRinf ? res(G.TrainRinf) : rej(new Error('brak danych RINF')));
+			sc.onerror = () => { rinfP = null; rej(new Error('nie udało się wczytać danych RINF')); };
+			document.head.appendChild(sc);
+		});
+		return rinfP;
+	}
+
+	return { unzip, xlsxRows, to1992, from1992, countiesAt, bdotUrl, bdotElements, bdotForRoute, plkAnnexUrls, plkData, fetchBytes, rinfData };
 });

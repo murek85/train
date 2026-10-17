@@ -1109,16 +1109,22 @@
 			s.start(start, 0, dur + 0.05);
 		}
 
+		// gong dworcowy: trzy tony z alikwotami; gain – głośność (zapowiedź na peronie w oddali)
+		chime(gain = 1) {
+			if (!this.ctx) return;
+			const t = this.ctx.currentTime;
+			for (const [f, d] of [[784, 0.4], [659, 0.75], [523, 1.1]]) {
+				this.tone(f, t + d, 1.1, 'sine', 0.1 * gain);
+				this.tone(f * 2.01, t + d, 0.6, 'sine', 0.025 * gain);
+			}
+		}
+
 		play(name) {
 			if (!this.ctx) return;
 			const t = this.ctx.currentTime;
 			switch (name) {
 				case 'chime':
-					// gong dworcowy: trzy tony z alikwotami
-					for (const [f, d] of [[784, 0.4], [659, 0.75], [523, 1.1]]) {
-						this.tone(f, t + d, 1.1, 'sine', 0.1);
-						this.tone(f * 2.01, t + d, 0.6, 'sine', 0.025);
-					}
+					this.chime();
 					break;
 				case 'doors':
 					for (let i = 0; i < 3; i++) this.tone(1250, t + i * 0.28, 0.14, 'square', 0.035);
@@ -1162,6 +1168,10 @@
 					this.contactor(t, 0.18);
 					this.burst(t, 0.25, 800, 0.12);
 					break;
+				case 'spark':
+					// łuk na oblodzonym przewodzie: krótki trzask (wysoki szum, kilka impulsów)
+					for (let i = 0, n = 2 + Math.floor(Math.random() * 3); i < n; i++) this.burst(t + i * (0.02 + Math.random() * 0.04), 0.03 + Math.random() * 0.05, 3200 + Math.random() * 2500, 0.05, 'highpass');
+					break;
 				case 'click':
 					this.tone(1800, t, 0.04, 'square', 0.03);
 					break;
@@ -1194,8 +1204,8 @@
 			if (this.master) this.set(this.master.gain, this.muted ? 0 : 0.75 * v, 0.05);
 		}
 		/* zapowiedź z syntezy Piper: próbki mono (Float32Array) – kolejno (następna po końcu poprzedniej); rate – szybkość
-		   odtwarzania (wysokość głosu; tempo kompensuje długość z syntezy) */
-		playVoice(pcm, sampleRate, rate = 1) {
+		   odtwarzania (wysokość głosu; tempo kompensuje długość z syntezy); gain – głośność (zapowiedź na peronie w oddali) */
+		playVoice(pcm, sampleRate, rate = 1, gain = 1) {
 			this.ensure();
 			if (!this.ctx) return;
 			const c = this.ctx, buf = c.createBuffer(1, pcm.length, sampleRate);
@@ -1203,7 +1213,11 @@
 			const s = c.createBufferSource();
 			s.buffer = buf;
 			s.playbackRate.value = rate;
-			s.connect(this.mixG.voice);
+			if (gain < 1) {
+				const g = c.createGain();
+				g.gain.value = gain;
+				s.connect(g).connect(this.mixG.voice);
+			} else s.connect(this.mixG.voice);
 			const at = Math.max(c.currentTime + 0.02, this.voiceEnd || 0);
 			s.start(at);
 			this.voiceEnd = at + buf.duration / rate;

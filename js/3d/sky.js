@@ -100,6 +100,8 @@ function createSky3D(THREE) {
 		moonPhase: { value: 0.62 },
 		// Aurora 0…1 (ice maps at night).
 		aurora: { value: 0 },
+		// łuna miasta nocą (kolor × siła): jaśniejszy pas nad horyzontem, chmury podświetlone od spodu
+		cityGlow: { value: C("#000000") },
 		// The sky of the map's world (setTheme): a second sun (direction, colour × visibility) and up to
 		// two bodies — planets or moons: [direction xyz, angular radius], [colour A, ring 0/1], [colour B].
 		sun2Dir: { value: new THREE.Vector3(0, 1, 0) },
@@ -120,7 +122,7 @@ function createSky3D(THREE) {
 		fragmentShader: `
 			uniform vec3 zenith; uniform vec3 horizon; uniform vec3 sunColor; uniform vec3 sunDir; uniform vec3 moonDir;
 			uniform float sunVis; uniform float moonVis; uniform float starVis; uniform float cover; uniform vec3 cloudLight;
-			uniform float skyTime; uniform vec2 cloudOffset; uniform float moonPhase; uniform float aurora;
+			uniform float skyTime; uniform vec2 cloudOffset; uniform float moonPhase; uniform float aurora; uniform vec3 cityGlow;
 			uniform float cloudThr; uniform vec3 camPos; uniform float cloudSteps; uniform sampler2D cloudTex;
 			uniform vec3 sun2Dir; uniform vec3 sun2Color; uniform vec4 bodyDir[2]; uniform vec4 bodyA[2]; uniform vec4 bodyB[2]; uniform float clear;
 			varying vec3 vDir;
@@ -321,6 +323,8 @@ function createSky3D(THREE) {
 					}
 					col += vec3(0.55, 0.65, 0.9) * (pow(max(m, 0.0), 300.0) * 0.12 + pow(max(m, 0.0), 3000.0) * 0.25) * moonVis * (0.2 + 0.8 * full);
 				}
+				// łuna miasta: ciepły pas nad horyzontem (rozproszone w powietrzu światło latarni)
+				col += cityGlow * (exp(-max(h, 0.0) * 9.0) * 0.9 + exp(-max(h, 0.0) * 2.5) * 0.25);
 				// Clouds. Glow of the low sun on them: lit from below at sunset and after it (the high cirrus
 				// longer); silvery edges round the moon.
 				if (h > 0.0) {
@@ -342,6 +346,8 @@ function createSky3D(THREE) {
 					if (cover > 0.0 && d.y > 0.0) {
 						vec4 cl = texture2D(cloudTex, vec2(atan(d.x, d.z) / 6.2831853 + 0.5, sqrt(d.y)));
 						col = col * (1.0 - cl.a) + cl.rgb;
+						// spody chmur nad miastem podświetlone łuną (najmocniej nisko nad horyzontem)
+						col += cityGlow * cl.a * (1.2 + 1.6 * exp(-h * 4.0));
 						col += vec3(0.75, 0.8, 0.95) * cl.a * (1.0 - cl.a) * 4.0 * moonM * 0.35;
 					}
 				}
@@ -497,7 +503,9 @@ function createSky3D(THREE) {
 		},
 		// Every frame, after the light and the weather: e the sun's height (-1…1), sunDir the true
 		// direction to the sun (below the horizon too), moonDir, haze 0…1 (weather), hazeColor, cover 0…1.
-		update({ camera, time, e, sunDir, moonDir, zenith: z, horizon: h, sunlight: sl, haze = 0, hazeColor, cover = 0.4, flash = 0, flashColor, moonPhase = 0.62, aurora = 0 }) {
+		update({ camera, time, e, sunDir, moonDir, zenith: z, horizon: h, sunlight: sl, haze = 0, hazeColor, cover = 0.4, flash = 0, flashColor, moonPhase = 0.62, aurora = 0, cityGlow = null, urban = 0 }) {
+			if (cityGlow) uniforms.cityGlow.value.copy(cityGlow);
+			else uniforms.cityGlow.value.setRGB(0, 0, 0);
 			uniforms.moonPhase.value = moonPhase;
 			uniforms.aurora.value = aurora * (1 - Math.min(1, haze * 1.2));
 			mesh.position.copy(camera.position);
@@ -519,7 +527,8 @@ function createSky3D(THREE) {
 			const clear = 1 - Math.min(1, haze * 1.2);
 			uniforms.sunVis.value = Math.max(0, Math.min(1, (e + 0.06) / 0.08)) * (1 - haze * 0.8);
 			uniforms.moonVis.value = Math.max(0, Math.min(1, -e / 0.12)) * clear;
-			uniforms.starVis.value = Math.max(0, Math.min(1, (-e - 0.05) / 0.2)) * clear;
+			// gwiazdy przyćmione przez łunę w mieście
+			uniforms.starVis.value = Math.max(0, Math.min(1, (-e - 0.05) / 0.2)) * clear * (1 - 0.6 * urban);
 			uniforms.cover.value = Math.min(1, cover + haze * 0.6);
 			uniforms.cloudLight.value.copy(MOONLIT).lerp(WHITE, Math.max(0, Math.min(1, (e + 0.1) / 0.3)));
 			uniforms.skyTime.value = time;

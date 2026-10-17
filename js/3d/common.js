@@ -118,7 +118,17 @@
 	// uTime – czas, uWind – siła wiatru (0…1.5), uWet – zmoczenie powierzchni (0…1, schnie powoli),
 	// uSnow – pokrywa śnieżna (0…1, narasta i topnieje powoli), uRain – bieżąca siła deszczu (0…1)
 	// uWear – mnożnik zabrudzenia taboru (0 – czysty, 1 – zwykła eksploatacja)
-	const U = { uTime: { value: 0 }, uWind: { value: 0.4 }, uWet: { value: 0 }, uSnow: { value: 0 }, uRain: { value: 0 }, uWear: { value: 1 } };
+	/* mapa światła nocnego (World.updateNightMap): widok z góry ok. 512 × 512 m wokół kamery – lewa połowa tekstury: plamy
+	   światła latarni na ziemi, prawa: same oprawy (do odbić w mokrej nawierzchni); uNightBox – x0, z0 lewego dolnego rogu
+	   i bok w metrach; uNightK – siła (0 w dzień) */
+	const nightBlank = new T.DataTexture(new Uint8Array(4), 1, 1);
+	nightBlank.needsUpdate = true;
+	const U = { uTime: { value: 0 }, uWind: { value: 0.4 }, uWet: { value: 0 }, uSnow: { value: 0 }, uRain: { value: 0 }, uWear: { value: 1 },
+		uNightTex: { value: nightBlank }, uNightBox: { value: new T.Vector3(0, 0, 512) }, uNightK: { value: 0 },
+		/* otwory portali tuneli (trasa z mapy, world.js envPortalUniforms): A – środek (x, y dołu, z) i wysokość, B – kierunek
+		   w głąb wzdłuż toru (x, z), połowa szerokości, 1 – włączony; teren w otworze odrzucany (siatka wysokości nie ma
+		   dziury – skok terenu z dna wykopu nad strop zasłaniał wlot) */
+		uPortalA: { value: Array.from({ length: 8 }, () => new T.Vector4()) }, uPortalB: { value: Array.from({ length: 8 }, () => new T.Vector4()) } };
 
 	const NOISE_GLSL = `
 		/* skrót: siatka zawinięta co 2048 oczek – współrzędne świata (dziesiątki km × kilka oczek na metr) dawały w sinusie
@@ -173,6 +183,42 @@
 	   kryształków z bliska. wN – normalna w świecie. P – współrzędne wzoru: świata (vWorldP) dla obiektów
 	   nieruchomych, pojazdu (vLocP) dla taboru – wzór śniegu i kropel jedzie razem z pociągiem, zamiast przesuwać
 	   się po dachu. */
+	/* światło latarni z mapy nocnej: plama na ziemi (powierzchnie w górę – w pełni, ściany – trochę; śnieg jasny, asfalt
+	   ciemny – przez kolor podłoża) i odbicia opraw w mokrej nawierzchni – promień odbity od powierzchni do wysokości
+	   opraw (ok. 6,5 m): przy patrzeniu pod małym kątem odbicie wydłuża się w smugę w stronę oka, jak na mokrym asfalcie */
+	const NIGHT_GLSL = `
+		if (uNightK > 0.001) {
+			vec2 nq = (vWorldP.xz - uNightBox.xy) / uNightBox.z;
+			if (nq.x > 0.003 && nq.x < 0.997 && nq.y > 0.003 && nq.y < 0.997) {
+				vec3 pool = texture2D(uNightTex, vec2(nq.x * 0.5, nq.y)).rgb;
+				float face = 0.25 + 0.75 * max(wN.y, 0.0);
+				/* asfalt ma albedo ok. 0,05–0,1 – pod latarnią i tak wyraźnie jaśniejszy (latarnia o rzędy jaśniejsza od księżyca);
+				   jasne podłoże (śnieg, beton) – słabsze wzmocnienie, bez prześwietlenia pod gęstymi lampami peronów */
+				totalEmissiveRadiance += (diffuseColor.rgb * 0.85 + 0.06) * pool * (0.35 + pool) * 2.0 * face * uNightK;
+			}
+			float wr = uWet * smoothstep(0.6, 0.9, wN.y);
+			if (wr > 0.02) {
+				vec3 vd = normalize(vWorldP - cameraPosition);
+				vec3 rd = reflect(vd, wN);
+				if (rd.y > 0.02) {
+					/* chropowatość mokrej nawierzchni rozmywa odbicie głównie w pionie – próbki wzdłuż promienia co 1,8 m po
+					   ziemi (mniej niż średnica plamki oprawy – smuga ciągła), od odbicia oprawy na 6,5 m w stronę oka */
+					vec3 em = vec3(0.0);
+					float d0 = 6.5 / rd.y, stepL = 1.8 / max(length(rd.xz), 0.05);
+					for (int i = 0; i < 8; i++) {
+						float dist = d0 - stepL * (float(i) - 1.0);
+						if (dist < 0.5) break;
+						vec2 rq = (vWorldP.xz + rd.xz * min(dist, 400.0) - uNightBox.xy) / uNightBox.z;
+						if (dist < 250.0 && rq.x > 0.003 && rq.x < 0.997 && rq.y > 0.003 && rq.y < 0.997) {
+							vec3 e = texture2D(uNightTex, vec2(0.5 + rq.x * 0.5, rq.y)).rgb;
+							em += e * e;
+						}
+					}
+					float fr = 0.35 + 0.65 * pow(1.0 - max(dot(-vd, wN), 0.0), 3.0);
+					totalEmissiveRadiance += em * 0.4 * wr * fr * uNightK;
+				}
+			}
+		}`;
 	const WEATHER_GLSL = (wetK, snowK, P = 'vWorldP') => `
 		{
 			vec3 wP = ${P};
@@ -614,12 +660,21 @@
 			shader.fragmentShader = shader.fragmentShader
 				.replace('#include <common>', `#include <common>
 				uniform float uWet; uniform float uSnow; uniform float uRain; uniform float uTime;
+				uniform sampler2D uNightTex; uniform vec3 uNightBox; uniform float uNightK;
 				varying vec3 vWorldP;
-				${ground ? 'varying vec2 vRow; varying vec3 vMat;' : ''}
+				${ground ? 'varying vec2 vRow; varying vec3 vMat; uniform vec4 uPortalA[8]; uniform vec4 uPortalB[8];' : ''}
 				${variant === 'road' ? 'varying vec3 vLat;' : ''}
 				${variant === 'platform' ? 'varying vec2 vPl;' : ''}
 				${NOISE_GLSL}`)
 				.replace('#include <color_fragment>', `#include <color_fragment>
+				${ground ? `
+				for (int i = 0; i < 8; i++) {
+					vec4 pa = uPortalA[i], pb = uPortalB[i];
+					if (pb.w < 0.5) continue;
+					vec2 rel = vWorldP.xz - pa.xz;
+					float along = dot(rel, pb.xy), across = abs(rel.x * pb.y - rel.y * pb.x);
+					if (across < pb.z && along > -0.6 && along < 0.6 && vWorldP.y > pa.y && vWorldP.y < pa.y + pa.w) discard;
+				}` : ''}
 				float gH = 0.0, puddle = 0.0, gSand = 0.0, gRough = 0.0; // gRough – zmiana chropowatości (stosowana niżej)
 				${ground ? GROUND_GLSL : gravel ? GRAVEL_GLSL : variant === 'wind' ? LEAF_GLSL : train ? TRAIN_GLSL(grime, panels) : surf}`)
 				.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
@@ -640,7 +695,7 @@
 				#endif
 				${WEATHER_GLSL(ground || gravel || variant === 'road' || variant === 'concrete' || variant === 'platform' || variant === 'roof' ? 1.0 : veg ? 0.6 : 0.75, snowK, train ? 'vLocP' : 'vWorldP')}
 				${ground || variant === 'road' ? `
-				// kałuże: ciemne, gładkie jak lustro, z kręgami od kropli
+				// kałuże: ciemne, gładkie jak lustro, z kręgami od kropli (niżej – też światło latarni z mapy nocnej)
 				{
 					float pm = puddle * smoothstep(0.85, 0.97, wN.y);
 					diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.35 + vec3(0.02, 0.03, 0.04), pm);
@@ -651,7 +706,9 @@
 						float rr = gRipples(vWorldP.xz, uTime) * pm * uRain;
 						normal = normalize(normal + vec3(rr * 0.6, 0.0, rr * 0.6));
 					}
-				}` : ''}`);
+				}` : ''}`)
+				.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+				${NIGHT_GLSL}`);
 		};
 		material.userData.shared = true;
 		return material;

@@ -17,7 +17,8 @@
 	const STEP = 10; // krok próbkowania przebiegu (m)
 	const NMT = 'https://services.gugik.gov.pl/nmt/?request=GetHbyPointList';
 	const SOURCE = 'Dane: © współtwórcy OpenStreetMap (ODbL), NMT, NMPT i BDOT10k – GUGiK (geoportal.gov.pl), Copernicus DEM (Open-Meteo)';
-	const isNode = typeof window === 'undefined';
+	// Node (narzędzie tools/osm-route.js) – nie przeglądarka ani wątek generatora w grze (js/gen-worker.js)
+	const isNode = typeof window === 'undefined' && typeof importScripts !== 'function';
 	const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 	// ---------- pobieranie ----------
@@ -238,7 +239,8 @@
 			const res = await fetchTimed(NMPT + q, { headers: { 'User-Agent': 'maszynista-route-generator/0.1' } }, 180000);
 			return res.ok ? res.text() : null;
 		}
-		const dk = typeof window !== 'undefined' && window.desktop;
+		// wątek generatora (js/gen-worker.js): przez grę (self.desktopProxy)
+		const dk = (typeof window !== 'undefined' && window.desktop) || (typeof self !== 'undefined' && self.desktopProxy);
 		if (dk && dk.fetchText) return dk.fetchText(NMPT + q);
 		if (typeof location !== 'undefined' && !/^https?:/.test(location.protocol)) throw Object.assign(new Error('gra otwarta z pliku – pobieranie NMPT wymaga serwera gry (npm start)'), { fatal: true });
 		const res = await fetchTimed('gugik/nmpt' + q, {}, 180000);
@@ -373,7 +375,7 @@
 		}
 		const sel = (f) => boxes.map((b) => `${f}(${b});`).join('');
 		const hw = 'way["highway"]["highway"!~"^(footway|path|steps|cycleway|track|bridleway|corridor|platform|proposed|construction|elevator|raceway|bus_stop|services|rest_area)$"]';
-		const q = `[out:json][timeout:240];(${sel('way["building"]')}${sel(hw)}${sel('way["landuse"]')}${sel('way["natural"]')}${sel('way["leisure"]')}${sel('way["waterway"]')}${sel('way["amenity"="grave_yard"]')}${sel('way["railway"="rail"]')}${sel('way["railway"="disused"]')}${sel('way["disused:railway"="rail"]')}${sel('way["railway"="platform"]')}${sel('way["public_transport"="platform"]["train"="yes"]')}${sel('way["amenity"="parking"]')}${sel('way["place"="square"]')})->.w;.w out tags geom;(${sel('node["railway"="switch"]')}${sel('node["railway"="railway_crossing"]')}${sel('node["power"="catenary_mast"]')}${sel('node["highway"="crossing"]')}${sel('node["amenity"~"^(police|fire_station|post_office|school|kindergarten|childcare|hospital|clinic|doctors|dentist|veterinary|pharmacy|bank|townhall|courthouse|library|theatre|cinema|place_of_worship|restaurant|fast_food|cafe|pub|bar|community_centre|arts_centre|social_facility|nursing_home|bus_station|fuel|car_wash|car_repair|university|college)$"]')}${sel('node["shop"]')}${sel('node["office"]')}${sel('node["healthcare"]')}${sel('node["tourism"~"^(hotel|hostel|guest_house|museum)$"]')})->.n;.n out;(${sel('relation["landuse"]')}${sel('relation["natural"]')}${sel('relation["leisure"]')}${sel('relation["railway"="platform"]')})->.m;.m out geom;`;
+		const q = `[out:json][timeout:240];(${sel('way["building"]')}${sel(hw)}${sel('way["landuse"]')}${sel('way["natural"]')}${sel('way["leisure"]')}${sel('way["waterway"]')}${sel('way["amenity"="grave_yard"]')}${sel('way["railway"="rail"]')}${sel('way["railway"="disused"]')}${sel('way["disused:railway"="rail"]')}${sel('way["railway"="platform"]')}${sel('way["public_transport"="platform"]["train"="yes"]')}${sel('way["amenity"="parking"]')}${sel('way["place"="square"]')})->.w;.w out tags geom;(${sel('node["railway"="switch"]')}${sel('node["railway"="railway_crossing"]')}${sel('node["power"="catenary_mast"]')}${sel('node["highway"="crossing"]')}${sel('node["highway"="bus_stop"]')}${sel('node["public_transport"="platform"]["bus"="yes"]')}${sel('node["amenity"~"^(police|fire_station|post_office|school|kindergarten|childcare|hospital|clinic|doctors|dentist|veterinary|pharmacy|bank|townhall|courthouse|library|theatre|cinema|place_of_worship|restaurant|fast_food|cafe|pub|bar|community_centre|arts_centre|social_facility|nursing_home|bus_station|fuel|car_wash|car_repair|university|college)$"]')}${sel('node["shop"]')}${sel('node["office"]')}${sel('node["healthcare"]')}${sel('node["tourism"~"^(hotel|hostel|guest_house|museum)$"]')})->.n;.n out;(${sel('relation["landuse"]')}${sel('relation["natural"]')}${sel('relation["leisure"]')}${sel('relation["railway"="platform"]')})->.m;.m out geom;`;
 		if (log) log(`Pobieram otoczenie: budynki, drogi, lasy, wody (${boxes.length} odcinków; zwykle 1–2 minuty)…`);
 		return overpass(q, log, 280000);
 	}
@@ -419,6 +421,21 @@
 		if (log) log('Pobieram przejścia dla pieszych, parkingi i place…');
 		const sel = (f) => boxes.map((b) => `${f}(${b});`).join('');
 		const j = await overpass(`[out:json][timeout:120];(${sel('way["amenity"="parking"]')}${sel('way["place"="square"]')}${sel('way["highway"="pedestrian"]["area"="yes"]')})->.w;.w out tags geom;(${sel('node["highway"="crossing"]')})->.n;.n out;`, log, 150000);
+		return j.elements || [];
+	}
+
+	// przystanki autobusowe w pasie trasy (dane otoczenia zapisane przed ich dodaniem do zapytania)
+	async function fetchBusStops(poly, log) {
+		const boxes = [];
+		for (let i = 0; i < poly.length - 1; i += 6) {
+			const seg = poly.slice(i, i + 7);
+			const la = seg.map((p) => p.lat), lo = seg.map((p) => p.lon);
+			const mlo = 0.0052 / Math.cos((la[0] * Math.PI) / 180);
+			boxes.push([Math.min(...la) - 0.0052, Math.min(...lo) - mlo, Math.max(...la) + 0.0052, Math.max(...lo) + mlo].map((v) => v.toFixed(4)).join(','));
+		}
+		if (log) log('Pobieram przystanki autobusowe…');
+		const sel = (f) => boxes.map((b) => `${f}(${b});`).join('');
+		const j = await overpass(`[out:json][timeout:120];(${sel('node["highway"="bus_stop"]')}${sel('node["public_transport"="platform"]["bus"="yes"]')});out;`, log, 150000);
 		return j.elements || [];
 	}
 
@@ -489,6 +506,8 @@
 	// ---------- otoczenie w układzie trasy (kilometraż s, odsunięcie d – w prawo dodatnie) ----------
 	// pas otoczenia: budynki do 500 m od osi, drogi, wody i raster zagospodarowania do 560 m (widoczność ±500 m)
 	const ENV_B = 500, ENV_A = 560, ENV_STEP = 10;
+	// tory z mapy (z rozjazdami i kozłami) do 250 m od osi (dawniej 110 m)
+	const RAIL_D = 250;
 	const ROAD_TYPES = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'unclassified', 'residential', 'living_street', 'service', 'pedestrian', 'road'];
 	const roadType = (h) => ROAD_TYPES.indexOf(String(h || '').replace(/_link$/, ''));
 	// kody obszarów: 0 brak, 1 las (11 liściasty, 12 iglasty), 2 park, 3 łąka/trawnik, 4 pole/ogródki, 5 zabudowa mieszkaniowa, 6 przemysł/kolej,
@@ -515,7 +534,8 @@
 		if (/^(house|detached|semidetached_house|bungalow|farm|cabin|terrace)$/.test(b)) return 0;
 		if (/^(apartments|residential|dormitory|flats)$/.test(b)) return area < 160 ? 0 : 1;
 		if (/^(industrial|warehouse|factory|manufacture|hangar|storage_tank|silo|service|depot|transformer_tower)$/.test(b)) return 2;
-		if (/^(commercial|retail|office|supermarket|hotel|public|civic|school|hospital|university|college|kindergarten|train_station|transportation|government|sports_hall|stadium)$/.test(b)) return 3;
+		if (b === 'stadium') return 7;
+		if (/^(commercial|retail|office|supermarket|hotel|public|civic|school|hospital|university|college|kindergarten|train_station|transportation|government|sports_hall)$/.test(b)) return 3;
 		if (/^(church|chapel|cathedral|religious|mosque|temple|synagogue)$/.test(b)) return 4;
 		if (/^(garage|garages|shed|roof|carport|hut|greenhouse|kiosk|toilets|container)$/.test(b)) return 5;
 		return area < 30 ? 5 : area < 170 ? 0 : area > 1800 ? 2 : 1;
@@ -713,11 +733,14 @@
 		const stationBlock = (s, d) => stationsS.some(([ps]) => s > ps + 15 - platformLength - 30 && s < ps + 15 + 40 && d > -16 && d < 12);
 
 		const els = data.elements || [];
+		/* pfFar: perony podziemne daleko od osi (stacja innej linii w tunelu naszej linii) – zostają tylko przy torze
+		   w tunelu (bit 16) z danych; bez niego to stacja w osobnym tunelu (np. Warszawa Śródmieście WKD obok Centralnej) */
+		const pfFar = new Set();
 		const b = [], bTags = [], r = [], w = [], tr = [], pf = [], ov = [], obRuns = [], ro = [], cm = [];
 		/* ulice: ra – atrybuty drogi równolegle do r: [pasy, szerokość (dm), nawierzchnia (0 asfalt, 1 kostka kamienna,
 		   2 kostka betonowa / płyty / beton, 3 gruntowa), chodniki (0 brak, 1 lewy, 2 prawy, 3 oba, −1 – wg zabudowy),
 		   jednokierunkowa]; rx – przejścia dla pieszych [s, d, sygnalizacja]; pk – parkingi (0) i place (1) [rodzaj, s, d, …] */
-		const ra = [], rx = [], pk = [];
+		const ra = [], rx = [], pk = [], bs = [];
 		const roadAttr = (t) => {
 			const sf = String(t.surface || '');
 			const surf = /sett|cobblestone|unhewn/.test(sf) ? 1 : /paving_stones|concrete|paved_stones|bricks/.test(sf) ? 2 : /unpaved|gravel|dirt|ground|compacted|grass|sand|earth|mud|pebble/.test(sf) ? 3 : 0;
@@ -729,6 +752,12 @@
 		for (const e of els) {
 			const t = e.tags;
 			if (!t) continue;
+			// przystanki autobusowe [s, d] (ruch uliczny: autobusy, wiaty); dwa węzły tego samego przystanku (do 12 m) – jeden
+			if (e.type === 'node' && e.lat !== undefined && (t.highway === 'bus_stop' || (t.public_transport === 'platform' && t.bus === 'yes'))) {
+				const p = P.xy(e.lat, e.lon), q = project(p[0], p[1], -1);
+				if (q && Math.abs(q.d) > 8 && Math.abs(q.d) < ENV_B && sOk(q.s) && !bs.some((x) => Math.hypot(x[0] - q.s - shift, x[1] - q.d) < 12)) bs.push([R2(q.s + shift), R2(q.d)]);
+				continue;
+			}
 			if (e.type === 'node' && t.highway === 'crossing' && e.lat !== undefined) {
 				const p = P.xy(e.lat, e.lon), q = project(p[0], p[1], -1);
 				if (q && Math.abs(q.d) > 8 && Math.abs(q.d) < ENV_B && sOk(q.s)) rx.push([R2(q.s + shift), R2(q.d), /traffic_signals/.test(t.crossing || '') ? 1 : 0]);
@@ -771,7 +800,7 @@
 					if (uses.get(key(end)) !== 1) continue;
 					const pe = P.xy(end.lat, end.lon), pp = P.xy(prev.lat, prev.lon);
 					const a = project(pe[0], pe[1], -1), b2 = project(pp[0], pp[1], a ? a.k : -1);
-					if (!a || !b2 || Math.abs(a.d) < 3 || Math.abs(a.d) > 110 || !sOk(a.s)) continue;
+					if (!a || !b2 || Math.abs(a.d) < 3 || Math.abs(a.d) > RAIL_D || !sOk(a.s)) continue;
 					// kierunek „na zewnątrz” toru w (s, d)
 					bufs.push([R2(a.s + shift), R2(a.d), Math.round(Math.atan2(a.d - b2.d, a.s - b2.s) * 100) / 100]);
 				}
@@ -824,6 +853,48 @@
 			return out;
 		};
 		const bu = [], bn = [];
+		/* stadiony: obszary leisure=stadium (w xy, z nazwą) i boiska (leisure=pitch) – budynek stadionu (building=stadium
+		   albo duży budynek wypełniający obszar stadionu, np. z BDOT10k) dostaje rodzaj 7: w grze trybuny, dach z otworem
+		   i boisko (env.sp) */
+		const stadia = [], pitches = [];
+		for (const e of els) {
+			const t = e.tags;
+			if (!t || (t.leisure !== 'stadium' && t.leisure !== 'pitch')) continue;
+			const rr = e.type === 'way' && e.geometry ? [e.geometry.filter(Boolean).map((q) => [q.lat, q.lon])] : e.type === 'relation' && e.members ? rings(e.members, 'outer') : [];
+			for (const r0 of rr) {
+				if (r0.length < 4) continue;
+				const xy = r0.map(([la, lo]) => P.xy(la, lo));
+				const o = { xy, area: polyArea(xy), name: t.name || '', sport: t.sport || '' };
+				(t.leisure === 'stadium' ? stadia : pitches).push(o);
+			}
+		}
+		// prostokąt boiska (osie główne obrysu): środek, kierunek dłuższego boku, połowy długości i szerokości
+		const rectOf = (xy) => {
+			let cx = 0, cy = 0;
+			for (const [x, y] of xy) { cx += x / xy.length; cy += y / xy.length; }
+			let sxx = 0, syy = 0, sxy = 0;
+			for (const [x, y] of xy) { sxx += (x - cx) ** 2; syy += (y - cy) ** 2; sxy += (x - cx) * (y - cy); }
+			const ang = 0.5 * Math.atan2(2 * sxy, sxx - syy), ux = Math.cos(ang), uy = Math.sin(ang);
+			let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+			for (const [x, y] of xy) { const a2 = (x - cx) * ux + (y - cy) * uy, b2 = -(x - cx) * uy + (y - cy) * ux; a0 = Math.min(a0, a2); a1 = Math.max(a1, a2); b0 = Math.min(b0, b2); b1 = Math.max(b1, b2); }
+			const mx = cx + ux * (a0 + a1) / 2 - uy * (b0 + b1) / 2, my = cy + uy * (a0 + a1) / 2 + ux * (b0 + b1) / 2;
+			return { cx: mx, cy: my, ux, uy, hl: (a1 - a0) / 2, hw: (b1 - b0) / 2 };
+		};
+		// budynek stadionu: największy (od 5000 m²) ze środkiem w obszarze stadionu
+		const stadB = new Map();
+		if (stadia.length) for (const e of els) {
+			if (e.type !== 'way' || !e.tags || !e.tags.building || !e.geometry || e.tags._roofOnly) continue;
+			const xy = e.geometry.filter(Boolean).map((q) => P.xy(q.lat, q.lon)), area = polyArea(xy);
+			if (area < 5000) continue;
+			let cx = 0, cy = 0;
+			for (const [x, y] of xy) { cx += x / xy.length; cy += y / xy.length; }
+			const q = stadia.find((z) => pointInPoly(cx, cy, z.xy));
+			if (q && (!q.best || area > q.best.area)) q.best = { id: e.id, area };
+		}
+		for (const q of stadia) if (q.best) stadB.set(q.best.id, q);
+		const sp = []; // boiska stadionów: [indeks budynku, s, d, kierunek s, kierunek d, połowa długości, połowa szerokości] (dm dla wymiarów)
+		// wnętrze tunelu naszego toru (od 15 m za portalami; kilometraż z przesunięciem)
+		const tunOver = (s2) => (ctx.tunnels || []).some(([a, b]) => s2 > a + 15 && s2 < b - 15);
 		// ---- budynki ----
 		for (const e of els) {
 			if (e.type !== 'way' || !e.tags || !e.tags.building || !e.geometry || e.tags._roofOnly) continue;
@@ -836,22 +907,27 @@
 			for (const p of xy) {
 				const q = project(p[0], p[1], hint);
 				// dworzec może stać tuż za peronem: po prawej od 6,5 m, po lewej za drugim peronem (11,5 m)
-				const near = isSt ? (q && (q.d > 0 ? q.d < 6.5 : q.d > -11.5)) : q && Math.abs(q.d) < 9;
+				// nad tunelem (stacja podziemna, ulica nad tunelem) budynek może stać także nad osią toru
+				const near = q && !tunOver(q.s + shift) && (isSt ? q.d > 0 ? q.d < 6.5 : q.d > -11.5 : Math.abs(q.d) < 9);
 				if (!q || Math.abs(q.d) > ENV_B || !sOk(q.s) || near) { ok = false; break; }
 				hint = q.k;
 				sd.push([q.s + shift, q.d]);
 			}
 			if (!ok) { dropB.far++; continue; }
 			const cs = sd.reduce((a2, p) => a2 + p[0], 0) / sd.length, cd = sd.reduce((a2, p) => a2 + p[1], 0) / sd.length;
-			if (!isSt && (stationBlock(cs, cd) || sd.some(([s2, d2]) => stationBlock(s2, d2)))) { dropB.station++; continue; }
+			if (!isSt && !sd.every(([s2]) => tunOver(s2)) && (stationBlock(cs, cd) || sd.some(([s2, d2]) => stationBlock(s2, d2)))) { dropB.station++; continue; }
 			const area = polyArea(xy);
 			if (area < 12) { dropB.small++; continue; }
 			// dworzec: znacznik dworca, nazwa „Dworzec…” albo punkt stacji z mapy wewnątrz obrysu
 			let kind = buildingKind(e.tags, area);
 			if (isSt) kind = 6;
+			// stadion: building=stadium albo największy budynek w obszarze leisure=stadium (od 5000 m²)
+			const stad = stadB.get(e.id) || null;
+			if (!isSt && area >= 4000 && (stad || kind === 7 || /stadion/.test(e.tags['bdot:use'] || ''))) kind = 7;
+			else if (kind === 7) kind = 3;
 			const lv = num(e.tags['building:levels']);
 			let h = num(e.tags.height);
-			if (h === null) h = lv !== null ? lv * 3 + (kind === 0 ? 1.5 : 1) : [6.5, area > 700 ? 15 : 12, 9, 11, 16, 3, 11][kind];
+			if (h === null) h = lv !== null && kind !== 7 ? lv * 3 + (kind === 0 ? 1.5 : 1) : [6.5, area > 700 ? 15 : 12, 9, 11, 16, 3, 11, 24][kind];
 			h = Math.max(2.5, Math.min(120, h));
 			const rs = e.tags['roof:shape'];
 			const roofS = rs === 'gabled' ? 1 : /^(hipped|pyramidal|half-hipped)$/.test(rs || '') ? 2 : rs === 'flat' ? 0 : kind === 0 ? (sd.length === 4 ? 1 : 2) : kind === 4 ? 1 : kind === 6 && area < 2500 ? 2 : 0;
@@ -861,8 +937,27 @@
 			for (const [s2, d2] of ring) row.push(R2(s2), R2(d2));
 			// rodzaj budynku i nazwa (budynek, punkty usług w obrysie)
 			const pois = poisIn(xy);
-			let use = isSt ? 25 : useOf([useText(e.tags)].concat(pois.map(useText)).join(' '));
-			let name = e.tags.name || '';
+			let use = isSt ? 25 : kind === 7 ? 23 : useOf([useText(e.tags)].concat(pois.map(useText)).join(' '));
+			let name = e.tags.name || (stad && stad.name) || '';
+			if (kind === 7) {
+				// boisko: największe leisure=pitch ze środkiem w obrysie, bez niego – piłkarskie wzdłuż osi stadionu
+				let best = null;
+				for (const q of pitches) {
+					let cx = 0, cy = 0;
+					for (const [x, y] of q.xy) { cx += x / q.xy.length; cy += y / q.xy.length; }
+					if (q.area > 1500 && q.area < 0.5 * area && pointInPoly(cx, cy, xy) && (!best || q.area > best.area)) best = q;
+				}
+				// wymiary boiska z mapy tylko rozsądne (dł. 60–125 m, szer. 35–90 m; obszar „boiska” wokół całego stadionu – nie)
+				let R = best ? rectOf(best.xy) : null;
+				if (R && !(R.hl >= 30 && R.hl <= 62.5 && R.hw >= 17.5 && R.hw <= 45)) R = null;
+				if (!R) R = Object.assign(rectOf(xy), { hl: 52.5, hw: 34 });
+				// punkt i kierunek w układzie trasy
+				const q0 = project(R.cx, R.cy, -1), q1 = project(R.cx + R.ux * 10, R.cy + R.uy * 10, -1);
+				if (q0 && q1) {
+					const L = Math.hypot(q1.s - q0.s, q1.d - q0.d) || 1;
+					sp.push(b.length, R2(q0.s + shift), R2(q0.d), Math.round(((q1.s - q0.s) / L) * 1000), Math.round(((q1.d - q0.d) / L) * 1000), Math.round(R.hl * 10), Math.round(R.hw * 10));
+				}
+			}
 			for (const q of pois) if (q.name && useOf(useText(q)) === use) { name = q.name; break; }
 			if (use > 3 && use !== 4 && use !== 5 && use !== 29 && name) bn.push(b.length, String(name).slice(0, 64));
 			bu.push(use);
@@ -901,7 +996,10 @@
 		}
 		if (rf.length && log) log(`Zadaszenia peronów z mapy: ${rf.length}.`);
 		// ---- drogi i cieki (linie cięte przy torze) ----
-		const lineRuns = (geom, maxD, minAbsD) => {
+		/* tunFree: w tunelu naszego toru (od 15 m za portalem) bez odstępu od osi – ulica biegnąca nad tunelem wzdłuż
+		   osi (np. Aleje Jerozolimskie nad tunelem średnicowym) nie ma dziury nad torem */
+		const tunInner = (s2) => (ctx.tunnels || []).some(([a, b]) => s2 > a + 15 && s2 < b - 15);
+		const lineRuns = (geom, maxD, minAbsD, tunFree) => {
 			const out = [];
 			let cur = [], hint = -1;
 			// zagęszczenie co ≤ 5 m – odcinek przecinający tor też zostanie przecięty
@@ -916,13 +1014,22 @@
 			}
 			for (const p of dense) {
 				const pr = project(p[0], p[1], hint);
-				const good = pr && Math.abs(pr.d) <= maxD && Math.abs(pr.d) >= minAbsD && sOk(pr.s);
+				const good = pr && Math.abs(pr.d) <= maxD && (Math.abs(pr.d) >= minAbsD || (tunFree && tunInner(pr.s + shift))) && sOk(pr.s);
 				if (pr) hint = pr.k;
 				if (good) cur.push([pr.s + shift, pr.d]);
 				else { if (cur.length >= 2) out.push(cur); cur = []; }
 			}
 			if (cur.length >= 2) out.push(cur);
 			return out;
+		};
+		// nad tunelem naszego toru (kilometraż z przesunięciem): przecięcie osi toru w tunelu
+		const tunS = ctx.tunnels || [];
+		const crossesOverTunnel = (geom) => {
+			if (!tunS.length) return false;
+			for (const run of lineRuns(geom, 30, 0)) for (let k = 1; k < run.length; k++) {
+				if (Math.sign(run[k][1]) !== Math.sign(run[k - 1][1]) && tunS.some(([a, b]) => run[k][0] > a && run[k][0] < b)) return true;
+			}
+			return false;
 		};
 		for (const e of els) {
 			if (e.type !== 'way' || !e.tags || !e.geometry) continue;
@@ -937,7 +1044,8 @@
 				const longTunnel = t.tunnel && t.tunnel !== 'no' && wayLen(e) >= 150;
 				// nad torem: most albo wyższa warstwa niż nasz tor w miejscu przecięcia (np. nasz tor w wykopie, layer=-1)
 				const lay = Number(t.layer) || 0;
-				const bridge = (t.bridge && t.bridge !== 'no') || (ctx.layerAt && lineRuns(e.geometry, 140, 0).some((run) => run.some((q, k) => k && Math.sign(q[1]) !== Math.sign(run[k - 1][1]) && lay > ctx.layerAt(q[0]))));
+				const overTun = crossesOverTunnel(e.geometry);
+				const bridge = !overTun && ((t.bridge && t.bridge !== 'no') || (ctx.layerAt && lineRuns(e.geometry, 140, 0).some((run) => run.some((q, k) => k && Math.sign(q[1]) !== Math.sign(run[k - 1][1]) && lay > ctx.layerAt(q[0])))));
 				if (bridge) {
 					// wiadukt drogowy nad torem: cały obiekt (bez cięcia przy torze), jeśli przecina nasz tor – w całym pasie
 					// otoczenia (długa estakada nie urywa się w powietrzu 140 m od toru)
@@ -955,7 +1063,17 @@
 					continue;
 				}
 				const at = roadAttr(t);
-				for (const run of lineRuns(e.geometry, longTunnel ? 25 : ENV_A, 7.5)) {
+				// ulica nad tunelem naszego toru: na powierzchni, bez wiaduktu i bez przerwy nad osią toru
+				if (overTun) {
+					for (const run of lineRuns(e.geometry, ENV_A, 0)) {
+						const row = [ti];
+						for (const [s2, d2] of simplify(run, 0.4)) row.push(RR(s2), RR(d2));
+						r.push(row);
+						ra.push(at.slice());
+					}
+					continue;
+				}
+				for (const run of lineRuns(e.geometry, longTunnel ? 25 : ENV_A, 7.5, !longTunnel)) {
 					const row = [ti];
 					for (const [s2, d2] of simplify(run, 0.4)) row.push(RR(s2), RR(d2));
 					r.push(row);
@@ -965,6 +1083,9 @@
 				// droga OSM użyta przez przebieg: pomijamy tylko odcinki na osi naszego toru (do 1,2 m) – ta sama droga bywa
 				// dalej torem obok (przebieg zmienia tor na stacji), który musi zostać
 				const onPath = !!(ctx.pathWays && ctx.pathWays.has(e.id));
+				// tor przecinający nasz w tunelu (inny tunel pod nami albo tory na powierzchni nad nami) – bez wiaduktu
+				// i bez skrzyżowania w poziomie toru: pomijany
+				if (!onPath && crossesOverTunnel(e.geometry)) continue;
 				// długi tunel: tylko fragment pod naszym torem (do 25 m od osi)
 				const longTunnelR = t.tunnel && t.tunnel !== 'no' && wayLen(e) >= 150;
 				// krótki „tunel” (do 150 m) to zwykle przejazd pod wiaduktem – tor rysowany normalnie
@@ -989,21 +1110,60 @@
 					}
 					if (crosses) continue;
 				}
-				// tory obok naszego (stacyjne, bocznice, stacje towarowe, linie równoległe) do 110 m od osi;
+				// tory obok naszego (stacyjne, bocznice, stacje towarowe, linie równoległe) do 250 m od osi (RAIL_D);
 				// bit 1 – bocznica / tor boczny, bit 2 – tor na moście (na poziomie naszego toru, z pomostem), bit 4 – nieużywany
 				// bit 8 – tor zelektryfikowany (sieć trakcyjna nad nim)
 				const electrified = /^(contact_line|yes)$/.test(t.electrified || '');
-				const side = (t.service ? 1 : 0) | (onBridge ? 2 : 0) | (disused ? 4 : 0) | (electrified && !disused ? 8 : 0);
+				/* bit 32 (tylko w generatorze): tor pod ziemią według danych (layer < 0, krótki tunel, location=underground) bez
+				   długiego tunelu – po pomiarze NMT: wykop zostaje, przykryty (pomiar = teren obok) – tunel (bit 16 w tunelu
+				   naszej linii, poza nim pomijany); np. WKD pod Alejami Jerozolimskimi (layer=-1 bez tunnel=yes) */
+				const underTag = !onPath && !longTunnelR && (lay < 0 || (t.tunnel && t.tunnel !== 'no') || /underground/.test(t.location || ''));
+				const side = (t.service ? 1 : 0) | (onBridge ? 2 : 0) | (disused ? 4 : 0) | (electrified && !disused ? 8 : 0) | (underTag ? 32 : 0);
 				// do 0,3 m od osi: tor odchodzący rozjazdem dochodzi do toru pociągu (w grze same szyny przy torze pociągu)
-				for (const run of lineRuns(e.geometry, longTunnelR ? 25 : 110, onPath ? 1.2 : 0.3)) {
-					if (onPath && run.length < 3) continue;
-					const row = [side];
-					for (const [s2, d2] of simplify(run, 0.08)) row.push(R1(s2), R1(d2));
-					tr.push(row);
+				/* tor w długim tunelu: tylko przy naszej osi (w tej samej obudowie – drugi tor linii); dalsze tory w tunelach
+				   (inne linie pod ziemią) pomijane – dawniej leżały na powierzchni, z wagonami na bocznicach */
+				/* tor w długim tunelu (bit 16): tylko w tunelu naszej linii, do 60 m od osi (dawniej 40 m – na Warszawie Śródmieście brakowało toru przy dalszym peronie) – wspólna obudowa (np. tunel
+				   średnicowy: tory dalekobieżne obok podmiejskich), w grze na poziomie naszego toru; poza tunelem naszej linii
+				   pod ziemią – pomijany (dawniej do 6,5 m od osi, a tor biegnący pod ziemią dalej od niej leżał na terenie) */
+				const inOurTun = (s2) => tunS.some(([a, b]) => s2 > a - 2 && s2 < b + 2);
+				for (const run0 of lineRuns(e.geometry, longTunnelR ? 60 : RAIL_D, onPath ? 1.2 : 0.3)) {
+					const runs = [];
+					if (!longTunnelR) runs.push(run0);
+					else {
+						let cur = [];
+						for (const q of run0) {
+							if (inOurTun(q[0])) cur.push(q);
+							else { if (cur.length >= 2) runs.push(cur); cur = []; }
+						}
+						if (cur.length >= 2) runs.push(cur);
+					}
+					for (const run of runs) {
+						if (onPath && run.length < 3) continue;
+						const row = [side | (longTunnelR ? 16 : 0)];
+						for (const [s2, d2] of simplify(run, 0.08)) row.push(R1(s2), R1(d2));
+						tr.push(row);
+					}
 				}
 			} else if (isPlatform) {
+				// perony metra i tramwaju (subway=yes, sieć metra; często bez warstwy) – nie kolej, dawniej leżały na terenie
+				if (t.subway === 'yes' || t.tram === 'yes' || t.light_rail === 'yes' || /metro/i.test(t.network || '') || /^(subway|tram|light_rail)$/.test(t.station || '')) continue;
 				// perony: obrys (zamknięty) albo linia (peron o szerokości 4 m)
 				const g = e.geometry.filter(Boolean);
+				/* peron podziemny (warstwa poniżej zera, tunel, location=underground) daleko od naszego toru – stacja innej
+				   linii pod ziemią (np. Warszawa Centralna przy linii średnicowej): pomijany, nie leży na powierzchni */
+				const under = Number(t.layer) < 0 || (t.tunnel && t.tunnel !== 'no') || /underground/.test(t.location || '');
+				let far = false;
+				if (under) {
+					// blisko osi albo w tunelu naszej linii (wspólna obudowa – np. perony Śródmieścia obok Centralnej) – zostaje
+					let near = false, axis = false;
+					for (const q of g) {
+						const xy2 = P.xy(q.lat, q.lon), pr = project(xy2[0], xy2[1], -1);
+						if (pr && Math.abs(pr.d) < 9) axis = true;
+						if (pr && (Math.abs(pr.d) < 9 || (Math.abs(pr.d) < 70 && tunS.some(([a, b]) => pr.s + shift > a + 5 && pr.s + shift < b - 5)))) near = true;
+					}
+					if (!near) continue;
+					far = !axis;
+				}
 				const sOkP = (s2) => s2 > 5 && s2 < (n - 1) * ENV_STEP - 5;
 				const closed = g.length >= 4 && Math.abs(g[0].lat - g[g.length - 1].lat) < 1e-7 && Math.abs(g[0].lon - g[g.length - 1].lon) < 1e-7;
 				if (closed) {
@@ -1011,7 +1171,7 @@
 					const sd = [];
 					for (const q of g.slice(0, -1)) {
 						const xy2 = P.xy(q.lat, q.lon), pr = project(xy2[0], xy2[1], hint);
-						if (!pr || Math.abs(pr.d) > 60 || !sOkP(pr.s)) { ok = false; break; }
+						if (!pr || Math.abs(pr.d) > 70 || !sOkP(pr.s)) { ok = false; break; }
 						hint = pr.k;
 						sd.push([pr.s + shift, pr.d]);
 					}
@@ -1023,12 +1183,14 @@
 						const row = [1];
 						for (const [s2, d2] of simplifyRing(sd, 0.3)) row.push(R2(s2), R2(d2));
 						pf.push(row);
+						if (far) pfFar.add(row);
 					}
 				} else {
-					for (const run of lineRuns(e.geometry, 60, 1)) {
+					for (const run of lineRuns(e.geometry, 70, 1)) {
 						const row = [0];
 						for (const [s2, d2] of simplify(run, 0.3)) row.push(R2(s2), R2(d2));
 						pf.push(row);
+						if (far) pfFar.add(row);
 					}
 				}
 			} else if (t.waterway && /^(river|canal|stream)$/.test(t.waterway) && !(t.tunnel && t.tunnel !== 'no')) {
@@ -1053,19 +1215,26 @@
 		// perony opisane jako relacje (wielokąty): zewnętrzne pierścienie jak obrysy peronów
 		for (const e of els) {
 			if (e.type !== 'relation' || !e.tags || e.tags.railway !== 'platform' || !e.members) continue;
+			const t = e.tags;
+			// jak perony – drogi: bez metra i tramwaju; podziemny tylko przy osi albo w tunelu naszej linii
+			if (t.subway === 'yes' || t.tram === 'yes' || t.light_rail === 'yes' || /metro/i.test(t.network || '')) continue;
+			const under = Number(t.layer) < 0 || (t.tunnel && t.tunnel !== 'no') || /underground/.test(t.location || '');
 			for (const rr of rings(e.members, 'outer')) {
-				let hint = -1, ok = true;
+				let hint = -1, ok = true, near = !under, axis = !under;
 				const sd = [];
 				for (const [la, lo] of rr.slice(0, -1)) {
 					const xy2 = P.xy(la, lo), pr = project(xy2[0], xy2[1], hint);
-					if (!pr || Math.abs(pr.d) > 60) { ok = false; break; }
+					if (!pr || Math.abs(pr.d) > 70) { ok = false; break; }
 					hint = pr.k;
 					sd.push([pr.s + shift, pr.d]);
+					if (Math.abs(pr.d) < 9) axis = true;
+					if (Math.abs(pr.d) < 9 || (Math.abs(pr.d) < 70 && tunS.some(([a2, b2]) => pr.s + shift > a2 + 5 && pr.s + shift < b2 - 5))) near = true;
 				}
-				if (!ok || sd.length < 3) continue;
+				if (!ok || !near || sd.length < 3) continue;
 				const row = [1];
 				for (const [s2, d2] of simplifyRing(sd, 0.3)) row.push(R2(s2), R2(d2));
 				pf.push(row);
+				if (!axis) pfFar.add(row);
 			}
 		}
 		for (const e of els) {
@@ -1085,6 +1254,13 @@
 				pidx.get(key).push(i);
 			}
 		});
+		/* woda nad ciekiem pod ziemią (przepust, kolektor; do 25 m – obszar kanału bywa szeroki na 40 m) – bez wody: obszar wody z BDOT10k ciągnie się czasem
+		   wzdłuż zakrytego odcinka (Kanał Kamionkowski przy Warszawie Stadion – w OSM „Kolektor Stadionowy” pod torami) */
+		const culvS = (ctx.culv || []).concat(els.filter((e) => e.type === 'way' && e.tags && e.tags.waterway && e.geometry && ((e.tags.tunnel && e.tags.tunnel !== 'no') || Number(e.tags.layer) < 0)).flatMap((e) => {
+			const g = e.geometry.filter(Boolean).map((q) => P.xy(q.lat, q.lon));
+			return g.slice(1).map((q, k) => [g[k], q]);
+		}));
+		const overCulv = (x, y) => culvS.some(([a2, b2]) => x > Math.min(a2[0], b2[0]) - 25 && x < Math.max(a2[0], b2[0]) + 25 && y > Math.min(a2[1], b2[1]) - 25 && y < Math.max(a2[1], b2[1]) + 25 && segDist([x, y], a2, b2) < 25);
 		const cols = Math.round((2 * ENV_A) / ENV_STEP) + 1;
 		const rowsOut = [];
 		for (let s = 0; s <= endS; s += ENV_STEP) {
@@ -1099,6 +1275,7 @@
 				for (const i of pidx.get(Math.floor(x / PB) * 100003 + Math.floor(y / PB)) || []) {
 					const p = polys[i];
 					if (p.pri <= pri || x < p.x0 || x > p.x1 || y < p.y0 || y > p.y1) continue;
+					if (p.kind === 9 && overCulv(x, y)) continue;
 					if (pointInPoly(x, y, p.xy) && !p.holes.some((h) => pointInPoly(x, y, h))) { kind = p.kind; pri = p.pri; }
 				}
 				if (kind === last) cnt++;
@@ -1108,6 +1285,46 @@
 			rowsOut.push(line);
 		}
 		if (log && ctx.debug) log(`[debug] budynki odrzucone: ${JSON.stringify(dropB)}`);
+		if (pfFar.size) {
+			const dAt = (row, s2) => {
+				for (let k = 1; k + 3 < row.length; k += 2) {
+					const sa = row[k], sb = row[k + 2];
+					if ((sa - s2) * (sb - s2) <= 0 && sa !== sb) return row[k + 1] + ((row[k + 3] - row[k + 1]) * (s2 - sa)) / (sb - sa);
+				}
+				return NaN;
+			};
+			let nDrop = 0;
+			for (let i = pf.length - 1; i >= 0; i--) {
+				const row = pf[i];
+				if (!pfFar.has(row)) continue;
+				// przekrój peronu w s: [od, do] (obrys – przecięcia boków; linia – ±2 m)
+				const m = (row.length - 1) / 2;
+				let s0 = Infinity, s1 = -Infinity;
+				for (let k = 0; k < m; k++) { s0 = Math.min(s0, row[1 + k * 2]); s1 = Math.max(s1, row[1 + k * 2]); }
+				const across = (s2) => {
+					if (row[0] !== 1) { const d2 = dAt(row, s2); return Number.isNaN(d2) ? null : [d2 - 2, d2 + 2]; }
+					let lo = Infinity, hi = -Infinity;
+					for (let k = 0; k < m; k++) {
+						const sa = row[1 + k * 2], da = row[2 + k * 2], q = (k + 1) % m, sb = row[1 + q * 2], db = row[2 + q * 2];
+						if ((sa - s2) * (sb - s2) > 0 || sa === sb) continue;
+						const d2 = da + ((db - da) * (s2 - sa)) / (sb - sa);
+						lo = Math.min(lo, d2); hi = Math.max(hi, d2);
+					}
+					return lo < hi ? [lo, hi] : null;
+				};
+				// w ¼, ½ i ¾ długości peronu tor w tunelu przy krawędzi (do 4 m od niej, na zewnątrz; peron jako linia – szerokość
+				// nieznana, do 6 m)
+				const tol = row[0] === 1 ? 4 : 6;
+				const edgeTrack = (s2) => {
+					const w2 = across(s2);
+					return !!w2 && tr.some((t2) => { if (!(t2[0] & 16)) return false; const d2 = dAt(t2, s2); return (d2 < w2[0] && d2 > w2[0] - tol) || (d2 > w2[1] && d2 < w2[1] + tol); });
+				};
+				if ([0.25, 0.5, 0.75].every((f) => edgeTrack(s0 + (s1 - s0) * f))) continue;
+				pf.splice(i, 1);
+				nDrop++;
+			}
+			if (log && nDrop) log(`Perony podziemne bez toru w tunelu naszej linii (osobny tunel): ${nDrop} pominiętych.`);
+		}
 		if (log) log(`Otoczenie: ${b.length} budynków (w tym ${b.filter((x) => x[0] === 6).length} dworców), ${r.length} odcinków dróg, ${tr.length} odcinków torów, ${pf.length} peronów, ${w.length} cieków, ${polys.length} obszarów.`);
 		if (log && ov.length) log(`Wiadukty drogowe nad torem: ${ov.length}.`);
 		// mosty drogowe obok toru: nad innymi torami prześwit 6,8 m, w pozostałych miejscach (ulica, rzeka) 3,5 m
@@ -1236,7 +1453,7 @@
 				const dirs = keys.map((nk) => { const xy = xyOf(nk), L = dist2(xy, o) || 1; return [(xy[0] - o[0]) / L, (xy[1] - o[1]) / L]; });
 				const dot = (i, j) => dirs[i][0] * dirs[j][0] + dirs[i][1] * dirs[j][1];
 				const p0 = project(o[0], o[1], -1);
-				if (!p0 || Math.abs(p0.d) > 110 || !sOk(p0.s)) continue;
+				if (!p0 || Math.abs(p0.d) > RAIL_D || !sOk(p0.s)) continue;
 				const tw = tagsAt(o), tg = tw && tw.t, nodeId = tw ? tw.id : 0;
 				const hand = tg && (tg['railway:local_operated'] === 'yes') ? 1 : 0;
 				if (m.size === 3) {
@@ -1531,7 +1748,7 @@
 			}
 		}
 		if (log) log(`Ulice: ${r.length} odcinków, z chodnikami ${ra.filter((q) => q[3] > 0).length}; przejścia dla pieszych ${rx.length}, parkingi i place ${pk.length}.`);
-		return { v: 8, b, bu, bn, _bTags: bTags, cm: cm.flat(), rf, r, ra, rx, pk, w, t: tr, _tz: envTz, p: pf, o: ov, ob, ro, sw, k: bufs, g: { step: ENV_STEP, s0: shift, d0: -ENV_A, cols, rows: rowsOut } };
+		return { v: 8, b, bu, bn, sp, _bTags: bTags, cm: cm.flat(), rf, r, ra, rx, pk, bs, w, t: tr, _tz: envTz, p: pf, o: ov, ob, ro, sw, k: bufs, g: { step: ENV_STEP, s0: shift, d0: -ENV_A, cols, rows: rowsOut } };
 	}
 
 	/* Peron przy torze pociągu na stacji (pos – miejsce zatrzymania, kilometraż z przesunięciem): spośród peronów
@@ -1988,11 +2205,70 @@
 		const stations = [];
 		const seen = new Set();
 		const sA = project(pA, 400), sB = project(pB, 400);
+		/* stacje innych linii w pobliżu przebiegu (do 250 m) – pomijane, inaczej wypierały prawdziwe przystanki (reguła
+		   900 m): metro, kolej lekka, tramwaj (tagi węzła stacji) i stacje przy torach innej linii PKP – najbliższy tor
+		   węzła stacji nie należy do przebiegu, jest wyraźnie bliżej niż nasz tor i ma inny numer linii (ref) niż tory
+		   przebiegu w tym miejscu (np. Warszawa Centralna przy linii średnicowej podmiejskiej: tory dalekobieżne) */
+		const otherSt = [];
+		const pathWayIds = new Set(path.edges.map((e) => e.w.id));
+		/* dane PKP PLK wcześniej (dawniej dopiero po wyborze stacji): wykaz posterunków – linie, przy których leży przystanek
+		   (np. Warszawa Ochota, Śródmieście, Stadion – tylko linia 448); używane niżej i w części PLK */
+		const normName = (x) => String(x).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l').replace(/[^a-z0-9]+/g, ' ').trim();
+		let plkData0 = null;
+		if (opts.plk) { try { plkData0 = await opts.plk(log); } catch (e) { plkData0 = null; } }
+		const plkLinesOf = new Map();
+		if (plkData0) for (const q of plkData0.posts) { const k = normName(q.name); if (!plkLinesOf.has(k)) plkLinesOf.set(k, new Set()); plkLinesOf.get(k).add(String(q.line)); }
+		/* przystanek innej linii wg PKP PLK: w wykazie posterunków tylko przy liniach, którymi przebieg w tym miejscu (±400 m)
+		   nie biegnie (numery ref torów przebiegu); undefined – brak w wykazie albo torów bez numeru (reguła odległości) */
+		const plkOther = (name, s0) => {
+			const lines = plkLinesOf.get(normName(name));
+			if (!lines || !lines.size) return undefined;
+			const ours = new Set();
+			for (let x = s0 - 400; x <= s0 + 400; x += 50) for (const r of refsOf(edgeAt(Math.max(0, Math.min(total - 1, x))).w)) ours.add(r);
+			if (!ours.size) return undefined;
+			if ([...lines].some((l) => ours.has(l))) return null;
+			return `w wykazie PKP PLK przy linii ${[...lines].join(', ')} (przebieg: linia ${[...ours].join(', ')})`;
+		};
+		const refsOf = (w) => new Set(String((w && w.tags.ref) || '').split(';').map((x) => x.trim()).filter(Boolean));
+		const otherKind = (t) => {
+			if (/^(subway|light_rail|monorail|tram|funicular|miniature)$/.test(t.station || '') || t.subway === 'yes' || t.monorail === 'yes') return 'stacja metra lub kolei lekkiej';
+			if (((t.light_rail === 'yes' || t.tram === 'yes') && t.train !== 'yes') || t.train === 'no') return 'stacja kolei lekkiej lub tramwaju';
+			if (/metro/i.test(`${t.network || ''} ${t.operator || ''}`)) return 'stacja metra';
+			return null;
+		};
+		const otherLine = (p, s0) => {
+			let best = null;
+			for (const w of ways) {
+				const g = w.geometry;
+				for (let k = 0; k + 1 < g.length; k++) {
+					const a = P.xy(g[k].lat, g[k].lon), b = P.xy(g[k + 1].lat, g[k + 1].lon);
+					const ux = b[0] - a[0], uy = b[1] - a[1], L2 = ux * ux + uy * uy || 1e-9;
+					const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * ux + (p[1] - a[1]) * uy) / L2));
+					const dd = Math.hypot(p[0] - a[0] - ux * t, p[1] - a[1] - uy * t);
+					if (!best || dd < best.d) best = { w, d: dd };
+				}
+			}
+			if (!best || pathWayIds.has(best.w.id)) return null;
+			const k0 = Math.max(0, Math.min(pts.length - 1, Math.round(s0 / STEP)));
+			let dPath = Infinity;
+			for (let k = Math.max(0, k0 - 3); k <= Math.min(pts.length - 1, k0 + 3); k++) dPath = Math.min(dPath, dist2(p, pts[k]));
+			/* wyraźnie przy obcym torze: ponad 15 m bliżej niż nasz albo węzeł tuż przy nim (do 8 m), nasz dalej niż 9 m i co
+			   najmniej 4 m dalej (linie równoległe w jednym wykopie – np. Ochota: przystanek linii 448 obok toru linii 2) */
+			if (dPath - best.d <= 15 && !(best.d < 8 && dPath > 9 && dPath - best.d >= 4)) return null;
+			const near = refsOf(best.w), ours = new Set();
+			for (let x = s0 - 400; x <= s0 + 400; x += 50) for (const r of refsOf(edgeAt(Math.max(0, Math.min(total - 1, x))).w)) ours.add(r);
+			if (!near.size || !ours.size || [...near].some((r) => ours.has(r))) return null;
+			return `przy torach linii ${[...near].join(', ')} (przebieg: linia ${[...ours].join(', ')})`;
+		};
 		for (const st of stationNodes) {
 			if (seen.has(st.tags.name)) continue;
 			const s0 = project(P.xy(st.lat, st.lon), 250);
 			if (opts.debug) log(`[debug] stacja ${st.tags.name}: ${s0 === null ? 'poza przebiegiem (> 250 m)' : 'km ' + (s0 / 1000).toFixed(2)}`);
 			if (s0 === null || s0 < sA - 50 || s0 > sB + 50) continue;
+			const isEnd = st.tags.name === opts.from || st.tags.name === opts.to;
+			const kindWhy = isEnd ? null : otherKind(st.tags), plkWhy = isEnd || kindWhy ? null : plkOther(st.tags.name, s0);
+			const why = kindWhy || (isEnd ? null : plkWhy !== undefined ? plkWhy : otherLine(P.xy(st.lat, st.lon), s0));
+			if (why) { otherSt.push({ name: st.tags.name, s: s0, why, metro: !!kindWhy }); continue; }
 			seen.add(st.tags.name);
 			// miejsce zatrzymania: wskaźnik W4 zwrócony w naszą stronę przy stacji, inaczej przed środkiem peronu
 			// okno do 300 m za węzłem stacji (węzeł bywa przy budynku, a W4 na końcu długiego peronu)
@@ -2062,11 +2338,11 @@
 		/* Kilometraż linii z posterunków (stacje przebiegu dopasowane po nazwie, co najmniej dwie) – liniowo między nimi.
 		   Prędkości: wykaz 2.1 dla toru przebiegu (railway:track_ref z OSM: nieparzysty – N, parzysty – P; bez numeru –
 		   mniejsza z obu torów), kolumna pociągów pasażerskich (EZT); bez danych PLK – maxspeed z OSM. */
-		const normName = (x) => String(x).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ł/g, 'l').replace(/[^a-z0-9]+/g, ' ').trim();
 		let plk = null, kmAt = null, plkLine = null, plkV = null;
+		const plkPending = []; // uwagi PLK – zgłaszane po utworzeniu listy uwag (dawniej błąd „issue before initialization”, bez danych PLK)
 		if (opts.plk) {
 			try {
-				const data = await opts.plk(log);
+				const data = plkData0 || (await opts.plk(log));
 				const cnt = new Map();
 				for (let s2 = 0; s2 < endS; s2 += 100) for (const r of refs(edgeAt(s2).w.tags)) cnt.set(r, (cnt.get(r) || 0) + 1);
 				plkLine = opts.line ? String(opts.line) : ([...cnt.entries()].sort((a, b) => b[1] - a[1])[0] || [null])[0];
@@ -2102,8 +2378,8 @@
 					const kA = kmAt(route[0].s), kB = kmAt(route[route.length - 1].s), lo = Math.min(kA, kB), hi = Math.max(kA, kB);
 					const sOfKm = (km) => route[0].s + ((km - kA) / (kB - kA || 1)) * (route[route.length - 1].s - route[0].s);
 					for (const q of posts) {
-						if (!q.platform || q.km <= lo + 0.3 || q.km >= hi - 0.3 || route.some((st) => normName(st.name) === normName(q.name))) continue;
-						issue('plk-stop', sOfKm(q.km), 'warn', `PKP PLK: ${q.kind === 'PO' ? 'przystanek' : 'stacja'} „${q.name}” (km ${q.km} linii ${plkLine}) z peronem – brak w danych OSM.`, `Dodaj: "stations": { "add": [{ "name": "${q.name}", "pos": ${S(sOfKm(q.km))}${q.kind === 'PO' ? ', "type": "halt"' : ''} }] }.`);
+						if (!q.platform || q.km <= lo + 0.3 || q.km >= hi - 0.3 || route.some((st) => normName(st.name) === normName(q.name)) || otherSt.some((o) => normName(o.name) === normName(q.name))) continue;
+						plkPending.push(() => issue('plk-stop', sOfKm(q.km), 'warn', `PKP PLK: ${q.kind === 'PO' ? 'przystanek' : 'stacja'} „${q.name}” (km ${q.km} linii ${plkLine}) z peronem – brak w danych OSM.`, `Dodaj: "stations": { "add": [{ "name": "${q.name}", "pos": ${S(sOfKm(q.km))}${q.kind === 'PO' ? ', "type": "halt"' : ''} }] }.`));
 					}
 				} else log(`PKP PLK: za mało stacji przebiegu w wykazie posterunków linii ${plkLine || '?'} – bez danych PLK.`);
 			} catch (e) {
@@ -2137,12 +2413,68 @@
 		if (limits[0][0] > 0) limits.unshift([0, limits[0][1]]);
 		limits[0][0] = 0;
 
+		// ---------- tunele (przed otoczeniem: ulice i tory nad tunelem są na powierzchni, nie wiaduktami nad torem) ----------
+		const ranges = (key) => {
+			const out = [];
+			for (let s = 0; s < endS; s += STEP) {
+				const t = edgeAt(s).w.tags;
+				if (t[key] && t[key] !== 'no') {
+					const r = out[out.length - 1];
+					if (r && s - r[1] <= 30) r[1] = s + STEP; else out.push([s, s + STEP]);
+				}
+			}
+			return out;
+		};
+		/* tunel z danych (tunnel=… na drogach przebiegu): odrzucany tylko krótki (do 80 m – przejście pod wiaduktem) albo
+		   krótki przy stacji (do 300 m z końcem w strefie peronów – hala, zadaszenie). Dawniej odpadał każdy z końcem przy
+		   stacji: tunel średnicowy w Warszawie (portal tuż za peronem Powiśla, podziemne Śródmieście) znikał, a tor
+		   z pomiaru terenu biegł po ulicach centrum */
+		const tunnelRaw = ranges('tunnel').filter(([a, b]) => b - a >= 80 && !(b - a < 300 && (inZone(a) || inZone(b))));
+		const inTunnelRaw = (s2, m = 0) => tunnelRaw.some(([a, b]) => s2 > a - m && s2 < b + m);
+		/* RINF (ERA): tunele i pochylenia linii przebiegu (kilometraż linii z PKP PLK – kmAt). Tunel z RINF bez odpowiednika
+		   w OSM – dodany; różne położenie portali – uwaga (zostaje OSM i pomiar NMT, RINF podaje km z dokładnością stacji) */
+		let rinfD = null;
+		if (opts.rinf && kmAt && plkLine) { try { rinfD = await opts.rinf(); } catch (e) { rinfD = null; log(`RINF niedostępny (${e.message}).`); } }
+		const sOfKmR = (km) => {
+			// odwrotność kmAt (kilometraż odcinkami liniowy między stacjami): najbliższy punkt przebiegu co 5 m
+			let best = null;
+			for (let s2 = 0; s2 <= endS; s2 += 5) { const dk = Math.abs(kmAt(s2) - km); if (!best || dk < best[1]) best = [s2, dk]; }
+			return best && best[1] < 0.05 ? best[0] : null;
+		};
+		if (rinfD && rinfD.tunnels) {
+			let nAdd = 0;
+			for (const [ln, km0, km1, len] of rinfD.tunnels) {
+				if (ln !== plkLine) continue;
+				const p0 = sOfKmR(km0), p1 = sOfKmR(km1);
+				if (p0 === null || p1 === null) continue;
+				const a = Math.min(p0, p1), b = Math.max(p0, p1);
+				const ov = tunnelRaw.filter(([x, y]) => x < b + 30 && y > a - 30);
+				if (ov.length) {
+					const [x, y] = ov[0];
+					if (Math.abs(x - a) > 60 || Math.abs(y - b) > 60) plkPending.push(() => issue('tunnel-rinf', a, 'info', `RINF: tunel linii ${ln} km ${km0}–${km1} (${len} m) – w grze km ${fmtKm(S(x))}–${fmtKm(S(y))} wg OSM i pomiaru terenu.`, 'Położenie portali z OSM i NMT (RINF podaje km z dokładnością do posterunków); inne – popraw zasięg tunnel=yes w OSM.', b));
+				} else if (b - a >= 80) {
+					tunnelRaw.push([a, b]);
+					nAdd++;
+					plkPending.push(() => issue('tunnel-rinf', a, 'warn', `RINF: tunel linii ${ln} km ${km0}–${km1} (${len} m) – w danych OSM go brak, dodany.`, 'Sprawdź położenie portali; najlepiej uzupełnić tunnel=yes w OSM i wygenerować ponownie.', b));
+				}
+			}
+			if (nAdd) { tunnelRaw.sort((x, y) => x[0] - y[0]); log(`RINF: dodane tunele (brak w OSM): ${nAdd}.`); }
+		}
+
 		// ---------- otoczenie: budynki, drogi, wody, zagospodarowanie ----------
 		let env = null, envData = null;
+		const culv = [];
 		if (opts.environment) {
 			const poly = [];
 			for (let s = 0; s <= endS; s += 250) { const p = pts[Math.min(pts.length - 1, Math.round(s / STEP))]; poly.push(P.ll(p[0], p[1])); }
 			envData = await opts.environment(poly, log);
+			// cieki pod ziemią z OSM (przepusty, kolektory) – odcinki w xy: woda z BDOT10k nad nimi pomijana
+			for (const e of [...((envData && envData.elements) || []), ...(els || [])]) {
+				const t = e.tags;
+				if (e.type !== 'way' || !t || !t.waterway || !e.geometry || !((t.tunnel && t.tunnel !== 'no') || Number(t.layer) < 0)) continue;
+				const g = e.geometry.filter(Boolean).map((q) => P.xy(q.lat, q.lon));
+				for (let k = 0; k + 1 < g.length; k++) culv.push([g[k], g[k + 1]]);
+			}
 			/* BDOT10k (GUGiK): budynki, jezdnie, zagospodarowanie, lasy, wody – zamiast obiektów tych rodzajów z OSM, gdy
 			   paczki wszystkich powiatów wzdłuż trasy są dostępne (tory, perony, stacje, rozjazdy – z OSM) */
 			if (opts.bdot && envData) {
@@ -2172,7 +2504,36 @@
 							.map((e) => (e.type === 'way' && e.tags && roofOnly(e.tags) ? Object.assign({}, e, { tags: Object.assign({}, e.tags, { _roofOnly: '1' }) }) : e))
 							.concat(pois);
 						log(`Otoczenie: BDOT10k (${bd.elements.length} obiektów) zamiast ${envData.elements.length - keep.length} obiektów OSM tych samych rodzajów.`);
-						envData = Object.assign({}, envData, { elements: keep.concat(bd.elements) });
+						/* cieki: odcinek BDOT10k „na powierzchni” wzdłuż cieku OSM pod ziemią (przepust, kolektor; do 15 m) – też pod
+						   ziemią (np. Kanał Kamionkowski przy Warszawie Stadion: w OSM „Kolektor Stadionowy” pod torami) */
+						let nCulv = 0;
+						const bdEls = !culv.length ? bd.elements : bd.elements.flatMap((e) => {
+							const t = e.tags;
+							if (e.type !== 'way' || !t || !t.waterway || t.tunnel || !e.geometry) return [e];
+							// punkty co najwyżej co 5 m (pomiar odległości od cieku pod ziemią)
+							const g = [];
+							e.geometry.filter(Boolean).forEach((q, k, A) => {
+								if (k) {
+									const a2 = A[k - 1], L = dist2(P.xy(a2.lat, a2.lon), P.xy(q.lat, q.lon)), m = Math.ceil(L / 5);
+									for (let j = 1; j < m; j++) g.push({ lat: a2.lat + ((q.lat - a2.lat) * j) / m, lon: a2.lon + ((q.lon - a2.lon) * j) / m });
+								}
+								g.push({ lat: q.lat, lon: q.lon });
+							});
+							const under = g.map((q) => { const c = P.xy(q.lat, q.lon); return culv.some(([a2, b2]) => segDist(c, a2, b2) < 15); });
+							if (!under.some(Boolean)) return [e];
+							const out = [];
+							for (let k0 = 0; k0 < g.length;) {
+								let k1 = k0;
+								while (k1 + 1 < g.length && under[k1 + 1] === under[k0]) k1++;
+								const part = g.slice(Math.max(0, k0 - 1), k1 + 1);
+								if (part.length > 1) out.push(Object.assign({}, e, { id: e.id * 1000 - out.length, geometry: part, nodes: undefined, tags: under[k0] ? Object.assign({}, t, { tunnel: 'culvert', layer: '-1' }) : t }));
+								if (under[k0]) nCulv++;
+								k0 = k1 + 1;
+							}
+							return out;
+						});
+						if (nCulv) log(`Cieki BDOT10k wzdłuż cieków pod ziemią z OSM (przepusty, kolektory): ${nCulv} odcinków pod ziemią.`);
+						envData = Object.assign({}, envData, { elements: keep.concat(bdEls) });
 					} else if (bd) log('BDOT10k niepełny dla trasy – otoczenie z OSM.');
 				} catch (e) {
 					log(`BDOT10k niedostępny (${e.message}) – otoczenie z OSM.`);
@@ -2186,7 +2547,7 @@
 				const q = pos.get(id);
 				if (q) swTags.set(Math.round(q[0] * 10) + ',' + Math.round(q[1] * 10), { t: nd.tags, id });
 			}
-			if (envData) env = buildEnvironment(envData, { P, pts, shift, endS, layerAt, stationsS: route.map((st, i) => [S(st.s), st.type === 'halt' && i > 0 && i < route.length - 1]), platformLength, log, debug: opts.debug, pathWays: new Set(path.edges.map((e) => e.w.id)), rails: ways, swTags, stationPts: stationNodes.filter((n) => n.tags.railway === 'station').map((n) => P.xy(n.lat, n.lon).concat([n.tags.name])) });
+			if (envData) env = buildEnvironment(envData, { P, pts, shift, endS, layerAt, stationsS: route.map((st, i) => [S(st.s), st.type === 'halt' && i > 0 && i < route.length - 1]), platformLength, log, debug: opts.debug, pathWays: new Set(path.edges.map((e) => e.w.id)), rails: ways, swTags, tunnels: tunnelRaw.map(([a, b]) => [a + shift, b + shift]), culv, stationPts: stationNodes.filter((n) => n.tags.railway === 'station').map((n) => P.xy(n.lat, n.lon).concat([n.tags.name])) });
 		}
 
 		// ---------- uwagi dla poprawek (plik poprawek: fixes) ----------
@@ -2198,19 +2559,9 @@
 			if (osm) o.osm = osm; // obiekt w OpenStreetMap (np. "way/123") – do sprawdzenia i poprawienia danych
 			issues.push(o);
 		};
+		for (const f of plkPending) f();
 
 		// ---------- mosty, wiadukty, tunele, przejazdy ----------
-		const ranges = (key) => {
-			const out = [];
-			for (let s = 0; s < endS; s += STEP) {
-				const t = edgeAt(s).w.tags;
-				if (t[key] && t[key] !== 'no') {
-					const r = out[out.length - 1];
-					if (r && s - r[1] <= 30) r[1] = s + STEP; else out.push([s, s + STEP]);
-				}
-			}
-			return out;
-		};
 		const waterSegs = [];
 		for (const w of waters) for (let k = 0; k < w.geometry.length - 1; k++) waterSegs.push([P.xy(w.geometry[k].lat, w.geometry[k].lon), P.xy(w.geometry[k + 1].lat, w.geometry[k + 1].lon)]);
 		const overWater = (a, b) => {
@@ -2335,7 +2686,8 @@
 		}
 		// brakujące mosty: pod torem droga lub tor w tunelu albo rzeka – w danych bez mostu
 		for (const c of crossings2) {
-			if (ourBridge(c.s) || c.over) continue;
+			// w tunelu naszego toru: drogi, cieki i tory krzyżują się na powierzchni albo w innym tunelu – bez wiaduktów
+			if (ourBridge(c.s) || c.over || inTunnelRaw(c.s, 10)) continue;
 			const what = c.kind === 'water' ? 'ciek' : c.kind === 'road' ? 'droga' : 'tor';
 			const nm = c.name ? ` (${c.name})` : '';
 			if ((c.kind === 'water' && !c.culvert) || (c.kind !== 'water' && c.under)) {
@@ -2367,11 +2719,7 @@
 				bridges.splice(k--, 1);
 			}
 		}
-		const tunnels = [];
-		for (const [a, b] of ranges('tunnel')) {
-			if (b - a < 80 || inZone(a) || inZone(b)) continue;
-			tunnels.push({ from: S(a), to: S(b) });
-		}
+		const tunnels = tunnelRaw.map(([a, b]) => ({ from: S(a), to: S(b) }));
 		const crossings = [];
 		for (const [id, s] of nodeS) {
 			const t = tagged.get(id);
@@ -2439,15 +2787,61 @@
 					run = null;
 					rel.push(k);
 				}
+				/* wykop czy most: obniżenie względem przebiegu toru bywa wykopem (np. zejście do tunelu, linia w mieście) –
+				   wtedy teren po obu stronach toru (12 i 20 m od osi) jest wyraźnie wyżej niż oś; przy moście teren obok też
+				   leży nisko (dolina, ulica pod torem). Dawniej każde obniżenie stawało się mostem (np. wykop przed Ochotą) */
+				let cutDips = [];
+				if (dips.length) {
+					const SIDE = [-20, -12, 12, 20], probe = [];
+					for (const [k0, k1] of dips) { const st = Math.max(1, Math.round((k1 - k0) / 10)); for (let k = k0; k <= k1; k += st) probe.push(k); }
+					const llS = [];
+					for (const k of probe) for (const d2 of SIDE) llS.push(llAt(k * STEP, d2));
+					let hS = null;
+					try { hS = await opts.lidar(llS, log); } catch (e) { hS = null; }
+					if (hS) {
+						const rise = new Map();
+						probe.forEach((k, i) => {
+							const v = hS.slice(i * 4, i * 4 + 4), L = Math.max(v[0], v[1]), Rr = Math.max(v[2], v[3]);
+							if ([L, Rr, g[k]].every(Number.isFinite)) rise.set(k, Math.min(L, Rr) - g[k]);
+						});
+						cutDips = dips.filter(([k0, k1]) => {
+							const r = [];
+							for (const [k, v] of rise) if (k >= k0 && k <= k1) r.push(v);
+							r.sort((x, y) => x - y);
+							return r.length > 0 && r[r.length >> 1] > 1.5;
+						});
+					}
+				}
+				for (const [k0, k1] of cutDips) {
+					for (let k = k0; k <= k1; k++) fixed[k] = true; // pomiar w wykopie jest poziomem toru
+					issue('cut-nmt', k0 * STEP, 'info', `Pomiar NMT: tor w wykopie (teren po obu stronach wyżej) na ${Math.round((k1 - k0) * STEP)} m – bez mostu.`, `Jeśli to jednak most: "bridges": [{ "from": ${S(k0 * STEP)}, "to": ${S(k1 * STEP)}, "kind": "viaduct" }].`, k1 * STEP);
+				}
+				/* obniżenie sięgające tunelu (np. estakada od Wisły do portalu tunelu średnicowego): most tylko do portalu – pomiar
+				   w tunelu to teren nad nim; dawniej most „wydłużony” przez cały tunel */
+				const bridgeDips = [];
+				for (const d0 of dips) {
+					if (cutDips.includes(d0)) continue;
+					let parts = [[d0[0], d0[1]]];
+					for (const [ta, tb] of tunnelRaw) {
+						const ka = Math.ceil(ta / STEP), kb = Math.floor(tb / STEP), next = [];
+						for (const [x0, x1] of parts) {
+							if (x1 < ka || x0 > kb) { next.push([x0, x1]); continue; }
+							if (x0 < ka - 1) next.push([x0, ka - 1]);
+							if (x1 > kb + 1) next.push([kb + 1, x1]);
+						}
+						parts = next;
+					}
+					for (const [x0, x1] of parts) if (x1 - x0 >= 2) bridgeDips.push([x0, x1, d0[2]]);
+				}
 				// mosty z pomiaru: wydłużenie mostu z danych albo nowy most (w danych go brak)
-				for (const [k0, k1, depth] of dips) {
+				for (const [k0, k1, depth] of bridgeDips) {
 					const a = k0 * STEP - 5, b = k1 * STEP + 5;
 					const ov = bridges.filter((o) => o.to - shift > a - 10 && o.from - shift < b + 10);
 					for (const o of ov) { o.from = Math.min(o.from, S(a)); o.to = Math.max(o.to, S(b)); o.nmt = 1; }
 					if (!ov.length) bridges.push({ from: S(a), to: S(b), kind: 'viaduct', over: '?', nmt: 1 });
 					issue('bridge-nmt', a, 'info', `Pomiar NMT: teren pod torem do ${depth.toFixed(1)} m niżej na ${Math.round(b - a)} m – ${ov.length ? 'most z danych wydłużony' : 'dodano most (w danych go brak)'}.`, `Jeśli to nie most: "bridges": [{ "at": ${S((a + b) / 2)}, "remove": true }]; inna długość: [{ "at": ${S((a + b) / 2)}, "from": …, "to": … }].`, b);
 				}
-				if (dips.length) {
+				if (bridgeDips.length) {
 					bridges.sort((x, y) => x.from - y.from);
 					for (let k = 1; k < bridges.length; k++) {
 						if (bridges[k].from <= bridges[k - 1].to + 5) {
@@ -2457,8 +2851,9 @@
 							bridges.splice(k--, 1);
 						}
 					}
-					log(`Mosty z pomiaru NMT: ${dips.length} (wydłużone albo dodane).`);
+					log(`Mosty z pomiaru NMT: ${bridgeDips.length} (wydłużone albo dodane).`);
 				}
+				const gRaw = g.slice(); // pomiar przed wypełnieniem luk (w tunelu – teren nad nim)
 				let last = -1;
 				for (let k = 0; k <= n; k++) {
 					if (k < n && !fixed[k]) continue;
@@ -2498,6 +2893,100 @@
 						} else i = k1;
 					}
 					if (fixedN) log(`Niweleta: wygładzone krótkie garby i dołki ponad 15‰: ${fixedN}.`);
+				}
+				/* tunel: tor co najmniej 7,5 m pod terenem z pomiaru (obudowa ok. 6 m i strop) – sama prosta między portalami
+				   bywała płycej niż ulica nad tunelem (Warszawa: Śródmieście ok. 7 m pod ulicą); wymóg rośnie od portalu przez
+				   250 m (zejście najwyżej ok. 30‰), tylko gdzie teren nie leży niżej niż tor (koniec estakady, wiadukt).
+				   Potem portal z pomiaru: tam, gdzie teren jest co najmniej 3 m nad torem (tunel w danych zaczyna się czasem
+				   nad terenem – obudowa wystawałaby ponad teren); tunel bez przykrycia – usunięty */
+				for (let i = tunnelRaw.length - 1; i >= 0; i--) {
+					const [a, b] = tunnelRaw[i], k0 = Math.max(0, Math.ceil(a / STEP)), k1 = Math.min(n - 1, Math.floor(b / STEP));
+					for (let k = k0; k <= k1; k++) {
+						if (!Number.isFinite(gRaw[k]) || gRaw[k] < hs[k] - 1) continue;
+						const cover = 7.5 * Math.min(1, Math.min(k * STEP - a, b - k * STEP) / 250);
+						hs[k] = Math.min(hs[k], gRaw[k] + 0.3 - cover);
+					}
+					const covered = (k) => Number.isFinite(gRaw[k]) && gRaw[k] - hs[k] >= 3;
+					let ka = k0, kb = k1;
+					while (ka <= k1 && !covered(ka)) ka++;
+					while (kb >= ka && !covered(kb)) kb--;
+					if (kb - ka < Math.round(80 / STEP)) {
+						issue('tunnel-nmt', a, 'warn', `Pomiar NMT: tunel z danych (${Math.round(b - a)} m) bez przykrycia terenem – pominięty.`, `Jeśli to jednak tunel: popraw dane OSM (tunnel, layer) i wygeneruj ponownie.`, b);
+						tunnelRaw.splice(i, 1);
+						tunnels.splice(i, 1);
+						continue;
+					}
+					const na = Math.max(a, ka * STEP - 10), nb = Math.min(b, kb * STEP + 10);
+					if (na - a > 30 || b - nb > 30) issue('tunnel-nmt', na, 'info', `Pomiar NMT: portale tunelu tam, gdzie teren jest ponad torem – km ${fmtKm(S(na))}–${fmtKm(S(nb))} (w danych ${fmtKm(S(a))}–${fmtKm(S(b))}).`, `Inne położenie portali: popraw dane OSM (zasięg tunnel=yes) i wygeneruj ponownie.`, nb);
+					tunnelRaw[i] = [na, nb];
+					tunnels[i] = { from: S(na), to: S(nb) };
+				}
+				/* RINF: oficjalny profil podłużny linii (pochylenia ‰ od km) w tunelach i na mostach od 150 m – tam pomiar NMT nie
+				   widzi toru (teren nad tunelem, dno pod mostem; dotąd prosta albo wymóg przykrycia). Kształt z RINF, końce na
+				   wysokości z pomiaru przy portalach / przyczółkach (różnica rozłożona liniowo). Najpierw zgodność z pomiarem na
+				   otwartych odcinkach (różnica wysokości co 500 m): mediana odchyłki ponad 1,5 m – profil RINF nieużyty */
+				const RG = rinfD && rinfD.lines && rinfD.lines[plkLine];
+				if (RG && RG.length >= 2 && kmAt) {
+					const gradeAt = (km) => {
+						if (km < RG[0][0] - 0.05 || km > RG[RG.length - 1][0] + 3) return null;
+						let lo = 0, hi = RG.length - 1;
+						while (lo < hi) { const m = (lo + hi + 1) >> 1; if (RG[m][0] <= km) lo = m; else hi = m - 1; }
+						return RG[lo][1];
+					};
+					const relProf = (k0, k1) => {
+						const rel = [0];
+						for (let k = k0 + 1; k <= k1; k++) {
+							const ka = kmAt((k - 1) * STEP), kb = kmAt(k * STEP), gr = gradeAt((ka + kb) / 2);
+							if (gr === null) return null;
+							rel.push(rel[rel.length - 1] + gr * (kb - ka)); // ‰ × km = m
+						}
+						return rel;
+					};
+					const spans = tunnelRaw.map(([x, y]) => [x, y, 'tunel']).concat(bridges.filter((o) => o.to - o.from >= 150).map((o) => [o.from - shift, o.to - shift, 'most']));
+					const inSpan = (s2) => spans.some(([x, y]) => s2 > x - 30 && s2 < y + 30);
+					const W = Math.round(500 / STEP), dev = [];
+					for (let k = 0; k + W < n; k += W) {
+						if (inSpan(k * STEP) || inSpan((k + W) * STEP) || spans.some(([x, y]) => x < (k + W) * STEP && y > k * STEP)) continue;
+						const rel = relProf(k, k + W);
+						if (rel) dev.push(Math.abs(rel[rel.length - 1] - (hs[k + W] - hs[k])));
+					}
+					dev.sort((x, y) => x - y);
+					const medDev = dev.length ? dev[dev.length >> 1] : null;
+					if (medDev === null || medDev > 1.5) log(`RINF: profil linii ${plkLine} niezgodny z pomiarem (odchyłka ${medDev === null ? '?' : medDev.toFixed(1)} m na 500 m) – nieużyty.`);
+					else {
+						let nOk = 0;
+						for (const [x, y, kind] of spans) {
+							const k0 = Math.max(0, Math.ceil(x / STEP)), k1 = Math.min(n - 1, Math.floor(y / STEP));
+							if (k1 - k0 < 4) continue;
+							const rel = relProf(k0, k1);
+							if (!rel) continue;
+							const close = hs[k1] - hs[k0] - rel[rel.length - 1];
+							if (Math.abs(close) > Math.max(2, 0.004 * (y - x))) {
+								issue('rinf-profile', x, 'info', `RINF: profil linii ${plkLine} (${kind}, ${Math.round(y - x)} m) różni się od pomiaru na końcach o ${close.toFixed(1)} m – profil z pomiaru.`, 'Bez zmian – sprawdź wysokości przy portalach / przyczółkach.', y);
+								continue;
+							}
+							for (let k = k0; k <= k1; k++) hs[k] = hs[k0] + rel[k - k0] + (close * (k - k0)) / (k1 - k0);
+							/* tunel: mimo profilu RINF tor co najmniej 6,5 m pod terenem z pomiaru (narastająco przez 200 m od portali) –
+							   kilometraż z PKP PLK liniowy między stacjami przesuwa stromy odcinek o kilkadziesiąt metrów (Warszawa:
+							   tor 4–5 m pod Alejami Jerozolimskimi – obudowa wystawałaby ponad jezdnię) */
+							if (kind === 'tunel') {
+								for (let k = k0; k <= k1; k++) {
+									if (!Number.isFinite(gRaw[k]) || gRaw[k] < hs[k] - 1) continue;
+									hs[k] = Math.min(hs[k], gRaw[k] + 0.3 - 6.5 * Math.min(1, Math.min(k * STEP - x, y - k * STEP) / 200));
+								}
+								/* obniżenie pod przykrycie nie bardziej strome niż 14‰ (w obie strony od sąsiadów) – przykrycie ustępuje
+								   pochyleniu (Warszawa: za wschodnim portalem 16–18‰, w RINF najwyżej 12,4‰); teren nad stropem
+								   podnosi świat gry */
+								const gm = 0.014 * STEP;
+								for (let it = 0; it < 2; it++) {
+									for (let k = k0 + 1; k <= k1; k++) hs[k] = Math.max(hs[k], hs[k - 1] - gm);
+									for (let k = k1 - 1; k >= k0; k--) hs[k] = Math.max(hs[k], hs[k + 1] - gm);
+								}
+							}
+							nOk++;
+						}
+						log(`RINF: profil podłużny linii ${plkLine} (zgodność z pomiarem ${medDev.toFixed(2)} m na 500 m) – w ${nOk} tunelach i na mostach.`);
+					}
 				}
 				// pochylenia co 50 m (0,1‰) z korektą narastającą – wysokość w grze zgodna z pomiarem
 				grades.length = 0;
@@ -2642,7 +3131,8 @@
 				}
 				return nmptBox(e0 - 2, n0 - 2, e1 + 2, n1 + 2);
 			};
-			const sts = def.stations.map((o) => ({ o, a: o.pos - platformLength - 15, b: o.pos + 25 }));
+			// stacja podziemna (w tunelu) – NMPT pokazuje powierzchnię nad nią, bez pomiaru
+			const sts = def.stations.filter((o) => !def.tunnels.some((t) => o.pos > t.from && o.pos < t.to)).map((o) => ({ o, a: o.pos - platformLength - 15, b: o.pos + 25 }));
 			log(`Mierzę perony stacji z NMPT (${sts.length} wycinków 0,5 m)…`);
 			let next = 0;
 			const worker = async () => {
@@ -2727,6 +3217,103 @@
 			}
 		};
 
+		/* poziom torów z mapy obok torów na poziomie naszej linii (zob. „tor na innym piętrze” niżej) – po pomiarze NMT
+		   i ponownie po poprawkach z NMPT (pomosty, krzyżowania, styki), które mogły go zmienić */
+		const levelShifted = new Set(); // wiersze env.t przesunięte przez levelBeside (oba przebiegi)
+		const levelBeside = (base) => {
+			let nH = 0;
+			// dwa przebiegi: drugi tor pary (np. WKD) leży obok pierwszego, już przesuniętego
+			for (let pass = 0; pass < 2; pass++) {
+				const ourZ = (s2) => Math.round((railAbs(s2 - shift) - base) * 10);
+				const segs = [];
+				env.t.forEach((row, i) => {
+					const z = env.th[i];
+					if (!z || row[0] & 16) return;
+					const m = (row.length - 1) / 2;
+					for (let k = 0; k + 1 < m; k++) if (z[k] >= 0 && z[k + 1] >= 0) segs.push([row[1 + k * 2], row[2 + k * 2], row[3 + k * 2], row[4 + k * 2], z[k], z[k + 1], i]);
+				});
+				const B = new Map();
+				for (const q of segs) for (let b2 = Math.floor(Math.min(q[0], q[2]) / 50); b2 <= Math.floor(Math.max(q[0], q[2]) / 50); b2++) { if (!B.has(b2)) B.set(b2, []); B.get(b2).push(q); }
+				// poziom sąsiedniego (do 6 m) równoległego toru na poziomie naszej linii (do 1,5 m), różniącego się o ponad 1 m; -1 – brak
+				const below = (i, s2, d2, z) => {
+					let best = -1, bd = 6;
+					for (const q of B.get(Math.floor(s2 / 50)) || []) {
+						if (q[6] === i) continue;
+						const ux = q[2] - q[0], uy = q[3] - q[1], L2 = ux * ux + uy * uy || 1e-9;
+						if (Math.abs(uy) > 0.15 * Math.abs(ux)) continue;
+						const t = Math.max(0, Math.min(1, ((s2 - q[0]) * ux + (d2 - q[1]) * uy) / L2));
+						const dist = Math.hypot(q[0] + ux * t - s2, q[1] + uy * t - d2);
+						if (dist > bd) continue;
+						const zq = q[4] + (q[5] - q[4]) * t;
+						if (Math.abs(zq - ourZ(s2)) < 15 && Math.abs(z - zq) > 10) { best = Math.round(zq); bd = dist; }
+					}
+					return best;
+				};
+				env.t.forEach((row, i) => {
+					const z = env.th[i], m = (row.length - 1) / 2;
+					if (!z || row[0] & 16 || m < 2) return;
+					const L = [0];
+					for (let k = 1; k < m; k++) L.push(L[k - 1] + Math.hypot(row[1 + k * 2] - row[k * 2 - 1], row[2 + k * 2] - row[k * 2]));
+					const tz = [];
+					// tylko tam, gdzie sam tor biegnie wzdłuż (tor ukośny, np. pod naszym mostem, ma inny poziom niż tory obok)
+					const along = (k) => { const a2 = Math.max(0, k - 1), b2 = Math.min(m - 1, k + 1); return Math.abs(row[2 + b2 * 2] - row[2 + a2 * 2]) <= 0.15 * Math.abs(row[1 + b2 * 2] - row[1 + a2 * 2]); };
+					for (let k = 0; k < m; k++) tz.push(z[k] >= 0 && along(k) ? below(i, row[1 + k * 2], row[2 + k * 2], z[k]) : -1);
+					for (let k = 0; k < m;) {
+						if (tz[k] < 0) { k++; continue; }
+						let e2 = k;
+						while (e2 + 1 < m && tz[e2 + 1] >= 0) e2++;
+						// krótszy odcinek – tylko cały tor (krótki odcinek przy portalu, dalej łączony końcem z dłuższym)
+						if (L[e2] - L[k] < 40 && !(k === 0 && e2 === m - 1)) for (let j = k; j <= e2; j++) tz[j] = -1;
+						k = e2 + 1;
+					}
+					const on = [];
+					for (let k = 0; k < m; k++) if (tz[k] >= 0) on.push(k);
+					if (!on.length) return;
+					nH++;
+					levelShifted.add(i);
+					const nz = z.slice();
+					for (let k = 0; k < m; k++) {
+						if (z[k] < 0) continue;
+						if (tz[k] >= 0) { nz[k] = tz[k]; continue; }
+						// rampa: od najbliższego przesuniętego punktu
+						let jb = -1, db = 60;
+						for (const j of on) { const dd = Math.abs(L[j] - L[k]); if (dd < db) { db = dd; jb = j; } }
+						if (jb >= 0) nz[k] = Math.round(tz[jb] + (z[k] - tz[jb]) * (db / 60));
+					}
+					env.th[i] = nz;
+				});
+			}
+			if (nH) log(`Tory obok torów na poziomie linii (pomiar NMT trafia w przykrycie, skarpę albo ulicę pod wiaduktem): ${nH} przesuniętych do poziomu sąsiedniego toru.`);
+			/* perony przy przesuniętych torach (env.ph liczone wcześniej, do poziomu toru sprzed przesunięcia): peron pod
+			   główką szyny najbliższego toru (do 9 m od środka peronu) albo ponad 1,5 m nad nią – 0,76 m nad szyną (np. perony
+			   Warszawy Powiśle: tor podniesiony o 3 m, peron został na dawnym poziomie, pod torami) */
+			if (levelShifted.size && env.ph && env.p) {
+				let nP = 0;
+				env.p.forEach((row, pi) => {
+					if (!(env.ph[pi] >= 0)) return;
+					const m = (row.length - 1) / 2;
+					let cs = 0, cd = 0;
+					for (let k = 0; k < m; k++) { cs += row[1 + k * 2] / m; cd += row[2 + k * 2] / m; }
+					let best = null, bd = 9, bi = -1;
+					env.t.forEach((tr, i) => {
+						const z = env.th[i];
+						if (!z || tr[0] & 16) return;
+						const tm = (tr.length - 1) / 2;
+						for (let k = 0; k + 1 < tm; k++) {
+							const sa = tr[1 + k * 2], da = tr[2 + k * 2], sb = tr[3 + k * 2], db = tr[4 + k * 2];
+							if (Math.max(sa, sb) < cs - 10 || Math.min(sa, sb) > cs + 10 || !(z[k] >= 0 && z[k + 1] >= 0)) continue;
+							const ux = sb - sa, uy = db - da, L2 = ux * ux + uy * uy || 1e-9, t = Math.max(0, Math.min(1, ((cs - sa) * ux + (cd - da) * uy) / L2));
+							const dist = Math.hypot(sa + ux * t - cs, da + uy * t - cd);
+							if (dist < bd) { bd = dist; best = z[k] + (z[k + 1] - z[k]) * t; bi = i; }
+						}
+					});
+					if (best === null || !levelShifted.has(bi)) return;
+					const rel = env.ph[pi] - best;
+					if (rel < -2 || rel > 15) { env.ph[pi] = Math.round(best + 7.6); nP++; }
+				});
+				if (nP) log(`Perony przy przesuniętych torach: ${nP} na nowym poziomie.`);
+			}
+		};
 		/* NMPT − NMT: wysokość obiektów nad terenem. Budynki: wysokość (90. percentyl powierzchni w obrysie nad
 		   terenem przy ścianach) i dach płaski/spadzisty (rozrzut wysokości dachu), o ile OSM nie podaje; korony drzew:
 		   siatka jak zagospodarowanie (co 10 m, kod co 2 m); pomosty wiaduktów nad torem i mostów obok. */
@@ -3115,6 +3702,41 @@
 					}
 					if (nC) log(`Tory z mapy nad innymi torami z prześwitem poniżej 6,2 m: ${nC} – tor dolny obniżony.`);
 				}
+				/* tory z mapy pod naszym mostem: tor przecinający oś naszej linii (ukośnie, |Δd| > 0,25·|Δs|) w obrębie jej mostu
+				   biegnie pod przęsłem – w przecięciu co najmniej 7 m pod naszą szyną (prześwit 6,2 m i konstrukcja), rampa 2%
+				   w obie strony; pomiar NMT na naszym nasypie podnosił go na nasz poziom (Gliwice – Zabrze km 4,24: dwa tory
+				   innej linii „wjeżdżały” na nasze tory). Znacznik mostu na takim torze (pomost na naszym poziomie) – usunięty. */
+				{
+					let nU = 0;
+					const underOur = (sx) => bridges.some((b) => sx > b.from - 3 && sx < b.to + 3);
+					// odcinki ukośne dochodzące do osi (do 2 m) pod naszym mostem – bez znacznika mostu (obniżenie przechodzi na nie)
+					env.t.forEach((row) => {
+						if (row[0] & 16 || !(row[0] & 2)) return;
+						const m = (row.length - 1) / 2;
+						for (let k = 0; k + 1 < m; k++) {
+							const sa = row[1 + k * 2], da = row[2 + k * 2], sb = row[3 + k * 2], db = row[4 + k * 2];
+							if (Math.abs(db - da) < 0.25 * Math.abs(sb - sa)) continue;
+							if ((Math.abs(da) <= 2 && underOur(sa)) || (Math.abs(db) <= 2 && underOur(sb))) { row[0] &= ~2; break; }
+						}
+					});
+					env.t.forEach((row, i) => {
+						if (row[0] & 16 || !env.th[i]) return;
+						const m = (row.length - 1) / 2;
+						for (let k = 0; k + 1 < m; k++) {
+							const sa = row[1 + k * 2], da = row[2 + k * 2], sb = row[3 + k * 2], db = row[4 + k * 2];
+							if (da * db > 0 || da === db || Math.abs(db - da) < 0.25 * Math.abs(sb - sa)) continue;
+							const t = da / (da - db), sx = sa + (sb - sa) * t;
+							if (!underOur(sx)) continue;
+							const L0 = railAbs(sx - shift) - 7, y = thAbs(i, k, t);
+							if (!Number.isFinite(y) || y < L0 + 0.5) continue;
+							row[0] &= ~2;
+							lower(i, arc(i, k, t), L0, new Set());
+							nU++;
+							break;
+						}
+					});
+					if (nU) log(`Tory z mapy pod naszym mostem (przecinają oś pod przęsłem): ${nU} – obniżone pod przęsło.`);
+				}
 			}
 			/* tory z mapy: bez zapadlisk ostrzejszych niż 3% (tor wzięty z terenu pod mostem albo w dolinie pod nasypem –
 			   NMT pokazuje dno) i bez progów na stykach torów (koniec do końca – wyższy z poziomów) */
@@ -3178,6 +3800,44 @@
 						}
 					}
 				};
+				// tory obok torów na poziomie linii – ponownie po poprawkach z NMPT (pomosty, krzyżowania), przed wyrównaniem styków
+				levelBeside(base);
+				/* tory na naszym moście: w obrębie mostu naszej linii (±5 m) tory biegnące wzdłuż (|Δd| ≤ 0,35·|Δs|) do 60 m od osi,
+				   różniące się od naszej szyny o mniej niż 3 m – na jej poziomie (jeden wiadukt pod wszystkimi torami stacji), przejście
+				   30 m; dawniej tor z pomiarem pomostu (NMPT) wznosił się ponad nasz, a tor bez znacznika mostu schodził w ulicę
+				   pod spodem (Toruń Główny, wiadukt nad ulicą) */
+				{
+					let nB = 0;
+					const ourZ = (s2) => Math.round((railAbs(s2 - shift) - base) * 10);
+					const onOur = (s2) => bridges.some((b) => s2 > b.from - 5 && s2 < b.to + 5);
+					env.t.forEach((row, i) => {
+						const z = env.th[i], m = (row.length - 1) / 2;
+						if (!z || row[0] & 16 || m < 2) return;
+						const L = [0];
+						for (let k = 1; k < m; k++) L.push(L[k - 1] + Math.hypot(row[1 + k * 2] - row[k * 2 - 1], row[2 + k * 2] - row[k * 2]));
+						const tz = [];
+						for (let k = 0; k < m; k++) {
+							const s2 = row[1 + k * 2], d2 = row[2 + k * 2], a2 = Math.max(0, k - 1), b2 = Math.min(m - 1, k + 1);
+							// wzdłuż albo rozchodzący się łagodnie (rozjazdy na wiadukcie stacji); tor innej linii pod mostem – ukośnie
+							const along = Math.abs(row[2 + b2 * 2] - row[2 + a2 * 2]) <= 0.35 * Math.abs(row[1 + b2 * 2] - row[1 + a2 * 2]);
+							const oz = ourZ(s2);
+							tz.push(z[k] >= 0 && along && Math.abs(d2) < 60 && onOur(s2) && Math.abs(z[k] - oz) < 30 && z[k] !== oz ? oz : -1);
+						}
+						const on = [];
+						for (let k = 0; k < m; k++) if (tz[k] >= 0) on.push(k);
+						if (!on.length) return;
+						nB++;
+						const z0 = z.slice();
+						for (let k = 0; k < m; k++) {
+							if (z0[k] < 0) continue;
+							if (tz[k] >= 0) { z[k] = tz[k]; continue; }
+							let jb = -1, db = 30;
+							for (const j of on) { const dd = Math.abs(L[j] - L[k]); if (dd < db) { db = dd; jb = j; } }
+							if (jb >= 0) z[k] = Math.round(tz[jb] + (z0[k] - tz[jb]) * (db / 30));
+						}
+					});
+					if (nB) log(`Tory na moście naszej linii (wzdłuż, do 60 m od osi): ${nB} na jej poziomie.`);
+				}
 				for (let it = 0; it < 4; it++) {
 					branchFix();
 					env.t.forEach((_, i) => fill(i));
@@ -3194,6 +3854,62 @@
 			}
 			env.oh = env.o.map((row) => profile(row, 1));
 			env.roh = env.ro.map((row) => profile(row, 1));
+			/* wiadukty innych linii nad naszą (env.ro – w danych most nad naszym torem): pomiar powierzchni bez pomostu
+			   (profil przy torze poniżej 5,5 m nad naszą szyną – NMPT nie widzi obiektu albo brak kafla) – pomost poziomy
+			   7,6 m nad naszą szyną (jak w grze bez pomiaru); tory dochodzące do końców pomostu (i ich dalszy ciąg) wznoszą się
+			   do niego rampą 3% – dawniej pomost wisiał nad torami, a tory tej linii dochodziły do przyczółków po ziemi
+			   (Gliwice – Katowice przed Katowicami: linie 139 i 656 nad 137) */
+			{
+				let nR = 0;
+				const endsOf = (row) => { const m = (row.length - 1) / 2; return [0, m - 1].map((k) => [row[1 + k * 2], row[2 + k * 2], k]); };
+				env.ro.forEach((row, ri) => {
+					const P = [];
+					for (let k = 1; k + 1 < row.length; k += 2) P.push([row[k], row[k + 1]]);
+					let ci = 0;
+					P.forEach((q, k) => { if (Math.abs(q[1]) < Math.abs(P[ci][1])) ci = k; });
+					const rail = railAbs(P[ci][0] - shift), prof = env.roh[ri];
+					const measured = env.roz && env.roz[ri] >= 0 ? base + env.roz[ri] / 10 : null;
+					let deck = measured;
+					if (deck === null) {
+						const near = prof.filter((_, k) => Math.abs(P[k][1]) < 6).map((v) => base + v / 10);
+						if (!near.length || Math.max(...near) < rail + 5.5) deck = rail + 7.6;
+					}
+					if (deck === null) return;
+					if (measured === null) env.roh[ri] = prof.map(() => Math.round((deck - base) * 10));
+					// rampa 3% od końców pomostu wzdłuż torów (szyna 0,6 m pod wierzchem pomostu)
+					const top = deck - 0.6;
+					const seen = new Set();
+					const raise = (i, kFrom, z0) => {
+						if (seen.has(i) || env.t[i][0] & 16 || !env.th[i]) return;
+						seen.add(i);
+						const tr = env.t[i], m = (tr.length - 1) / 2, z = env.th[i];
+						const dir = kFrom === 0 ? 1 : -1;
+						let c = 0, hit = false;
+						for (let k = kFrom; k >= 0 && k < m; k += dir) {
+							if (k !== kFrom) c += Math.hypot(tr[1 + k * 2] - tr[1 + (k - dir) * 2], tr[2 + k * 2] - tr[2 + (k - dir) * 2]);
+							const target = Math.round((z0 - 0.03 * c - base) * 10);
+							if (target <= z[k]) break;
+							z[k] = target;
+							hit = true;
+						}
+						if (!hit) return;
+						nR++;
+						// dalszy ciąg (tor połączony drugim końcem)
+						const kEnd = dir > 0 ? m - 1 : 0, eS = tr[1 + kEnd * 2], eD = tr[2 + kEnd * 2], zEnd = base + z[kEnd] / 10;
+						if (z[kEnd] < Math.round((z0 - 0.03 * c - base) * 10) - 1) return;
+						env.t.forEach((t2, j) => {
+							if (j === i) return;
+							for (const [s2, d2, k2] of endsOf(t2)) if (Math.hypot(s2 - eS, d2 - eD) < 1.5) raise(j, k2, zEnd);
+						});
+					};
+					for (const [eS, eD] of [P[0], P[P.length - 1]]) {
+						env.t.forEach((t2, j) => {
+							for (const [s2, d2, k2] of endsOf(t2)) if (Math.hypot(s2 - eS, d2 - eD) < 4) raise(j, k2, top);
+						});
+					}
+				});
+				if (nR) log(`Wiadukty innych linii nad naszą: ${nR} odcinków torów dojazdowych podniesionych rampą 3% do pomostu.`);
+			}
 			env.obh = env.ob.map((row) => profile(row, 2));
 			/* drogi stykające się z końcem mostu (odcinek mostu w danych bywa krótszy niż prawdziwy most): od tego końca jezdnia
 			   po powierzchni (NMPT), dopóki ta jest ponad 2 m nad terenem – dalszy ciąg pomostu albo nasyp dojazdu */
@@ -3313,22 +4029,39 @@
 					};
 					tl.push(ext(0, 1), ext(m - 1, m - 2));
 				}
+				// tor pod ziemią według danych (bit 32): teren 12 m po obu stronach (wykop czy przykrycie)
+				if (row[0] & 32) for (let k = 0; k < m; k++) tl.push(llAt(row[1 + k * 2] - shift, row[2 + k * 2] - 12), llAt(row[1 + k * 2] - shift, row[2 + k * 2] + 12));
 			});
 			log(`Pobieram wysokości torów z mapy z NMT (${tl.length} punktów)…`);
 			const th = await opts.lidar(tl, log);
 			let q = 0;
-			env.th = env.t.map((row) => {
+			const sideH = new Map();
+			env.th = env.t.map((row, ri) => {
 				const m = (row.length - 1) / 2, v = th.slice(q, q + m);
 				q += m;
+				const raw = v.slice();
 				if (row[0] & 2 && m >= 2) {
 					const a = th[q], b = th[q + 1];
 					q += 2;
 					if (Number.isFinite(a) && Number.isFinite(b)) {
 						const L = [0];
 						for (let k = 1; k < m; k++) L.push(L[k - 1] + Math.hypot(row[1 + k * 2] - row[k * 2 - 1], row[2 + k * 2] - row[k * 2]));
-						for (let k = 0; k < m; k++) v[k] = a + ((b - a) * L[k]) / (L[m - 1] || 1);
+						// prosta między końcami, ale nie niżej niż teren z pomiaru pod torem (długi „most” na nasypie – np. tory
+						// linii 448 przy Stadionie – dawniej do 7 m pod terenem w środku)
+						for (let k = 0; k < m; k++) v[k] = Math.max(a + ((b - a) * L[k]) / (L[m - 1] || 1), Number.isFinite(raw[k]) ? raw[k] : -Infinity);
+						/* most bez prześwitu: teren z pomiaru pod torem (mediana) mniej niż 2 m pod prostą między końcami, na
+						   długości od 40 m – w praktyce nasyp (np. tory linii 448 przy Stadionie, w danych most 450 m): zwykły tor
+						   z wysokością z pomiaru (kształtuje teren, nie zapada się pod niego) */
+						const gaps = [];
+						for (let k = 0; k < m; k++) if (Number.isFinite(raw[k])) gaps.push(v[k] - raw[k]);
+						gaps.sort((x, y) => x - y);
+						if (L[m - 1] >= 40 && gaps.length >= 3 && gaps[gaps.length >> 1] < 2) {
+							row[0] &= ~2;
+							for (let k = 0; k < m; k++) v[k] = Number.isFinite(raw[k]) ? raw[k] : v[k];
+						}
 					}
 				}
+				if (row[0] & 32) { sideH.set(ri, { raw, lat: th.slice(q, q + 2 * m) }); q += 2 * m; }
 				for (let k = 0; k < m; k++) if (!Number.isFinite(v[k])) v[k] = k ? v[k - 1] : NaN;
 				for (let k = m - 2; k >= 0; k--) if (!Number.isFinite(v[k])) v[k] = v[k + 1];
 				// tory przy naszej linii (do 15 m, równoległe): na odcinku naszego mostu – na jego poziomie (pod mostem NMT
@@ -3351,7 +4084,11 @@
 					// do 15 m: na odcinku naszego mostu albo pomiar ponad 1,5 m wyżej (pomost nad torem w NMT) – poziom naszej linii;
 					// do 60 m (głowice stacji, tory obok): na odcinku naszego mostu pomiar ponad 1,5 m niżej – tor na tym samym
 					// obiekcie (przejście pod całym torowiskiem), krótki odcinek toru z mapy nad przejściem nie ma odniesienia
-					if ((Math.abs(d2) <= 15 && (onOurs || v[k] > ra + 1.5)) || (onOurs && row[0] & 2 && skew <= 0.15 && sameLv)) v[k] = ra;
+					/* tor na moście równoległy do naszego (do 30 m), nasza linia bez mostu, poziom w pobliżu naszego (do 5 m): na
+					   naszym poziomie – wysokość między końcami długiego mostu (np. 450 m przy Stadionie) zapadała się do 3 m pod
+					   torowisko */
+					const bridgeNear = row[0] & 2 && !onOurs && Math.abs(d2) <= 30 && skew <= 0.15 && Math.abs(v[k] - ra) < 5;
+					if ((Math.abs(d2) <= 15 && (onOurs || v[k] > ra + 1.5)) || (onOurs && row[0] & 2 && skew <= 0.15 && sameLv) || bridgeNear) v[k] = ra;
 					else if (onOurs && v[k] < ra - 1.5 && sameLv) v[k] = NaN; // dalej – prosto między pewnymi punktami toru przed i za mostem
 				}
 				// odrzucone punkty: liniowo między pewnymi sąsiadami w torze; bez sąsiada z jednej strony – poziom naszej linii
@@ -3377,6 +4114,93 @@
 				}
 				return v.map((x) => (Number.isFinite(x) ? Math.round((x + 0.3 - base) * 10) : -1));
 			});
+			/* tory pod ziemią według danych (bit 32): punkt przykryty, gdy pomiar na torze nie leży ponad 2,5 m niżej niż
+			   wyższa strona (12 m obok) – nie wykop; ciągi przykrytych punktów od 60 m – tunel: w tunelu naszej linii tor
+			   na jej poziomie (bit 16), poza nim pomijany (pod ziemią, niewidoczny) */
+			{
+				const T2 = [], H2 = [];
+				let nU = 0, nD = 0;
+				const inOurTun = (s2) => tunnelRaw.some(([a, b]) => s2 - shift > a - 2 && s2 - shift < b + 2);
+				// wnętrze tunelu naszej linii (od 20 m za portalami, do 45 m od osi): każdy tor (poza mostem) na jej poziomie –
+				// także krótkie łącznice bez znaczników tunelu (dawniej z pomiaru – na wysokości ulicy, „drabina” w powietrzu)
+				const interior = (s2, d2) => Math.abs(d2) < 45 && tunnelRaw.some(([a, b]) => s2 - shift > a + 20 && s2 - shift < b - 20);
+				env.t.forEach((row, i) => {
+					const z = env.th[i], q2 = sideH.get(i), m0 = (row.length - 1) / 2;
+					let inside = false;
+					if (!(row[0] & 2)) for (let k = 0; k < m0 && !inside; k++) inside = interior(row[1 + k * 2], row[2 + k * 2]);
+					if ((!(row[0] & 32) || !q2) && !inside) { T2.push(row); H2.push(z); return; }
+					const m = (row.length - 1) / 2, L = [0];
+					for (let k = 1; k < m; k++) L.push(L[k - 1] + Math.hypot(row[1 + k * 2] - row[k * 2 - 1], row[2 + k * 2] - row[k * 2]));
+					const cov = [];
+					for (let k = 0; k < m; k++) {
+						if (!q2) { cov.push(false); continue; }
+						const a = q2.raw[k], hl = q2.lat[2 * k], hr = q2.lat[2 * k + 1];
+						const hi = Math.max(Number.isFinite(hl) ? hl : -Infinity, Number.isFinite(hr) ? hr : -Infinity);
+						cov.push(Number.isFinite(a) && Number.isFinite(hi) && a > hi - 2.5);
+					}
+					// ciągi przykrytych punktów krótsze niż 60 m – przejścia pod wiaduktami (tor zostaje)
+					const under = cov.slice();
+					for (let k = 0; k < m;) {
+						if (!cov[k]) { k++; continue; }
+						let e = k;
+						while (e + 1 < m && cov[e + 1]) e++;
+						if (L[e] - L[k] < 60) for (let j = k; j <= e; j++) under[j] = false;
+						k = e + 1;
+					}
+					// podział na kawałki: na powierzchni (bez zmian), pod ziemią w tunelu naszej linii (bit 16), pod ziemią poza nim (pominięty)
+					/* w obrębie naszego tunelu tor pod ziemią według danych (bit 32): do 45 m od osi – w obudowie (bit 16), dalej –
+					   osobny tunel (np. WKD przy Śródmieściu), pomijany; bez progu długości (krótkie odcinki z kozłami dawniej na
+					   powierzchni) */
+					/* przykryty tor tuż obok naszej linii (do 25 m, równoległy) poza naszym tunelem – ten sam wykop pod pomostem /
+					   placem (np. Ochota: tor linii 448 przy peronie wyspowym, nad nim przykrycie): zostaje na poziomie naszej linii
+					   (kod 128); dawniej pomijany jako tunel innej linii – peron wyspowy z torem tylko po jednej stronie */
+					const parallel = (k) => {
+						const a = Math.max(0, k - 1), b = Math.min(m - 1, k + 1);
+						return Math.abs(row[2 + b * 2] - row[2 + a * 2]) <= 0.15 * Math.abs(row[1 + b * 2] - row[1 + a * 2]);
+					};
+					const kind = (k) => {
+						const s2 = row[1 + k * 2], d2 = row[2 + k * 2];
+						if (!(row[0] & 2) && interior(s2, d2)) return 16;
+						if (row[0] & 32 && inOurTun(s2)) return Math.abs(d2) < 45 ? 16 : -1;
+						if (under[k] && !inOurTun(s2) && Math.abs(d2) <= 25 && parallel(k)) return 128;
+						return !under[k] ? 0 : inOurTun(s2) ? 16 : -1;
+					};
+					let k0 = 0;
+					while (k0 < m) {
+						const kd = kind(k0);
+						let k1 = k0;
+						while (k1 + 1 < m && kind(k1 + 1) === kd) k1++;
+						// kawałek z punktem granicznym następnego (ciągłość toru)
+						const kb = Math.min(m - 1, k1 + 1);
+						if (kd >= 0 && kb > k0) {
+							const fl = kd === 128 ? 0 : kd;
+							const nr = [(row[0] & ~32 & ~16) | fl | (fl === 0 ? row[0] & 16 : 0)]; // tor z długiego tunelu – flaga zostaje
+							for (let k = k0; k <= kb; k++) nr.push(row[1 + k * 2], row[2 + k * 2]);
+							T2.push(nr);
+							const zz = z ? z.slice(k0, kb + 1) : z;
+							if (kd === 128 && zz) for (let k = k0; k <= kb; k++) zz[k - k0] = Math.round((railAbs(row[1 + k * 2] - shift) - base) * 10);
+							H2.push(zz);
+							if (kd === 16) nU++;
+						} else if (kd < 0) nD++;
+						k0 = k1 + 1;
+					}
+				});
+				env.t = T2.map((row) => { row[0] &= ~32; return row; });
+				env.th = H2;
+				if (nU || nD) log(`Tory pod ziemią (pomiar NMT): ${nU} odcinków w tunelu naszej linii, ${nD} pominiętych (tunel innej linii).`);
+				/* tor „na innym piętrze” tuż obok toru na poziomie naszej linii: równoległy, do 6 m w planie, ponad 1 m wyżej albo
+				   niżej, na odcinku od 40 m (albo na całej długości krótkiego toru) – w rzeczywistości biegnie obok na tym samym
+				   poziomie (pomiar NMT trafia w strop, plac, skarpę albo ulicę pod wiaduktem; np. WKD przy Ochocie obok toru linii
+				   448 – rysowana na nasypie przyklejonym do toru; skrajny tor linii 448 przy Powiślu – 3 m pod sąsiednim, na
+				   poziomie ulicy pod mostem): przesuwany do poziomu sąsiedniego toru, z rampą 60 m do własnego pomiaru */
+				// tory w tunelu naszej linii (bit 16 – w grze na jej poziomie): ten sam poziom w danych, żeby wyrównanie styków
+				// niżej nie przenosiło pomiaru z ulicy nad tunelem na tory wychodzące z niego
+				env.t.forEach((row, i) => {
+					if (!(row[0] & 16) || !env.th[i]) return;
+					env.th[i] = env.th[i].map((z, k) => (z < 0 ? z : Math.round((railAbs(row[1 + k * 2] - shift) - base) * 10)));
+				});
+				levelBeside(base);
+			}
 			/* mosty drogowe obok toru (nie nad torami): teren pod środkiem (NMT, mosty usunięte) nie niżej niż 2 m od końców –
 			   pod spodem nic nie ma (dane oznaczają most, a droga biegnie po terenie) – zwykła droga */
 			if (env.ob && env.ob.length) {
@@ -3468,14 +4292,32 @@
 				return best !== null && Math.abs(cd) > 12 ? best : railAbs(cs - shift);
 			};
 			env.ph = meta.map(([cs, cd, i0], q) => {
+				// peron w tunelu naszej linii: pomiar to teren nad tunelem – bez pomiaru (w grze poziom torów)
+				if (tunnelRaw.some(([a, b]) => cs - shift > a && cs - shift < b)) return -1;
 				const i1 = q + 1 < meta.length ? meta[q + 1][2] : pp.length;
 				const v = ph.slice(i0, i1).filter(Number.isFinite).sort((x, y) => x - y);
 				if (!v.length) return -1;
 				const rail = railNear(cs, cd, v[v.length >> 1]);
 				if (!Number.isFinite(rail)) return -1;
 				const rel = v[v.length >> 1] - rail;
-				// wyraźnie niżej niż tory w pobliżu (inny poziom stacji, tory dolnego poziomu poza danymi) – zmierzona powierzchnia
-				if (rel < -1.5) {
+				/* wyraźnie niżej niż tory w pobliżu (inny poziom stacji, tory dolnego poziomu poza danymi) – zmierzona powierzchnia;
+				   nie dla peronu między torami tego poziomu (po obu stronach do 9 m – peron wyspowy, pomiar chybiony, np. Powiśle) */
+				const between = () => {
+					let lo = false, hi = false;
+					env.t.forEach((row, i) => {
+						const z = env.th[i], m = (row.length - 1) / 2;
+						if (!z || row[0] & 16) return;
+						for (let k = 0; k + 1 < m; k++) {
+							const sa = row[1 + k * 2], sb = row[3 + k * 2];
+							if ((sa - cs) * (sb - cs) > 0 || !(z[k] >= 0)) continue;
+							const t = (cs - sa) / ((sb - sa) || 1e-9), dd = row[2 + k * 2] + (row[4 + k * 2] - row[2 + k * 2]) * t - cd;
+							if (Math.abs(dd) > 9 || Math.abs(base + z[k] / 10 - rail) > 1) continue;
+							if (dd < 0) lo = true; else hi = true;
+						}
+					});
+					return lo && hi;
+				};
+				if (rel < -1.5 && !between()) {
 					if (opts.debug) log(`[debug] peron km ${((cs - shift) / 1000).toFixed(2)} d ${cd.toFixed(0)}: ${rel.toFixed(2)} m względem torów – na zmierzonej powierzchni`);
 					return Math.round((v[v.length >> 1] - base) * 10);
 				}
@@ -3553,6 +4395,15 @@
 		if (env && env._tz) env.tz = env._tz();
 		if (env) delete env._tz;
 		if (env) delete env._bTags;
+		/* bez pomiaru NMT (bez siatki terenu): robocza flaga 32 usunięta, tory we wnętrzu tunelu naszej linii – bit 16
+		   (poziom naszej linii; bez rozróżnienia wykopu i przykrycia poza tunelem) */
+		if (env && env.t && env.t.some((row) => row[0] & 32)) {
+			for (const row of env.t) {
+				let inside = false;
+				if (!(row[0] & 2)) for (let k = 1; k + 1 < row.length && !inside; k += 2) inside = Math.abs(row[k + 1]) < 45 && tunnelRaw.some(([a, b]) => row[k] - shift > a + 20 && row[k] - shift < b - 20);
+				row[0] = (row[0] & ~32) | (inside ? 16 : 0);
+			}
+		}
 		if (env) def.env = env;
 
 		// uwagi: przebieg (odchyłka, łuki), tor (lewy, boczny), prędkości, semafory, stacje, perony
@@ -3598,6 +4449,9 @@
 			if (b - a >= 300) issue('speed', a, 'info', `Brak prędkości (maxspeed) w danych na ${(b - a) / 1000 < 1 ? Math.round(b - a) + ' m' : ((b - a) / 1000).toFixed(1).replace('.', ',') + ' km'} – przyjęto prędkość z sąsiedniego odcinka.`, `Prędkość ręcznie: "limits": [[${S(a)}, 80]] (pozycja, km/h).`, b);
 		}
 		if (added) issue('signals', route[0].s, 'info', `Uzupełniono ${added} semaforów odstępowych bez nazw (mało sygnalizacji w danych).`, 'Semafor ręcznie: "signals": [{ "pos": …, "name": "…", "kind": "block" }]; usunięcie: [{ "at": …, "remove": true }].');
+		// stacje innych linii kolejowych obok (nazwy peronów z mapy, np. Śródmieście przy Centralnej): [km, nazwa]
+		if (def.env) { const os = otherSt.filter((o) => !o.metro).map((o) => [Math.round(S(o.s)), o.name]); if (os.length) def.env.os = os; }
+		for (const o of otherSt) issue('station-other', o.s, 'info', `Pominięto „${o.name}” – ${o.why}.`, `Jeśli to jednak stacja tej linii: "stations": { "add": [{ "name": "${o.name}", "pos": ${S(o.s + 80)}, "type": "halt" }] }.`);
 		for (const { st, prev } of skippedSt) issue('station-skip', st.s, 'info', `Pominięto ${st.type === 'halt' ? 'przystanek' : 'stację'} „${st.name}” – mniej niż 900 m od „${prev}”.`, `Dodanie: "stations": { "add": [{ "name": "${st.name}", "pos": ${S(st.s)}, "type": "halt" }] }.`);
 		route.forEach((st, i) => {
 			const o = def.stations[i];
@@ -3658,6 +4512,7 @@
 			if (plkLens.length) def.platformLength = Math.max(120, Math.min(400, Math.round(Math.min(...plkLens))));
 			def.source += ', PKP PLK (Regulamin sieci)';
 		}
+		if (rinfD) def.source += ', RINF – © Europejska Agencja Kolejowa (ERA, CC BY 4.0)';
 		/* horyzont z prawdziwego terenu (js/horizon-data.js): powiązanie układu gry z mapą (punkty przebiegu co ok. 1 km)
 		   i sylwetka terenu do 60 km z siatki wysokości co 4 km (opts.horizonElev – Open-Meteo); błąd – trasa bez
 		   horyzontu (pagórki) */
@@ -3712,7 +4567,9 @@
 		const bdot = opts.bdot === false || !environment || !SRC ? null : opts.bdot || ((pts, l) => SRC.bdotForRoute(pts, { log: l, cache: opts.fileCache }));
 		const plk = opts.plk === false || !SRC ? null : opts.plk || ((l) => SRC.plkData({ log: l, cache: opts.fileCache }));
 		const horizonElev = opts.horizon === false ? null : opts.horizonElev || ((pts, l) => elevations(pts, l));
-		const build = (data) => buildRoute(data, Object.assign({}, opts, { elevation: (pts, l) => elevations(pts, l), environment, dem, lidar, bdot, plk, horizonElev }));
+		// RINF (ERA): pochylenia linii i tunele – razem z danymi oficjalnymi PKP PLK
+		const rinf = opts.rinf === false || opts.plk === false || !SRC ? null : opts.rinf || (() => SRC.rinfData());
+		const build = (data) => buildRoute(data, Object.assign({}, opts, { elevation: (pts, l) => elevations(pts, l), environment, dem, lidar, bdot, plk, rinf, horizonElev }));
 		let data = await fetchCorridor(a, b, log, opts.line);
 		if (opts.onData) opts.onData(data);
 		if (!opts.line) return build(data);
@@ -3729,5 +4586,5 @@
 	}
 
 	const nmtCache = new Map();
-	return { generate, buildRoute, buildEnvironment, findStations, fetchCorridor, fetchEnvironment, fetchMasts, fetchStreetExtras, fetchPois, elevations, nmtHeights, nmptSampler, to1992, SOURCE, ROAD_TYPES };
+	return { generate, buildRoute, buildEnvironment, findStations, fetchCorridor, fetchEnvironment, fetchMasts, fetchStreetExtras, fetchPois, fetchBusStops, elevations, nmtHeights, nmptSampler, to1992, SOURCE, ROAD_TYPES };
 });

@@ -72,6 +72,21 @@
 		return out;
 	}
 
+	/* oblodzona sieć trakcyjna (zima): co ok. 2 km z prawdopodobieństwem 0,45 odcinek 300–1200 m, na którym szadź na
+	   przewodzie jezdnym – ślizgacz traci styk (łuki, chwilowe przerwy w zasilaniu); stałe dla trasy */
+	function icePatches(route) {
+		const out = [];
+		let k = 0;
+		for (let x = route.stations[0].pos + 600; x < route.length - 400; x += 2000) {
+			k++;
+			if (rnd(k * 4.3 + route.length * 0.0013 + 0.5) < 0.45) {
+				const a = x + rnd(k * 6.7 + 1.1) * 1000, len = 300 + rnd(k * 8.1 + 2.3) * 900;
+				out.push([Math.round(a), Math.round(a + len)]);
+			}
+		}
+		return out;
+	}
+
 	function rnd(seed) {
 		const x = Math.sin(seed * 91.17 + 7.3) * 43758.5453;
 		return x - Math.floor(x);
@@ -166,6 +181,8 @@
 			this.slip = false;
 			this.lock = { t: 0, flat: false };
 			this.leaves = this.opts.season === 'autumn' ? leafPatches(route) : [];
+			this.ice = this.iceFor(this.opts.season);
+			this.iceGapT = 0; // trwająca przerwa w styku ślizgacza z oblodzonym przewodem (s)
 			this.leafSeen = {};
 			/* ocena jazdy (rating): przyspieszenie wygładzone (aS), czas szarpnięć (jerk), czas jazdy niekomfortowej
 			   (comfort: za szybko w łuku, ostre hamowanie), czas jazdy (moving); samples – [km·1000, prędkość, dozwolona]
@@ -551,7 +568,50 @@
 			if (!season || season === this.opts.season) return false;
 			this.opts.season = season;
 			this.leaves = season === 'autumn' ? leafPatches(this.route) : [];
+			this.ice = this.iceFor(season);
 			return true;
+		}
+		// odcinki oblodzonej sieci: zima, pojazd elektryczny na linii zelektryfikowanej
+		iceFor(season) { return season === 'winter' && this.train.electric && this.route.electrified !== false ? icePatches(this.route) : []; }
+		/* oblodzony przewód jezdny: pantograf pod napięciem w ruchu – ślizgacz co chwilę traci styk (częściej przy
+		   większej prędkości): łuk elektryczny i krótka przerwa w zasilaniu (0,1–0,35 s, bez siły pociągowej); raz na
+		   odcinek komunikat */
+		updateIce(dt) {
+			if (this.iceGapT > 0) this.iceGapT -= dt;
+			if (!this.ice || !this.ice.length || !this.train.electric) return;
+			const front = this.st.pos, v = this.st.v;
+			const on = this.ice.find(([a, b]) => front > a && front - this.L < b);
+			if (!on || !this.power || v < 2) return;
+			if (!this.said['ice' + on[0]]) {
+				this.said['ice' + on[0]] = 1;
+				this.msg('Oblodzona sieć trakcyjna – iskrzenie pantografu i chwilowe przerwy w zasilaniu. Jedź łagodnie.', 'info', 'ice');
+			}
+			if (this.iceGapT <= 0 && Math.random() < dt * (0.5 + v / 12)) {
+				this.iceGapT = 0.1 + Math.random() * 0.25;
+				this.events.push({ type: 'iceArc' });
+			}
+		}
+		/* zamarznięta zwrotnica (zdarzenie, zima): semafor wjazdowy „stój” przez duration s od chwili, gdy pociąg w drodze
+		   zbliży się na 1,5 km (dyżurny wyjaśnia przez radiotelefon); po rozmrożeniu – zgoda na wjazd */
+		freezeSignal(i, duration) {
+			const sig = this.signals[i];
+			if (!sig) return;
+			sig.frozen = duration;
+			sig.frozenUntil = null;
+		}
+		checkFrozen() {
+			const front = this.st.pos;
+			for (const sig of this.signals) {
+				if (!sig.frozen || sig.passed) continue;
+				const name = sig.label || sig.name || '', st = this.route.stations.find((x) => x.pos > sig.pos - 50);
+				if (sig.frozenUntil === null && sig.pos - front < 1500 && this.st.v > 3) {
+					sig.frozenUntil = this.time + sig.frozen;
+					this.radioMsg(this.dispatcherName(sig.pos), `${this.trainName()}: zamarznięta zwrotnica w głowicy wjazdowej${st ? ` stacji ${st.name}` : ''} – rozmrażamy. Semafor ${name} wskazuje „stój”, wjazd za ok. ${Math.max(1, Math.round(sig.frozen / 60))} min.`, 0);
+				} else if (sig.frozenUntil !== null && this.time >= sig.frozenUntil && !this.said['thaw' + sig.pos]) {
+					this.said['thaw' + sig.pos] = 1;
+					this.radioMsg(this.dispatcherName(sig.pos), `${this.trainName()}: zwrotnica rozmrożona, droga przebiegu ułożona – semafor ${name} podaje sygnał zezwalający na wjazd.`, 0);
+				}
+			}
 		}
 		sandOn() {
 			if (this.status !== 'running') return false;
@@ -689,7 +749,8 @@
 				this.tractionBlock = block;
 				if (block) cmd.power = 0;
 			}
-			if (this.doorsOpen || !this.power) cmd.power = 0;
+			this.updateIce(dt);
+			if (this.doorsOpen || !this.power || this.iceGapT > 0) cmd.power = 0;
 			const grade = R.gradeAt(this.route, s.pos - this.L / 2) / 1000;
 			const prev = s.pos;
 			this.applyDrive(cmd, dt);
@@ -716,6 +777,7 @@
 			this.checkCrossing();
 			this.checkShp(dt);
 			this.checkFaults(dt);
+			this.checkFrozen();
 			for (const sig of this.signals) {
 				if (!sig.passed && prev < sig.pos && front >= sig.pos) {
 					// przejazd obok „stój” dozwolony tylko na sygnał zastępczy albo rozkaz „S” (permit)
@@ -755,6 +817,8 @@
 					if (sig.holdUntil === null && sig.pos - front < HOLD_TRIGGER && this.st.v > 3) sig.holdUntil = this.time + sig.hold;
 					sig.red = sig.holdUntil === null || this.time < sig.holdUntil;
 				} else sig.red = false;
+				// zamarznięta zwrotnica – „stój” do rozmrożenia (odliczanie od zbliżenia się pociągu)
+				if (sig.frozen && (sig.frozenUntil === null || this.time < sig.frozenUntil)) sig.red = true;
 			}
 			/* sygnał wg następnego semafora (za ostatnim – stacja końcowa, jak „stój”) i ograniczenia przy tym semaforze;
 			   aspect – barwa górnego światła (HUD, minimapa, ekran w kabinie): red | yellow | green */
@@ -1033,7 +1097,7 @@
 				doorsOpen: this.doorsOpen, next: this.next, service: this.service, overspeed: this.overspeed,
 				ca: copy(this.ca), panto: copy(this.panto), penalties: copy(this.penalties), bonus: this.bonus,
 				records: copy(this.records), ss: copy(this.ss),
-				signals: this.signals.map((s) => [s.holdUntil, s.passed ? 1 : 0, s.fault ? 1 : 0, s.permit || 0, s.asked ? 1 : 0]),
+				signals: this.signals.map((s) => [s.holdUntil, s.passed ? 1 : 0, s.fault ? 1 : 0, s.permit || 0, s.asked ? 1 : 0, s.frozen || 0, s.frozenUntil === undefined ? null : s.frozenUntil]),
 				crossings: this.crossings.map((c) => [c.honked ? 1 : 0, c.done ? 1 : 0]),
 				tempLimits: copy(this.tempLimits), outages: copy(this.outages), radio: copy(this.radio), radioSeq: this.radioSeq,
 				stats: copy(this.stats), scen: this.scenario ? this.scenario.snapshot() : null,
@@ -1065,6 +1129,8 @@
 				s.fault = !!x[2];
 				s.permit = x[3] || undefined;
 				s.asked = !!x[4];
+				s.frozen = x[5] || 0;
+				s.frozenUntil = x[6] === undefined ? null : x[6];
 			});
 			sim.orders = snap.orders || [];
 			sim.orderSeq = snap.orderSeq || 0;
