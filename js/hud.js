@@ -7,6 +7,11 @@
 
 	const $ = (id) => document.getElementById(id);
 
+	// kategorie komunikatów (pasek u góry): wg klucza komunikatu o stanie, inaczej wg wagi
+	const TOAST_CAT = { valve: 'HAMULEC', sand: 'PIASECZNICA', order: 'ROZKAZ', detail: 'OTOCZENIE', ca: 'CZUWAK', shp: 'SHP', speed: 'PRĘDKOŚĆ', doors: 'DRZWI',
+		panto: 'PANTOGRAF', ice: 'SIEĆ TRAKCYJNA', outage: 'ZASILANIE', leaves: 'SZYNY', slip: 'POŚLIZG', flat: 'KOŁA', airblock: 'HAMULEC', drive: 'NAPĘD',
+		info: 'KOMUNIKAT', warn: 'UWAGA', bad: 'ZDARZENIE', good: 'W PORZĄDKU', announce: 'ZAPOWIEDŹ' };
+
 	function fmtDist(d) {
 		if (d < 1000) return `${Math.max(0, Math.round(d / 10) * 10)} m`;
 		return `${(d / 1000).toFixed(1)} km`;
@@ -19,6 +24,13 @@
 			this.sctx = this.speedo.getContext('2d');
 			this.toasts = $('toasts');
 			this.prompt = $('prompt');
+			// komunikaty pod okienkiem radiotelefonu: wysokość okienka (zmienna CSS --radio-h) – odstęp nie zależy od liczby linii
+			const radio = $('radio');
+			if (radio && window.ResizeObserver) {
+				new ResizeObserver(() => {
+					if (radio.offsetHeight) document.documentElement.style.setProperty('--radio-h', radio.offsetHeight + 'px');
+				}).observe(radio);
+			}
 			// panel z rozkładem (lewa góra) tej samej szerokości co panel z nastawnikiem (lewy dół) – zmienna CSS --drive-w
 			const drive = this.root.querySelector('.hud-drive');
 			if (drive && window.ResizeObserver) {
@@ -175,14 +187,18 @@
 		   Kliknięcie zamyka komunikat. Ten sam tekst bez klucza też się nie powtarza. */
 		toast(text, kind, key) {
 			kind = kind || 'info';
-			let el = [...this.toasts.children].find((x) => (key && x.dataset.key === key) || (!key && !x.dataset.key && x.textContent === text && !x.classList.contains('fade')));
+			let el = [...this.toasts.children].find((x) => (key && x.dataset.key === key) || (!key && !x.dataset.key && x.dataset.text === text && !x.classList.contains('fade')));
 			if (!el) {
 				el = document.createElement('div');
+				el.innerHTML = '<i class="lamp"></i><em></em><span></span>';
 				el.addEventListener('click', () => this.hideToast(el, true));
 				this.toasts.appendChild(el);
 			}
+			// pasek jak komunikat dyżurnego: lampa w kolorze wagi, kategoria (wg klucza albo wagi) i treść
 			el.className = 'toast ' + kind;
-			el.textContent = text;
+			el.dataset.text = text;
+			el.children[1].textContent = TOAST_CAT[key] || TOAST_CAT[kind] || 'KOMUNIKAT';
+			el.children[2].textContent = text;
 			if (key) el.dataset.key = key;
 			clearTimeout(el._t1);
 			clearTimeout(el._t2);
@@ -230,6 +246,8 @@
 			$('order-from').textContent = 'Dyżurny ruchu: ' + (o.station || '');
 			$('order-ack').textContent = o.acked ? 'potwierdzono odbiór' : 'Enter – potwierdzam odbiór';
 			$('order').className = 'order' + (o.acked ? ' done' : '');
+			// pieczątka stacji (po potwierdzeniu odbioru)
+			$('order').dataset.stamp = (o.station || 'PKP').toUpperCase();
 			clearTimeout(this.orderT);
 			if (o.acked) this.orderT = setTimeout(() => $('order').classList.add('hidden'), 5000);
 		}
@@ -405,6 +423,8 @@
 			$('task').style.bottom = this.height() + 60 + 'px';
 		}
 
+		/* prędkościomierz jak w kabinie: tarcza z pierścieniem, strefa dozwolona (zielona) i ponad ograniczeniem
+		   (czerwona), bursztynowy znacznik ograniczenia na obwodzie, odczyt cyfrowy w okienku */
 		drawSpeedo(kmh, limit) {
 			const c = this.speedo, ctx = this.sctx;
 			const size = c.clientWidth || 168;
@@ -416,57 +436,108 @@
 			const cx = size / 2, cy = size / 2, r = size / 2 - 4;
 			const max = this.vmaxDial;
 			const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25;
-			const ang = (v) => a0 + ((a1 - a0) * Math.min(v, max)) / max;
+			const ang = (v) => a0 + ((a1 - a0) * Math.max(0, Math.min(v, max))) / max;
+			const mono = 'ui-monospace, Consolas, monospace';
+			const over = kmh > limit + 3;
 			ctx.clearRect(0, 0, size, size);
-			ctx.fillStyle = '#0b0f15';
+			// tarcza i pierścień
+			const g = ctx.createRadialGradient(cx, cy - r * 0.3, r * 0.1, cx, cy, r);
+			g.addColorStop(0, '#141b25');
+			g.addColorStop(1, '#06090d');
+			ctx.fillStyle = g;
 			ctx.beginPath();
 			ctx.arc(cx, cy, r, 0, Math.PI * 2);
 			ctx.fill();
-			ctx.strokeStyle = '#2f3a4c';
-			ctx.lineWidth = 2;
+			ctx.strokeStyle = 'rgba(170,195,220,0.28)';
+			ctx.lineWidth = 1.5;
 			ctx.stroke();
-			// strefa ponad ograniczeniem
-			ctx.strokeStyle = 'rgba(255,59,48,0.75)';
-			ctx.lineWidth = 6;
+			ctx.strokeStyle = 'rgba(170,195,220,0.08)';
+			ctx.lineWidth = 1;
 			ctx.beginPath();
-			ctx.arc(cx, cy, r - 6, ang(limit), a1);
+			ctx.arc(cx, cy, r - 3, 0, Math.PI * 2);
+			ctx.stroke();
+			// strefy: dozwolona i ponad ograniczeniem
+			const rz = r - 7;
+			ctx.lineWidth = 4;
+			ctx.strokeStyle = 'rgba(79,224,140,0.55)';
+			ctx.beginPath();
+			ctx.arc(cx, cy, rz, a0, ang(limit));
+			ctx.stroke();
+			ctx.strokeStyle = 'rgba(255,106,85,0.8)';
+			ctx.beginPath();
+			ctx.arc(cx, cy, rz, ang(limit), a1);
+			ctx.stroke();
+			// przebyta część skali – jasny łuk do wskazówki
+			ctx.strokeStyle = over ? 'rgba(255,106,85,0.95)' : 'rgba(255,210,122,0.9)';
+			ctx.lineWidth = 2;
+			ctx.beginPath();
+			ctx.arc(cx, cy, rz - 4, a0, ang(kmh));
 			ctx.stroke();
 			// podziałka
-			ctx.strokeStyle = '#9aa5b3';
-			ctx.fillStyle = '#c9d1db';
-			ctx.font = `600 ${Math.round(size * 0.065)}px system-ui, sans-serif`;
 			ctx.textAlign = 'center';
 			ctx.textBaseline = 'middle';
-			for (let v = 0; v <= max; v += 10) {
-				const a = ang(v), big = v % 20 === 0;
+			ctx.font = `600 ${Math.round(size * 0.062)}px ${mono}`;
+			const step = max > 180 ? 20 : 10, lab = max > 180 ? 40 : 20;
+			for (let v = 0; v <= max; v += step) {
+				const a = ang(v), big = v % lab === 0;
+				ctx.strokeStyle = big ? '#c9d4df' : '#5d6b7a';
 				ctx.lineWidth = big ? 2 : 1;
 				ctx.beginPath();
-				ctx.moveTo(cx + Math.cos(a) * (r - 10), cy + Math.sin(a) * (r - 10));
-				ctx.lineTo(cx + Math.cos(a) * (r - (big ? 18 : 14)), cy + Math.sin(a) * (r - (big ? 18 : 14)));
+				ctx.moveTo(cx + Math.cos(a) * (r - 13), cy + Math.sin(a) * (r - 13));
+				ctx.lineTo(cx + Math.cos(a) * (r - (big ? 21 : 17)), cy + Math.sin(a) * (r - (big ? 21 : 17)));
 				ctx.stroke();
-				if (big) ctx.fillText(String(v), cx + Math.cos(a) * (r - 30), cy + Math.sin(a) * (r - 30));
+				if (big) {
+					ctx.fillStyle = v > limit ? '#c98a80' : '#b9c4cf';
+					ctx.fillText(String(v), cx + Math.cos(a) * (r - 32), cy + Math.sin(a) * (r - 32));
+				}
+			}
+			// znacznik ograniczenia (trójkąt na obwodzie)
+			{
+				const a = ang(limit), ro = r - 2, ri = r - 12, w = 0.07;
+				ctx.fillStyle = '#ffb020';
+				ctx.shadowColor = '#ffb020';
+				ctx.shadowBlur = 6;
+				ctx.beginPath();
+				ctx.moveTo(cx + Math.cos(a - w) * ro, cy + Math.sin(a - w) * ro);
+				ctx.lineTo(cx + Math.cos(a + w) * ro, cy + Math.sin(a + w) * ro);
+				ctx.lineTo(cx + Math.cos(a) * ri, cy + Math.sin(a) * ri);
+				ctx.closePath();
+				ctx.fill();
+				ctx.shadowBlur = 0;
 			}
 			// wskazówka
 			const a = ang(kmh);
-			ctx.strokeStyle = '#ffb020';
+			ctx.strokeStyle = over ? '#ff6a55' : '#ffb020';
+			ctx.shadowColor = ctx.strokeStyle;
+			ctx.shadowBlur = 8;
 			ctx.lineWidth = 3;
 			ctx.lineCap = 'round';
 			ctx.beginPath();
 			ctx.moveTo(cx - Math.cos(a) * 10, cy - Math.sin(a) * 10);
-			ctx.lineTo(cx + Math.cos(a) * (r - 14), cy + Math.sin(a) * (r - 14));
+			ctx.lineTo(cx + Math.cos(a) * (r - 15), cy + Math.sin(a) * (r - 15));
 			ctx.stroke();
+			ctx.shadowBlur = 0;
 			ctx.lineCap = 'butt';
-			ctx.fillStyle = '#ffb020';
+			ctx.fillStyle = '#0b0f15';
+			ctx.strokeStyle = over ? '#ff6a55' : '#ffb020';
+			ctx.lineWidth = 2;
 			ctx.beginPath();
 			ctx.arc(cx, cy, 5, 0, Math.PI * 2);
 			ctx.fill();
-			// cyfry
-			ctx.fillStyle = kmh > limit + 3 ? '#ff6b5e' : '#e6ebf2';
-			ctx.font = `700 ${Math.round(size * 0.15)}px ui-monospace, Consolas, monospace`;
-			ctx.fillText(String(Math.round(kmh)), cx, cy + size * 0.22);
-			ctx.fillStyle = '#8f9bad';
-			ctx.font = `500 ${Math.round(size * 0.065)}px system-ui, sans-serif`;
-			ctx.fillText('km/h', cx, cy + size * 0.34);
+			ctx.stroke();
+			// odczyt cyfrowy w okienku
+			const bw = size * 0.36, bh = size * 0.16, by = cy + size * 0.15;
+			ctx.fillStyle = 'rgba(3,6,9,0.9)';
+			ctx.strokeStyle = over ? 'rgba(255,106,85,0.7)' : 'rgba(170,195,220,0.22)';
+			ctx.lineWidth = 1;
+			ctx.fillRect(cx - bw / 2, by, bw, bh);
+			ctx.strokeRect(cx - bw / 2 + 0.5, by + 0.5, bw - 1, bh - 1);
+			ctx.fillStyle = over ? '#ff6a55' : '#e8eef2';
+			ctx.font = `700 ${Math.round(size * 0.12)}px ${mono}`;
+			ctx.fillText(String(Math.round(kmh)).padStart(3, ' '), cx, by + bh / 2 + 1);
+			ctx.fillStyle = '#8798a6';
+			ctx.font = `600 ${Math.round(size * 0.052)}px ${mono}`;
+			ctx.fillText('KM/H', cx, by + bh + size * 0.07);
 		}
 	}
 

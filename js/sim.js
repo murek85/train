@@ -114,6 +114,33 @@
 		return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0');
 	}
 
+	/* Godziny w zapowiedziach do odczytania głosem, jak na dworcu: „o 06:17” → „o godzinie szóstej siedemnaście”,
+	   „o 07:05” → „o godzinie siódmej zero pięć”, „o 18:00” → „o godzinie osiemnastej”; godzina bez „o” – w mianowniku
+	   („06:17” → „szósta siedemnaście”). Tekst na ekranie zostaje z cyframi. */
+	const H_LOC = ['zero', 'pierwszej', 'drugiej', 'trzeciej', 'czwartej', 'piątej', 'szóstej', 'siódmej', 'ósmej', 'dziewiątej', 'dziesiątej',
+		'jedenastej', 'dwunastej', 'trzynastej', 'czternastej', 'piętnastej', 'szesnastej', 'siedemnastej', 'osiemnastej', 'dziewiętnastej', 'dwudziestej'];
+	const H_NOM = ['zero', 'pierwsza', 'druga', 'trzecia', 'czwarta', 'piąta', 'szósta', 'siódma', 'ósma', 'dziewiąta', 'dziesiąta',
+		'jedenasta', 'dwunasta', 'trzynasta', 'czternasta', 'piętnasta', 'szesnasta', 'siedemnasta', 'osiemnasta', 'dziewiętnasta', 'dwudziesta'];
+	const N_1_19 = ['zero', 'jeden', 'dwa', 'trzy', 'cztery', 'pięć', 'sześć', 'siedem', 'osiem', 'dziewięć', 'dziesięć',
+		'jedenaście', 'dwanaście', 'trzynaście', 'czternaście', 'piętnaście', 'szesnaście', 'siedemnaście', 'osiemnaście', 'dziewiętnaście'];
+	const N_TENS = { 2: 'dwadzieścia', 3: 'trzydzieści', 4: 'czterdzieści', 5: 'pięćdziesiąt' };
+	function hourWords(h, loc) {
+		const T = loc ? H_LOC : H_NOM;
+		return h <= 20 ? T[h] : `${T[20]} ${T[h - 20]}`;
+	}
+	function minuteWords(m) {
+		if (m < 10) return `zero ${N_1_19[m]}`;
+		if (m < 20) return N_1_19[m];
+		return N_TENS[Math.floor(m / 10)] + (m % 10 ? ' ' + N_1_19[m % 10] : '');
+	}
+	function spokenTimes(text) {
+		return text.replace(/(\bo\s+)?\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\b/g, (all, o, hh, mm) => {
+			const h = Number(hh), m = Number(mm);
+			const w = hourWords(h, !!o) + (m ? ' ' + minuteWords(m) : '');
+			return o ? `o godzinie ${w}` : w;
+		});
+	}
+
 	function fmtDelay(sec) {
 		const s = Math.round(Math.abs(sec));
 		return (sec < 0 ? '−' : '+') + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
@@ -1299,5 +1326,5 @@
 		return tt;
 	}
 
-	return { Sim, autopilot, buildTimetable, fmtClock, fmtDelay, OVERRUN_TOL, SIGNALS, signalText, signalSpeed };
+	return { Sim, autopilot, buildTimetable, fmtClock, fmtDelay, spokenTimes, OVERRUN_TOL, SIGNALS, signalText, signalSpeed };
 });

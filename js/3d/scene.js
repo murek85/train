@@ -849,6 +849,41 @@
 			return false;
 		}
 
+		/* Ujęcia kolejowe w tle menu (menuCam – main.js): co 9–12 s nowy kadr; przy stacji – widok z peronu (cinemaShot),
+		   poza nią na zmianę: przejazd obok kamery stojącej przy torze, ujęcie z boku z wysoka okrążające skład, kamera
+		   nisko przed czołem (pociąg „na” widza), widok z góry jak z wiaduktu na nadjeżdżający pociąg. Kamera nie schodzi
+		   pod teren. */
+		menuShot(sim, dt) {
+			const route = sim.route, front = sim.st.pos, tp = this.tp, W = this.world, M = this.menuCamState || (this.menuCamState = { k: -1, t: 0, len: 0, a: 0 });
+			const SHOTS = ['pass', 'orbit', 'front', 'bridge'];
+			M.t += dt;
+			const y = (s, d, h) => { R.sidePoint(route, s, d, tp); return Math.max(tp.y, W.terrainY ? W.terrainY(s, d) : tp.y) + h; };
+			// nowe ujęcie po czasie albo gdy pociąg minął kamerę stojącą
+			if (!M.shot || M.t > M.len || (M.shot === 'pass' && front - sim.L > M.s + 25) || (M.shot === 'bridge' && front > M.s - 8)) {
+				M.k = (M.k + 1) % SHOTS.length;
+				M.shot = SHOTS[M.k];
+				M.t = 0;
+				M.len = 9 + Math.random() * 3;
+				M.side = Math.random() < 0.5 ? -1 : 1;
+				M.s = front + (M.shot === 'pass' ? 70 + sim.st.v * 3 : M.shot === 'bridge' ? 140 + sim.st.v * 4 : 0);
+				M.a = Math.random() * Math.PI * 2;
+			}
+			// stacja w pobliżu – widok z peronu (jak tryb „cinema”)
+			if (this.cinemaShot(sim)) return;
+			const mid = front - sim.L / 2;
+			let cs, cd, ch, ls, ld, lh;
+			if (M.shot === 'pass') { cs = M.s; cd = M.side * 7; ch = 1.7; ls = front - 6; ld = 0; lh = 2.2; }
+			else if (M.shot === 'orbit') { M.a += dt * 0.12; const r = 26; cs = mid + Math.cos(M.a) * r; cd = Math.sin(M.a) * r; ch = 11 + Math.sin(M.t * 0.3) * 2; ls = mid; ld = 0; lh = 1.8; }
+			else if (M.shot === 'front') { cs = front + 14 + Math.sin(M.t * 0.25) * 2; cd = M.side * 3.2; ch = 1.3; ls = front - 18; ld = 0; lh = 2.4; }
+			else { cs = M.s; cd = M.side * 2; ch = 11; ls = front - 10; ld = 0; lh = 1.5; }
+			const cy = y(cs, cd, ch);
+			R.sidePoint(route, cs, cd, tp);
+			this.camera.position.set(tp.x, cy, tp.z);
+			R.sidePoint(route, ls, ld, tp);
+			this.camera.lookAt(tp.x, tp.y + lh, tp.z);
+			this.focus.set(tp.x, tp.y, tp.z);
+		}
+
 		setNear(n) {
 			if (this.camera.near !== n) {
 				this.camera.near = n;
@@ -858,6 +893,7 @@
 
 		updateCamera(sim, dt) {
 			if (this.free) return this.freeUpdate(sim, dt); // swobodna kamera (js/3d/freecam.js)
+			if (this.menuCam) return this.menuShot(sim, dt); // tło menu: ujęcia kolejowe
 			const route = sim.route, front = sim.st.pos, v = sim.st.v;
 			const tp = this.tp;
 			this.zoom += (this.zoomLevels[this.zoomIdx] - this.zoom) * Math.min(1, dt * 2.5);

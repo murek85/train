@@ -81,7 +81,14 @@
 			this.verb.buffer = this.impulse(2.2, 2.5);
 			this.verbG = c.createGain();
 			this.verbG.gain.value = 0;
-			this.verb.connect(this.verbG).connect(this.master);
+			/* stłumienie (postój w pauzie): dźwięki jazdy, otoczenia i sygnałów przez filtr dolnoprzepustowy – jak za szybą;
+			   głos zapowiedzi i dźwięki menu bez filtra */
+			this.muf = c.createBiquadFilter();
+			this.muf.type = 'lowpass';
+			this.muf.frequency.value = 20000;
+			this.mufG = c.createGain();
+			this.muf.connect(this.mufG).connect(this.master);
+			this.verb.connect(this.verbG).connect(this.muf);
 			/* szyna pociągu (z wysyłką na pogłos), szyna otoczenia (tłumiona w kabinie), syreny (na szynę pociągu),
 			   sygnały i komunikaty; każda grupa przez własną głośność z ustawień (mixG) */
 			const mixG = (k) => { const g = c.createGain(); g.gain.value = this.mix[k]; return g; };
@@ -90,15 +97,19 @@
 			this.mixG.voice.connect(this.master);
 			this.trainBus = c.createGain();
 			this.trainBus.connect(this.mixG.train);
-			this.mixG.train.connect(this.master);
+			this.mixG.train.connect(this.muf);
 			this.mixG.train.connect(this.verb);
 			this.ambF = c.createBiquadFilter();
 			this.ambF.type = 'lowpass';
 			this.ambF.frequency.value = 18000;
 			this.ambBus = c.createGain();
-			this.ambBus.connect(this.ambF).connect(this.mixG.amb).connect(this.master);
+			this.ambBus.connect(this.ambF).connect(this.mixG.amb).connect(this.muf);
 			this.sigBus = c.createGain();
-			this.sigBus.connect(this.mixG.sig).connect(this.master);
+			this.sigBus.connect(this.mixG.sig).connect(this.muf);
+			// dźwięki menu (ui): osobna szyna prosto do wyjścia – bez tłumienia w kabinie i bez pogłosu
+			this.uiBus = c.createGain();
+			this.uiBus.gain.value = 0.55;
+			this.uiBus.connect(this.master);
 			// syreny: przez szynę pociągu (tłumienie w kabinie, pogłos w tunelu), z własną głośnością
 			this.hornBus = c.createGain();
 			this.hornBus.connect(this.mixG.horn).connect(this.trainBus);
@@ -1116,6 +1127,60 @@
 			for (const [f, d] of [[784, 0.4], [659, 0.75], [523, 1.1]]) {
 				this.tone(f, t + d, 1.1, 'sine', 0.1 * gain);
 				this.tone(f * 2.01, t + d, 0.6, 'sine', 0.025 * gain);
+			}
+		}
+
+		/* dźwięki menu w kolejowym stylu (syntezowane, bez plików): hover – tyknięcie przekaźnika, click – zaskok nastawnika,
+		   select – przełożenie zwrotnicy (metaliczne stuknięcie), back – zwolnienie (opadający ton), toggle – przełącznik,
+		   done – gong dworcowy; uiOn – opcja „Dźwięki menu” */
+		// postój w pauzie: stłumienie (filtr 520 Hz, ciszej) albo powrót do pełnego pasma
+		setMuffle(on) {
+			if (!this.ctx || !this.muf || this.mufOn === !!on) return;
+			this.mufOn = !!on;
+			const t = this.ctx.currentTime;
+			this.muf.frequency.cancelScheduledValues(t);
+			this.muf.frequency.setTargetAtTime(on ? 520 : 20000, t, 0.08);
+			this.mufG.gain.setTargetAtTime(on ? 0.55 : 1, t, 0.08);
+		}
+		ui(name) {
+			if (this.uiOn === false || this.muted) return;
+			this.ensure();
+			if (!this.ctx || !this.uiBus) return;
+			const c = this.ctx, t = c.currentTime;
+			if (name === 'hover') {
+				if (t - (this.uiHover || 0) < 0.045) return;
+				this.uiHover = t;
+			}
+			const tone = (f0, f1, at, dur, type, vol) => {
+				const o = c.createOscillator(), g = c.createGain();
+				o.type = type;
+				o.frequency.setValueAtTime(f0, at);
+				if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+				g.gain.setValueAtTime(0.0001, at);
+				g.gain.exponentialRampToValueAtTime(vol, at + 0.004);
+				g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+				o.connect(g).connect(this.uiBus);
+				o.start(at);
+				o.stop(at + dur + 0.02);
+			};
+			const tick = (at, dur, freq, vol, type = 'highpass') => {
+				if (!this.noiseBuf) return;
+				const s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+				s.buffer = this.noiseBuf;
+				f.type = type;
+				f.frequency.value = freq;
+				g.gain.setValueAtTime(vol, at);
+				g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+				s.connect(f).connect(g).connect(this.uiBus);
+				s.start(at, Math.random() * 2, dur + 0.02);
+			};
+			switch (name) {
+				case 'hover': tick(t, 0.025, 3800, 0.05); tone(2100, 2100, t, 0.03, 'sine', 0.012); break;
+				case 'click': tick(t, 0.03, 2500, 0.12); tone(880, 1320, t, 0.06, 'triangle', 0.05); tick(t + 0.045, 0.03, 1800, 0.07); break;
+				case 'select': tone(320, 260, t, 0.09, 'square', 0.03); tick(t, 0.06, 900, 0.16, 'bandpass'); tone(1650, 1650, t + 0.01, 0.12, 'sine', 0.018); break;
+				case 'back': tone(990, 620, t, 0.12, 'triangle', 0.045); tick(t, 0.04, 2200, 0.05); break;
+				case 'toggle': tone(1500, 1500, t, 0.025, 'square', 0.02); tick(t, 0.02, 3000, 0.06); break;
+				case 'done': this.chime(0.7); break;
 			}
 		}
 

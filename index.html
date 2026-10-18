@@ -24,7 +24,7 @@
 		<div class="order-h"><b id="order-title"></b><span id="order-no"></span></div>
 		<div class="order-meta" id="order-meta"></div>
 		<p id="order-text"></p>
-		<div class="order-f"><span id="order-from"></span><span class="order-ack" id="order-ack">Enter – potwierdzam odbiór</span></div>
+		<div class="order-f"><span class="order-sig"><span id="order-from"></span><i></i><small>podpis dyżurnego ruchu</small></span><span class="order-ack" id="order-ack">Enter – potwierdzam odbiór</span></div>
 	</div>
 	<!-- zadanie samouczka (instruktor) -->
 	<div id="task" class="task hidden"><div class="task-h"><b>Instruktor</b><span id="task-n"></span></div><p id="task-text"></p></div>
@@ -106,33 +106,40 @@
 			</div>
 		</div>
 
-		<!-- prawy dół: sterowanie -->
+		<!-- prawy dół: sterowanie – grupy jak na pulpicie (jazda, skład, sygnały i widok), klawisz przy każdym przycisku -->
 		<div class="hud-panel hud-controls">
 			<div class="controls">
-				<button data-act="up" title="Nastawnik w górę (↑ / W)">▲ Jazda</button>
-				<button data-act="down" id="btn-down" title="Nastawnik w dół (↓ / S)">▼ Hamuj</button>
-				<button data-act="neutral" title="Pozycja zerowa (0)">0</button>
-				<button data-act="doors" title="Drzwi (D)">Drzwi</button>
-				<button data-act="horn" title="Syrena (H – przytrzymaj)">Syrena</button>
-				<button data-act="horn2" title="Syrena wysokotonowa (J – przytrzymaj)">Syrena 2</button>
-				<button data-act="ca" title="Czuwak (spacja)">CA</button>
-				<button data-act="cab" title="Fotel maszynisty – widok z kabiny (K)">Kabina</button>
-				<button data-act="camera" title="Tryb kamery (V)">Kamera</button>
-				<button data-act="time" title="Przyspieszenie czasu (T)">Czas ×</button>
-				<button data-act="panto" title="Pantograf: podnieś / opuść (U)">Pantograf</button>
-				<button data-act="sand" title="Piasecznica – piasek pod koła (X)">Piasek (X)</button>
-				<button data-act="wipers" title="Wycieraczki: wyłączone / przerywane / ciągłe / szybkie (R)">Wycieraczki</button>
-				<button data-act="valve-rel" class="air-only hidden" title="Zawór maszynisty w stronę luzowania (Q)">Luzuj (Q)</button>
-				<button data-act="valve-brake" class="air-only hidden" title="Zawór maszynisty w stronę hamowania (A)">Hamuj (A)</button>
-				<button data-act="emergency" class="danger" title="Hamowanie nagłe (E / Backspace)">NAGŁE</button>
+				<p class="cg-h">Jazda</p>
+				<button data-act="up" title="Nastawnik w górę (↑ / W)"><span>▲ Jazda</span><kbd>↑</kbd></button>
+				<button data-act="down" id="btn-down" title="Nastawnik w dół (↓ / S)"><span>▼ Hamuj</span><kbd>↓</kbd></button>
+				<button data-act="neutral" title="Pozycja zerowa (0)"><span>Zero</span><kbd>0</kbd></button>
+				<button data-act="valve-rel" class="air-only hidden" title="Zawór maszynisty w stronę luzowania (Q)"><span>Luzuj</span><kbd>Q</kbd></button>
+				<button data-act="valve-brake" class="air-only hidden" title="Zawór maszynisty w stronę hamowania (A)"><span>Hamuj</span><kbd>A</kbd></button>
+				<button data-act="ca" title="Czuwak (spacja)"><span>Czuwak</span><kbd>␣</kbd></button>
+				<p class="cg-h">Skład</p>
+				<button data-act="doors" title="Drzwi (D)"><span>Drzwi</span><kbd>D</kbd></button>
+				<button data-act="panto" title="Pantograf: podnieś / opuść (U)"><span>Pantograf</span><kbd>U</kbd></button>
+				<button data-act="sand" title="Piasecznica – piasek pod koła (X)"><span>Piasek</span><kbd>X</kbd></button>
+				<button data-act="wipers" title="Wycieraczki: wyłączone / przerywane / ciągłe / szybkie (R)"><span>Wycieraczki</span><kbd>R</kbd></button>
+				<button data-act="horn" title="Syrena (H – przytrzymaj)"><span>Syrena</span><kbd>H</kbd></button>
+				<button data-act="horn2" title="Syrena wysokotonowa (J – przytrzymaj)"><span>Syrena 2</span><kbd>J</kbd></button>
+				<p class="cg-h">Widok</p>
+				<button data-act="cab" title="Fotel maszynisty – widok z kabiny (K)"><span>Kabina</span><kbd>K</kbd></button>
+				<button data-act="camera" title="Tryb kamery (V)"><span>Kamera</span><kbd>V</kbd></button>
+				<button data-act="time" title="Przyspieszenie czasu (T)"><span>Czas ×</span><kbd>T</kbd></button>
+				<button data-act="emergency" class="danger" title="Hamowanie nagłe (E / Backspace)"><span>Hamowanie nagłe</span><kbd>E</kbd></button>
 			</div>
 		</div>
 	</div>
 
 	<!-- swobodna kamera: lot nad mapą (F), symulacja stoi -->
 	<div id="free" class="hud-panel free-panel hidden">
-		<div class="free-head"><b>Swobodna kamera</b><button id="free-close" class="primary" title="Wróć do jazdy (F / Esc)">Wróć do jazdy</button></div>
-		<div class="free-info" id="free-info">—</div>
+		<!-- nagłówek jak okna menu: nadtytuł z lampą, tytuł, powrót do jazdy -->
+		<div class="free-head">
+			<div class="ph-t"><p class="mf-eyebrow"><i class="lamp amber"></i><span>WIDOK Z TRASY · SYMULACJA STOI</span></p><h2>Swobodna kamera.</h2></div>
+		</div>
+		<button id="free-close" class="primary free-back" title="Wróć do jazdy (F / Esc)"><span>Wróć do jazdy</span><kbd>F</kbd></button>
+		<dl class="free-info" id="free-info"></dl>
 		<label class="free-label">Kilometraż <span id="free-km-val"></span></label>
 		<input type="range" id="free-km" min="0" max="1000" step="10" value="0">
 		<div class="free-row">
@@ -143,7 +150,7 @@
 		</div>
 		<label class="free-check"><input type="checkbox" id="free-run"> Pociąg jedzie dalej <small>(prowadzi automat)</small></label>
 		<label class="free-check"><input type="checkbox" id="free-follow"> Leć z pociągiem <small>(kamera przesuwa się razem ze składem)</small></label>
-		<label class="free-label">Prędkość
+		<label class="free-label">Prędkość lotu
 			<select id="free-speed"><option value="0.25">wolno</option><option value="1" selected>normalnie</option><option value="3">szybko</option></select>
 		</label>
 		<div class="free-tabs">
@@ -158,51 +165,69 @@
 	<!-- generowanie trasy w tle (js/gen-worker.js): postęp widoczny w menu i w czasie jazdy -->
 	<div id="gen-bg" class="gen-bg hidden" role="status" aria-live="polite"></div>
 	<div id="route-loading" class="route-loading hidden" role="status" aria-live="polite">
+		<!-- małe wczytywanie (zmiana trasy, składu, warunków): karta jak okna nowego menu -->
 		<div class="rl-box">
-			<div class="rl-head"><span class="rl-spin"></span><b id="rl-head">Wczytywanie trasy</b></div>
+			<p class="mf-eyebrow"><i class="lamp amber"></i><span id="rl-head">Wczytywanie trasy</span></p>
 			<div class="rl-title" id="rl-title"></div>
-			<div class="rl-step" id="rl-step"></div>
+			<div class="rl-step"><span id="rl-step"></span><b id="rl-pct"></b></div>
 			<div class="rl-bar"><i id="rl-fill"></i></div>
 		</div>
 	</div>
 
 	<div id="menu" class="overlay">
-		<div class="panel menu-main" id="scr-main">
-			<h1>Maszynista</h1>
-			<p class="tagline">Prosty symulator pociągu: ruszaj, hamuj, zatrzymuj się przy peronie i trzymaj się rozkładu.</p>
-			<nav class="menu-buttons">
-				<button id="btn-single" class="primary big">Gra jednoosobowa</button>
-				<button id="btn-scen" class="big">Scenariusze</button>
-				<button id="btn-load" class="big">Wczytaj grę</button>
-				<button id="btn-gen" class="big">Generator tras</button>
-				<button id="btn-settings" class="big">Ustawienia</button>
-				<button id="btn-hist" class="big">Historia jazd</button>
-				<button id="btn-news" class="big">Co nowego</button>
-				<button id="btn-exit" class="big hidden">Wyjście</button>
+		<!-- rama menu (nowe menu, etap 1): narożniki jak oznaczenia na peronie, pasek światła reflektora, nagłówek, stopka -->
+		<div class="mf-hud" aria-hidden="true"></div>
+		<header class="mf-brand" aria-hidden="true">
+			<svg viewBox="0 0 120 120"><rect x="28" y="22" width="64" height="66" rx="14" fill="#ffb020"/><rect x="34" y="30" width="23" height="20" rx="4" fill="#0d1118"/><rect x="63" y="30" width="23" height="20" rx="4" fill="#0d1118"/><rect x="28" y="57" width="64" height="5" fill="#c77d0a"/><circle cx="41" cy="73" r="5.5" fill="#fff4d6"/><circle cx="79" cy="73" r="5.5" fill="#fff4d6"/><path d="M40 92 L31 108 M80 92 L89 108" stroke="#8f9bad" stroke-width="4" stroke-linecap="round"/></svg>
+			<div><b>MASZYNISTA</b> · PO PRAWDZIWYCH TORACH<small id="mf-sub">TRASY Z MAPY · ZAPIS LOKALNY</small></div>
+		</header>
+
+		<!-- ekran główny: nadtytuł z lampą semafora, tytuł, opis, akcje (podpowiedź z prawej) -->
+		<div class="mf-home" id="scr-main">
+			<p class="mf-eyebrow" id="home-eyebrow"><i class="lamp"></i><span>MASZYNISTA</span></p>
+			<h1 class="mf-title">Gotowy do odjazdu.</h1>
+			<p class="mf-lead" id="home-lead">Prosty symulator pociągu: ruszaj, hamuj, zatrzymuj się przy peronie i trzymaj się rozkładu.</p>
+			<nav class="mf-actions">
+				<button id="btn-continue" class="mf-act prominent hidden"><span>Kontynuuj jazdę<small id="continue-sub"></small></span><em>autozapis</em></button>
+				<button id="btn-quick" class="mf-act prominent"><span>Szybki odjazd<small id="quick-sub"></small></span><em><kbd>Enter</kbd></em></button>
+				<button id="btn-single" class="mf-act"><span>Nowa jazda</span><em>karta drogowa</em></button>
+				<button id="btn-scen" class="mf-act"><span>Scenariusze</span><em>rozkazy i cele</em></button>
+				<button id="btn-load" class="mf-act"><span>Wczytaj grę</span><em>książka pokładowa</em></button>
+				<button id="btn-gen" class="mf-act"><span>Generator tras</span><em>nowa trasa · moje trasy</em></button>
+				<button id="btn-settings" class="mf-act"><span>Ustawienia</span><em>obraz · dźwięk</em></button>
+				<button id="btn-hist" class="mf-act"><span>Historia jazd</span><em>dziennik maszynisty</em></button>
+				<button id="btn-exit" class="mf-act subtle hidden"><span>Wyjście</span><em></em></button>
 			</nav>
-			<p class="version" id="version"></p>
 		</div>
 
+		<!-- tablica odjazdów (ekran główny): wybrana trasa i skład, litery przeskakują przy zmianie -->
+		<aside class="mf-board" id="dep-board" aria-label="Tablica odjazdów"></aside>
+
+		<footer class="mf-foot">
+			<span><b id="version"></b> · <kbd>Enter</kbd> odjazd · <kbd>Esc</kbd> wstecz</span>
+			<span><button type="button" class="mf-link" id="btn-news">Co nowego</button></span>
+		</footer>
+
 		<div class="panel wide hidden" id="scr-scen">
-			<div class="panel-head"><button class="back" id="scen-back">← Wróć</button><h2>Scenariusze</h2></div>
+			<div class="panel-head"><button class="back" id="scen-back">← Wróć</button><div class="ph-t"><p class="mf-eyebrow"><i class="lamp"></i><span>ROZKAZY · ZADANIA DLA MASZYNISTY</span></p><h2>Scenariusze.</h2></div></div>
 			<p class="hint">Jazdy z celem: zdarzenia na trasie, polecenia dyżurnego ruchu i cele do spełnienia. Ukończenie – ★, każdy spełniony cel – kolejne gwiazdki. Na górze zadanie dnia (codziennie inne, u wszystkich takie samo), dalej samouczek i scenariusze.</p>
 			<div class="scen-list" id="scen-list"></div>
 		</div>
 
 		<div class="panel wide hidden" id="scr-hist">
-			<div class="panel-head"><button class="back" id="hist-back">← Wróć</button><h2>Historia jazd</h2></div>
+			<div class="panel-head"><button class="back" id="hist-back">← Wróć</button><div class="ph-t"><p class="mf-eyebrow"><i class="lamp"></i><span>DZIENNIK MASZYNISTY · OSTATNIE JAZDY</span></p><h2>Historia jazd.</h2></div></div>
 			<p class="hint">Ostatnie 30 ukończonych i przerwanych jazd z oceną (gwiazdki 1–5) w kategoriach. Najlepsza ocena dla trasy i składu – ★ przy nazwie.</p>
 			<div class="hist-list" id="hist-list"></div>
 		</div>
 
 		<div class="panel hidden" id="scr-news">
-			<div class="panel-head"><button class="back" id="news-back">← Wróć</button><h2>Co nowego</h2></div>
+			<div class="panel-head"><button class="back" id="news-back">← Wróć</button><div class="ph-t"><p class="mf-eyebrow"><i class="lamp"></i><span>KOMUNIKATY · ZMIANY W ROZKŁADZIE</span></p><h2>Co nowego.</h2></div></div>
 			<div class="news-list" id="news-list"></div>
 		</div>
 
 		<!-- generator tras: podmenu (nowa trasa, moje trasy) i ich ekrany -->
 		<div class="panel menu-main hidden" id="scr-genmenu">
-			<div class="panel-head"><button class="back" id="genmenu-back">← Wróć</button><h2>Generator tras</h2></div>
+			<div class="panel-head"><button class="back" id="genmenu-back">← Wróć</button><div class="ph-t"><p class="mf-eyebrow"><i class="lamp"></i><span>TRASY Z MAPY · POMIAR LINII</span></p><h2>Generator tras.</h2></div></div>
 			<p class="tagline">Trasy z prawdziwych linii kolejowych – z OpenStreetMap i danych oficjalnych.</p>
 			<nav class="menu-buttons">
 				<button id="btn-gen-new" class="primary big">Nowa trasa<small>stacje, linia, dane – generowanie w tle</small></button>
@@ -211,7 +236,7 @@
 		</div>
 
 		<div class="panel wide hidden" id="scr-gen">
-			<div class="panel-head"><button class="back" id="gen-back">← Wróć</button><h2>Nowa trasa</h2><button id="gen-to-mine" class="head-link">Moje trasy →</button></div>
+			<div class="panel-head"><button class="back" id="gen-back">← Wróć</button><div class="ph-t"><p class="mf-eyebrow"><i class="lamp"></i><span>NOWA TRASA · OPENSTREETMAP I GUGIK</span></p><h2>Nowa trasa.</h2></div><button id="gen-to-mine" class="head-link">Moje trasy →</button></div>
 			<p class="hint">Trasa z prawdziwej linii kolejowej: tory, stacje i przystanki, ograniczenia prędkości, semafory z nazwami, łuki,
 				mosty i wiadukty z OpenStreetMap oraz profil wysokości z modelu terenu. Rozkład jazdy liczony jest z fizyki pociągu.
 				Potrzebny jest internet; serwery danych bywają przeciążone – wtedy generator sam ponawia próby.</p>
@@ -242,7 +267,7 @@
 		</div>
 
 		<div class="panel wide hidden" id="scr-routes">
-			<div class="panel-head"><button class="back" id="routes-back">← Wróć</button><h2>Moje trasy</h2><button id="routes-to-new" class="head-link">Nowa trasa →</button></div>
+			<div class="panel-head"><button class="back" id="routes-back">← Wróć</button><div class="ph-t"><p class="mf-eyebrow"><i class="lamp"></i><span>MOJE TRASY · PAMIĘĆ LOKALNA</span></p><h2>Moje trasy.</h2></div><button id="routes-to-new" class="head-link">Nowa trasa →</button></div>
 				<section class="pick">
 										<p class="hint">Trasy z generatora i zaimportowane z plików. Pliki tras (.trasa, .json, .js) można też przeciągnąć na okno.</p>
 					<div class="gen-io">
@@ -257,7 +282,7 @@
 		</div>
 
 		<div class="panel wide hidden" id="scr-single">
-			<div class="panel-head"><button class="back" id="single-back">← Wróć</button><h2>Gra jednoosobowa</h2></div>
+			<div class="panel-head"><button class="back" id="single-back">← Wróć</button><div class="ph-t"><p class="mf-eyebrow"><i class="lamp"></i><span>KARTA DROGOWA · ODPRAWA PRZED ODJAZDEM</span></p><h2>Karta drogowa.</h2></div></div>
 			<nav class="tabs" id="single-tabs">
 				<button data-tab="map" class="sel"><i>1</i><span>Mapa</span><small id="sum-map"></small></button>
 				<button data-tab="train"><i>2</i><span>Pociąg</span><small id="sum-train"></small></button>
@@ -349,62 +374,29 @@
 					<label class="row-opt sel-opt">Napęd <select id="opt-drive"><option value="simple">prosty – nastawnik J1…J5</option><option value="series">wg serii – rozruch oporowy (EU07, EN57…), falownik (Elfy, ED250), spalinowy (SM42…)</option></select></label>
 					<label class="row-opt sel-opt">Hamulec <select id="opt-brake"><option value="simple">prosty – nastawnik z pozycjami hamowania H1…H4</option><option value="air">zespolony – zawór maszynisty (Q / A), ciśnienia, fala hamowania</option></select></label>
 				</div>
-				<h3>Sterowanie</h3>
-				<div class="help-grid">
-					<div><kbd>↑</kbd>/<kbd>W</kbd> nastawnik w górę (J1…J5 = jazda)</div>
-					<div><kbd>↓</kbd>/<kbd>S</kbd> nastawnik w dół (H1…H4 = hamowanie)</div>
-					<div><kbd>0</kbd> pozycja zerowa (wybieg)</div>
-					<div><kbd>E</kbd>/<kbd>Backspace</kbd> hamowanie nagłe</div>
-					<div><kbd>D</kbd> otwarcie drzwi na stacji</div>
-					<div><kbd>H</kbd> syrena (przytrzymaj)</div>
-					<div><kbd>J</kbd> syrena wysokotonowa (przytrzymaj)</div>
-					<div><kbd>U</kbd> pantograf: podnieś / opuść</div>
-					<div><kbd>R</kbd> wycieraczki</div>
-					<div><kbd>Spacja</kbd> potwierdzenie czuwaka</div>
-					<div><kbd>T</kbd> przyspieszenie czasu ×1/×2/×4</div>
-					<div><kbd>Z</kbd> widok normalny / daleki / bliski</div>
-					<div><kbd>←</kbd>/<kbd>→</kbd> lub przeciąganie myszą – obrót kamery, <kbd>PgUp</kbd>/<kbd>PgDn</kbd> – pochylenie, <kbd>+</kbd>/<kbd>−</kbd> – przybliżenie</div>
-					<div>kółko myszy – przybliżenie i oddalenie (od kilku metrów do widoku z daleka), <kbd>C</kbd> lub dwuklik – widok domyślny</div>
-					<div>przeciąganie prawym przyciskiem (albo <kbd>Shift</kbd> + lewym) – przesuwanie widoku</div>
-					<div>kliknięcie w pojazd albo <kbd>[</kbd>/<kbd>]</kbd> – kamera krąży wokół wybranego wagonu</div>
-					<div><kbd>V</kbd> widok: za pociągiem / z kabiny / z boku / przy torze / z dachu / przy wózku / z końca składu / kinowa</div>
-					<div><kbd>K</kbd> fotel maszynisty (kabina) i z powrotem</div>
-					<div><kbd>M</kbd> dźwięk, <kbd>Esc</kbd> pauza</div>
-				</div>
-				<h3>Zasady</h3>
-				<ul class="rules">
-					<li>Zatrzymaj czoło pociągu przy tablicy <b>W4</b> (biała z czarnym paskiem) – im dokładniej, tym więcej punktów. Cały pociąg musi stać przy peronie.</li>
-					<li>Po zatrzymaniu naciśnij <kbd>D</kbd>. Drzwi zamkną się same, a semafor odjazdowy zezwoli na jazdę w chwili odjazdu z rozkładu.</li>
-					<li>Hamulec zespolony (opcja niżej): nastawnik tylko jazda, hamowanie zaworem maszynisty – <kbd>A</kbd> w stronę hamowania (ciśnienie w przewodzie głównym spada), potem <kbd>Q</kbd> na odcięcie (hamulec trzyma); dalej <kbd>Q</kbd> – jazda (luzowanie) i napełnianie. Długi skład towarowy hamuje i luzuje wolno – hamuj wcześniej. Poniżej 4 bar w przewodzie jazda jest zablokowana.</li>
-					<li>Przyczepność: w deszczu, mgle i śniegu, zimą i na liściach (jesień) koła łatwiej wpadają w poślizg, a hamowanie jest słabsze. Piasecznica – <kbd>X</kbd>. Napęd wg serii (opcja niżej): w lokomotywach i EZT z rozruchem oporowym przechodź przez pozycje nastawnika stopniowo (prąd – pasek pod pozycją) i jedź na pozycjach ekonomicznych S12, R12, B1–B4; za szybko – przekaźnik nadmiarowy wyłączy wyłącznik szybki, za długo na oporach – przegrzanie. Hamulec dodatkowy lokomotywy: <kbd>Shift</kbd>+<kbd>A</kbd> / <kbd>Shift</kbd>+<kbd>Q</kbd>.</li>
-					<li>Rozkazy pisemne: „O” (ostrzeżenie, np. ograniczenie prędkości) dostajesz na stacji przed odjazdem, „S” (przejazd obok uszkodzonego semafora odstępowego, jazda ostrożna do 20 km/h) – przez radiotelefon, gdy stoisz przed semaforem. Potwierdź odbiór klawiszem <kbd>Enter</kbd>; <kbd>O</kbd> – pokaż ostatni rozkaz. Uszkodzony semafor wjazdowy lub wyjazdowy – dyżurny poda sygnał zastępczy (białe migające): jazda do 40 km/h do następnego semafora.</li>
-					<li>Ruch na linii („Warunki”): pociągi przed Tobą i za Tobą jadą po Twoim torze – semafor pokazuje „stój”, gdy odcinek za nim jest zajęty. Spóźniając się, możesz zatrzymać pociąg jadący za Tobą.</li>
-					<li>SHP (opcja niżej): 200 m przed semaforem zapala się lampka SHP – naciśnij spację w ciągu 3,5 s.</li>
-					<li>Komunikaty dyżurnego ruchu (radiotelefon, u góry ekranu) potwierdzaj klawiszem <kbd>Enter</kbd> – bez potwierdzenia −10 pkt. Polecenia dyżurnego (ograniczenie doraźne, wydłużony postój, zanik napięcia) obowiązują jak sygnały.</li>
-					<li>Skład towarowy jedzie bez postojów – zatrzymaj się dopiero na stacji końcowej (czołem przy W4) i naciśnij <kbd>D</kbd>.</li>
-					<li>Semafory jak na PKP (instrukcja Ie-1). <span class="dot red"></span> czerwone – stój; minięcie kończy grę. Górne światło zapowiada następny semafor: <span class="dot green"></span> zielone – wolna droga, zielone migające – następny ogranicza do 100 km/h, <span class="dot yellow"></span> pomarańczowe migające – do 40 lub 60 km/h, pomarańczowe ciągłe – następny wskazuje „stój”. Dolne pomarańczowe światło – ograniczenie przy tym semaforze (przez rozjazdy): 40 km/h, z pasem pomarańczowym 60, z zielonym 100. W panelu semafora – oznaczenie sygnału (S1…S13a) i zapowiedź.</li>
-					<li>Żółte tablice to nowe ograniczenie prędkości, pomarańczowe trójkąty je zapowiadają. Ograniczenie obowiązuje, dopóki cały pociąg go nie minie.</li>
-					<li>Przed przejazdami (tablica <b>W6</b>) użyj syreny. Na końcowej stacji za peronem jest kozioł oporowy.</li>
-				</ul>
+				<p class="hint">Klawisze i zasady jazdy – w <b>Ustawieniach</b>, zakładki „Sterowanie” i „Zasady” (także w pauzie).</p>
 			</section>
 			<div class="start-bar">
 				<div id="summary"></div>
-				<button id="btn-start" class="primary">Rozpocznij jazdę (Enter)</button>
+				<button id="btn-start" class="primary">Odjazd <kbd>Enter</kbd></button>
 			</div>
 		</div>
 	</div>
 	<div id="settings" class="overlay hidden">
 		<div class="panel">
-			<div class="panel-head"><button class="back" id="settings-back">← Wróć</button><h2>Ustawienia</h2></div>
+			<div class="panel-head"><button class="back" id="settings-back">← Wróć</button><div class="ph-t"><p class="mf-eyebrow"><i class="lamp"></i><span>KONFIGURACJA POJAZDU I OBRAZU</span></p><h2>Ustawienia.</h2></div></div>
 			<!-- zakładki (jak w menu gry jednoosobowej): numer, nazwa, podsumowanie; ostatnio otwarta – zapamiętana -->
 			<nav class="tabs" id="set-tabs">
 				<button data-tab="sound" class="sel"><i>1</i><span>Dźwięk</span><small id="sum-set-sound"></small></button>
 				<button data-tab="voice"><i>2</i><span>Zapowiedzi</span><small id="sum-set-voice"></small></button>
 				<button data-tab="gfx"><i>3</i><span>Grafika</span><small id="sum-set-gfx"></small></button>
+				<button data-tab="keys"><i>4</i><span>Sterowanie</span><small>klawisze</small></button>
+				<button data-tab="rules"><i>5</i><span>Zasady</span><small>jazda i sygnały</small></button>
 			</nav>
 			<section class="tab set-tab" id="set-tab-sound">
 				<h3>Głośność</h3>
 				<label class="row-opt"><input type="checkbox" id="set-sound" checked> Dźwięk włączony <kbd>M</kbd></label>
+				<label class="row-opt"><input type="checkbox" id="set-uisound" checked> Dźwięki menu – przekaźnik, nastawnik, zwrotnica, gong</label>
 				<label class="row-opt vol-opt">Głośność ogólna <input type="range" id="set-volume" min="0" max="100" step="5"> <span id="set-volume-val">80%</span></label>
 				<h3>Grupy dźwięków <small>względem głośności ogólnej</small></h3>
 				<label class="row-opt vol-opt mix-opt">Pociąg – silniki, toczenie, hamulce <input type="range" id="set-mix-train" min="0" max="100" step="5"> <span></span></label>
@@ -430,6 +422,7 @@
 			</section>
 			<section class="tab set-tab hidden" id="set-tab-gfx">
 				<h3>Jakość</h3>
+				<label class="row-opt"><input type="checkbox" id="set-reduce"> Ogranicz animacje menu – pas światła, przeskakujące litery, poświata, przejścia okien</label>
 				<label class="row-opt">Jakość <select id="opt-quality"><option value="low">niska</option><option value="medium">średnia</option><option value="high">wysoka</option></select></label>
 				<p class="hint" id="quality-hint"></p>
 				<button id="set-autoq" class="small">Dobierz jakość automatycznie</button>
@@ -444,15 +437,80 @@
 				<label class="row-opt"><input type="checkbox" id="set-traffic-people"> Z maszynistą i pasażerami w oknach</label>
 				<p class="hint" id="gpu-info"></p>
 			</section>
+			<!-- sterowanie: klawisze (przeniesione z karty drogowej) -->
+			<section class="tab set-tab hidden" id="set-tab-keys">
+				<h3>Klawisze</h3>
+				<div class="help-grid">
+					<div><kbd>↑</kbd>/<kbd>W</kbd> nastawnik w górę (J1…J5 = jazda)</div>
+					<div><kbd>↓</kbd>/<kbd>S</kbd> nastawnik w dół (H1…H4 = hamowanie)</div>
+					<div><kbd>0</kbd> pozycja zerowa (wybieg)</div>
+					<div><kbd>E</kbd>/<kbd>Backspace</kbd> hamowanie nagłe</div>
+					<div><kbd>D</kbd> otwarcie drzwi na stacji</div>
+					<div><kbd>H</kbd> syrena (przytrzymaj)</div>
+					<div><kbd>J</kbd> syrena wysokotonowa (przytrzymaj)</div>
+					<div><kbd>U</kbd> pantograf: podnieś / opuść</div>
+					<div><kbd>R</kbd> wycieraczki</div>
+					<div><kbd>Spacja</kbd> potwierdzenie czuwaka</div>
+					<div><kbd>T</kbd> przyspieszenie czasu ×1/×2/×4</div>
+					<div><kbd>Z</kbd> widok normalny / daleki / bliski</div>
+					<div><kbd>←</kbd>/<kbd>→</kbd> lub przeciąganie myszą – obrót kamery, <kbd>PgUp</kbd>/<kbd>PgDn</kbd> – pochylenie, <kbd>+</kbd>/<kbd>−</kbd> – przybliżenie</div>
+					<div>kółko myszy – przybliżenie i oddalenie (od kilku metrów do widoku z daleka), <kbd>C</kbd> lub dwuklik – widok domyślny</div>
+					<div>przeciąganie prawym przyciskiem (albo <kbd>Shift</kbd> + lewym) – przesuwanie widoku</div>
+					<div>kliknięcie w pojazd albo <kbd>[</kbd>/<kbd>]</kbd> – kamera krąży wokół wybranego wagonu</div>
+					<div><kbd>V</kbd> widok: za pociągiem / z kabiny / z boku / przy torze / z dachu / przy wózku / z końca składu / kinowa</div>
+					<div><kbd>K</kbd> fotel maszynisty (kabina) i z powrotem</div>
+					<div><kbd>M</kbd> dźwięk, <kbd>Esc</kbd> pauza</div>
+				</div>
+			</section>
+			<!-- zasady jazdy: W4, drzwi, hamulec, rozkazy, semafory… -->
+			<section class="tab set-tab hidden" id="set-tab-rules">
+				<h3>Zasady jazdy</h3>
+				<ul class="rules">
+					<li>Zatrzymaj czoło pociągu przy tablicy <b>W4</b> (biała z czarnym paskiem) – im dokładniej, tym więcej punktów. Cały pociąg musi stać przy peronie.</li>
+					<li>Po zatrzymaniu naciśnij <kbd>D</kbd>. Drzwi zamkną się same, a semafor odjazdowy zezwoli na jazdę w chwili odjazdu z rozkładu.</li>
+					<li>Hamulec zespolony (opcja w karcie drogowej – „Pomoc”): nastawnik tylko jazda, hamowanie zaworem maszynisty – <kbd>A</kbd> w stronę hamowania (ciśnienie w przewodzie głównym spada), potem <kbd>Q</kbd> na odcięcie (hamulec trzyma); dalej <kbd>Q</kbd> – jazda (luzowanie) i napełnianie. Długi skład towarowy hamuje i luzuje wolno – hamuj wcześniej. Poniżej 4 bar w przewodzie jazda jest zablokowana.</li>
+					<li>Przyczepność: w deszczu, mgle i śniegu, zimą i na liściach (jesień) koła łatwiej wpadają w poślizg, a hamowanie jest słabsze. Piasecznica – <kbd>X</kbd>. Napęd wg serii (opcja w karcie drogowej – „Pomoc”): w lokomotywach i EZT z rozruchem oporowym przechodź przez pozycje nastawnika stopniowo (prąd – pasek pod pozycją) i jedź na pozycjach ekonomicznych S12, R12, B1–B4; za szybko – przekaźnik nadmiarowy wyłączy wyłącznik szybki, za długo na oporach – przegrzanie. Hamulec dodatkowy lokomotywy: <kbd>Shift</kbd>+<kbd>A</kbd> / <kbd>Shift</kbd>+<kbd>Q</kbd>.</li>
+					<li>Rozkazy pisemne: „O” (ostrzeżenie, np. ograniczenie prędkości) dostajesz na stacji przed odjazdem, „S” (przejazd obok uszkodzonego semafora odstępowego, jazda ostrożna do 20 km/h) – przez radiotelefon, gdy stoisz przed semaforem. Potwierdź odbiór klawiszem <kbd>Enter</kbd>; <kbd>O</kbd> – pokaż ostatni rozkaz. Uszkodzony semafor wjazdowy lub wyjazdowy – dyżurny poda sygnał zastępczy (białe migające): jazda do 40 km/h do następnego semafora.</li>
+					<li>Ruch na linii („Warunki”): pociągi przed Tobą i za Tobą jadą po Twoim torze – semafor pokazuje „stój”, gdy odcinek za nim jest zajęty. Spóźniając się, możesz zatrzymać pociąg jadący za Tobą.</li>
+					<li>SHP (opcja w karcie drogowej – „Pomoc”): 200 m przed semaforem zapala się lampka SHP – naciśnij spację w ciągu 3,5 s.</li>
+					<li>Komunikaty dyżurnego ruchu (radiotelefon, u góry ekranu) potwierdzaj klawiszem <kbd>Enter</kbd> – bez potwierdzenia −10 pkt. Polecenia dyżurnego (ograniczenie doraźne, wydłużony postój, zanik napięcia) obowiązują jak sygnały.</li>
+					<li>Skład towarowy jedzie bez postojów – zatrzymaj się dopiero na stacji końcowej (czołem przy W4) i naciśnij <kbd>D</kbd>.</li>
+					<li>Semafory jak na PKP (instrukcja Ie-1). <span class="dot red"></span> czerwone – stój; minięcie kończy grę. Górne światło zapowiada następny semafor: <span class="dot green"></span> zielone – wolna droga, zielone migające – następny ogranicza do 100 km/h, <span class="dot yellow"></span> pomarańczowe migające – do 40 lub 60 km/h, pomarańczowe ciągłe – następny wskazuje „stój”. Dolne pomarańczowe światło – ograniczenie przy tym semaforze (przez rozjazdy): 40 km/h, z pasem pomarańczowym 60, z zielonym 100. W panelu semafora – oznaczenie sygnału (S1…S13a) i zapowiedź.</li>
+					<li>Żółte tablice to nowe ograniczenie prędkości, pomarańczowe trójkąty je zapowiadają. Ograniczenie obowiązuje, dopóki cały pociąg go nie minie.</li>
+					<li>Przed przejazdami (tablica <b>W6</b>) użyj syreny. Na końcowej stacji za peronem jest kozioł oporowy.</li>
+				</ul>
+			</section>
 		</div>
 	</div>
 
 	<div id="pause" class="overlay hidden">
-		<div class="panel pause-panel">
-			<div class="pause-head">
-				<h2>Pauza</h2>
-				<div class="pause-info" id="pause-info"></div>
+		<!-- karta po prawej: raport jazdy, rozkład jazdy, rozkazy (przełącznik u góry) -->
+		<aside class="mf-board mf-report" id="pause-report" aria-label="Raport jazdy">
+			<div class="rep-tabs" role="tablist">
+				<button type="button" data-rep="report" class="sel">Raport jazdy</button>
+				<button type="button" data-rep="tt">Rozkład jazdy</button>
+				<button type="button" data-rep="orders">Rozkazy</button>
 			</div>
+			<div id="rep-body"></div>
+		</aside>
+
+		<!-- postój: akcje jak w menu głównym -->
+		<div class="mf-home pause-home" id="pause-main">
+			<p class="mf-eyebrow"><i class="lamp amber"></i><span>POSTÓJ · CZAS STOI</span></p>
+			<h1 class="mf-title">Postój.</h1>
+			<p class="mf-lead" id="pause-info"></p>
+			<nav class="mf-actions">
+				<button id="btn-resume" class="mf-act prominent"><span>Wznów jazdę</span><em><kbd>Esc</kbd></em></button>
+				<button id="btn-cond" class="mf-act"><span>Warunki na trasie</span><em>pogoda · pora dnia · roku</em></button>
+				<button id="btn-saves" class="mf-act"><span>Zapisz / wczytaj</span><em>książka pokładowa</em></button>
+				<button id="btn-pause-settings" class="mf-act"><span>Ustawienia</span><em>dźwięk · obraz · sterowanie</em></button>
+				<button id="btn-quit" class="mf-act subtle"><span>Zakończ jazdę</span><em>do menu</em></button>
+			</nav>
+		</div>
+
+		<!-- warunki na trasie: pogoda, pora dnia, pora roku (zmiana od razu) -->
+		<div class="panel pause-panel hidden" id="pause-cond">
+			<div class="panel-head"><button class="back" id="cond-back">← Wróć</button><div class="ph-t"><p class="mf-eyebrow"><i class="lamp amber"></i><span>WARUNKI NA TRASIE · KOMUNIKAT METEO</span></p><h2>Warunki na trasie.</h2></div></div>
 			<section class="pause-sec">
 				<h3>Pogoda</h3>
 				<div class="tiles pause-tiles" id="pause-weather-tiles"></div>
@@ -469,19 +527,14 @@
 				<div class="tiles pause-tiles" id="pause-season-tiles"></div>
 				<select id="pause-season" class="hidden"><option value="spring">wiosna</option><option value="summer">lato</option><option value="autumn">jesień (liście na torach)</option><option value="winter">zima (słabsza przyczepność)</option></select>
 			</section>
-			<button id="btn-resume" class="primary pause-resume">Wznów (Esc)</button>
-			<div class="pause-actions">
-				<button id="btn-free">Swobodna kamera (F)</button>
-				<button id="btn-saves">Zapisz / wczytaj grę</button>
-				<button id="btn-pause-settings">Ustawienia</button>
-				<button id="btn-quit">Wróć do menu</button>
-			</div>
 		</div>
+
+		<footer class="mf-foot"><span><kbd>Esc</kbd> wznów · <kbd>F</kbd> swobodna kamera</span><span id="pause-foot"></span></footer>
 	</div>
 
 	<div id="saves" class="overlay hidden">
 		<div class="panel">
-			<div class="panel-head"><button class="back" id="saves-back">← Wróć</button><h2 id="saves-title">Zapisane gry</h2></div>
+			<div class="panel-head"><button class="back" id="saves-back">← Wróć</button><div class="ph-t"><p class="mf-eyebrow"><i class="lamp"></i><span>KSIĄŻKA POKŁADOWA · PAMIĘĆ LOKALNA</span></p><h2 id="saves-title">Zapisane gry</h2></div></div>
 			<p class="hint" id="saves-hint"></p>
 			<div class="save-list" id="save-list"></div>
 			<p class="hint save-msg" id="saves-msg"></p>
@@ -490,7 +543,7 @@
 
 	<div id="end" class="overlay hidden">
 		<div class="panel">
-			<h2 id="end-title">Koniec trasy</h2>
+			<div class="ph-t"><p class="mf-eyebrow" id="end-eyebrow"><i class="lamp"></i><span>KONIEC JAZDY · RAPORT</span></p><h2 id="end-title">Koniec trasy</h2></div>
 			<p id="end-reason"></p>
 			<div class="end-score"><span id="end-stars"></span><b id="end-points"></b></div>
 			<ul class="end-goals hidden" id="end-goals"></ul>

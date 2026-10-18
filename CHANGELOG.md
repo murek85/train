@@ -4,6 +4,215 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.48.5 – 18 października 2026
+
+Ruch uliczny nad tunelem po ulicy, nie w tunelu.
+
+### Ruch uliczny (`street-life.js`)
+- `streetY`: `roadY` tylko do 25 m od przejazdu w poziomie (`nearLevelCrossing`), dotąd – przy torze poza mostem, więc
+  także nad tunelem (Warszawa Wschodnia – Zachodnia: 1020 z 1056 punktów ulic nad tunelem 6–10 m pod jezdnią;
+  trzy przystanki autobusowe nad osią tunelu).
+
+## 0.48.4 – 18 października 2026
+
+Ruch uliczny pod mostami po jezdni, nie na poziomie toru.
+
+### Ruch uliczny (`street-life.js`)
+- `streetY(s, d, ch)`: wysokość jak rysowana jezdnia – `surfY` + 0,1 m; `roadY` (poziom torowiska) tylko przy torze poza
+  mostem (przejazd w poziomie); `roadBridged` – `rowZAt` drogi źródłowej odcinka ciągu (`nearSeg`). `pathAt` podaje
+  ciąg (`out.ch`) – auta, światła, piesi na jezdni. Na trasie Rybnik – Katowice 239 z 280 punktów ulic pod mostami
+  było dotąd ponad 0,5 m nad jezdnią (do 6,2 m).
+
+## 0.48.3 – 18 października 2026
+
+Raport jazdy w pauzie jak tablica odjazdów.
+
+### Postój (`main.js`, `style.css`)
+- `buildReport()` – widok raportu jako `.rep-board` (`.mb-head`, `.mb-cols`, `.mb-dest`, `.mb-note`, `.mb-dl` z tablicy
+  odjazdów; `setFlap`); `setFlap` animuje też przy widocznej pauzie.
+
+## 0.48.2 – 18 października 2026
+
+Krótsze menu postoju.
+
+### Postój (`index.html`, `main.js`)
+- Usunięte `#btn-tt` i `#btn-free` z `#pause-main` oraz ich obsługa.
+
+## 0.48.1 – 18 października 2026
+
+Zakładki ustawień mieszczą nazwy w całości.
+
+### Ustawienia (`style.css`)
+- `#settings .panel` – 780 px; `#set-tabs button` – jedna kolumna, numer `i` w prawym górnym rogu.
+
+## 0.48.0 – 18 października 2026
+
+Sterowanie i zasady jako zakładki Ustawień.
+
+### Ustawienia (`index.html`, `main.js`, `style.css`)
+- `#set-tab-keys` (dawna lista klawiszy z `#tab-help`) i `#set-tab-rules` (zasady); `showSetTab` – pięć zakładek,
+  `#set-tabs` – 5 kolumn (3 poniżej 760 px).
+- Pauza: usunięte `#btn-keys`, `#pause-keys` i kopiowanie pomocy w `main.js`.
+
+## 0.47.8 – 18 października 2026
+
+Rozkaz pisemny jak druk kolejowy, z pieczątką stacji.
+
+### Rozkaz pisemny (`index.html`, `style.css`, `hud.js`)
+- `.order-f`: `.order-sig` (nadawca, linia podpisu, podpis „podpis dyżurnego ruchu”); `Hud.order()` ustawia
+  `data-stamp` (nazwa stacji) – pieczątka `.order.done::after`. Sekcja „rozkaz pisemny: druk kolejowy” w `style.css`.
+
+## 0.47.7 – 18 października 2026
+
+Karta postoju: wysokość wg treści, górna krawędź w stałym miejscu.
+
+### Postój (`style.css`)
+- `#pause .mf-report`: `max-height` 480 px zamiast stałej wysokości, przypięta górą (`top: max(80px, 50vh − 240px)`, bez
+  `translateY`), własna animacja wejścia `mf-card-top`.
+
+## 0.47.6 – 18 października 2026
+
+Karta postoju o stałej wysokości z przewijaniem.
+
+### Postój (`style.css`)
+- `#pause .mf-report`: stała wysokość `min(470px, 100vh − 160px)`; `#rep-body` przewijane, pasek `::-webkit-scrollbar`
+  (Firefox – `scrollbar-color`).
+
+## 0.47.5 – 18 października 2026
+
+Godziny w zapowiedziach głosowych czytane słownie.
+
+### Zapowiedzi (`sim.js`, `main.js`)
+- `spokenTimes(text)` (eksport `TrainSim`): „o HH:MM[:SS]” → „o godzinie” + godzina porządkowa w miejscowniku i minuty
+  słownie (1–9 – „zero …”, pełna godzina – bez minut); godzina bez „o” – w mianowniku. `announce()` podaje syntezie
+  (Piper i głos systemu) tekst po zamianie; test w `sim.test.js`.
+
+## 0.47.4 – 18 października 2026
+
+Odstęp komunikatów od okienka dyżurnego ruchu.
+
+### Radiotelefon (`hud.js`, `style.css`)
+- `ResizeObserver` na `#radio` ustawia zmienną CSS `--radio-h`; `body.radio-on #toasts` – `top: 12px + --radio-h + 14px`.
+
+## 0.47.3 – 18 października 2026
+
+Okienko dyżurnego ruchu w stylu pulpitu.
+
+### Radiotelefon (`style.css`)
+- `.radio` jak komunikaty pulpitu: zmienna `--k` (zielony, przy `.ack` – pomarańczowy), nagłówek mono z prefiksem
+  „RADIOTELEFON ·” (`.radio-h::before`), lampa `.radio-ico` miga, `.radio-ack` kwadratowy.
+
+## 0.47.2 – 18 października 2026
+
+Komunikaty w dwóch rzędach: rodzaj, a pod nim treść.
+
+### Komunikaty (`style.css`)
+- `.toast` jako siatka: lampa i kategoria w pierwszym rzędzie, treść (`span`) na całą szerokość w drugim.
+
+## 0.47.1 – 18 października 2026
+
+Swobodna kamera w stylu nowego menu.
+
+### Swobodna kamera (`index.html`, `style.css`, `main.js`)
+- `#free`: nagłówek `.ph-t` z nadtytułem, `#free-close.free-back` z `kbd`; `#free-info` jako `<dl>` (`updateFreePanel`
+  – HTML podmieniany tylko przy zmianie), `fillRanges($('free'))` dla suwaka kilometrażu.
+- Lista stacji: `<em>` z kilometrem i nazwa z opisem w `<small>`; sekcja „swobodna kamera w stylu nowego menu” w `style.css`.
+
+## 0.47.0 – 18 października 2026
+
+Pulpit w czasie jazdy w stylu nowego menu: przyrządy, sterowanie w grupach, pasek komunikatów.
+
+### Pulpit jazdy (`index.html`, `style.css`, `hud.js`)
+- Sekcja „pulpit jazdy (HUD) w stylu nowego menu” w `style.css`: `#hud .hud-panel` (szkło, narożniki z tła), etykiety
+  mono z ▸, zegar, `#i-delay` z lampką, oś czasu, głowica semafora z masztem (`.sig-head::after`), kontrolki `.ind`,
+  przyciski `.controls` z `kbd`, `.toast` jako pasek, `#prompt`, `#btn-pause`.
+- `.hud-controls`: nagłówki grup `.cg-h`, przyciski `<span>` + `<kbd>`; panel 336 px (300 px poniżej 1100 px).
+- `Hud.toast()`: lampa, kategoria (`TOAST_CAT` – wg klucza komunikatu, inaczej wg wagi) i treść; powtórki rozpoznawane
+  po `dataset.text`.
+- `Hud.drawSpeedo()`: strefy dozwolona / ponad ograniczeniem, znacznik ograniczenia, łuk do wskazówki, odczyt cyfrowy.
+
+## 0.46.1 – 18 października 2026
+
+Równa wysokość przycisku „Zakończ jazdę”.
+
+### Akcja drugorzędna (`style.css`)
+- `button.mf-act.subtle`: bez mniejszej czcionki i odstępów – tylko tło i kolor napisu.
+
+## 0.46.0 – 18 października 2026
+
+Menu w czasie jazdy: postój z rozkładem, rozkazami i stłumionym dźwiękiem.
+
+### Postój (`index.html`, `style.css`, `main.js`, `audio.js`)
+- `#pause`: `#pause-main` (`.mf-home` z akcjami `mf-act`), `#pause-cond` (dawne sekcje pogody, pory dnia i roku),
+  `#pause-keys` (kopia klawiszy i zasad z pomocy karty drogowej), stopka; `pauseScreen()`, Esc – z podekranów do postoju.
+- Karta `#pause-report`: przełącznik `.rep-tabs`, `buildReport()` – raport, rozkład (`sim.records`, `plannedArr/Dep`),
+  rozkazy (`sim.orders`).
+- `btn-quit`: potwierdzenie w przycisku (3 s). Pauza nie wycisza – `audio.setMuffle()` (filtr dolnoprzepustowy 520 Hz
+  na szynach pociągu, otoczenia i sygnałów; głos i menu bez filtra), włączane w `showOverlay` w pauzie (także ustawienia
+  i zapisy otwarte z pauzy).
+
+## 0.45.4 – 18 października 2026
+
+Bez migającego paska przewijania w menu.
+
+### Pasek przewijania w menu (`style.css`)
+- Nakładka menu ma `backdrop-filter`, więc jej elementy `position: fixed` liczą się do jej przewijania: `.mf-hud` przycina
+  pas światła (`overflow: hidden`), `#menu` bez przewijania w poziomie (wsuwana tablica odjazdów).
+- Linia światła okna (`.panel::after`): element na całe okno, przesuwa się tło (`background-position`), nie element.
+- Pomiar: zawartość menu większa niż widok w 6 na 100 próbek przed poprawką, 0 po.
+
+## 0.45.3 – 18 października 2026
+
+Okna menu bez mignięcia przy otwarciu.
+
+### Otwieranie okien (`style.css`)
+- `mf-win`: tylko przezroczystość (0,2 s) – skalowanie 0,985 → 1 i przesunięcie wyglądały jak chwilowa zmiana szerokości.
+- `.panel`: `scrollbar-gutter: stable`.
+
+## 0.45.2 – 18 października 2026
+
+Czytelne podpisy na bursztynowych przyciskach.
+
+### Kontrast podpisów (`style.css`)
+- `small` w `button.primary` (podmenu generatora i okna menu): `rgba(28, 20, 4, 0.75)` zamiast półprzezroczystej bieli.
+
+## 0.45.1 – 18 października 2026
+
+Małe okienka wczytywania w stylu nowego menu.
+
+### Małe wczytywanie (`index.html`, `style.css`, `main.js`)
+- `#route-loading .rl-box`: karta jak okna nowego menu (szkło, narożniki, bursztynowy pasek z lewej), `.mf-eyebrow`
+  z lampą zamiast kręciołka, `#rl-pct`, odblask na pasku; klasa `done` (100%) – zieleń.
+- `routeLoading`: nadtytuły `RL_HEAD` wg rodzaju wczytywania, procent; nazwy etapów.
+
+## 0.45.0 – 18 października 2026
+
+Nowe menu: okna, karta drogowa, pauza z raportem, dźwięki, ujęcia w tle.
+
+### Nowe menu – etapy 2–5 (`index.html`, `style.css`, `main.js`, `audio.js`, `scene.js`)
+- Okna `.panel` w menu, ustawieniach, zapisach, pauzie i na końcu jazdy: tło `--m-glass` z narożnikami w gradientach
+  (zostają przy przewijaniu), `mf-win`/`mf-winscan`, nagłówki `.ph-t` (nadtytuł z `.lamp`, tytuł z kropką i kreską),
+  `.panel.danger` (zdarzenie). Kafelki z numerami (liczniki CSS), zakładki z numerem 01–04, wiersze tras, suwaki
+  z `--fill` (`fillRanges`).
+- Pauza: `#pause-report` – `buildReport()` (dane jak w HUD-zie). Koniec jazdy: `#end-eyebrow`, lampa zielona / czerwona.
+- `audio.ui(name)` (szyna `uiBus`): hover, click, select, back, toggle, done; podpięte delegacją zdarzeń w oknach menu;
+  opcje `opt.uiSound`, `opt.reduceMotion` (`body.reduced-motion`).
+- `scene.js menuShot()`: ujęcia w tle menu (`renderer.menuCam` w menu, `cinemaShot` przy stacji).
+
+## 0.44.0 – 18 października 2026
+
+Nowe menu: ekran główny „Gotowy do odjazdu.” z tablicą odjazdów.
+
+### Nowe menu – etap 1 (`index.html`, `style.css`, `main.js`)
+- Wzór: menu gry LOT, w kolejowej otoczce (bursztyn + zieleń semafora, czerwień – zdarzenia). Tokeny `--m-*`, rama
+  `.mf-hud` (narożniki z gradientów, pas światła), `.mf-brand`, `.mf-foot`.
+- Ekran główny `#scr-main.mf-home`: `.mf-eyebrow` z `.lamp`, `h1.mf-title`, `.mf-lead`, akcje `button.mf-act`
+  (pasek akcentu, odblask, `.prominent` z pulsującą poświatą, podpowiedź `em`). `buildHome()` – dane z wybranej trasy
+  (od stacji początkowej), numer pociągu `trainNo()` (stały dla trasy i godziny), autozapis.
+- `#dep-board`: tablica klapkowa (`setFlap` – zmienione znaki przeskakują przez losowe litery), „przez” przewijane tylko
+  przy długiej liście, zegar dworcowy; tylko na ekranie głównym, ukryta poniżej 1000 px.
+- Enter na ekranie głównym – odjazd (gdy fokus nie stoi na przycisku); po wejściu na ekran – fokus na pierwszej akcji.
+
 ## 0.43.3 – 17 października 2026
 
 Pasek generowania w tym samym miejscu w menu i w grze.

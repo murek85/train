@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const P = require('../js/physics.js');
 const R = require('../js/routes.js');
 const ROUTES = require('./fixtures/test-routes.js'); // fikcyjne trasy testowe
-const { Sim, autopilot, buildTimetable, SIGNALS, signalSpeed, signalText } = require('../js/sim.js');
+const { Sim, autopilot, buildTimetable, SIGNALS, signalSpeed, signalText, spokenTimes } = require('../js/sim.js');
 
 const routes = ROUTES.map(R.prepare);
 
@@ -435,4 +435,13 @@ test('jazda od wybranej stacji: stacje wcześniejsze pominięte, kilometraż bez
 	assert.equal(Math.round(sim.st.pos), Math.round(part.stations[0].pos));
 	drive(sim, 400000);
 	assert.equal(sim.status, 'ended');
+});
+
+test('godziny w zapowiedziach słownie (głos)', () => {
+	assert.equal(spokenTimes('Planowy odjazd o 06:17.'), 'Planowy odjazd o godzinie szóstej siedemnaście.');
+	assert.equal(spokenTimes('Odjazd o 07:05:45.'), 'Odjazd o godzinie siódmej zero pięć.');
+	assert.equal(spokenTimes('o 18:00'), 'o godzinie osiemnastej');
+	assert.equal(spokenTimes('o 23:41'), 'o godzinie dwudziestej trzeciej czterdzieści jeden');
+	assert.equal(spokenTimes('o 00:30'), 'o godzinie zero trzydzieści');
+	assert.equal(spokenTimes('tor 2, peron 1'), 'tor 2, peron 1');
 });

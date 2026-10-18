@@ -4,6 +4,237 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.48.5',
+			date: '18 października 2026',
+			groups: [
+				['Ruch uliczny', [
+					'Auta, autobusy i piesi nad tunelem (np. linia średnicowa w Warszawie – Aleje Jerozolimskie nad tunelem) jadą po ulicy, a nie w tunelu na poziomie toru; autobus na przystanku nad tunelem stoi na ulicy. Poziom torowiska tylko na przejazdach w poziomie.',
+				]],
+			],
+		},
+		{
+			version: '0.48.4',
+			date: '18 października 2026',
+			groups: [
+				['Ruch uliczny', [
+					'Auta i piesi pod mostami i wiaduktami kolejowymi jadą i idą po jezdni pod przęsłem – dotąd w pasie kilku metrów od toru podnosiło ich do poziomu szyn (nawet ok. 6 m, „wjazd” na most). Na skrzyżowaniach dwupoziomowych dróg auta trzymają się wysokości własnej jezdni (dolnej pod wiaduktem, górnej na nim).',
+				]],
+			],
+		},
+		{
+			version: '0.48.3',
+			date: '18 października 2026',
+			groups: [
+				['Menu w czasie jazdy', [
+					'Raport jazdy w pauzie jak tablica odjazdów w menu: nagłówek „RAPORT” z trasą i zegarem gry, prędkość, dozwolona i kilometr na klapkach, następna stacja (albo postój) i stan rozkładu („ZGODNIE Z ROZKŁADEM” zielono, „OPÓŹNIENIE +m:ss” czerwono) na klapkach, pod spodem semafor, odległość do końca, punkty i stan składu. Klapki przeskakują przy otwarciu pauzy.',
+				]],
+			],
+		},
+		{
+			version: '0.48.2',
+			date: '18 października 2026',
+			groups: [
+				['Menu w czasie jazdy', [
+					'Krótsze menu postoju: bez przycisków „Rozkład jazdy” (jest zakładka w karcie po prawej) i „Swobodna kamera” (klawisz F działa nadal).',
+				]],
+			],
+		},
+		{
+			version: '0.48.1',
+			date: '18 października 2026',
+			groups: [
+				['Ustawienia', [
+					'Szersze okno ustawień – nazwy i podsumowania pięciu zakładek mieszczą się w całości; numer zakładki w rogu.',
+				]],
+			],
+		},
+		{
+			version: '0.48.0',
+			date: '18 października 2026',
+			groups: [
+				['Ustawienia', [
+					'Nowe zakładki w Ustawieniach: „Sterowanie” (klawisze) i „Zasady” (zatrzymanie przy W4, drzwi, hamulec zespolony, przyczepność, rozkazy pisemne, semafory, ograniczenia) – dostępne z menu i z pauzy.',
+					'Z pauzy zniknął osobny ekran „Sterowanie” – przycisk „Ustawienia” (dźwięk · obraz · sterowanie) prowadzi do tych samych zakładek; w karcie drogowej („Pomoc”) zostały opcje pomocy w jeździe i odnośnik do Ustawień.',
+				]],
+			],
+		},
+		{
+			version: '0.47.8',
+			date: '18 października 2026',
+			groups: [
+				['Pulpit w czasie jazdy', [
+					'Kartka rozkazu pisemnego jak druk kolejowy: kwadratowe rogi, czerwony pasek nagłówka z numerem rozkazu, przerywana linia podpisu dyżurnego ruchu, kwadratowy znacznik „Enter – potwierdzam odbiór” (pulsuje, po potwierdzeniu zielony).',
+					'Po potwierdzeniu odbioru na polu podpisu pojawia się okrągła pieczątka stacji (fioletowy tusz, przekrzywiona); przycisk z liczbą rozkazów w panelu rozkładu w tym samym stylu.',
+				]],
+			],
+		},
+		{
+			version: '0.47.7',
+			date: '18 października 2026',
+			groups: [
+				['Menu w czasie jazdy', [
+					'Karta postoju dopasowuje wysokość do treści (najwyżej 480 px, dłuższy rozkład przewija się w środku), a jej górna krawędź zostaje w tym samym miejscu przy przełączaniu widoków.',
+				]],
+			],
+		},
+		{
+			version: '0.47.6',
+			date: '18 października 2026',
+			groups: [
+				['Menu w czasie jazdy', [
+					'Karta postoju (raport jazdy, rozkład jazdy, rozkazy) ma stałą wysokość i nie skacze przy przełączaniu widoków; długi rozkład przewija się w środku karty cienkim pomarańczowym paskiem.',
+				]],
+			],
+		},
+		{
+			version: '0.47.5',
+			date: '18 października 2026',
+			groups: [
+				['Zapowiedzi', [
+					'Godziny w zapowiedziach głosowych czytane jak na dworcu: „o godzinie szóstej siedemnaście”, „o godzinie siódmej zero pięć”, „o godzinie osiemnastej” (zamiast cyfr czytanych po kolei); tekst na ekranie zostaje z cyframi.',
+				]],
+			],
+		},
+		{
+			version: '0.47.4',
+			date: '18 października 2026',
+			groups: [
+				['Pulpit w czasie jazdy', [
+					'Komunikaty i zapowiedzi pokazują się z wyraźnym odstępem pod okienkiem dyżurnego ruchu – niezależnie od tego, czy treść radiotelefonu ma jedną, czy kilka linii.',
+				]],
+			],
+		},
+		{
+			version: '0.47.3',
+			date: '18 października 2026',
+			groups: [
+				['Pulpit w czasie jazdy', [
+					'Okienko radiotelefonu (komunikat dyżurnego ruchu) w stylu pulpitu: szkło, zielony pasek z lewej, nagłówek „RADIOTELEFON · DYŻURNY RUCHU …” z migającą lampką nadawania, treść pod spodem; gdy czeka na potwierdzenie – pomarańczowy pasek i znacznik „Enter – zrozumiałem”.',
+				]],
+			],
+		},
+		{
+			version: '0.47.2',
+			date: '18 października 2026',
+			groups: [
+				['Pulpit w czasie jazdy', [
+					'Komunikaty u góry w dwóch rzędach: w pierwszym lampka i rodzaj komunikatu (KOMUNIKAT, UWAGA, ZAPOWIEDŹ…), w drugim treść.',
+				]],
+			],
+		},
+		{
+			version: '0.47.1',
+			date: '18 października 2026',
+			groups: [
+				['Swobodna kamera', [
+					'Panel swobodnej kamery w stylu nowego menu: szkło z narożnikami, nadtytuł „Widok z trasy · symulacja stoi” i tytuł „Swobodna kamera.”, pomarańczowy przycisk „Wróć do jazdy” z klawiszem F.',
+					'Położenie kamery jak raport jazdy: kilometr, odległość od toru, wysokość i najbliższa stacja w osobnych wierszach.',
+					'Suwak kilometrażu z wypełnieniem, widoki jako numerowane kafelki, zakładki jak w postoju, stacje jak wykaz w rozkładzie (kilometr + nazwa, najbliższa podświetlona).',
+				]],
+			],
+		},
+		{
+			version: '0.47.0',
+			date: '18 października 2026',
+			groups: [
+				['Pulpit w czasie jazdy', [
+					'Okienka pulpitu w stylu nowego menu: ciemne szkło, kwadratowe rogi, pomarańczowe narożniki, nagłówki „▸ SEMAFOR”, „▸ NASTAWNIK”… – układ bez zmian.',
+					'Zegar jak na tablicy odjazdów, status rozkładu z lampką (zielona – zgodnie z rozkładem, czerwona migająca – opóźnienie), bieżąca stacja jak wiersz tablicy, rozkład z rombami stacji.',
+					'Prędkościomierz jak w kabinie: zielona strefa dozwolona, czerwona ponad ograniczeniem, pomarańczowy znacznik ograniczenia na obwodzie, odczyt cyfrowy w okienku; przy przekroczeniu wskazówka i cyfry czerwienieją.',
+					'Semafor z masztem w biało-czerwone pasy, tarcza ograniczenia pulsuje przy przekroczeniu; lampki CA, DRZWI, POŚL, PIAS, HAM świecą jak kontrolki na pulpicie.',
+					'Sterowanie w grupach „Jazda”, „Skład”, „Widok” z klawiszem przy każdym przycisku; „Hamowanie nagłe” wyróżnione na czerwono.',
+					'Komunikaty jako wąski pasek dyżurnego u góry: lampka w kolorze wagi, kategoria (UWAGA, PRĘDKOŚĆ, PANTOGRAF, ZAPOWIEDŹ…) i treść; podpowiedź nad pulpitem (np. „Wymiana pasażerów…”) w tym samym stylu.',
+				]],
+			],
+		},
+		{
+			version: '0.46.1',
+			date: '18 października 2026',
+			groups: [
+				['Menu', [
+					'Przycisk „Zakończ jazdę” (i „Wyjście” w aplikacji) ma tę samą wysokość co pozostałe akcje – różni się tylko ciemniejszym tłem.',
+				]],
+			],
+		},
+		{
+			version: '0.46.0',
+			date: '18 października 2026',
+			groups: [
+				['Menu w czasie jazdy', [
+					'Postój (pauza) w układzie menu głównego: „Postój.” z pomarańczową lampą, opis i akcje – „Wznów jazdę” (Esc), „Rozkład jazdy”, „Warunki na trasie”, „Swobodna kamera” (F), „Zapisz / wczytaj”, „Sterowanie”, „Ustawienia”, „Zakończ jazdę”.',
+					'Karta po prawej z trzema widokami: raport jazdy, rozkład jazdy (wykaz stacji: rozkład i rzeczywiste przejazdy z opóźnieniem; przejechane wyszarzone, bieżąca podświetlona) i rozkazy pisemne tej jazdy.',
+					'„Warunki na trasie” (pogoda, pora dnia, pora roku) i „Sterowanie” (klawisze i zasady) to osobne ekrany; Esc wraca z nich do postoju.',
+					'„Zakończ jazdę” z potwierdzeniem w przycisku: pierwsze kliknięcie – „Na pewno? Jazda trafi do autozapisu”, drugie – wyjście do menu.',
+					'Pod menu postoju gra jest rozmyta i przygaszona, a dźwięki jazdy stłumione jak za szybą (zapowiedzi i dźwięki menu wyraźne).',
+				]],
+			],
+		},
+		{
+			version: '0.45.4',
+			date: '18 października 2026',
+			groups: [
+				['Menu', [
+					'Koniec migającego paska przewijania z prawej strony menu: pas światła ramy co kilka sekund wychodził poza dół ekranu, a linia światła przy otwarciu okna – poza dół okna; oba na chwilę wywoływały pasek przewijania.',
+				]],
+			],
+		},
+		{
+			version: '0.45.3',
+			date: '18 października 2026',
+			groups: [
+				['Menu', [
+					'Okna menu (np. Scenariusze) otwierają się bez mignięcia: zamiast skalowania i przesunięcia – krótkie pojawienie się; miejsce na pasek przewijania jest zarezerwowane, więc okno nie zmienia szerokości, gdy pasek się pojawi.',
+				]],
+			],
+		},
+		{
+			version: '0.45.2',
+			date: '18 października 2026',
+			groups: [
+				['Menu', [
+					'Podpisy na bursztynowych przyciskach (np. „Nowa trasa” w generatorze tras) są ciemne jak tytuł przycisku – jasne były nieczytelne na bursztynowym tle.',
+				]],
+			],
+		},
+		{
+			version: '0.45.1',
+			date: '18 października 2026',
+			groups: [
+				['Menu', [
+					'Małe okienka wczytywania (zmiana trasy, składu, warunków, podgląd składu) w stylu nowego menu: szkło z bursztynowymi narożnikami, nadtytuł z lampą („Wczytywanie trasy · zestawianie przebiegu”, „Zmiana składu · manewry”, „Podgląd składu · hala postojowa”, „Zmiana warunków · komunikat meteo”), etap i procent, pasek z odblaskiem; po zakończeniu lampa zielona.',
+					'Etapy po kolejowemu: „Zestawianie przebiegu…”, „Układanie rozkładu jazdy…”, „Budowa otoczenia linii…”, „Droga przebiegu ułożona ✓”.',
+				]],
+			],
+		},
+		{
+			version: '0.45.0',
+			date: '18 października 2026',
+			groups: [
+				['Nowe menu – etapy 2–5', [
+					'Wszystkie okna menu w nowym stylu: szkło z bursztynowymi narożnikami, linia światła przy otwarciu, nadtytuł z lampą semafora i tytuł („Karta drogowa.”, „Scenariusze.”, „Ustawienia.”, „Moje trasy.”…), kwadratowe przyciski z bursztynowym podświetleniem.',
+					'„Nowa jazda” to teraz „Karta drogowa.”: zakładki 01–04, lista tras z wyróżnieniem wybranej, numerowane kafelki pogody, pory dnia i roku, przycisk „Odjazd”.',
+					'Suwaki z wypełnionym torem i prostokątnym uchwytem (ustawienia, karta drogowa).',
+					'Pauza „Postój.” z kartą „RAPORT JAZDY” po prawej: położenie, prędkość i dozwolona, następna stacja, opóźnienie, semafor, punkty, stan składu.',
+					'Koniec jazdy: „Stacja końcowa – …” z zieloną lampą albo „Jazda przerwana.” – okno zdarzenia kolejowego w czerwonych barwach.',
+					'Dźwięki menu w kolejowym stylu: tyknięcie przekaźnika (najechanie), zaskok nastawnika (kliknięcie), przełożenie zwrotnicy (wybór kafelka, zakładki, trasy), zwolnienie (wstecz), przełącznik, gong po wygenerowaniu trasy. Opcja „Dźwięki menu” w ustawieniach dźwięku.',
+					'Opcja „Ogranicz animacje menu” w ustawieniach grafiki (także systemowe „ogranicz ruch”).',
+					'Tło menu: ujęcia kolejowe co 9–12 s – przy stacji widok z peronu, poza nią przejazd obok kamery przy torze, przelot z boku, kamera nisko przed czołem pociągu, widok z góry jak z wiaduktu.',
+				]],
+			],
+		},
+		{
+			version: '0.44.0',
+			date: '18 października 2026',
+			groups: [
+				['Nowe menu – etap 1', [
+					'Nowy wygląd menu głównego: rama na cały ekran (narożniki jak oznaczenia na peronie, przesuwający się pas światła reflektora), nagłówek z logo i stopka z wersją, skrótami klawiszy i „Co nowego”.',
+					'Ekran główny „Gotowy do odjazdu.”: nadtytuł z lampą semafora (skład, numer pociągu, stacja, tor), opis jazdy i akcje z podpowiedziami po prawej – „Kontynuuj jazdę” (gdy jest autozapis), „Szybki odjazd” (Enter – bieżąca trasa i skład), „Nowa jazda”, „Scenariusze”, „Wczytaj grę”, „Generator tras”, „Ustawienia”, „Historia jazd”.',
+					'Tablica odjazdów po prawej: godzina, numer pociągu, peron i tor, kierunek – litery przeskakują jak na dworcowej tablicy przy zmianie trasy; stacje pośrednie (przewijane), uwagi, skład, długość i czas jazdy, warunki, zegar dworcowy.',
+					'Fokus od razu na pierwszej akcji – menu można obsługiwać klawiaturą (Tab, Enter).',
+				]],
+			],
+		},
+		{
 			version: '0.43.3',
 			date: '17 października 2026',
 			groups: [

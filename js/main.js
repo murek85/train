@@ -207,7 +207,121 @@
 		return n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many;
 	}
 
+	/* ---------- ekran główny (nowe menu): nadtytuł, opis, akcje i tablica odjazdów ----------
+	   Tablica: wybrana trasa (od stacji początkowej) i skład – godzina, numer pociągu, kierunek, peron i tor, „przez”
+	   (stacje pośrednie, przewijane), uwagi; litery w komórkach przeskakują przy zmianie (jak tablica klapkowa). */
+	const strHash = (s) => { let h = 2166136261; for (const c of String(s)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return (h >>> 0) / 4294967296; };
+	// numer pociągu (stały dla trasy i godziny odjazdu): rodzaj z nazwy trasy, pięć cyfr
+	function trainNo(route, dep) {
+		const kind = route.freight ? 'TME' : /^pospieszny/i.test(route.name) ? 'TLK' : 'Os';
+		return `${kind} ${String(10000 + Math.floor(strHash(route.id + '|' + Math.round(dep / 60)) * 89999)).slice(0, 5)}`;
+	}
+	const FLAP_CH = 'ABCDEFGHIJKLMNOPRSTUWZ0123456789';
+	const plain2 = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ł/g, 'l').replace(/Ł/g, 'L').toUpperCase();
+	// komórki tekstu klapkowego: zmienione znaki „przeskakują” przez losowe litery (dłużej dalej w wierszu)
+	function setFlap(el, text, n) {
+		const s = plain2(text).slice(0, n).padEnd(n, ' ');
+		while (el.children.length < n) el.appendChild(document.createElement('i'));
+		while (el.children.length > n) el.lastChild.remove();
+		[...el.children].forEach((c, k) => {
+			const want = s[k] === ' ' ? ' ' : s[k];
+			if (c.dataset.v === want) return;
+			c.dataset.v = want;
+			clearInterval(c._t);
+			if ((!$('menu') || $('menu').classList.contains('hidden')) && $('pause').classList.contains('hidden') || document.body.classList.contains('reduced-motion') || matchMedia('(prefers-reduced-motion: reduce)').matches) { c.textContent = want; return; }
+			let steps = 4 + k + Math.floor(Math.random() * 4);
+			c.classList.add('spin');
+			c._t = setInterval(() => {
+				if (--steps <= 0) { clearInterval(c._t); c.classList.remove('spin'); c.textContent = want; return; }
+				c.textContent = FLAP_CH[Math.floor(Math.random() * FLAP_CH.length)];
+			}, 45);
+		});
+	}
+	function buildBoard(route, def, t, dep, duration) {
+		const B = $('dep-board');
+		if (!B.firstChild) {
+			B.innerHTML = `<div class="mb-head"><b>ODJAZDY</b><span id="mb-station"></span><span class="mb-clock" id="mb-clock"></span></div>
+				<div class="mb-cols"><div><label>Godz.</label><span class="flap" id="mb-time"></span></div><div><label>Pociąg</label><span class="flap" id="mb-no"></span></div><div class="r"><label>Peron / tor</label><span class="flap" id="mb-pt"></span></div></div>
+				<div class="mb-dest"><label>Do</label><span class="flap" id="mb-dest"></span></div>
+				<div class="mb-via"><span id="mb-via"></span></div>
+				<div class="mb-note"><span class="flap" id="mb-note"></span></div>
+				<dl class="mb-dl"><dt>Skład</dt><dd id="mb-train"></dd><dt>Trasa</dt><dd id="mb-len"></dd><dt>Warunki</dt><dd id="mb-cond"></dd></dl>`;
+			// zegar dworcowy (czas rzeczywisty)
+			const tick = () => { const d = new Date(); $('mb-clock').textContent = d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); };
+			tick();
+			setInterval(tick, 1000);
+		}
+		const st = route.stations, a = st[0], z = st[st.length - 1];
+		$('mb-station').textContent = a.name;
+		setFlap($('mb-time'), fmtClock(dep).slice(0, 5), 5);
+		setFlap($('mb-no'), trainNo(route, dep), 8);
+		setFlap($('mb-dest'), z.name, 18);
+		setFlap($('mb-pt'), '1/1', 3); // pociąg gracza stoi przy peronie pierwszym, przy torze pierwszym (sim.js)
+		const via = st.slice(1, -1).map((s) => s.name);
+		const v = $('mb-via');
+		v.textContent = via.length ? 'Przez: ' + via.join(' · ') : 'Bez stacji pośrednich';
+		// przewijanie tylko długiej listy (jak pasek informacyjny); krótka – w miejscu
+		v.classList.toggle('roll', v.textContent.length > 42);
+		v.parentElement.classList.toggle('roll', v.textContent.length > 42);
+		v.style.animationDuration = `${Math.max(10, v.textContent.length * 0.22)}s`;
+		const save = readSave('auto');
+		setFlap($('mb-note'), save && !saveProblem(save) ? 'ZAPIS DO WZNOWIENIA' : 'ODJAZD WG ROZKŁADU', 19);
+		$('mb-train').textContent = `${t.name}${route.freight ? ' (towarowy)' : ''} · ${Math.round(route.trainLength)} m`;
+		$('mb-len').textContent = `${((z.pos - a.pos) / 1000).toFixed(1).replace('.', ',')} km · ${st.length} ${plural(st.length, 'stacja', 'stacje', 'stacji')} · ok. ${duration} min`;
+		const wsel = $('opt-weather'), ssel = $('opt-season');
+		$('mb-cond').textContent = `${wsel.options[wsel.selectedIndex].text} · ${ssel.options[ssel.selectedIndex].text.replace(/ \(.*\)$/, '')}`;
+	}
+	function buildHome() {
+		const def = defById(selected);
+		if (!def) return;
+		const route = routeFor(def), t = route.train, tab = timetable(route);
+		const duration = Math.round(tab[tab.length - 1].arr / 60), dep = depClock(def), st = route.stations;
+		$('home-eyebrow').querySelector('span').textContent = `${t.name} · ${trainNo(route, dep)} · ${st[0].name} · tor 1`;
+		const stops = st.slice(1, -1).filter((s) => s.stop).length;
+		$('home-lead').textContent = `${route.freight ? 'Pociąg towarowy' : (route.name.split(' ')[0] || 'Pociąg')} ${route.title} – odjazd o ${fmtClock(dep).slice(0, 5)}, ${stops ? `${stops} ${plural(stops, 'postój', 'postoje', 'postojów')} po drodze` : 'bez postojów po drodze'}, ok. ${duration} min jazdy.`;
+		$('quick-sub').textContent = `${route.title} · ${t.name}`;
+		// kontynuacja: autozapis do wczytania (główna akcja zamiast szybkiego odjazdu)
+		const save = readSave('auto'), ok = !!save && !saveProblem(save);
+		$('btn-continue').classList.toggle('hidden', !ok);
+		$('btn-quick').classList.toggle('prominent', !ok);
+		if (ok) $('continue-sub').textContent = `${save.title} · km ${Number(save.km || 0).toFixed(1).replace('.', ',')} · godz. ${fmtClock(save.clock || 0).slice(0, 5)}`;
+		buildBoard(route, def, t, dep, duration);
+	}
+
+	// suwaki w menu: wypełnienie toru do wartości (--fill, style.css)
+	function fillRanges(root = document) {
+		for (const el of root.querySelectorAll('input[type="range"]')) {
+			const a = Number(el.min) || 0, b = Number(el.max) || 100;
+			el.style.setProperty('--fill', `${((Number(el.value) - a) / ((b - a) || 1)) * 100}%`);
+		}
+	}
+	document.addEventListener('input', (e) => { if (e.target.type === 'range') fillRanges(e.target.parentElement); });
+
+	/* dźwięki menu (audio.ui): najechanie na przycisk, kliknięcie (wstecz, wybór – kafelki, zakładki, trasy, schemat linii),
+	   przełączniki; tylko w oknach menu, pauzy, ustawień, zapisów i końca jazdy */
+	const UI_ROOTS = '#menu, #settings, #saves, #pause, #end, #gen-bg';
+	let uiOver = null;
+	document.addEventListener('mouseover', (e) => {
+		const b = e.target.closest && e.target.closest('button');
+		if (b === uiOver) return;
+		uiOver = b;
+		if (b && !b.disabled && b.closest(UI_ROOTS)) audio.ui('hover');
+	});
+	document.addEventListener('click', (e) => {
+		const b = e.target.closest && e.target.closest('button');
+		if (!b || b.disabled || !b.closest(UI_ROOTS)) return;
+		const back = b.classList.contains('back') || /^(btn-resume|settings-back|saves-back)$/.test(b.id);
+		const pick = b.closest('.tiles, .tabs, #route-list, .run-line, #dir-seg, .seg, .stock-list, .livery');
+		audio.ui(back ? 'back' : pick ? 'select' : 'click');
+	}, true);
+	document.addEventListener('change', (e) => { if (e.target.type === 'checkbox' && e.target.closest(UI_ROOTS)) audio.ui('toggle'); });
+	// opcje menu: dźwięki i ograniczenie animacji (także systemowe „ogranicz ruch” – style.css)
+	audio.uiOn = load('opt.uiSound', true);
+	document.body.classList.toggle('reduced-motion', !!load('opt.reduceMotion', false));
+
 	function buildMenu() {
+		buildHome();
+		requestAnimationFrame(() => fillRanges());
 		// mapy
 		const list = $('route-list');
 		list.innerHTML = '';
@@ -556,9 +670,84 @@
 		$('pause-season').value = sim ? sim.opts.season : $('opt-season').value;
 		tiles('pause-season-tiles', 'pause-season', SEASON_SKY);
 		$('pause-custom-row').classList.toggle('hidden', $('pause-time').value !== 'custom');
-		if (!sim) { $('pause-info').innerHTML = ''; return; }
+		if (!sim) { $('pause-info').innerHTML = ''; $('rep-body').innerHTML = ''; return; }
 		const r = sim.route, km = (sim.st.pos / 1000).toFixed(2).replace('.', ',');
 		$('pause-info').innerHTML = `<b>${esc(r.title)}</b> · ${fmtClock(r.startClock + sim.time).slice(0, 5)} · km ${km} · ${Math.round(sim.st.v * 3.6)} km/h`;
+		buildReport();
+	}
+	/* ---------- postój (pauza): ekrany i karta po prawej ----------
+	   Ekrany: main (akcje), cond (warunki na trasie), keys (sterowanie). Karta: raport jazdy, rozkład jazdy (wykaz stacji
+	   – planowo i rzeczywiście), rozkazy pisemne tej jazdy. */
+	let pauseScr = 'main', repTab = 'report';
+	function pauseScreen(name) {
+		pauseScr = name;
+		$('pause-main').classList.toggle('hidden', name !== 'main');
+		$('pause-cond').classList.toggle('hidden', name !== 'cond');
+		const quit = $('btn-quit');
+		quit.classList.remove('confirm');
+		quit.querySelector('span').textContent = 'Zakończ jazdę';
+		requestAnimationFrame(() => { const b = name === 'main' ? $('btn-resume') : document.querySelector(`#pause-${name} button.back`); if (b && !$('pause').classList.contains('hidden')) b.focus({ preventScroll: true }); });
+	}
+	function buildReport() {
+		const box = $('rep-body');
+		document.querySelectorAll('#pause-report .rep-tabs button').forEach((b) => b.classList.toggle('sel', b.dataset.rep === repTab));
+		const r = sim.route, st = sim.st, front = st.pos, S = window.TrainSim;
+		const hm = (sec) => fmtClock(r.startClock + sec).slice(0, 5);
+		const atStation = sim.service !== null && !sim.ss[sim.service].cleared;
+		let ni = atStation ? sim.service : sim.next;
+		if (!atStation) while (ni < r.stations.length - 1 && ['served', 'departed', 'missed'].includes(sim.ss[ni].state)) ni++;
+		const s = r.stations[ni];
+		if (repTab === 'tt') {
+			// wykaz stacji: przyjazd / odjazd planowy, rzeczywisty (przyjazd albo przelot) i opóźnienie
+			const recs = {};
+			for (const x of sim.records) recs[x.index] = x;
+			const rows = r.stations.map((x, i) => {
+				const arr = sim.plannedArr(i), dep = sim.plannedDep(i), rec = recs[i];
+				const past = i < sim.next && sim.service !== i, cur = i === ni;
+				const plan = i === 0 ? `odj. ${dep != null ? hm(dep) : '—'}` : x.terminus ? `przyj. ${arr != null ? hm(arr) : '—'}` : !x.stop ? `przelot ${arr != null ? hm(arr) : ''}` : `${arr != null ? hm(arr) : '—'} – ${dep != null ? hm(dep) : '—'}`;
+				let real = '';
+				if (rec && rec.missed) real = '<b class="bad">pominięta</b>';
+				else if (rec) real = `${hm(rec.actual)} ${rec.delay > 30 ? `<b class="bad">+${fmtDelay(rec.delay)}</b>` : '<b class="good">o czasie</b>'}`;
+				else if (cur && atStation) real = '<b>postój</b>';
+				return `<tr class="${past ? 'past' : ''}${cur ? ' cur' : ''}${x.stop ? '' : ' thr'}"><td>${esc(x.name)}</td><td>${plan}</td><td>${real}</td></tr>`;
+			}).join('');
+			box.innerHTML = `<table class="rep-tt"><thead><tr><th>Stacja</th><th>Rozkład</th><th>Rzeczywiście</th></tr></thead><tbody>${rows}</tbody></table>`;
+			const cur = box.querySelector('tr.cur');
+			if (cur) cur.scrollIntoView({ block: 'nearest' });
+			return;
+		}
+		if (repTab === 'orders') {
+			const list = sim.orders || [];
+			box.innerHTML = list.length ? list.map((o) => `<div class="rep-order${o.acked ? '' : ' new'}"><b>${o.type ? `Rozkaz „${esc(o.type)}”` : 'Rozkaz pisemny'} nr ${o.no}</b><span>${esc(o.station || '')} · godz. ${hm(o.at)}${o.via === 'radio' ? ' · radiotelefon' : ''}${o.acked ? '' : ' · niepotwierdzony'}</span><p>${esc(o.text || '')}</p></div>`).join('')
+				: '<p class="rep-empty">Brak rozkazów pisemnych w tej jeździe. Rozkaz „O” dostaniesz na stacji przed odjazdem, „S” – przez radiotelefon przed uszkodzonym semaforem.</p>';
+			return;
+		}
+		let delay = null;
+		if (s) {
+			const planned = atStation ? sim.plannedDep(ni) : sim.plannedArr(ni);
+			if (planned != null && sim.time > planned) delay = sim.time - planned;
+		}
+		const sig = sim.nextSignal();
+		const sigTx = sig ? `${S.signalText(sig.code).title} · ${Math.max(0, Math.round(sig.pos - front))} m` : '—';
+		const lim = Math.round(sim.limit), v = Math.round(st.v * 3.6); // dozwolona – jak na prędkościomierzu (hud.js)
+		const row = (k, val, cls) => `<dt>${k}</dt><dd${cls ? ` class="${cls}"` : ''}>${esc(val)}</dd>`;
+		const end = r.stations[r.stations.length - 1].pos;
+		// raport jak tablica odjazdów w menu: nagłówek z zegarem gry, wiersz z prędkościami i kilometrem, stacja i stan
+		// rozkładu na klapkach, szczegóły pod spodem
+		box.innerHTML = `<div class="mf-board-in rep-board">
+			<div class="mb-head"><b>RAPORT</b><span>${esc(r.title)}</span><span class="mb-clock">${fmtClock(sim.clock())}</span></div>
+			<div class="mb-cols"><div><label>Prędkość</label><span class="flap${v > lim + 2 ? ' bad' : ''}" id="rb-v"></span></div><div><label>Dozwolona</label><span class="flap" id="rb-lim"></span></div><div class="r"><label>Kilometr</label><span class="flap" id="rb-km"></span></div></div>
+			<div class="mb-dest"><label>${atStation ? 'Postój' : s ? `Następna stacja · ${((s.pos - front) / 1000).toFixed(1).replace('.', ',')} km` : 'Stacja końcowa'}</label><span class="flap" id="rb-st"></span></div>
+			<div class="mb-note${delay ? ' bad' : ''}"><span class="flap" id="rb-note"></span></div>
+			<dl class="mb-dl">${row('Semafor', sigTx)}
+			${row('Do końca', `${Math.max(0, (end - front) / 1000).toFixed(1).replace('.', ',')} km z ${(end / 1000).toFixed(1).replace('.', ',')}`)}
+			${row('Punkty', String(sim.score()))}
+			${row('Stan', sim.doorsOpen ? 'drzwi otwarte' : st.v < 0.3 ? 'skład zahamowany' : 'w biegu – czas stoi', sim.doorsOpen ? 'warn' : '')}</dl></div>`;
+		setFlap($('rb-v'), String(v).padStart(3, ' '), 3);
+		setFlap($('rb-lim'), String(lim).padStart(3, ' '), 3);
+		setFlap($('rb-km'), (front / 1000).toFixed(2).replace('.', ','), 6);
+		setFlap($('rb-st'), s ? s.name : r.stations[r.stations.length - 1].name, 18);
+		setFlap($('rb-note'), delay ? `OPOZNIENIE ${fmtDelay(delay)}` : 'ZGODNIE Z ROZKLADEM', 19);
 	}
 
 	function esc(s) {
@@ -870,6 +1059,7 @@
 		else if (m.type === 'route') { J.done.push(m.def); J.part = Math.min(J.parts - 1, J.part + 1); genStore(m.def, m.check, m.ms); updateGenUI(); }
 		else if (m.type === 'error') { J.err = m.message; genLog(m.message, 'err'); }
 		else if (m.type === 'end') {
+			if (J.done.length) audio.ui('done'); // gong – trasa gotowa
 			J.running = false;
 			J.end = Date.now();
 			J.dismissed = false;
@@ -913,13 +1103,18 @@
 		setTimeout(go, 120);
 	});
 	// head – nagłówek okienka (domyślnie „Wczytywanie trasy”; zmiana składu i warunków – własny)
+	// nadtytuły małych wczytywań (kolejowo): rodzaj – co się dzieje
+	const RL_HEAD = { 'Wczytywanie trasy': 'Wczytywanie trasy · zestawianie przebiegu', 'Zmiana składu': 'Zmiana składu · manewry', 'Podgląd składu': 'Podgląd składu · hala postojowa', 'Zmiana warunków': 'Zmiana warunków · komunikat meteo' };
 	function routeLoading(step, frac, title, head) {
 		const box = $('route-loading');
 		if (step === null) { box.classList.add('hidden'); return; }
 		box.classList.remove('hidden');
-		if (title !== undefined) { $('rl-title').textContent = title; $('rl-head').textContent = head || 'Wczytywanie trasy'; }
+		if (title !== undefined) { $('rl-title').textContent = title; const h = head || 'Wczytywanie trasy'; $('rl-head').textContent = RL_HEAD[h] || h; }
 		$('rl-step').textContent = step;
-		$('rl-fill').style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
+		const f = Math.max(0, Math.min(1, frac));
+		$('rl-pct').textContent = Math.round(f * 100) + '%';
+		$('rl-fill').style.width = Math.round(f * 100) + '%';
+		box.classList.toggle('done', f >= 1);
 	}
 	async function selectRoute(id) {
 		const seq = ++loadSeq, def = defById(id);
@@ -930,21 +1125,21 @@
 		save('route', selected);
 		// tytuł przebiegu (od wybranej stacji początkowej)
 		const k = startOf(def), title = k > 0 ? `${def.stations[k].name} – ${def.stations[def.stations.length - 1].name}` : def.title;
-		routeLoading('Przygotowanie trasy…', 0.05, title);
+		routeLoading('Zestawianie przebiegu…', 0.05, title);
 		await nextFrame();
 		if (!live()) return quit();
 		buildMenu();
-		routeLoading('Rozkład jazdy…', 0.25);
+		routeLoading('Układanie rozkładu jazdy…', 0.25);
 		await nextFrame();
 		if (!live()) return quit();
 		timetable(routeById(id));
-		routeLoading('Budowa świata…', 0.45);
+		routeLoading('Budowa otoczenia linii…', 0.45);
 		await nextFrame();
 		if (!live()) return quit();
 		startDemo();
 		await worldNear(live, 0.45);
 		if (seq !== loadSeq) return;
-		routeLoading('Gotowe', 1);
+		routeLoading('Droga przebiegu ułożona ✓', 1);
 		setTimeout(() => { if (seq === loadSeq) routeLoading(null); }, 250);
 	}
 	// doczytywanie kawałków świata podglądu przy pociągu (najwyżej ok. 20 s – potem okienko i tak znika); pasek od f0 do 1
@@ -956,7 +1151,7 @@
 			const p = renderer.world ? renderer.world.pendingNear || 0 : 0;
 			total = Math.max(total, p);
 			if (k > 2 && p === 0) break;
-			if (total) routeLoading(`Budowa świata… (${total - p} z ${total})`, f0 + (1 - f0) * (1 - p / total));
+			if (total) routeLoading(`Budowa otoczenia linii… (${total - p} z ${total})`, f0 + (1 - f0) * (1 - p / total));
 		}
 	}
 	/* Zmiana w menu „Gra jednoosobowa” (skład, warunki, pierwsze otwarcie podglądu): okienko jak przy wyborze trasy,
@@ -972,19 +1167,19 @@
 		await nextFrame();
 		if (!live()) return quit();
 		work();
-		routeLoading('Podgląd…', 0.35);
+		routeLoading('Podgląd w hali…', 0.35);
 		await nextFrame();
 		await nextFrame();
 		if (!live()) return quit();
 		if (demo) {
-			routeLoading('Pociąg w tle…', 0.6);
+			routeLoading('Wyjazd na szlak (pociąg w tle)…', 0.6);
 			await nextFrame();
 			if (!live()) return quit();
 			startDemo();
 			await worldNear(live, 0.6);
 			if (!live()) return quit();
 		}
-		routeLoading('Gotowe', 1);
+		routeLoading('Gotowe ✓', 1);
 		setTimeout(() => { if (seq === loadSeq) routeLoading(null); }, 150);
 	}
 
@@ -1001,6 +1196,8 @@
 
 	function showOverlay(id) {
 		for (const o of ['menu', 'pause', 'end', 'settings', 'saves']) $(o).classList.toggle('hidden', o !== id);
+		// postój (także ustawienia i zapisy otwarte z pauzy): dźwięki jazdy stłumione jak za szybą
+		audio.setMuffle(mode === 'pause' && id !== null);
 	}
 
 	// ekrany menu głównego: 'main' | 'single'
@@ -1008,6 +1205,8 @@
 	function menuScreen(name) {
 		screen = name;
 		$('scr-main').classList.toggle('hidden', name !== 'main');
+		$('dep-board').classList.toggle('hidden', name !== 'main'); // tablica odjazdów – tylko na ekranie głównym
+		if (name === 'main') { buildHome(); requestAnimationFrame(() => { const b = document.querySelector('#scr-main .mf-act:not(.hidden)'); if (b) b.focus({ preventScroll: true }); }); }
 		$('scr-single').classList.toggle('hidden', name !== 'single');
 		$('scr-genmenu').classList.toggle('hidden', name !== 'genmenu');
 		$('scr-gen').classList.toggle('hidden', name !== 'gen');
@@ -1022,6 +1221,7 @@
 	// ustawienia otwierane z menu albo z pauzy – „Wróć” prowadzi tam, skąd przyszliśmy
 	let settingsFrom = 'menu';
 	function openSettings(from) {
+		requestAnimationFrame(() => fillRanges($('settings')));
 		settingsFrom = from;
 		const gpu = renderer.gpuName();
 		$('gpu-info').textContent = gpu ? 'Karta graficzna: ' + gpu : '';
@@ -1036,7 +1236,7 @@
 		setTab = name;
 		save('setTab', name);
 		document.querySelectorAll('#set-tabs button').forEach((b) => b.classList.toggle('sel', b.dataset.tab === name));
-		for (const t of ['sound', 'voice', 'gfx']) $('set-tab-' + t).classList.toggle('hidden', t !== name);
+		for (const t of ['sound', 'voice', 'gfx', 'keys', 'rules']) $('set-tab-' + t).classList.toggle('hidden', t !== name);
 	}
 	function setSummary() {
 		$('sum-set-sound').textContent = $('set-sound').checked ? `głośność ${$('set-volume').value}%` : 'wyciszony';
@@ -1067,7 +1267,8 @@
 		if (gain >= 0.5) hud.toast(station ? `${station}: ${text}` : text, 'announce');
 		// głos: w jeździe; zapowiedź na peronie (station) – także z kamery swobodnej (stoi się na peronie)
 		if (how !== 'voice' || muted || !(mode === 'play' || (station && mode === 'free'))) return;
-		// po gongu (ok. 1,4 s); Piper – synteza od razu, odtworzenie nie wcześniej niż po gongu
+		// po gongu (ok. 1,4 s); Piper – synteza od razu, odtworzenie nie wcześniej niż po gongu; godziny słownie
+		text = window.TrainSim.spokenTimes(text);
 		if (voiceEngine() === 'piper') speakPiper(text, performance.now() + 1400, gain);
 		else setTimeout(() => speak(text, 0, gain), 1400);
 	}
@@ -1286,7 +1487,7 @@
 	}
 	function buildSaves() {
 		const canSave = savesFrom === 'pause' && !!sim && sim.status === 'running';
-		$('saves-title').textContent = canSave ? 'Zapisz / wczytaj grę' : 'Wczytaj grę';
+		$('saves-title').textContent = canSave ? 'Zapisz albo wczytaj.' : 'Wczytaj jazdę.';
 		$('saves-hint').textContent = (canSave
 			? 'Zapis obejmuje stan jazdy: miejsce na trasie, prędkość, nastawnik, drzwi, pantograf, rozkład, punkty i kary, pogodę i porę dnia.'
 			: 'Wybierz zapis, aby jechać dalej od zapisanego miejsca.') + ' Autozapis – przy każdym odjeździe ze stacji, wyjściu do menu i zamknięciu gry.';
@@ -1533,9 +1734,9 @@
 		if (mode === 'play' || mode === 'free') {
 			pauseFromFree = mode === 'free';
 			mode = 'pause';
+			pauseScreen('main');
 			buildPause();
 			renderer.rotKey = 0;
-			audio.silence();
 			$('free').classList.add('hidden');
 			showOverlay('pause');
 		} else if (mode === 'pause') {
@@ -1572,7 +1773,7 @@
 			const pl = st.platform;
 			const kind = st.type === 'halt' ? 'przystanek' : 'stacja';
 			const side = pl ? (pl.island ? 'peron wyspowy' : pl.side < 0 ? 'peron z lewej' : 'peron z prawej') : 'peron z prawej';
-			b.innerHTML = `<span>${esc(st.name)}</span><small>${(st.pos / 1000).toFixed(1)} km · ${kind}, ${side}</small>`;
+			b.innerHTML = `<em>${(st.pos / 1000).toFixed(1).replace('.', ',')}</em><span>${esc(st.name)}<small>${kind} · ${side}</small></span>`;
 			b.addEventListener('click', () => freeGo('station', i));
 			list.appendChild(b);
 		});
@@ -1662,8 +1863,11 @@
 		const info = renderer.freeInfo(sim.route), st = info.station;
 		const side = Math.abs(info.d) < 1 ? 'na osi toru' : `${Math.round(Math.abs(info.d))} m ${info.d > 0 ? 'w prawo' : 'w lewo'} od osi toru`;
 		const h = info.h < 10 ? info.h.toFixed(1).replace('.', ',') : Math.round(info.h);
-		$('free-info').textContent = `km ${(info.s / 1000).toFixed(3).replace('.', ',')} · ${side}\nwysokość ${h} m nad terenem\nnajbliżej: ${st.name} – ${Math.round(st.dist)} m ${st.ahead ? 'dalej' : 'wcześniej'}`;
+		// położenie kamery jak w raporcie jazdy: etykiety mono, wartości obok
+		const html = `<dt>Kilometr</dt><dd class="km">${(info.s / 1000).toFixed(3).replace('.', ',')}</dd><dt>Od toru</dt><dd>${side}</dd><dt>Wysokość</dt><dd>${h} m nad terenem</dd><dt>Najbliżej</dt><dd>${esc(st.name)} · ${Math.round(st.dist)} m ${st.ahead ? 'dalej' : 'wcześniej'}</dd>`;
+		if ($('free-info')._h !== html) { $('free-info').innerHTML = html; $('free-info')._h = html; }
 		if (!freeKmDrag) $('free-km').value = Math.round(info.s / 10) * 10;
+		fillRanges($('free'));
 		$('free-km-val').textContent = (Number($('free-km').value) / 1000).toFixed(2).replace('.', ',') + ' km';
 		const near = sim.route.stations.findIndex((x) => x.name === st.name);
 		[...$('free-stations').children].forEach((b, i) => b.classList.toggle('near', i === near && st.dist < 400));
@@ -1674,7 +1878,12 @@
 		audio.silence();
 		const ok = sim.status === 'ended';
 		const score = sim.score(), max = sim.maxScore();
-		$('end-title').textContent = ok ? 'Koniec trasy – ' + sim.route.stations[sim.route.stations.length - 1].name : 'Jazda przerwana';
+		$('end-title').textContent = ok ? `Stacja końcowa – ${sim.route.stations[sim.route.stations.length - 1].name}.` : 'Jazda przerwana.';
+		// nadtytuł z lampą: zielona – przejazd do końca, czerwona – zdarzenie (okno w barwach ostrzegawczych)
+		const eyeb = $('end-eyebrow');
+		eyeb.querySelector('.lamp').className = 'lamp' + (ok ? '' : ' red');
+		eyeb.querySelector('span').textContent = ok ? 'KONIEC JAZDY · RAPORT' : 'ZDARZENIE KOLEJOWE · JAZDA PRZERWANA';
+		$('end').querySelector('.panel').classList.toggle('danger', !ok);
 		$('end-reason').textContent = ok ? `Przejazd zakończony o ${fmtClock(sim.clock())}.` : sim.failReason;
 		const ratio = ok ? Math.max(0, score / max) : 0;
 		let stars = ratio >= 0.9 ? 3 : ratio >= 0.7 ? 2 : ratio >= 0.4 ? 1 : 0;
@@ -1683,7 +1892,7 @@
 		$('end-goals').classList.toggle('hidden', !res);
 		if (res) {
 			stars = res.stars;
-			if (ok) $('end-title').textContent = `Scenariusz „${scen.title}” ukończony`;
+			if (ok) $('end-title').textContent = `Scenariusz „${scen.title}” ukończony.`;
 			$('end-goals').innerHTML = res.goals.map((g) => `<li class="${g.ok ? 'ok' : 'no'}">${esc(g.text)}</li>`).join('');
 			const bestS = load('scen.' + scen.id, 0);
 			if (stars > bestS) save('scen.' + scen.id, stars);
@@ -1874,6 +2083,7 @@
 		if (mode === 'menu' && !demo) {
 			$('fps').classList.add('menu-off');
 		} else if (mode === 'menu') {
+			renderer.menuCam = true; // tło menu: ujęcia kolejowe (scene.js menuShot)
 			if (demo.status !== 'running') startDemo();
 			autopilot(demo);
 			step(demo, dt * 2);
@@ -1884,6 +2094,7 @@
 			renderer.draw(demo, dt, 0);
 			if (autoQ && !(renderer.world.pending > 0)) autoQuality(performance.now() - tq);
 		} else if (sim) {
+			renderer.menuCam = false;
 			$('fps').classList.remove('menu-off');
 			// swobodna kamera z „Pociąg jedzie dalej” – symulacja biegnie, prowadzi automat (klawisze sterują kamerą)
 			const freeRun = mode === 'free' && $('free-run').checked && sim.status === 'running';
@@ -2030,7 +2241,8 @@
 			return;
 		}
 		if (mode === 'menu') {
-			if (e.code === 'Enter' && screen === 'single') { scen = null; startGame(); }
+			// Enter: odjazd (na ekranie głównym – gdy fokus nie stoi na przycisku; przycisk z fokusem obsługuje Enter sam)
+			if (e.code === 'Enter' && (screen === 'single' || (screen === 'main' && document.activeElement.tagName !== 'BUTTON'))) { scen = null; startGame(); }
 			if ((e.code === 'Delete' || e.code === 'Backspace') && screen === 'single' && singleTab === 'train' && !$('car-actions').classList.contains('hidden') && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); detachCar(); }
 			if (e.code === 'Escape' && screen !== 'main') menuScreen(screen === 'gen' || screen === 'routes' ? 'genmenu' : 'main');
 			return;
@@ -2050,7 +2262,8 @@
 			return;
 		}
 		if (e.code === 'Escape' || e.code === 'KeyP') {
-			togglePause();
+			if (mode === 'pause' && pauseScr !== 'main' && e.code === 'Escape') pauseScreen('main');
+			else togglePause();
 			e.preventDefault();
 			return;
 		}
@@ -2116,7 +2329,6 @@
 	$('ca-del').addEventListener('click', detachCar);
 	$('btn-pause').addEventListener('click', togglePause);
 	$('btn-resume').addEventListener('click', togglePause);
-	$('btn-free').addEventListener('click', () => { if (pauseFromFree) togglePause(); else enterFree(); });
 	$('free-close').addEventListener('click', exitFree);
 	$('free-run').addEventListener('change', () => {
 		if ($('free-run').checked) { audio.ensure(); hud.toast('Pociąg jedzie dalej – prowadzi automat', 'info'); }
@@ -2130,7 +2342,24 @@
 	document.querySelectorAll('[data-free]').forEach((b) => b.addEventListener('click', () => freeGo(b.dataset.free)));
 	document.querySelectorAll('[data-free-tab]').forEach((b) => b.addEventListener('click', () => freeTab(b.dataset.freeTab)));
 	window.addEventListener('blur', () => { for (const k in freeKeysDown) delete freeKeysDown[k]; });
-	$('btn-quit').addEventListener('click', toMenu);
+	// zakończenie jazdy: potwierdzenie w przycisku (drugie kliknięcie w ciągu 3 s)
+	let quitT = 0;
+	$('btn-quit').addEventListener('click', () => {
+		const b = $('btn-quit');
+		if (!b.classList.contains('confirm')) {
+			b.classList.add('confirm');
+			b.querySelector('span').textContent = 'Na pewno? Jazda trafi do autozapisu';
+			clearTimeout(quitT);
+			quitT = setTimeout(() => { b.classList.remove('confirm'); b.querySelector('span').textContent = 'Zakończ jazdę'; }, 3000);
+			return;
+		}
+		clearTimeout(quitT);
+		pauseScreen('main');
+		toMenu();
+	});
+	$('btn-cond').addEventListener('click', () => pauseScreen('cond'));
+	$('cond-back').addEventListener('click', () => pauseScreen('main'));
+	$('pause-report').addEventListener('click', (e) => { const b = e.target.closest('[data-rep]'); if (b && sim) { repTab = b.dataset.rep; buildReport(); } });
 	$('btn-again').addEventListener('click', () => startGame());
 	$('btn-menu').addEventListener('click', toMenu);
 	$('opt-ca').checked = load('opt.ca', true);
@@ -2234,6 +2463,9 @@
 	showTab(singleTab);
 	// menu główne
 	$('btn-single').addEventListener('click', () => menuScreen('single'));
+	// szybki odjazd: bieżący wybór (trasa, skład, warunki); kontynuacja – autozapis
+	$('btn-quick').addEventListener('click', () => { scen = null; startGame(); });
+	$('btn-continue').addEventListener('click', () => loadGame('auto'));
 	$('btn-scen').addEventListener('click', () => { buildScenarios(); menuScreen('scen'); });
 	$('scen-back').addEventListener('click', () => menuScreen('main'));
 	$('opt-events').checked = load('opt.events', false);
@@ -2355,7 +2587,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.43.3';
+	$('version').textContent = 'wersja 0.48.5';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');
@@ -2386,6 +2618,10 @@
 		}
 		buildPause();
 	});
+	$('set-uisound').checked = audio.uiOn;
+	$('set-uisound').addEventListener('change', () => { audio.uiOn = $('set-uisound').checked; save('opt.uiSound', audio.uiOn); });
+	$('set-reduce').checked = document.body.classList.contains('reduced-motion');
+	$('set-reduce').addEventListener('change', () => { document.body.classList.toggle('reduced-motion', $('set-reduce').checked); save('opt.reduceMotion', $('set-reduce').checked); });
 	$('opt-traffic').value = String(load('opt.traffic', 2));
 	// ruch uliczny (street-life.js): 0 brak, 1 mały, 2 średni, 3 duży – od razu w świecie (także w podglądzie menu)
 	$('opt-street').value = String(load('opt.street', 2));

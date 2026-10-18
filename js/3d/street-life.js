@@ -59,6 +59,7 @@
 		out.d = a[1] + (b[1] - a[1]) * f;
 		out.hs = (b[0] - a[0]) / L;
 		out.hd = (b[1] - a[1]) / L;
+		out.ch = P.ch || null; // ciąg ulicy (pas ruchu) – wysokość własnej drogi na skrzyżowaniu dwupoziomowym
 		return out;
 	}
 	// krzywa Béziera (kwadratowa) z punktu a (kierunek ta) do b (kierunek tb): punkt kontrolny na przecięciu stycznych
@@ -743,9 +744,38 @@
 		return true;
 	};
 
-	World.prototype.streetY = function (s, d) {
-		return this.roadY(s, d);
+	/* Wysokość jezdni pod autem / pieszym – jak rysowana jezdnia (buildEnvRoads): nawierzchnia (surfY) + ok. 0,1 m;
+	   przy torze tylko na przejeździe w poziomie – poziom torowiska (roadY); pod mostem kolejowym i nad tunelem –
+	   nawierzchnia (dawniej roadY: przy torze auta wjeżdżały na poziom szyn – na most albo w głąb tunelu); skrzyżowanie dwupoziomowe dróg
+	   (roadBridged) – wysokość własnej drogi ciągu ch (dolna jezdnia pod wiaduktem, górna na nim). */
+	World.prototype.streetY = function (s, d, ch) {
+		if (!this.env || !this.surfY || (Math.abs(d) < 7.5 && this.nearLevelCrossing(s))) return this.roadY(s, d);
+		if (ch && this.roadBridged(s, d)) {
+			const k = nearSeg(ch, s, d), inf = ch.seg && ch.seg[k] && ch.seg[k].inf;
+			const z = inf ? this.envStreets().rowZAt(inf, s, d) : null;
+			if (z !== null) return z + roadDy(inf.ti);
+		}
+		return this.surfY(s, d) + 0.1;
 	};
+	/* przejazd w poziomie w pobliżu kilometra s (do 25 m – ulica przecina tor pod kątem); poza nim jezdnia przy torze
+	   to most nad nią albo tunel pod nią (np. linia średnicowa w Warszawie) – nie poziom torowiska */
+	World.prototype.nearLevelCrossing = function (s) {
+		for (const cr of this.route.crossings) if (Math.abs(cr.pos - s) < 25) return true;
+		return false;
+	};
+	// jak w buildEnvRoads: jezdnie wyższej klasy minimalnie wyżej (bez migotania na styku)
+	const roadDy = (ti) => 0.1 + (10 - (ti || 10)) * 0.003;
+	// odcinek ciągu najbliższy punktowi (s, d)
+	function nearSeg(ch, s, d) {
+		let best = 0, bd = Infinity;
+		for (let k = 0; k + 1 < ch.pts.length; k++) {
+			const a = ch.pts[k], b = ch.pts[k + 1], ds = b[0] - a[0], dd = b[1] - a[1], L2 = ds * ds + dd * dd || 1;
+			const t = Math.max(0, Math.min(1, ((s - a[0]) * ds + (d - a[1]) * dd) / L2));
+			const x = Math.hypot(s - a[0] - ds * t, d - a[1] - dd * t);
+			if (x < bd) { bd = x; best = k; }
+		}
+		return best;
+	}
 
 	const Y_UP = new T.Vector3(0, 1, 0), BEAM_W = new T.Color(1, 0.86, 0.62), BEAM_R = new T.Color(1, 0.12, 0.06);
 	/* poświata świateł: przy każdym aucie dwa reflektory (z przodu, 0,6 m od osi, 0,7 m nad jezdnią) i dwa światła tylne;
@@ -763,9 +793,9 @@
 				carPoint(c, c.len / 2, F);
 				carPoint(c, -c.len / 2, B);
 				R.sidePoint(this.route, F.s, F.d, tp);
-				const fx = tp.x, fz = tp.z, fy = this.streetY(F.s, F.d);
+				const fx = tp.x, fz = tp.z, fy = this.streetY(F.s, F.d, F.ch);
 				R.sidePoint(this.route, B.s, B.d, tp);
-				const bx = tp.x, bz = tp.z, by = this.streetY(B.s, B.d);
+				const bx = tp.x, bz = tp.z, by = this.streetY(B.s, B.d, B.ch);
 				const L0 = Math.hypot(fx - bx, fz - bz) || 1, ux = (fx - bx) / L0, uz = (fz - bz) / L0, rx = -uz, rz = ux;
 				const dist = Math.hypot(cam.x - fx, cam.z - fz);
 				if (dist > 900) continue;
@@ -803,7 +833,7 @@
 		const beam = (s, d, yaw, w, len, color, k) => {
 			R.sidePoint(this.route, s, d, tp);
 			bq.setFromAxisAngle(Y_UP, yaw);
-			m4.compose(p3.set(tp.x, this.streetY(s, d) + 0.04, tp.z), bq, bs.set(w, 1, len));
+			m4.compose(p3.set(tp.x, this.streetY(s, d, N.ch) + 0.04, tp.z), bq, bs.set(w, 1, len));
 			beams.setMatrixAt(nb, m4);
 			beams.setColorAt(nb, bc.copy(color).multiplyScalar(k));
 			nb++;
@@ -814,9 +844,9 @@
 			carPoint(c, c.len * 0.38, F);
 			carPoint(c, -c.len * 0.38, B);
 			R.sidePoint(this.route, F.s, F.d, tp);
-			const fx = tp.x, fz = tp.z, fy = this.streetY(F.s, F.d);
+			const fx = tp.x, fz = tp.z, fy = this.streetY(F.s, F.d, F.ch);
 			R.sidePoint(this.route, B.s, B.d, tp);
-			const bx = tp.x, bz = tp.z, by = this.streetY(B.s, B.d);
+			const bx = tp.x, bz = tp.z, by = this.streetY(B.s, B.d, B.ch);
 			const yaw = Math.atan2(fx - bx, fz - bz), pitch = -Math.atan2(fy - by, Math.hypot(fx - bx, fz - bz) || 1);
 			e.set(pitch, yaw, 0);
 			q.setFromEuler(e);
@@ -1032,7 +1062,7 @@
 			q.setFromAxisAngle(up, yaw);
 			// chodnik – nad krawężnikiem; na jezdni (przejście, przejazd) – na nawierzchni
 			const onRoad = !!(p.z || (p.path && p.path.X)) || (p.state === 'stand' && !p.onSw);
-			const y = onRoad ? this.streetY(p.p[0], p.p[1]) : this.surfY(p.p[0], p.p[1]) + 0.25;
+			const y = onRoad ? this.streetY(p.p[0], p.p[1], p.ch) : this.surfY(p.p[0], p.p[1]) + 0.25;
 			const s0 = 0.95 + (p.seed % 1) * 0.12;
 			m4.compose(p3.set(x0, y, z0), q, sc.set(s0, s0, s0));
 			pm.bodies.setMatrixAt(k, m4);
