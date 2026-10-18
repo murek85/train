@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.48.6',
+			date: '18 października 2026',
+			groups: [
+				['Grafika', [
+					'Nowsza wersja silnika grafiki (Three.js 0.186) – pierwszy krok przed przejściem na WebGPU. Wygląd gry bez zmian. Wersja przeglądarkowa wymaga serwera (npm start) – strona otwarta prosto z dysku już się nie wczyta.',
+				]],
+			],
+		},
+		{
 			version: '0.48.5',
 			date: '18 października 2026',
 			groups: [

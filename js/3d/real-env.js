@@ -2,9 +2,11 @@
    budynki wyciągnięte z obrysów (elewacje z oknami świecącymi nocą, dachy płaskie, dwuspadowe i kopertowe),
    drogi na terenie, rzeki i zbiorniki, kolor terenu wg zagospodarowania, drzewa w lasach i parkach.
    Rozszerza World o metody wywoływane przy budowie kawałków świata. */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const R = window.TrainRoutes;
 	const NS = window.Train3D;
 	const { hash, vnoise, patch, canvasTexture, mat, box, GEO, smoothstep } = NS.util;

@@ -2,9 +2,11 @@
    (ciemniej w środku i u dołu, jaśniej na czubkach), kępy trawy i kwiaty, ludzie (nogi, tułów, ręce, głowa,
    włosy), samochody (karoseria, kabina, koła z felgami, światła). Geometrie są wspólne – rysowane jako
    instancje z kolorem instancji. */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const NS = window.Train3D;
 	const { hash, mat, matS, box, GEO } = NS.util;
 

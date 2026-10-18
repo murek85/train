@@ -7,9 +7,11 @@
    z iskrzeniem nocą, żaluzje lokomotywy. Jakość: patyna, spoiny i nity w shaderze taboru (common.js, wariant 'train'),
    okluzja wypiekana w wierzchołkach (bakeWear), fazowane krawędzie i bryły toczone w modelu szczegółowym (detail),
    drobne detale tylko z bliska (fine / THREE.LOD). */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const R = window.TrainRoutes;
 	const NS = window.Train3D;
 	const { mat: utilMat, matS: utilMatS, patch, box: boxU, sprite, glowTexture, disposeTree, canvasTexture, hash, GEO } = NS.util;

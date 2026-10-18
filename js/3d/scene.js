@@ -1,9 +1,11 @@
 /* Renderer 3D: scena Three.js, kamera nad pociągiem obracana za kierunkiem jazdy, słońce i księżyc według
    godziny, niebo z chmurami, horyzont, pogoda, efekty po renderowaniu (ACES, bloom, okluzja), ustawienia
    jakości, minimapa. */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const R = window.TrainRoutes;
 	const P = window.TrainPhysics;
 	const NS = window.Train3D;
@@ -88,7 +90,7 @@
 			this.mctx = mini.getContext('2d');
 			this.gl = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 			this.gl.shadowMap.enabled = true;
-			this.gl.shadowMap.type = T.PCFSoftShadowMap;
+			this.gl.shadowMap.type = T.PCFShadowMap; // od r180 PCF z miękkim brzegiem (shadow.radius); PCFSoftShadowMap usunięty
 			this.scene = new T.Scene();
 			this.camera = new T.PerspectiveCamera(FOV, 1, 0.5, 2600);
 			this.scene.fog = new T.Fog(0xcfe6f7, 450, 1500);

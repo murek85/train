@@ -1,9 +1,11 @@
 /* Podgląd składu w menu (zakładka „Pociąg”): osobny mały renderer z tym samym modelem co w grze (TrainModel),
    na odcinku toru, z oświetleniem dziennym i odbiciami nieba. Kamera krąży wokół wybranego pojazdu – przeciąganie
    myszą obraca, kółko przybliża; bez ruchu myszy powoli obraca się sama. Rysuje tylko, gdy jest widoczny. */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const NS = window.Train3D;
 
 	class StockPreview {
@@ -15,7 +17,7 @@
 			this.gl.toneMappingExposure = 1.05;
 			// cienie słońca (miękkie): pojazd stoi na torze, wózki i podwozie w cieniu pudła
 			this.gl.shadowMap.enabled = true;
-			this.gl.shadowMap.type = T.PCFSoftShadowMap;
+			this.gl.shadowMap.type = T.PCFShadowMap; // od r180 PCF z miękkim brzegiem (shadow.radius); PCFSoftShadowMap usunięty
 			this.scene = new T.Scene();
 			/* odbicia: niebo (gradient, jaśniej przy horyzoncie i wokół słońca), ciemniejszy grunt z jasnym pasem
 			   horyzontu – lakier i szyby mają co odbijać, a krawędzie fazowane łapią światło */
@@ -42,7 +44,7 @@
 			sun.shadow.mapSize.set(2048, 2048);
 			sun.shadow.bias = -0.0003;
 			sun.shadow.normalBias = 0.03;
-			sun.shadow.radius = 3;
+			sun.shadow.radius = 1.5; // promień rozmycia w tekselach (5 próbek z szumem – większy daje ziarno)
 			this.scene.add(sun, sun.target);
 			this.sun = sun;
 			// tor: podsypka, podkłady i szyny pod całym składem

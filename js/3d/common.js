@@ -1,7 +1,9 @@
 /* Wspólne narzędzia 3D: szum, tekstury z napisami, współdzielone materiały i bryły. */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const NS = (window.Train3D = window.Train3D || {});
 
 	function hash(n) {

@@ -1,6 +1,6 @@
 {
 	"name": "maszynista",
-	"version": "0.48.5",
+	"version": "0.48.6",
 	"private": true,
 	"description": "Prosty symulator pociągu w przeglądarce",
 	"author": "Marcin Murawski",
@@ -8,7 +8,7 @@
 	"scripts": {
 		"start": "node server.js",
 		"test": "node --test \"tests/*.test.js\"",
-		"build:three": "node tools/build-three.js",
+		"vendor": "node tools/vendor.js",
 		"icon": "node tools/make-icon.js",
 		"app": "electron .",
 		"app:check": "node tools/app-check.js",
@@ -18,7 +18,8 @@
 	},
 	"devDependencies": {
 		"electron": "^44.7.0",
-		"electron-builder": "^26.15.3"
+		"electron-builder": "^26.15.3",
+		"three": "0.186.1"
 	},
 	"build": {
 		"appId": "pl.maszynista.symulator",
@@ -37,7 +38,9 @@
 			"!web/**",
 			"!**/*.md",
 			"!server.js",
-			"!vendor/three.module.js",
+			"!vendor/three/three.webgpu.js",
+			"!vendor/three/three.tsl.js",
+			"!vendor/three/addons/**",
 			"!**/*.py",
 			"!**/*.cmd",
 			"!.claude/**"

@@ -9,6 +9,10 @@
 	<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 	<meta name="theme-color" content="#0d1118">
 	<link rel="stylesheet" href="style.css">
+	<!-- Three.js jako moduł ES (vendor/three – npm run vendor); warstwa 3D i to, co z niej korzysta, to moduły (wykonują się po zwykłych skryptach, w tej kolejności) -->
+	<script type="importmap">
+		{ "imports": { "three": "./vendor/three/three.module.js" } }
+	</script>
 </head>
 <body>
 	<!-- ekran startowy od pierwszej klatki (przed wczytaniem skryptów – bez mignięcia menu); js/screens.js go przejmuje -->
@@ -588,27 +592,26 @@
 	<script src="js/scenarios.js"></script>
 	<script src="js/audio-samples.js"></script>
 	<script src="js/audio.js"></script>
-	<script src="vendor/three.global.js"></script>
-	<script src="js/3d/sky.js"></script>
-	<script src="js/3d/common.js"></script>
-	<script src="js/3d/post.js"></script>
-	<script src="js/3d/sunfx.js"></script>
-	<script src="js/3d/horizon.js"></script>
-	<script src="js/3d/weather.js"></script>
-	<script src="js/3d/water.js"></script>
-	<script src="js/3d/props.js"></script>
-	<script src="js/3d/world.js"></script>
-	<script src="js/3d/real-env.js"></script>
-	<script src="js/3d/street-life.js"></script>
-	<script src="js/3d/train.js"></script>
-	<script src="js/3d/life.js"></script>
-	<script src="js/3d/cab.js"></script>
-	<script src="js/3d/preview.js"></script>
-	<script src="js/3d/scene.js"></script>
-	<script src="js/3d/freecam.js"></script>
-	<script src="js/hud.js"></script>
-	<script src="js/news.js"></script>
-	<script src="js/tts-piper.js"></script>
-	<script src="js/main.js"></script>
+	<script type="module" src="js/3d/sky.js"></script>
+	<script type="module" src="js/3d/common.js"></script>
+	<script type="module" src="js/3d/post.js"></script>
+	<script type="module" src="js/3d/sunfx.js"></script>
+	<script type="module" src="js/3d/horizon.js"></script>
+	<script type="module" src="js/3d/weather.js"></script>
+	<script type="module" src="js/3d/water.js"></script>
+	<script type="module" src="js/3d/props.js"></script>
+	<script type="module" src="js/3d/world.js"></script>
+	<script type="module" src="js/3d/real-env.js"></script>
+	<script type="module" src="js/3d/street-life.js"></script>
+	<script type="module" src="js/3d/train.js"></script>
+	<script type="module" src="js/3d/life.js"></script>
+	<script type="module" src="js/3d/cab.js"></script>
+	<script type="module" src="js/3d/preview.js"></script>
+	<script type="module" src="js/3d/scene.js"></script>
+	<script type="module" src="js/3d/freecam.js"></script>
+	<script type="module" src="js/hud.js"></script>
+	<script type="module" src="js/news.js"></script>
+	<script type="module" src="js/tts-piper.js"></script>
+	<script type="module" src="js/main.js"></script>
 </body>
 </html>

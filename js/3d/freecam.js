@@ -2,9 +2,11 @@
    świat doładowuje się wokół kamery (kilometraż kamery = rzut jej pozycji na oś trasy). Sterowanie:
    WASD / strzałki – ruch w poziomie, Q / E – w dół / w górę, Shift – szybciej, przeciąganie myszą – rozglądanie,
    kółko – wysokość. */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const R = window.TrainRoutes;
 	const NS = window.Train3D;
 	const proto = NS.Renderer3D.prototype;

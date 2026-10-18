@@ -4,7 +4,7 @@ Prosty symulator pociągu w przeglądarce, w 3D (Three.js). Kamera wisi nad poci
 
 ## Uruchomienie
 
-Otwórz `index.html` w przeglądarce. Gra nie wymaga instalacji ani budowania – Three.js jest dołączony w `vendor/` jako zwykły skrypt, więc działa też po otwarciu z dysku.
+Uruchom `npm start` (serwer statyczny, http://localhost:4180) albo aplikację desktopową (`npm run app`). Gra nie wymaga budowania – Three.js jest dołączony w `vendor/three/` i wczytywany przez import map jako moduł ES; moduły nie wczytują się ze strony otwartej z dysku (`file://`), dlatego potrzebny jest serwer (albo protokół `app://` aplikacji desktopowej).
 
 Możesz też uruchomić lokalny serwer:
 
@@ -274,12 +274,12 @@ js/hud.js               pulpit i prędkościomierz
 js/audio.js             dźwięki generowane w WebAudio
 js/main.js              pętla gry, menu, klawiatura
 js/screens.js           ekran startowy i ekran wczytywania trasy (tło kolejowe na canvasie, pasek, wskazówki)
-vendor/                 Three.js 0.170 (moduł + wersja skryptowa)
+vendor/three/           Three.js 0.186 (moduły ES: three.module.js + three.core.js; three.webgpu.js i three.tsl.js – pod WebGPU)
 electron/main.js        aplikacja desktopowa: okno, protokół app://, pośrednicy generatora, samosprawdzenie
 electron/preload.js     window.desktop – pełny ekran, wyjście, pobieranie NMPT
 electron/assets.js      ścieżka app:// → plik gry i jego typ
 electron/proxy.js       reguły pośredników generatora (wspólne z server.js)
-tools/build-three.js    generuje vendor/three.global.js (npm run build:three)
+tools/vendor.js         kopiuje Three.js z node_modules do vendor/three/ (npm run vendor)
 tools/dist.js           instalator i wersja przenośna (electron-builder, npm run dist)
 tools/app-check.js      samosprawdzenie aplikacji desktopowej (npm run app:check)
 tools/make-icon.js      ikona aplikacji (npm run icon)
@@ -291,7 +291,7 @@ tests/fixes.test.js       uwagi generatora i poprawki tras (sekcja fixes) – tr
 tests/desktop.test.js     aplikacja desktopowa: ścieżki app://, pośrednicy, ustawienia pakowania
 ```
 
-Pliki `physics.js`, `routes.js` i `sim.js` nie korzystają z DOM ani z Three.js, więc działają też w Node (testy).
+Pliki `physics.js`, `routes.js` i `sim.js` nie korzystają z DOM ani z Three.js, więc działają też w Node (testy). Warstwa 3D (`js/3d/`) i pliki po niej (`hud.js`, `news.js`, `tts-piper.js`, `main.js`) to moduły ES (`import * as THREE from 'three'`) – wykonują się po zwykłych skryptach, w kolejności z `index.html`; między sobą nadal przez `window.Train3D` itd.
 
 ### Dodanie trasy
 

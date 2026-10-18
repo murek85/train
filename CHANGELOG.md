@@ -4,6 +4,24 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.48.6 – 18 października 2026
+
+Three.js 0.186 jako moduły ES (etap 0 przejścia na WebGPU; nadal WebGLRenderer, wygląd bez zmian).
+
+### Three.js (`vendor/three/`, `tools/vendor.js`)
+- Three.js 0.170 → 0.186.1: npm `three` (devDependency) kopiowany przez `npm run vendor` do `vendor/three/` –
+  `three.module.js` + `three.core.js` (WebGLRenderer), `three.webgpu.js`, `three.tsl.js` i `addons/tsl/` pod WebGPU
+  (jeszcze nieużywane; poza paczką aplikacji i wersją przeglądarkową). Usunięte `vendor/three.global.js` i
+  `tools/build-three.js` (`npm run build:three`).
+- `index.html`: import map (`three` → `./vendor/three/three.module.js`); `js/3d/*`, `hud.js`, `news.js`, `tts-piper.js`,
+  `main.js` jako `<script type="module">` (po zwykłych skryptach, w tej samej kolejności); pliki 3D:
+  `import * as THREE from 'three'` zamiast `window.THREE`. Logika (`physics.js`, `sim.js`, trasy…) bez zmian – zwykłe
+  skrypty (testy w Node, wątki). Strona otwarta z dysku (`file://`) już nie działa – `npm start` albo aplikacja.
+- Cienie: `PCFSoftShadowMap` usunięty w r180 → `PCFShadowMap` (5 próbek z dyskiem Vogela, `shadow.radius` w tekselach);
+  podgląd składu `radius` 3 → 1,5 (przy 3 – ziarno). Podmiany fragmentów shaderów (`onBeforeCompile`, kaskady cieni
+  w `lights_fragment_begin`) – wszystkie 41 miejsc zaczepienia bez zmian w 0.186.
+- Sprawdzone zrzutami z jazdy (Gliwice – Zabrze, 12:00 i 21:30): średnia różnica pikseli wobec 0.170 poniżej 1/255.
+
 ## 0.48.5 – 18 października 2026
 
 Ruch uliczny nad tunelem po ulicy, nie w tunelu.

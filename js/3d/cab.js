@@ -5,9 +5,11 @@
    Jakość: bryły z zaokrąglonymi krawędziami i toczone (gałki, zegary z chromowaną obręczą i szkłem, lampki
    kopułkowe), faktury z kanwy (lakier strukturalny, blacha ryflowana, tapicerka, panele, podziałka nastawnika),
    światło rozproszone przez szyby (świecenie materiałów i światło punktowe), ekrany w 1,5 × wyższej rozdzielczości. */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const NS = window.Train3D;
 	const P = window.TrainPhysics;
 

@@ -1,9 +1,11 @@
 /* Pogoda (tylko wygląd – nie zmienia rozgrywki): zachmurzenie i cienie chmur, mgła, deszcz, śnieg,
    mokra i zaśnieżona nawierzchnia, siła wiatru dla drzew. Opady to cząstki wokół kamery, liczone w shaderze;
    nie pada wewnątrz wagonów najbliżej kamery (setCars) ani w tunelu w widoku z kabiny (shelterTarget). */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const NS = window.Train3D;
 
 	const PRESETS = {

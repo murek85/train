@@ -1,8 +1,10 @@
 /* Życie w tle: pociągi z przeciwka na drugim torze (osobowe, ekspresy, towarowe) i stada ptaków.
    Tylko wygląd – nie wpływa na rozgrywkę. */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const R = window.TrainRoutes;
 	const NS = window.Train3D;
 	const { mat, hash } = NS.util;

@@ -2,9 +2,12 @@
 
 | Plik | Biblioteka | Wersja | Źródło | Licencja |
 |---|---|---|---|---|
-| `three.module.js` | Three.js | 0.170.0 | skopiowane z projektu Pogranicze Galaktyki (`strategy/vendor`), pierwotnie https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js | MIT — https://github.com/mrdoob/three.js/blob/dev/LICENSE |
-| `three.global.js` | Three.js | 0.170.0 | wygenerowane z `three.module.js` przez `npm run build:three` | MIT |
+| `three/three.core.js`, `three/three.module.js` | Three.js (WebGLRenderer) | 0.186.1 | `node_modules/three/build` (npm `three`, devDependency) | MIT – `three/LICENSE` |
+| `three/three.webgpu.js`, `three/three.tsl.js`, `three/addons/tsl/` | Three.js (WebGPURenderer, TSL) | 0.186.1 | jw. – pod przejście na WebGPU, jeszcze nieużywane | MIT |
 
-`three.global.js` to ten sam kod jako zwykły skrypt (definiuje `window.THREE`), bo moduły ES nie wczytują się ze strony otwartej z dysku (`file://`). Po podmianie `three.module.js` uruchom `npm run build:three`.
+Kopiuje je `npm run vendor` (`tools/vendor.js`); wersja w `three/VERSION`. Gra ładuje Three.js przez import map
+(`index.html`: `"three"` → `./vendor/three/three.module.js`) jako moduł ES, więc potrzebny jest serwer (`npm start`)
+albo protokół `app://` aplikacji desktopowej – ze strony otwartej z dysku (`file://`) moduły się nie wczytają.
+Zmiana wersji: `three` w `package.json`, potem `npm install && npm run vendor`.
 
-Przy publicznej dystrybucji gry należy dołączyć tekst licencji MIT Three.js.
+Przy publicznej dystrybucji gry należy dołączyć tekst licencji MIT Three.js (`three/LICENSE`).

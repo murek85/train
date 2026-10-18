@@ -3,9 +3,11 @@
    data.js, tools/horizon.js, Generator) wysokość wierzchołka = R · tg(kąt wzniesienia terenu w tym kierunku) w bieżącym
    miejscu trasy (płasko – prawie zero, Beskidy z Rybnika – kilka stopni); bez danych – łagodne pagórki. Bliski – niska
    linia lasów i zabudowy (dawniej druga warstwa wzgórz – góry „znikąd” na płaskim terenie). */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const NS = window.Train3D;
 
 	function ring(radius, base, amps, seed) {

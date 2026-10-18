@@ -1,8 +1,10 @@
 /* Świat wzdłuż toru budowany kawałkami: teren, tor, sieć trakcyjna, drzewa, stacje, semafory,
    przejazdy, mosty i tunele. Kawałki przed pociągiem powstają, za pociągiem są usuwane. */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const R = window.TrainRoutes;
 	const NS = window.Train3D;
 	const { hash, smoothstep, vnoise, mat, matS, patch, GEO, box, roof, sprite, glowTexture, labelTexture, boardTexture, disposeTree, canvasTexture } = NS.util;

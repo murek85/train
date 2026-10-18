@@ -3,9 +3,11 @@
    rozdzielczości, z ukośną płaszczyzną przycięcia (to, co pod lustrem, nie zasłania odbicia) – jak Reflector w three.js,
    bez dodatkowych wariantów shaderów. Odbicie zniekształcone falami; akweny na innej wysokości niż lustro – samo niebo
    (mapa otoczenia). */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const NS = window.Train3D;
 
 	// wspólne dla wszystkich akwenów

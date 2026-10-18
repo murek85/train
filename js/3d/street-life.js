@@ -16,9 +16,11 @@
 
    Gęstość i zasięg wg jakości grafiki (world.density) i opcji „Ruch uliczny” (world.streetLevel 0–3); ruch tylko
    w promieniu kilkuset metrów od kamery. */
+import * as THREE from 'three';
+
 (function () {
 	'use strict';
-	const T = window.THREE;
+	const T = THREE;
 	const R = window.TrainRoutes;
 	const NS = window.Train3D;
 	const { hash, canvasTexture, glowTexture } = NS.util;

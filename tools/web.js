@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* npm run web: wersja przeglądarkowa do wgrania na serwer – folder web/maszynista/ z plikami gry i archiwum
-   web/maszynista-<wersja>.zip (te same pliki). Tylko to, czego potrzebuje strona: index.html, style.css, favicon.ico, js/, vendor/three.global.js,
+   web/maszynista-<wersja>.zip (te same pliki). Tylko to, czego potrzebuje strona: index.html, style.css, favicon.ico, js/, vendor/three/ (three.core.js i three.module.js – WebGLRenderer),
    routes/ (trasy wbudowane i horyzonty), icons/, sounds/ (bez opisów .md). Bez serwera Node (server.js) Generator tras
    nie pobierze trzech źródeł bez nagłówków CORS (NMPT GUGiK, BDOT10k, Regulamin sieci PKP PLK) – reszta gry działa.
    ZIP składany w Node (zlib, bez dodatkowych pakietów). */
@@ -14,7 +14,7 @@ const WEB = path.join(ROOT, 'web'), OUT = path.join(WEB, 'maszynista');
 const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 
 // pliki i foldery gry (ścieżki względem katalogu projektu)
-const FILES = ['index.html', 'style.css', 'favicon.ico', 'vendor/three.global.js'];
+const FILES = ['index.html', 'style.css', 'favicon.ico', 'vendor/three/three.core.js', 'vendor/three/three.module.js', 'vendor/three/LICENSE'];
 const DIRS = ['js', 'routes', 'icons', 'sounds'];
 const skip = (rel) => /\.md$/i.test(rel) || /(^|\/)\./.test(rel); // opisy i pliki ukryte
 
