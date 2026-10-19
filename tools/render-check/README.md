@@ -8,6 +8,7 @@ Skrypty Electron do sprawdzania trybu WebGPU (`?webgpu`) wobec WebGL. Gra musi d
 | `view.js` | widok kamery i pogoda (`SHOT_CASE` np. `trackside-clear`, `side-rain`) – zrzuty nieba |
 | `case.js` | scena dla `SHOT_JS` / `SHOT_CASE`: `rain`, `snow`, `cab` (łączone, np. `cab-rain`) |
 | `lights.js` | wyłączanie składników światła (`noenv`, `nolamp`, `nonight`, `nohemi`, `nosun`) – szukanie różnic jasności |
+| `perfweather.js` | czas klatki przy pogodzie z `SHOT_CASE` (rain, snow) |
 | `perf.js` | odczyt nakładki F3 po rozgrzaniu (FPS, czas procesora, czas karty z `?gputime`) |
 | `cpuprof.js` | profil procesora (najdroższe funkcje, czas własny) |
 | `draws.js` | wywołania rysowania na klatkę wg kategorii (obraz / cienie; bez poleceń z paczek) |

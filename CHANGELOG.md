@@ -4,6 +4,22 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.53.0 – 19 października 2026
+
+Opady w trybie WebGPU (etap 5) – tryb WebGPU ma już wszystkie efekty trybu WebGL.
+
+### Opady – WebGPU (`js/3d/weather-gpu.js`, nowy; `weather.js`)
+- Odpowiedniki shaderów GLSL opadów w TSL, z tymi samymi uniformami (`Weather.update` bez zmian): deszcz – odcinki
+  (dwa wierzchołki na kroplę, smuga pochylona z wiatrem), śnieg z wirowaniem płatków, liście (obracany owal w jesiennych
+  kolorach), rozbryzgi na ziemi, śnieg wzbijany przez pociąg (pozycje z procesora – te same tablice); bez opadu
+  w wagonach najbliżej kamery.
+- Punkty większe niż piksel (śnieg, liście, rozbryzgi, śnieg spod pociągu): WebGPU nie ma rozmiaru punktu – instancje
+  kwadratu (`Sprite.count` + `PointsNodeMaterial`, atrybuty cząstek jako `InstancedBufferAttribute` na tych samych
+  tablicach). Najmniejszy płatek 2 px, mały – prawie pełny kwadrat (punkt GLSL 1,2 px rysuje się jak ostry piksel,
+  kwadrat z miękkim krążkiem tej wielkości był niewidoczny).
+- Wydajność w deszczu (Gliwice – Zabrze, jakość średnia): procesor ok. 21 ms na klatkę (WebGL ok. 11 ms).
+- `tools/render-check/perfweather.js` – czas klatki przy wybranej pogodzie.
+
 ## 0.52.0 – 19 października 2026
 
 Chmury wolumetryczne w trybie WebGPU (etap 4) – z projektu Lot nad Polską.

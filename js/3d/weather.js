@@ -140,14 +140,18 @@ import * as THREE from 'three';
 		}
 
 		build(scale) {
-			for (const m of [this.rain, this.rainNear, this.snow, this.splash, this.leaves]) if (m) { this.scene.remove(m); m.geometry.dispose(); m.material.dispose(); }
-			const mk = (snow, speed) => new T.ShaderMaterial({
-				uniforms: {
+			// (WebGPU: śnieg, liście, rozbryzgi – Sprite ze wspólnym kwadratem; geometria cząstek w userData.particleGeometry)
+			const geoOf = (m) => m.userData.particleGeometry || m.geometry;
+			for (const m of [this.rain, this.rainNear, this.snow, this.splash, this.leaves]) if (m) { this.scene.remove(m); geoOf(m).dispose(); m.material.dispose(); }
+			const GPU = NS.gpu && NS.weatherGpu;
+			const mkU = (snow, speed) => ({
 					uT: { value: 0 }, uCenter: { value: new T.Vector3() }, uBox: { value: new T.Vector3(90, 90, 90) }, uSpeed: { value: speed }, uDrift: { value: new T.Vector2(snow ? 0.7 : 2.6, snow ? 0.35 : 1.3) },
 					uLen: { value: snow ? 0 : 1 }, uSize: { value: snow ? 4.2 : 1 }, uSnow: { value: snow ? 1 : 0 }, uWindK: { value: 0.5 },
 					uColor: { value: new T.Color(snow ? '#ffffff' : '#d4dee9') }, uOpacity: { value: 0 }, uLight: { value: 1 },
 					uCar: { value: this.carM }, uCarH: { value: this.carH }, uCars: { value: 0 }, uLeaf: { value: 0 },
-				},
+			});
+			const mk = (snow, speed) => new T.ShaderMaterial({
+				uniforms: mkU(snow, speed),
 				vertexShader: VS,
 				fragmentShader: `uniform vec3 uColor; uniform float uOpacity; uniform float uSnow; uniform float uLight; uniform float uLeaf; uniform float uT; varying float vA; varying float vS;
 					void main() {
@@ -179,11 +183,14 @@ import * as THREE from 'three';
 				depthWrite: false,
 				fog: false,
 			});
-			this.rain = new T.LineSegments(precip(Math.round(16000 * scale), false), mk(false, 24));
-			this.rainNear = new T.LineSegments(precip(Math.round(5000 * scale), false), mk(false, 24));
-			this.snow = new T.Points(precip(Math.round(18000 * scale), true), mk(true, 1.5));
+			// WebGPU: te same cząstki i uniformy, materiały w TSL (weather-gpu.js)
+			const lines = (n) => new T.LineSegments(precip(n, false), GPU ? GPU.rainMaterial(mkU(false, 24)) : mk(false, 24));
+			const flakes = (n, speed, leaf) => (GPU ? GPU.flakeSprite(Object.assign(mkU(true, speed), leaf ? { uLeaf: { value: 1 } } : {}), precip(n, true), leaf) : new T.Points(precip(n, true), mk(true, speed)));
+			this.rain = lines(Math.round(16000 * scale));
+			this.rainNear = lines(Math.round(5000 * scale));
+			this.snow = flakes(Math.round(18000 * scale), 1.5, false);
 			// spadające liście (jesień): rzadkie, większe, wolniej i mocniej niesione wiatrem
-			this.leaves = new T.Points(precip(Math.round(1600 * scale), true), mk(true, 0.85));
+			this.leaves = flakes(Math.round(1600 * scale), 0.85, true);
 			this.leaves.material.uniforms.uLeaf.value = 1;
 			this.leaves.material.uniforms.uSize.value = 7;
 			this.leaves.material.uniforms.uDrift.value.set(2.4, 1.2);
@@ -194,8 +201,9 @@ import * as THREE from 'three';
 			sg.setAttribute('position', new T.BufferAttribute(pos, 3));
 			sg.setAttribute('aSeed', new T.BufferAttribute(seed, 1));
 			sg.boundingSphere = new T.Sphere(new T.Vector3(), 1e6);
-			this.splash = new T.Points(sg, new T.ShaderMaterial({
-				uniforms: { uT: { value: 0 }, uCenter: { value: new T.Vector3() }, uR: { value: 30 }, uGround: { value: 0 }, uOpacity: { value: 0 }, uLight: { value: 1 } },
+			const splashU = { uT: { value: 0 }, uCenter: { value: new T.Vector3() }, uR: { value: 30 }, uGround: { value: 0 }, uOpacity: { value: 0 }, uLight: { value: 1 } };
+			this.splash = GPU ? GPU.splashSprite(splashU, sg) : new T.Points(sg, new T.ShaderMaterial({
+				uniforms: splashU,
 				vertexShader: SPLASH_VS,
 				fragmentShader: `uniform float uOpacity; uniform float uLight; varying float vPh;
 					void main() {
@@ -215,14 +223,15 @@ import * as THREE from 'three';
 				this.scene.add(m);
 			}
 			// wzbijany śnieg: bufor cząstek liczonych na procesorze (setTrain – wagony i prędkość)
-			if (this.kick) { this.scene.remove(this.kick); this.kick.geometry.dispose(); this.kick.material.dispose(); }
+			if (this.kick) { this.scene.remove(this.kick); geoOf(this.kick).dispose(); this.kick.material.dispose(); }
 			const kn = Math.round(2400 * Math.max(0.4, scale));
 			const kg = new T.BufferGeometry();
 			kg.setAttribute('position', new T.BufferAttribute(new Float32Array(kn * 3), 3).setUsage(T.DynamicDrawUsage));
 			kg.setAttribute('aLife', new T.BufferAttribute(new Float32Array(kn), 1).setUsage(T.DynamicDrawUsage));
 			kg.boundingSphere = new T.Sphere(new T.Vector3(), 1e6);
-			this.kick = new T.Points(kg, new T.ShaderMaterial({
-				uniforms: { uLight: { value: 1 }, uOpacity: { value: 0.6 }, uScale: { value: 800 } },
+			const kickU = { uLight: { value: 1 }, uOpacity: { value: 0.6 }, uScale: { value: 800 } };
+			this.kick = GPU ? GPU.kickSprite(kickU, kg) : new T.Points(kg, new T.ShaderMaterial({
+				uniforms: kickU,
 				vertexShader: KICK_VS, fragmentShader: KICK_FS, transparent: true, depthWrite: false, fog: true,
 			}));
 			this.kick.material.fog = false;
@@ -248,7 +257,7 @@ import * as THREE from 'three';
 		updateKick(dt, camera) {
 			const K = this.kick;
 			if (!K) return;
-			const pos = K.geometry.attributes.position, life = K.geometry.attributes.aLife;
+			const KG = K.userData.particleGeometry || K.geometry, pos = KG.attributes.position, life = KG.attributes.aLife;
 			const P = pos.array, L = life.array, V = this.kickV, A = this.kickT, n = this.kickN;
 			const v = this.trainV || 0, sp = Math.abs(v), dir = v < 0 ? -1 : 1;
 			const kk = Math.max(0, Math.min(1, (this.cur.snowGround - 0.15) / 0.5)) * Math.max(0, Math.min(1, (sp - 3) / 14)) * (1 - this.shelter);
@@ -299,7 +308,7 @@ import * as THREE from 'three';
 				alive = true;
 			}
 			pos.needsUpdate = life.needsUpdate = alive;
-			K.visible = alive && !NS.gpu;
+			K.visible = alive;
 			K.material.uniforms.uLight.value = Math.max(0.12, this.light);
 		}
 
@@ -450,7 +459,7 @@ import * as THREE from 'three';
 				u.uWindK.value = this.cur.wind;
 				u.uLight.value = this.light;
 				u.uCars.value = this.nCars;
-				m.visible = a > 0.01 && !NS.gpu; // (WebGPU: opady jeszcze w GLSL)
+				m.visible = a > 0.01;
 			}
 			const su = this.splash.material.uniforms;
 			su.uT.value = this.time;
@@ -459,7 +468,7 @@ import * as THREE from 'three';
 			su.uGround.value = focus.y - 0.3;
 			su.uOpacity.value = this.cur.rain * 0.8 * open;
 			su.uLight.value = this.light;
-			this.splash.visible = this.cur.rain * open > 0.05 && !NS.gpu;
+			this.splash.visible = this.cur.rain * open > 0.05;
 			this.updateKick(dt, camera);
 			return this.cur;
 		}

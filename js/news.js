@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.53.0',
+			date: '19 października 2026',
+			groups: [
+				['Grafika', [
+					'Tryb WebGPU (?webgpu) kompletny: deszcz, śnieg, spadające liście, rozbryzgi kropel i śnieg wzbijany przez pociąg – wszystkie efekty zwykłego trybu, do tego nowe niebo i chmury.',
+				]],
+			],
+		},
+		{
 			version: '0.52.0',
 			date: '19 października 2026',
 			groups: [
