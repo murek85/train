@@ -1649,6 +1649,7 @@
 		loadingMax = 0;
 		if (loadingScreen && loadingScreen.progress) loadingScreen.progress(0.03); // od początku rzeczywisty postęp (bez animacji „na czas”)
 		precompiled = 0;
+		renderer.hold = !!window.Train3D.gpu; // WebGPU: bez rysowania do kompilacji potoków (scene.js hold)
 		sim = null;
 		requestAnimationFrame(() => requestAnimationFrame(() => {
 			try {
@@ -1657,6 +1658,7 @@
 				if (loadingScreen) loadingScreen.close();
 				loadingScreen = null;
 				mode = 'menu';
+				renderer.hold = false;
 				throw e;
 			}
 		}));
@@ -2087,7 +2089,7 @@
 					if (!precompiled) {
 						precompiled = 1;
 						const s0 = sim;
-						renderer.precompile().then(() => { if (sim === s0) precompiled = 2; });
+						renderer.precompile().then(() => { if (sim === s0) { precompiled = 2; renderer.hold = false; } });
 					} else if (precompiled === 2) finishLoading();
 				}
 			} else if (demo) renderer.draw(demo, 0, 0);
@@ -2610,7 +2612,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.54.0';
+	$('version').textContent = 'wersja 0.54.1';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');
@@ -2679,6 +2681,16 @@
 	loadCustom();
 	requestAnimationFrame(frame);
 	// ekran startowy: logo, pasek do zbudowania podglądu w menu, potem klik albo klawisz
-	if (window.TrainScreens) window.TrainScreens.boot({ version: $('version').textContent, ready: () => !demo || renderer.world.pending === 0 });
-	else if ($('boot')) $('boot').remove();
+	/* ekran startowy: gotowe, gdy świat podglądu zbudowany; w WebGPU dodatkowo potoki skompilowane równolegle
+	   (precompile) – do tego czasu podgląd się nie rysuje (scene.js hold) */
+	let bootWarm = window.Train3D.gpu ? 0 : 2;
+	if (bootWarm === 0) renderer.hold = true;
+	const bootReady = () => {
+		if (!demo) { renderer.hold = false; return true; }
+		if (renderer.world.pending !== 0) return false;
+		if (bootWarm === 0) { bootWarm = 1; renderer.precompile().then(() => { bootWarm = 2; if (mode === 'menu') renderer.hold = false; }); }
+		return bootWarm === 2;
+	};
+	if (window.TrainScreens) window.TrainScreens.boot({ version: $('version').textContent, ready: bootReady });
+	else { renderer.hold = false; if ($('boot')) $('boot').remove(); }
 })();

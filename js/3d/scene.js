@@ -2,7 +2,7 @@
    godziny, niebo z chmurami, horyzont, pogoda, efekty po renderowaniu (ACES, bloom, okluzja), ustawienia
    jakości, minimapa. */
 import * as THREE from 'three';
-import { WebGPURenderer } from 'three/webgpu';
+import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute, InstancedBufferAttribute } from 'three/webgpu';
 
 (function () {
 	'use strict';
@@ -95,6 +95,60 @@ import { WebGPURenderer } from 'three/webgpu';
 		location.reload();
 	}
 
+	/* WebGPU: wspólne shadery obiektów z instancjami. Three buduje shader osobno dla każdego InstancedMesh (uuid obiektu
+	   w kluczu – węzły instancji wskazują jego bufory), a do 1024 egzemplarzy macierze idą w buforze uniformów
+	   array<mat4, N> – inny kod WGSL dla każdej liczby egzemplarzy. Świat ma setki takich obiektów: ok. 800 budów (JS)
+	   i 950 programów do skompilowania (karta) przy wczytywaniu jazdy. Tu: macierze zawsze jako atrybuty instancji
+	   (limit bufora uniformów 0 – kod nie zależy od liczby), klucz bez uuid (z rozróżnieniem koloru egzemplarzy),
+	   a bufory instancji w atrybutach podmieniane na własne bufory obiektu (wersja = wersja instanceMatrix /
+	   instanceColor, więc zmiany macierzy trafiają do karty jak dotąd). */
+	function shareInstancing(gl) {
+		gl.backend.capabilities.getUniformBufferLimit = () => 0;
+		gl.gpuShared = true; // tylko ten renderer (prototyp RenderObject jest wspólny – podgląd taboru ma własny renderer)
+		const own = (o) => {
+			let d = o.userData.gpuInst;
+			if (d && d.m === o.instanceMatrix && d.c === o.instanceColor) return d;
+			const follow = (buf, src) => { Object.defineProperty(buf, 'version', { get: () => src.version, set() {}, configurable: true }); buf.setUsage(src.usage); return buf; };
+			const im = follow(new InstancedInterleavedBuffer(o.instanceMatrix.array, 16, 1), o.instanceMatrix);
+			d = o.userData.gpuInst = { m: o.instanceMatrix, c: o.instanceColor, cols: [0, 4, 8, 12].map((k) => new InterleavedBufferAttribute(im, 4, k)) };
+			if (o.instanceColor) d.color = follow(new InstancedBufferAttribute(o.instanceColor.array, 3), o.instanceColor);
+			return d;
+		};
+		const prev = gl.debug.onNodeBuilderCreated;
+		gl.debug.onNodeBuilderCreated = (nb, ro) => {
+			gl.debug.onNodeBuilderCreated = prev;
+			if (prev) prev(nb, ro);
+			const RO = Object.getPrototypeOf(ro);
+			if (RO.gpuShared) return;
+			RO.gpuShared = true;
+			const key = RO.getMaterialCacheKey, attrs = RO.getAttributes;
+			RO.getMaterialCacheKey = function () {
+				const o = this.object;
+				if (!o.isInstancedMesh || !this.renderer.gpuShared) return key.call(this);
+				const count = o.count;
+				o.isInstancedMesh = false;
+				o.count = 1;
+				try {
+					return (Math.imul(key.call(this), 31) + (o.instanceColor ? 2 : 1)) | 0;
+				} finally {
+					o.isInstancedMesh = true;
+					o.count = count;
+				}
+			};
+			RO.getAttributes = function () {
+				if (this.attributes !== null || !this.object.isInstancedMesh || !this.renderer.gpuShared) return attrs.call(this);
+				const list = attrs.call(this), d = own(this.object);
+				for (let i = 0; i < list.length; i++) {
+					const a = list[i];
+					if (a.isInterleavedBufferAttribute && a.data.isInstancedInterleavedBuffer && a.data.stride === 16 && a.itemSize === 4) list[i] = d.cols[a.offset / 4];
+					else if (a.isInstancedBufferAttribute && a.itemSize === 3 && d.color && !Object.values(this.geometry.attributes).includes(a)) list[i] = d.color;
+				}
+				this.vertexBuffers = Array.from(new Set(list.map((a) => (a.isInterleavedBufferAttribute ? a.data : a))));
+				return list;
+			};
+		};
+	}
+
 	class Renderer3D {
 		constructor(canvas, mini) {
 			this.canvas = canvas;
@@ -106,6 +160,7 @@ import { WebGPURenderer } from 'three/webgpu';
 				// ?gputime – znaczniki czasu karty (nakładka F3: czas GPU; trochę kosztują, więc tylko na życzenie)
 				this.gl = new WebGPURenderer({ canvas, antialias: true, powerPreference: 'high-performance', forceWebGL: NS.gpuForceWebGL, trackTimestamp: /[?&]gputime/.test(location.search) });
 				this.gpuInit = this.gl.init().then(() => {
+					shareInstancing(this.gl);
 					/* paczki (world.js bundleStatic) przy rysowaniu do bufora (efekty po renderowaniu): odtwarzane bez odświeżenia
 					   wspólnych uniformów (kamera) – obraz z nieaktualnej kamery; co najmniej odświeżenie współdzielone (tanie – jak
 					   przy rysowaniu wprost na ekran) */
@@ -140,6 +195,10 @@ import { WebGPURenderer } from 'three/webgpu';
 				this.cascades.push(l);
 			}
 			this.csmFrame = 0;
+			/* hold – klatki bez rysowania (świat i kamera liczone dalej): na ekranie startowym i ekranie wczytywania
+			   w WebGPU, zanim compileAsync (precompile) skompiluje potoki równolegle – rysowanie tworzy brakujące potoki
+			   synchronicznie, jeden po drugim (dziesiątki sekund przy kilkuset materiałach) */
+			this.hold = false;
 			if (NS.gpu) NS.nodes.setupCascades(this.cascades); // wybór kaskady i cienie chmur w węzłach świateł
 
 			this.post = NS.gpu ? NS.createPostGPU(this.gl) : NS.createPost3D(T, this.gl); // efekty po renderowaniu (WebGPU – post-gpu.js)
@@ -297,7 +356,14 @@ import { WebGPURenderer } from 'three/webgpu';
 			const rt = this.gl.getRenderTarget();
 			this.gl.setRenderTarget(this.usePost ? this.post.target : null);
 			try {
-				p = this.gl.compileAsync(this.scene, this.camera);
+				if (NS.gpu) {
+					/* compileAsync (Three 0.186) czeka na każdy potok osobno, obiekt po obiekcie – kompilacja szeregowa.
+					   Obietnice potoków zbierane tu, a nie w pętli Three: wszystkie potoki powstają naraz (createRenderPipelineAsync
+					   – równolegle w procesie karty), czekamy na komplet na końcu */
+					const pl = this.gl._pipelines, get = pl.getForRender, pend = [];
+					pl.getForRender = (ro, promises) => get.call(pl, ro, promises ? pend : promises);
+					p = this.gl.compileAsync(this.scene, this.camera).finally(() => { pl.getForRender = get; }).then(() => Promise.all(pend));
+				} else p = this.gl.compileAsync(this.scene, this.camera);
 			} catch (e) {
 				p = Promise.resolve();
 			}
@@ -1267,7 +1333,7 @@ import { WebGPURenderer } from 'three/webgpu';
 			const q = this.quality;
 			const exposure = 1 + 0.7 * (1 - this.dayK);
 			// odbicie wody (przed klatką): bez opadów, flary i wnętrza kabiny; rozdzielczość wg jakości
-			if (this.waterRefl) {
+			if (this.waterRefl && !this.hold) {
 				const wv = (this.W && this.W.wind) || 0.4;
 				this.waterWind.set(0.8 * wv, 0.35 * wv);
 				const wt = this.weather;
@@ -1275,9 +1341,12 @@ import { WebGPURenderer } from 'three/webgpu';
 			}
 			// WebGPU: rysowanie po init(); wspólne uniformy materiałów węzłowych raz na klatkę; macierze świata raz na klatkę
 			// (WebGPURenderer liczy je przy każdym render() – też dla każdej mapy cieni i przebiegów efektów)
-			const gpuOk = !NS.gpu || this.gl.hasInitialized();
+			const gpuReady = !NS.gpu || this.gl.hasInitialized(), gpuOk = gpuReady && !this.hold;
+			// chmury wolumetryczne z kamerą tej klatki – także przy wstrzymanym rysowaniu (hold): ich bufory (cień chmur
+			// w materiałach) muszą powstać jako bufory docelowe przed compileAsync, inaczej Three tworzy je jako zwykłe
+			// tekstury, a pierwsze rysowanie do nich niszczy je pod związanymi już materiałami
+			if (NS.gpu && gpuReady && this.skyGpu) this.skyGpu.renderClouds(this.camera);
 			if (NS.gpu && gpuOk) {
-				if (this.skyGpu) this.skyGpu.renderClouds(this.camera); // chmury wolumetryczne z kamerą tej klatki
 				NS.nodes.sync();
 				this.scene.updateMatrixWorld();
 				this.scene.matrixWorldAutoUpdate = false;

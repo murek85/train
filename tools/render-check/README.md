@@ -18,6 +18,10 @@ Skrypty Electron do sprawdzania trybu WebGPU (`?webgpu`) wobec WebGL. Gra musi d
 | `diff.js` | różnica dwóch zrzutów: średnia, odsetek pikseli > 24, obraz różnicy |
 | `crop.js` | dwa wycinki obok siebie (powiększenie) |
 | `lum.js` | średnia jasność zrzutów |
+| `loadtime.js` | czasy wczytywania: start gry do menu, „Start” do jazdy (budowa świata, kompilacja, rozgrzanie, najdłuższe klatki); `LT_SWITCH` – przełączniki Chromium |
+| `loadprof.js` | profil procesora wczytywania jazdy (czas własny i łączny) |
+| `builds.js` | budowy shaderów przy wczytywaniu: ile, jak długo, dla jakich materiałów; programy i potoki (`menu` – także start gry) |
+| `wgsldump.js` | kod WGSL wszystkich programów – porównanie dwóch uruchomień (powtarzalność) |
 
 Przykład (jakość niska – bez efektów po renderowaniu, więc porównuje same materiały):
 

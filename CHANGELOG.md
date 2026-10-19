@@ -4,6 +4,29 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.1 – 19 października 2026
+
+Krótsze wczytywanie w trybie WebGPU. Pomiar (Gliwice – Zabrze, RX 6800 XT, Electron): start gry do menu 64 s → ok. 22 s,
+„Start” do jazdy 77 s → ok. 17–27 s (WebGL: 14 s i 4 s).
+
+### Przyczyny (`tools/render-check/loadtime.js`, `loadprof.js`, `builds.js`)
+- Three buduje shader osobno dla każdego `InstancedMesh` (uuid obiektu w kluczu), a do 1024 egzemplarzy macierze idą
+  w buforze `array<mat4, N>` – inny kod WGSL dla każdej liczby egzemplarzy: przy wejściu do jazdy ok. 810 budów
+  w JS (19 s) i 955 programów wierzchołków do skompilowania przez kartę.
+- Podczas wczytywania scena rysowała się co klatkę – brakujące potoki powstawały synchronicznie, jeden po drugim
+  (pojedyncze klatki po 25–30 s), a `compileAsync` (Three 0.186) czeka na każdy potok osobno.
+
+### Zmiany (`js/3d/scene.js`, `main.js`)
+- `shareInstancing`: macierze egzemplarzy zawsze jako atrybuty (kod niezależny od liczby), klucz shadera bez uuid
+  (z rozróżnieniem koloru egzemplarzy), bufory instancji podmieniane na bufory obiektu (wersja jak `instanceMatrix`).
+  Budowy: 810 → 150, programy wierzchołków: 955 → 110.
+- `renderer.hold`: na ekranie startowym i ekranie wczytywania w WebGPU świat się buduje, ale scena nie rysuje, dopóki
+  `precompile` nie skompiluje potoków; ekran startowy czeka na kompilację. Chmury rysują się także wtedy (ich bufory
+  muszą powstać przed kompilacją materiałów – inaczej błąd „Destroyed texture”).
+- `precompile`: obietnice potoków zbierane poza pętlą `compileAsync` – wszystkie potoki kompilują się naraz.
+- Bez zmian: pamięć podręczna potoków Dawn nie skraca kolejnych uruchomień, choć kod WGSL jest powtarzalny
+  (`wgsldump.js`) – reszta czasu to kompilacja ok. 110–170 dużych potoków (średnio ok. 35 KB WGSL) przez kartę.
+
 ## 0.54.0 – 19 października 2026
 
 WebGPU domyślnym rendererem (etap 6); WebGL zostaje jako tryb zgodności.

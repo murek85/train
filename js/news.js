@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.1',
+			date: '19 października 2026',
+			groups: [
+				['Grafika', [
+					'WebGPU: znacznie krótsze wczytywanie – start gry ok. 3 razy szybciej, wejście do jazdy ok. 3 razy szybciej (shadery wspólne dla powtarzających się obiektów, kompilacja równoległa).',
+				]],
+			],
+		},
+		{
 			version: '0.54.0',
 			date: '19 października 2026',
 			groups: [
