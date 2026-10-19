@@ -5,6 +5,7 @@ Skrypty Electron do sprawdzania trybu WebGPU (`?webgpu`) wobec WebGL. Gra musi d
 | Plik | Do czego |
 |---|---|
 | `shot.js` | zrzut z jazdy (start trasy, godzina, jakość, scena) + JSON z trybem i błędami konsoli |
+| `view.js` | widok kamery i pogoda (`SHOT_CASE` np. `trackside-clear`, `side-rain`) – zrzuty nieba |
 | `case.js` | scena dla `SHOT_JS` / `SHOT_CASE`: `rain`, `snow`, `cab` (łączone, np. `cab-rain`) |
 | `lights.js` | wyłączanie składników światła (`noenv`, `nolamp`, `nonight`, `nohemi`, `nosun`) – szukanie różnic jasności |
 | `perf.js` | odczyt nakładki F3 po rozgrzaniu (FPS, czas procesora, czas karty z `?gputime`) |

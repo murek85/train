@@ -132,7 +132,12 @@ import { WebGPURenderer } from 'three/webgpu';
 
 			this.post = NS.gpu ? NS.createPostGPU(this.gl) : NS.createPost3D(T, this.gl); // efekty po renderowaniu (WebGPU – post-gpu.js)
 			this.sky = NS.createSky3D(T);
-			if (!NS.gpu) this.scene.add(this.sky.mesh); // (WebGPU: niebo jeszcze w GLSL – tło w kolorze mgły)
+			if (!NS.gpu) this.scene.add(this.sky.mesh);
+			// WebGPU: niebo z fizycznej atmosfery (sky-gpu.js) – kopuła, mgła w kolorze nieba, odbicia
+			if (NS.gpu) {
+				this.skyGpu = NS.skyGpu = new NS.SkyGPU(this.gl, this.scene);
+				this.scene.add(this.skyGpu.mesh);
+			}
 			this.envGpu = NS.gpu ? NS.nodes.createEnvironment(this.gl) : null;
 			this.horizon = new NS.Horizon(this.scene);
 			// promienie słońca w powietrzu i flara obiektywu (z Pogranicza)
@@ -551,6 +556,11 @@ import { WebGPURenderer } from 'three/webgpu';
 			cityGlow.setRGB(1.0, 0.56, 0.28).multiplyScalar(glowK);
 			this.sky.update({ camera: this.camera, time: this.time, e, sunDir: this.sunDir, moonDir: this.moonDir, zenith: zen, horizon: hor, sunlight: sunCol, haze: W.haze, hazeColor: gray, cover: W.cover, cityGlow, urban: urban * nightK });
 			this.sky.clouds(this.time, W.shadow * clamp01((e + 0.02) / 0.15));
+			if (this.skyGpu && this.gl.hasInitialized()) {
+				const cover = this.coverC || (this.coverC = new T.Color());
+				cover.copy(hor).lerp(gray, 0.5).multiplyScalar(1.1); // (chmury biorą barwę horyzontu – o zachodzie ciepłe)
+				this.skyGpu.update({ sunDir: this.sunDir, moonDir: this.moonDir, clock: sim.route.startClock + sim.time, season: this.world.season, camera: this.camera, haze: W.haze, cover: W.cover, coverColor: cover, hazeColor: gray, cityGlow, fog: { near: W.fogNear, far: W.fogFar } });
+			}
 			if (!NS.gpu) this.sky.renderClouds(this.gl, this.time); // panorama chmur wolumetrycznych (co ok. 0,4 s)
 
 			// światło kierunkowe: słońce w dzień, księżyc w nocy

@@ -4,6 +4,28 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.51.0 – 19 października 2026
+
+Niebo i atmosfera w trybie WebGPU (etap 3): fizyczna atmosfera z projektu Lot nad Polską.
+
+### Niebo – WebGPU (`js/3d/sky-gpu.js`, nowy)
+- Atmosfera z lot (`lot/src/atmosphere/gpu.js`, `model.js`; Hillaire 2020) bez zmian w obliczeniach: tablice
+  przepuszczalności i rozpraszania wielokrotnego (przeliczane przy zmianie zamglenia), widok nieba dla słońca i księżyca,
+  natężenie światła nieba; uniformy w grupie `renderGroup`.
+- Kopuła nieba zamiast `sky.js`: radiancja atmosfery (`skyK` 0,55 – do jasności sceny train), tarcza słońca, niebo
+  nocne z lot – gwiazdy w dwóch warstwach (jak punkt jednego piksela, migotanie przy horyzoncie), Droga Mleczna
+  z pyłami, księżyc z fazą i morzami (`nightK` 2,5); sfera niebieska obracana wg czasu gwiazdowego (szerokość ok.
+  50,3° N, dzień roku wg pory roku). Zamglenie z pogody → aerozole atmosfery (`haze` 6–40). Do czasu chmur (etap 4)
+  zachmurzenie od średniego przechodzi w barwę horyzontu z szarością pogody, nocą łuna miasta nad horyzontem.
+- Mgła (`scene.fogNode`): kolor nieba tuż nad horyzontem w kierunku punktu (ku słońcu jaśniejsza i cieplejsza – bez szwu
+  z niebem), z zamgleniem pogody; kolory horyzontu wg azymutu liczone raz na klatkę do paska 128 × 1 – w materiałach
+  tylko próbka tekstury (uniformy atmosfery w każdym shaderze kosztowały ok. 6 ms procesora na klatkę). Pierścienie
+  horyzontu w tym samym kolorze.
+- Odbicia nieba (`createEnvironment`): kolor nieba z atmosfery zamiast gradientu z palety.
+- Światła (słońce, półkula, ekspozycja) nadal z palety train. Zmierzch i świt fizyczne: ciemnoniebieski zenit i ciepła
+  łuna przy słońcu (w WebGL – stylizowana pomarańcz całego nieba).
+- `tools/render-check`: `view.js` (widok kamery i pogoda dla zrzutu), `lum.js` – jasność pasa wierszy.
+
 ## 0.50.0 – 19 października 2026
 
 Efekty po renderowaniu w trybie WebGPU (etap 2): okluzja, bloom, promienie słońca, mgła wysokościowa, ACES i gradacja.

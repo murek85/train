@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.51.0',
+			date: '19 października 2026',
+			groups: [
+				['Grafika', [
+					'Tryb WebGPU (?webgpu): nowe niebo z fizycznej atmosfery – błękit jaśniejący ku horyzontowi, prawdziwe zmierzchy i świty, gwiazdy, Droga Mleczna i księżyc z fazą; mgła w oddali w kolorze nieba. Chmur w tym trybie jeszcze nie ma.',
+				]],
+			],
+		},
+		{
 			version: '0.50.0',
 			date: '19 października 2026',
 			groups: [

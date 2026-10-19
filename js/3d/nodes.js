@@ -742,9 +742,13 @@ import {
 		const u = { zenith: uniform(new THREE.Color()), horizon: uniform(new THREE.Color()), ground: uniform(new THREE.Color()), sunDir: uniform(new THREE.Vector3(0, 1, 0)), sunColor: uniform(new THREE.Color()) };
 		// (bez tone mappingu – wartości liniowe jak w WebGL; inaczej ACES z nocną ekspozycją rozjaśniał ciemne niebo kilkanaście razy)
 		const mat = new MeshBasicNodeMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, toneMapped: false });
+		const sky = NS.skyGpu;
 		mat.colorNode = Fn(() => {
 			const d = normalize(positionLocal).toVar();
-			const c = select(d.y.greaterThan(0), mix(u.horizon, u.zenith, pow(max(d.y, 0), 0.6)), mix(u.horizon, u.ground, smoothstep(0.0, 0.25, d.y.negate()))).toVar();
+			// niebo z atmosfery (sky-gpu.js), pod horyzontem – ciemniejszy grunt; bez niej – gradient zenit / horyzont
+			const skyC = sky ? sky.skyColor(vec3(d.x, max(d.y, 0.02), d.z), false) : mix(u.horizon, u.zenith, pow(max(d.y, 0), 0.6));
+			const groundC = mix(sky ? sky.skyColor(vec3(d.x, 0.02, d.z), false) : u.horizon, u.ground, smoothstep(0.0, 0.25, d.y.negate()));
+			const c = select(d.y.greaterThan(0), skyC, groundC).toVar();
 			const s = max(0.0, dot(d, normalize(u.sunDir))).toVar();
 			c.addAssign(u.sunColor.mul(pow(s, 400.0).mul(18.0).add(pow(s, 12.0).mul(0.6))).mul(step(-0.02, d.y)));
 			return c;
@@ -1040,7 +1044,9 @@ import {
 	function horizonMaterial(uniforms) {
 		const m = new MeshBasicNodeMaterial({ fog: false, side: THREE.DoubleSide });
 		const k = reference('value', 'float', uniforms.k);
-		m.colorNode = mix(reference('value', 'color', uniforms.haze), reference('value', 'color', uniforms.col), k.oneMinus().mul(attribute('shade', 'float').mul(0.65).add(0.35)));
+		// (z niebem z atmosfery – kolor mgły w kierunku punktu, jak teren przed nim; sky-gpu.js)
+		const haze = NS.skyGpu ? NS.skyGpu.fogColor : reference('value', 'color', uniforms.haze);
+		m.colorNode = mix(haze, reference('value', 'color', uniforms.col), k.oneMinus().mul(attribute('shade', 'float').mul(0.65).add(0.35)));
 		m.uniforms = uniforms;
 		return m;
 	}
