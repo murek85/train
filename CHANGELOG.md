@@ -4,6 +4,24 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.6 – 19 października 2026
+
+Płynność ekranu startowego i ekranu wczytywania. Pomiar `tools/render-check/bootframes.js` (WebGPU): wątek główny
+przy starcie ok. 470 klatek w 20 s, w tym przerwy 4,5 s (koniec kompilacji), 2,7 s (start karty) i dziesiątki po
+150 ms (budowa shaderów) – tło ekranu startowego stawało razem z nim.
+
+### Ekrany (`js/screens.js`, `js/rail-scene.js` – nowy)
+- Tło (jazda po torze, rysunek 2D) rysuje Web Worker na OffscreenCanvas – własna pętla klatek, niezależna od wątku
+  głównego (ok. 1950 klatek w tym samym czasie, 10 ponad 50 ms). `rail-scene.js` – ten sam plik na stronie (zapas bez
+  OffscreenCanvas – rysowanie w wątku głównym jak dawniej) i jako skrypt workera. Ekran wczytywania przekazuje
+  workerowi prędkość jazdy (pociąg zwalnia z postępem), logika etapów i zamykania – w wątku głównym.
+- Zostaje jedna przerwa ok. 2,7 s tuż po starcie karty WebGPU – stoi wtedy proces karty (także worker).
+
+### Start gry (`js/main.js`)
+- Kompilacja przed menu bez rozgrzania (rysowanie wszystkich obiektów, także spoza kadru). Przerwa wątku głównego na
+  końcu kompilacji zmalała tylko z ok. 4,5 do 3,7 s – jej główna przyczyna jest gdzie indziej (do zbadania); tła już
+  nie zatrzymuje.
+
 ## 0.54.5 – 19 października 2026
 
 ### Poprawki – WebGPU, wspólne shadery instancji (`js/3d/scene.js` shareInstancing, od 0.54.1)

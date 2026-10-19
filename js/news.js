@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.6',
+			date: '19 października 2026',
+			groups: [
+				['Ekrany', [
+					'Ekran startowy i ekran wczytywania trasy: animacja tła płynna także wtedy, gdy gra wczytuje świat i shadery (rysowana w osobnym wątku).',
+				]],
+			],
+		},
+		{
 			version: '0.54.5',
 			date: '19 października 2026',
 			groups: [

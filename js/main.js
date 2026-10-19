@@ -2652,7 +2652,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.54.5';
+	$('version').textContent = 'wersja 0.54.6';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');
@@ -2740,8 +2740,10 @@
 		if (renderer.world.pending !== 0) return false;
 		if (bootWarm === 0) {
 			bootWarm = 1;
-			// do menu tylko to, co w kadrze; obiekty poza kadrem i odbicie w wodzie – w tle, gdy menu już działa
-			renderer.precompile({ all: false, reflect: false }).then(() => {
+			/* do menu tylko to, co w kadrze, bez rozgrzania (rysowanie wszystkich obiektów, także spoza kadru, tworzyło
+			   ich brakujące potoki synchronicznie – ok. 4,5 s zawieszenia ekranu startowego); obiekty poza kadrem i odbicie
+			   w wodzie – w tle, gdy menu już działa */
+			renderer.precompile({ all: false, reflect: false, warm: false }).then(() => {
 				bootWarm = 2;
 				if (mode === 'menu') renderer.hold = false;
 				setTimeout(() => { if (mode === 'menu') renderer.precompile({ warm: false }); }, 1500);
