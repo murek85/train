@@ -299,7 +299,7 @@ import * as THREE from 'three';
 				alive = true;
 			}
 			pos.needsUpdate = life.needsUpdate = alive;
-			K.visible = alive;
+			K.visible = alive && !NS.gpu;
 			K.material.uniforms.uLight.value = Math.max(0.12, this.light);
 		}
 
@@ -450,7 +450,7 @@ import * as THREE from 'three';
 				u.uWindK.value = this.cur.wind;
 				u.uLight.value = this.light;
 				u.uCars.value = this.nCars;
-				m.visible = a > 0.01;
+				m.visible = a > 0.01 && !NS.gpu; // (WebGPU: opady jeszcze w GLSL)
 			}
 			const su = this.splash.material.uniforms;
 			su.uT.value = this.time;
@@ -459,7 +459,7 @@ import * as THREE from 'three';
 			su.uGround.value = focus.y - 0.3;
 			su.uOpacity.value = this.cur.rain * 0.8 * open;
 			su.uLight.value = this.light;
-			this.splash.visible = this.cur.rain * open > 0.05;
+			this.splash.visible = this.cur.rain * open > 0.05 && !NS.gpu;
 			this.updateKick(dt, camera);
 			return this.cur;
 		}

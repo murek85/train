@@ -23,7 +23,9 @@ import * as THREE from 'three';
 	/* materiał wody: cienie chmur ('clean'), fale w shaderze (normalna z sumy fal – 4 kierunki i drobna zmarszczka),
 	   odbicie lustrzane z WaterReflection */
 	function waterMaterial() {
-		const m = NS.util.patch(new T.MeshStandardMaterial({ color: '#18323b', roughness: 0.05, metalness: 0, envMapIntensity: 1.0 }), 'clean');
+		const src = new T.MeshStandardMaterial({ color: '#18323b', roughness: 0.05, metalness: 0, envMapIntensity: 1.0 });
+		if (NS.gpu) { const g = NS.nodes.waterMaterial(src, WU); g.userData.water = true; return g; } // WebGPU: fale i odbicie w TSL
+		const m = NS.util.patch(src, 'clean');
 		const base = m.onBeforeCompile;
 		m.customProgramCacheKey = () => 'water2';
 		m.onBeforeCompile = (sh, r) => {
@@ -74,6 +76,40 @@ import * as THREE from 'three';
 		};
 		m.userData.water = true;
 		return m;
+	}
+
+	/* WebGPU: odbicie przez reflector z TSL (nodes.js waterReflector) – płaszczyzna lustra przesuwana na wysokość
+	   najbliższego akwenu (wybór jak w WaterReflection); rysowanie i ukośne przycięcie robi sam reflector (raz na klatkę). */
+	class WaterReflectionGPU {
+		constructor(scene) {
+			this.refl = NS.nodes.waterReflector();
+			this.target = this.refl.target;
+			this.target.rotation.x = -Math.PI / 2;
+			scene.add(this.target);
+			this.list = [];
+			this.n = 0;
+			this.t = new T.Vector3();
+		}
+		update(scene, camera, root, time, wind, hide, scale = 0.5) {
+			WU.uWTime.value = time;
+			if (wind) WU.uWWind.value.copy(wind);
+			if (this.n++ % 30 === 0) WaterReflection.prototype.scan.call(this, root);
+			const cp = camera.position;
+			camera.getWorldDirection(this.t);
+			const fl = Math.hypot(this.t.x, this.t.z) || 1, fx = cp.x + (this.t.x / fl) * 200, fz = cp.z + (this.t.z / fl) * 200;
+			let best = null;
+			for (const w of this.list) {
+				if (!w.o.visible) continue;
+				const d = Math.max(0, Math.hypot(w.c.x - fx, w.c.z - fz) - w.r);
+				if (d < 1500 && cp.y > w.y + 0.3 && (!best || d < best.d)) best = { d, w };
+			}
+			WU.uReflOn.value = best ? 1 : 0;
+			if (!best) return;
+			WU.uReflY.value = best.w.y;
+			this.refl.reflector.resolutionScale = scale;
+			this.target.position.set(cp.x, best.w.y, cp.z);
+			this.target.updateMatrixWorld();
+		}
 	}
 
 	class WaterReflection {
@@ -170,5 +206,6 @@ import * as THREE from 'three';
 
 	NS.waterMaterial = waterMaterial;
 	NS.WaterReflection = WaterReflection;
+	NS.WaterReflectionGPU = WaterReflectionGPU;
 	NS.waterUniforms = WU;
 })();

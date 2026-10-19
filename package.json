@@ -1,6 +1,6 @@
 {
 	"name": "maszynista",
-	"version": "0.48.6",
+	"version": "0.49.0",
 	"private": true,
 	"description": "Prosty symulator pociągu w przeglądarce",
 	"author": "Marcin Murawski",
@@ -38,8 +38,6 @@
 			"!web/**",
 			"!**/*.md",
 			"!server.js",
-			"!vendor/three/three.webgpu.js",
-			"!vendor/three/three.tsl.js",
 			"!vendor/three/addons/**",
 			"!**/*.py",
 			"!**/*.cmd",

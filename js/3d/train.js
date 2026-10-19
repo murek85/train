@@ -528,7 +528,7 @@ import * as THREE from 'three';
 				const P = { color: '#ffffff', vertexColors: true, roughness: 1, metalness: 1, envMapIntensity: m.envMapIntensity, side: m.side, emissive: m.emissive.clone(), emissiveIntensity: m.emissiveIntensity, flatShading: m.flatShading };
 				if (m.isMeshPhysicalMaterial) Object.assign(P, { clearcoat: m.clearcoat, clearcoatRoughness: m.clearcoatRoughness });
 				// zabrudzenie 0,987 – znacznik w kodzie shadera, zastępowany odczytem z wierzchołków (vRM.z)
-				vm = patch(m.isMeshPhysicalMaterial ? new T.MeshPhysicalMaterial(P) : new T.MeshStandardMaterial(P), 'train', { grime: 0.987, panels: mt[2] === '1' });
+				vm = patch(m.isMeshPhysicalMaterial ? new T.MeshPhysicalMaterial(P) : new T.MeshStandardMaterial(P), 'train', { grime: 0.987, panels: mt[2] === '1', rm: true });
 				const prev = vm.onBeforeCompile, ck = vm.customProgramCacheKey();
 				vm.onBeforeCompile = (sh, r) => {
 					prev(sh, r);
@@ -829,6 +829,7 @@ import * as THREE from 'three';
 			}
 		}`;
 	function wetGlass(material, U) {
+		if (NS.gpu) return NS.nodes.wetGlass(material, U); // WebGPU: ten sam wzór w TSL (nodes.js)
 		const prev = material.onBeforeCompile;
 		const key = material.customProgramCacheKey ? material.customProgramCacheKey() : '';
 		material.onBeforeCompile = (sh, r) => {
@@ -1172,9 +1173,10 @@ import * as THREE from 'three';
 			this.doorSets = [];
 			// wnętrza wagonów: materiały wspólne dla całego składu (oświetlenie zależne od pory dnia)
 			// świecenie własne mnożone przez kolor (także kolor instancji) – oświetlone wnętrze zachowuje barwy
-			const own = (m) => {
+			const own = (m, person) => {
+				if (NS.gpu && m.isMeshLambertMaterial) m = NS.nodes.interior(m, person); // WebGPU: świecenie × kolor, palety pasażerów
 				this.ownMats.push(m);
-				if (m.isMeshLambertMaterial) {
+				if (!NS.gpu && m.isMeshLambertMaterial) {
 					m.onBeforeCompile = (sh) => {
 						sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 							totalEmissiveRadiance *= diffuseColor.rgb;`);
@@ -1194,14 +1196,14 @@ import * as THREE from 'three';
 				pole: own(new T.MeshLambertMaterial({ color: '#f2c230', emissive: '#f2c230', emissiveIntensity: 0.15 })),
 				lamp: own(new T.MeshBasicMaterial({ color: '#f4f1e6' })),
 				// pasażerowie (model z props.js – spodnie, buty, włosy w kolorach wierzchołków)
-				peopleV: own(new T.MeshLambertMaterial({ color: '#ffffff', vertexColors: true, emissive: '#ffffff', emissiveIntensity: 0.06 })),
-				skinV: own(new T.MeshLambertMaterial({ color: '#ffffff', vertexColors: true, emissive: '#ffffff', emissiveIntensity: 0.06 })),
+				peopleV: own(new T.MeshLambertMaterial({ color: '#ffffff', vertexColors: true, emissive: '#ffffff', emissiveIntensity: 0.06 }), true),
+				skinV: own(new T.MeshLambertMaterial({ color: '#ffffff', vertexColors: true, emissive: '#ffffff', emissiveIntensity: 0.06 }), true),
 				wallLow: own(new T.MeshLambertMaterial({ color: train.style === 'ezt' ? '#9fa58f' : '#8e6f4f', emissive: '#ffffff', emissiveIntensity: 0.1 })),
 				carpet: own(new T.MeshLambertMaterial({ color: train.style === 'ezt' ? '#3c4046' : '#5a2f2a', emissive: '#ffffff', emissiveIntensity: 0.05 })),
 				curtain: own(new T.MeshLambertMaterial({ color: '#d9cdb0', emissive: '#ffffff', emissiveIntensity: 0.1 })),
 			};
 			// pasażerowie: spodnie, buty, włosy nie biorą koloru ubrania/skóry (aKeep – jak ludzie na peronach)
-			for (const m of [this.inMats.peopleV, this.inMats.skinV]) {
+			for (const m of NS.gpu ? [] : [this.inMats.peopleV, this.inMats.skinV]) {
 				const prev = m.onBeforeCompile;
 				m.onBeforeCompile = (sh, r) => {
 					prev(sh, r);
@@ -1321,7 +1323,8 @@ import * as THREE from 'three';
 			const sh = new T.Mesh(geo, this.shadowProxyMat);
 			sh.castShadow = true;
 			sh.receiveShadow = false;
-			sh.onBeforeRender = (r, sc, c, g) => { g.drawRange.count = 0; };
+			// (WebGPU woła onBeforeRender także w mapach cieni – po onBeforeShadow; kamery cieni słońca są ortograficzne)
+			sh.onBeforeRender = (r, sc, c, g) => { g.drawRange.count = c.isOrthographicCamera ? Infinity : 0; };
 			sh.onBeforeShadow = (r, o, c, shc, g) => { g.drawRange.count = Infinity; };
 			sh.userData.shadowProxy = true;
 			root.add(sh);

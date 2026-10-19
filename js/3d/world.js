@@ -116,7 +116,8 @@ import * as THREE from 'three';
 		/* Ludzie: części oznaczone aKeep nie biorą koloru instancji (ubranie/skóra) – spodnie i włosy z palet wg
 		   numeru osoby (gl_InstanceID), buty i pasek stałe. */
 		static personMat(m) {
-			NS.util.patch(m, 'lit', { noSnow: true }); // śnieg nie osiada na ludziach (ruszają się – plamy wyglądały jak tekstura)
+			m = NS.util.patch(m, 'lit', { noSnow: true }); // śnieg nie osiada na ludziach (ruszają się – plamy wyglądały jak tekstura)
+			if (NS.gpu) return NS.nodes.extend(m, NS.nodes.personHooks()); // WebGPU: animacja i palety w TSL (nodes.js)
 			const prev = m.onBeforeCompile;
 			m.onBeforeCompile = (sh, r) => {
 				prev(sh, r);
@@ -837,6 +838,7 @@ import * as THREE from 'three';
 		static driftMat() {
 			if (World.driftM) return World.driftM;
 			const m = NS.util.patch(new T.MeshStandardMaterial({ color: '#eef2f8', roughness: 0.78 }), 'lit');
+			if (NS.gpu) return (World.driftM = NS.nodes.extend(m, NS.nodes.driftHooks()));
 			const prev = m.onBeforeCompile;
 			m.onBeforeCompile = (sh, r) => {
 				prev(sh, r);
@@ -3145,8 +3147,7 @@ import * as THREE from 'three';
 				World.boardGeo = new T.PlaneGeometry(1, 1);
 				World.boardGeo.userData.shared = true;
 			}
-			const m = new T.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.1 });
-			NS.util.patch(m, 'clean');
+			const m = NS.util.patch(new T.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.1 }), 'clean');
 			m.userData.shared = false;
 			const frame = mat('#d9dde2', { roughness: 0.4, metalness: 0.4 });
 			g.add(box(0.06, h + 0.12, w + 0.12, frame, x, y, z));
@@ -3267,8 +3268,7 @@ import * as THREE from 'three';
 			// tabliczka z oznaczeniem semafora
 			const label = sig.label || (sig.type === 'starter' ? 'O' + (sig.station + 1) : sig.name.replace('Sbl ', 'S'));
 			const tex = labelTexture(label, '#f4f4f4', '#111111');
-			const pm = new T.MeshStandardMaterial({ map: tex, roughness: 0.6 });
-			NS.util.patch(pm, 'lit');
+			const pm = NS.util.patch(new T.MeshStandardMaterial({ map: tex, roughness: 0.6 }), 'lit');
 			pm.userData.shared = false;
 			if (!World.boardGeo) { World.boardGeo = new T.PlaneGeometry(1, 1); World.boardGeo.userData.shared = true; }
 			const plate = new T.Mesh(World.boardGeo, pm);
@@ -3367,8 +3367,7 @@ import * as THREE from 'three';
 			});
 			// wspornik głowicy i tabliczka z oznaczeniem
 			g.add(box(0.1, 0.4, 0.1, steel, 0, 3.75, -0.08));
-			const pm = new T.MeshStandardMaterial({ map: labelTexture(w.label, '#f4f4f4', '#111111'), roughness: 0.6 });
-			NS.util.patch(pm, 'lit');
+			const pm = NS.util.patch(new T.MeshStandardMaterial({ map: labelTexture(w.label, '#f4f4f4', '#111111'), roughness: 0.6 }), 'lit');
 			pm.userData.shared = false;
 			if (!World.boardGeo) { World.boardGeo = new T.PlaneGeometry(1, 1); World.boardGeo.userData.shared = true; }
 			const plate = new T.Mesh(World.boardGeo, pm);
@@ -3897,10 +3896,12 @@ import * as THREE from 'three';
 			const x0 = Math.round(this.viewPos.x / 16) * 16 - SZ / 2, z0 = Math.round(this.viewPos.z / 16) * 16 - SZ / 2;
 			let nm = this.nightMap;
 			if (!nm) {
-				const cv = document.createElement('canvas');
+				// (WebGPU: płótno i tekstura już są – nodes.js, wkompilowane w materiały)
+				const pre = NS.gpu && NS.util.U.uNightTex.value.isCanvasTexture ? NS.util.U.uNightTex.value : null;
+				const cv = pre ? pre.image : document.createElement('canvas');
 				cv.width = N * 2;
 				cv.height = N;
-				const tex = new T.CanvasTexture(cv);
+				const tex = pre || new T.CanvasTexture(cv);
 				tex.flipY = false;
 				tex.generateMipmaps = false;
 				tex.minFilter = T.LinearFilter;

@@ -6,6 +6,17 @@ import * as THREE from 'three';
 	const T = THREE;
 	const NS = (window.Train3D = window.Train3D || {});
 
+	/* Renderer: WebGL (domyślny, łatki GLSL) albo WebGPURenderer (w budowie – materiały węzłowe TSL z js/3d/nodes.js).
+	   ?webgpu w adresie (albo localStorage maszynista.renderer = 'webgpu') – WebGPU; ?webgpu=gl – WebGPURenderer z zapleczem
+	   WebGL 2 (te same materiały węzłowe, do porównań i na kartach bez WebGPU). */
+	const gpuMode = (() => {
+		const q = new URLSearchParams(location.search).get('webgpu');
+		if (q !== null) return q === 'gl' ? 'gl' : q === '0' ? '' : 'gpu';
+		try { const v = localStorage.getItem('maszynista.renderer'); return v === 'webgpu' ? 'gpu' : v === 'webgpu-gl' ? 'gl' : ''; } catch { return ''; }
+	})();
+	NS.gpu = gpuMode !== '';
+	NS.gpuForceWebGL = gpuMode === 'gl';
+
 	function hash(n) {
 		const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
 		return x - Math.floor(x);
@@ -597,6 +608,12 @@ import * as THREE from 'three';
 	   - 'indoor' : bez chmur i pogody (wnętrza). */
 	const allMaterials = [];
 	function patch(material, variant, opt = {}) {
+		if (NS.gpu) {
+			const m = NS.nodes.patch(material, variant, opt);
+			allMaterials.push(m);
+			m.userData.shared = true;
+			return m;
+		}
 		allMaterials.push(material);
 		const train = variant === 'train', grime = opt.grime ?? 0.12, panels = !!opt.panels;
 		const snowK = opt.noSnow ? 0.0 : variant === 'grass' ? 0.0 : variant === 'wind' ? 0.75 : 1.0; // noSnow – np. ludzie (śnieg na nich nie osiada)

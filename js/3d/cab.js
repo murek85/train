@@ -196,7 +196,9 @@ import * as THREE from 'three';
 			// ściany jasne szarozielone (jak w kabinach PKP), sufit kremowy
 			const wall = cm('#aab2a6', { side: T.BackSide, glow: 0.1, rough: 0.85 });
 			const ceiling = cm('#dcd9cc', { side: T.BackSide, glow: 0.14, rough: 0.9 });
-			const inGlass = own(new T.MeshBasicMaterial({ color: '#0d1820', transparent: true, opacity: 0.1, side: T.BackSide, depthWrite: false }));
+			let inGlass = new T.MeshBasicMaterial({ color: '#0d1820', transparent: true, opacity: 0.1, side: T.BackSide, depthWrite: false });
+			if (NS.gpu) inGlass = NS.nodes.patch(inGlass, 'indoor'); // (WebGPU – materiał węzłowy, haki szyby niżej)
+			own(inGlass);
 			// krople i śnieg na szybie widziane od środka (te same uniformy co szyba z zewnątrz)
 			if (model.glassU && NS.wetGlass) NS.wetGlass(inGlass, model.glassU);
 			const shell = new T.Mesh(spec ? spec.geo : car.bodyGeo, [wall, wall, wall, ceiling, inGlass, inGlass, own(new T.MeshBasicMaterial({ visible: false })), wall]);

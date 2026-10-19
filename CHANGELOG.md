@@ -4,6 +4,49 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.49.0 – 19 października 2026
+
+Tryb WebGPU (etap 1 przejścia, w budowie): `?webgpu` – WebGPURenderer z materiałami węzłowymi (TSL). Domyślnie WebGL.
+
+### Renderer (`common.js`, `scene.js`, `preview.js`)
+- `NS.gpu`: `?webgpu` w adresie albo `localStorage['maszynista.renderer'] = 'webgpu'`; `?webgpu=gl` – WebGPURenderer
+  z zapleczem WebGL 2. Rysowanie po `init()`; `precompile` czeka na niego. Import map: `three/webgpu`, `three/tsl`,
+  `three/addons/`.
+- W trybie WebGPU wyłączone (jeszcze GLSL – `ShaderMaterial`): efekty po renderowaniu (`post.js`), kopuła nieba
+  i panorama chmur (`sky.js` – tło w kolorze mgły), opady (`weather.js`), promienie słońca; bez kompilacji z góry.
+- Nakładka F3: czas karty ze znaczników czasu (`?gputime`), nazwa karty z `adapterInfo`; `bench()` – tylko czas procesora.
+- Macierze świata raz na klatkę (WebGPURenderer liczył je przy każdym `render()`, także dla każdej mapy cieni).
+- `setQuality` nie niszczy map cieni (WebGPU: `ShadowNode` trzyma mapę i sam zmienia jej rozmiar – zniszczona psuła
+  wszystkie materiały z cieniami).
+
+### Materiały węzłowe (`js/3d/nodes.js`, nowy)
+- `patch()` w trybie WebGPU tworzy materiał węzłowy (Standard / Physical / Lambert / Basic) z klasą pochodną: wszystkie
+  warianty (`lit`, `wind`, `grass`, `ground`, `gravel`, `road`, `concrete`, `platform`, `roof`, `dirt`, `train`, `clean`,
+  `indoor`) z tymi samymi wzorami i kolejnością co GLSL – wzór i wysokość mikrorzeźby, normalna zgięta przez nią, pogoda
+  (mokro, strużki, krople, śnieg), kałuże z kręgami, światło latarni z mapy nocnej i odbicia opraw; tabor – patyna,
+  spoiny, nity, żebra dachu, okluzja z wierzchołków także w świetle bezpośrednim, powłoka; kołysanie roślin (pozycja
+  instancji z kolumny macierzy), otwory portali tuneli. Szumy jako funkcje shadera (`setLayout`).
+- Haki zamiast dalszych łatek `onBeforeCompile`: ludzie (animacja chodu i siedzenia, wzrost, plecaki i torby, palety
+  ubrań), zaspy, wnętrza wagonów (świecenie × kolor) i pasażerowie, materiały taboru z `aRM` (chropowatość, metaliczność,
+  zabrudzenie w wierzchołkach), mokra / ośnieżona / oszroniona szyba z wycieraczkami, woda (fale, Fresnel, odbicie przez
+  `reflector` – `WaterReflectionGPU` w `water.js`), pierścienie horyzontu, odbicia nieba (PMREM, ten sam bufor docelowy).
+- Kaskady cieni i cienie chmur w węzłach świateł (`setupCascades`: `shadow.shadowNode` – pierwsza mapa obejmująca piksel,
+  `colorNode` – chmury, dalsze kaskady bez cieni dla obiektów bez cieni).
+- Klucz zbudowanego shadera z wariantem, opcjami i `#define` (Three skraca obiekty materiału do „{}” – płyty peronu
+  i warianty taboru dzieliłyby jeden shader).
+- Wydajność: wspólne uniformy w grupie `renderGroup`, przepisywane raz na klatkę (`NS.nodes.sync`) – `reference()`
+  aktualizował się dla każdego obiektu; mapa nocna jako jedna stała tekstura, próbki bez aktualizacji odwrócenia osi Y
+  dla każdego obiektu (9 próbek w materiale); razem z 34 do 24 ms procesora na klatkę. Nadal wolniej niż WebGL (ok. 9 ms):
+  narzut WebGPURenderer na obiekt (~800 obiektów w scenie i mapach cieni), karta ok. 4 ms.
+- Zgodność z WebGL (jakość niska, Gliwice – Zabrze): w dzień średnia różnica pikseli 1,8–2,3/255 (krawędzie), noc ta sama
+  jasność (45,1 / 45,0), śnieg i kabina w deszczu bez różnic poza brakującymi jeszcze opadami i niebem. Wyłapane przy tym:
+  mapa otoczenia w WebGPU przechodziła przez tone mapping (nocą kilkanaście razy jaśniejsza), cienie składu (bryły cienia
+  ukrywane w `onBeforeRender` – WebGPU woła go także w mapach cieni; teraz wg kamery).
+
+### Narzędzia
+- `tools/render-check/` – zrzuty z jazdy w obu trybach (Electron, okno poza ekranem), różnice obrazów, wycinki, jasność,
+  profil procesora, sceny (deszcz nocą, śnieg, kabina).
+
 ## 0.48.6 – 18 października 2026
 
 Three.js 0.186 jako moduły ES (etap 0 przejścia na WebGPU; nadal WebGLRenderer, wygląd bez zmian).

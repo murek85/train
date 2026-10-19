@@ -1,5 +1,7 @@
 /* Przeniesione z projektu Pogranicze Galaktyki (strategy/webgl3d/sky-3d.js) i opakowane jako zwykły skrypt.
    Oryginalny opis poniżej. */
+import * as THREE from 'three';
+
 (function () {
 'use strict';
 const NS = (window.Train3D = window.Train3D || {});
@@ -14,7 +16,7 @@ const NS = (window.Train3D = window.Train3D || {});
    and in reflections; its horizon colour is also the colour of the distance haze. */
 
 // Cloud cover shared by the sky and the shadows on the ground: offset (drift) and amount of shadow.
-const SKY_CLOUDS = { cloudAmount: { value: 0 }, cloudOffset: { value: [0, 0] }, cloudThr: { value: 0.55 } };
+const SKY_CLOUDS = { cloudAmount: { value: 0 }, cloudOffset: { value: new THREE.Vector2() }, cloudThr: { value: 0.55 } };
 const SKY_CLOUD_GLSL = `
 	uniform float cloudAmount; uniform vec2 cloudOffset; uniform float cloudThr;
 	float cloudHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -548,8 +550,7 @@ function createSky3D(THREE) {
 		},
 		// Cloud drift and the shadow they cast (0 none … 1 dark).
 		clouds(time, shadow) {
-			SKY_CLOUDS.cloudOffset.value[0] = time * 0.0042;
-			SKY_CLOUDS.cloudOffset.value[1] = time * 0.0017;
+			SKY_CLOUDS.cloudOffset.value.set(time * 0.0042, time * 0.0017);
 			SKY_CLOUDS.cloudAmount.value = shadow;
 			// próg mapy zachmurzenia wg zachmurzenia: pogodnie – pojedyncze kłęby, pochmurno – dużo, deszcz – zwarta warstwa
 			const c = uniforms.cover.value;

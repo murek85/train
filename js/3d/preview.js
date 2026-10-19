@@ -2,6 +2,7 @@
    na odcinku toru, z oświetleniem dziennym i odbiciami nieba. Kamera krąży wokół wybranego pojazdu – przeciąganie
    myszą obraca, kółko przybliża; bez ruchu myszy powoli obraca się sama. Rysuje tylko, gdy jest widoczny. */
 import * as THREE from 'three';
+import { WebGPURenderer, PMREMGenerator } from 'three/webgpu';
 
 (function () {
 	'use strict';
@@ -11,7 +12,8 @@ import * as THREE from 'three';
 	class StockPreview {
 		constructor(canvas) {
 			this.canvas = canvas;
-			this.gl = new T.WebGLRenderer({ canvas, antialias: true, alpha: true });
+			// (WebGPU – NS.gpu: osobny WebGPURenderer, gotowy po init())
+			this.gl = NS.gpu ? new WebGPURenderer({ canvas, antialias: true, alpha: true, forceWebGL: NS.gpuForceWebGL }) : new T.WebGLRenderer({ canvas, antialias: true, alpha: true });
 			this.gl.outputColorSpace = T.SRGBColorSpace;
 			this.gl.toneMapping = T.ACESFilmicToneMapping;
 			this.gl.toneMappingExposure = 1.05;
@@ -34,9 +36,13 @@ import * as THREE from 'three';
 			}
 			sky.geometry.setAttribute('color', new T.Float32BufferAttribute(col, 3));
 			env.add(sky);
-			const pm = new T.PMREMGenerator(this.gl);
-			this.scene.environment = pm.fromScene(env, 0.02).texture;
-			pm.dispose();
+			const envMap = () => {
+				const pm = NS.gpu ? new PMREMGenerator(this.gl) : new T.PMREMGenerator(this.gl);
+				this.scene.environment = pm.fromScene(env, 0.02).texture;
+				pm.dispose();
+			};
+			if (NS.gpu) this.gl.init().then(envMap).catch((e) => console.error('WebGPU (podgląd):', e));
+			else envMap();
 			this.scene.add(new T.HemisphereLight(0xdfeaf5, 0x6b6656, 0.55));
 			const sun = new T.DirectionalLight(0xfff3df, 3.0);
 			sun.position.set(-30, 40, -20);
@@ -146,7 +152,8 @@ import * as THREE from 'three';
 			this.sun.target.position.copy(this.target);
 			this.sun.position.set(this.target.x - 30, this.target.y + 40, this.target.z - 20);
 			if (sc.right !== ext) { sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = 1; sc.far = 120; sc.updateProjectionMatrix(); }
-			this.gl.render(this.scene, this.camera);
+			if (NS.gpu) NS.nodes.sync();
+			if (!NS.gpu || this.gl.hasInitialized()) this.gl.render(this.scene, this.camera);
 		}
 	}
 	NS.StockPreview = StockPreview;

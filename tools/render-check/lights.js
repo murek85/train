@@ -1,0 +1,10 @@
+const r = window.maszynista.renderer, c = window.SHOT_CASE || '';
+const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+const lock = (o, k, v) => Object.defineProperty(o, k, { get: () => v, set() {}, configurable: true });
+if (c.includes('noenv')) lock(r.scene, 'environmentIntensity', 0);
+if (c.includes('nolamp')) r.scene.traverse((o) => { if (o.isPointLight || o.isSpotLight) lock(o, 'intensity', 0); });
+if (c.includes('nohemi')) lock(r.hemi, 'intensity', 0);
+if (c.includes('nonight')) lock(window.Train3D.util.U.uNightK, 'value', 0);
+if (c.includes('nosun')) for (const l of r.cascades) lock(l, 'intensity', 0);
+await wait(5000);
+return { case: c };

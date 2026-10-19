@@ -43,8 +43,9 @@ import * as THREE from 'three';
 				{ geo: ring(FAR, 20, [[3, 40], [7, 24], [13, 12], [29, 6]], 1.3), color: new T.Color('#5d6f8c'), haze: 0.62 },
 				{ geo: ring(1650, 4, [[37, 7], [71, 5], [13, 4], [113, 3]], 4.1), color: new T.Color('#3f5636'), haze: 0.42 },
 			].map((L) => {
-				const m = new T.ShaderMaterial({
-					uniforms: { col: { value: L.color.clone() }, haze: { value: new T.Color() }, k: { value: L.haze } },
+				const uniforms = { col: { value: L.color.clone() }, haze: { value: new T.Color() }, k: { value: L.haze } };
+				const m = NS.gpu ? NS.nodes.horizonMaterial(uniforms) : new T.ShaderMaterial({
+					uniforms,
 					vertexShader: 'attribute float shade; varying float vShade; void main() { vShade = shade; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
 					fragmentShader: `uniform vec3 col; uniform vec3 haze; uniform float k; varying float vShade;
 						void main() {

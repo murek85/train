@@ -2,6 +2,7 @@
    godziny, niebo z chmurami, horyzont, pogoda, efekty po renderowaniu (ACES, bloom, okluzja), ustawienia
    jakości, minimapa. */
 import * as THREE from 'three';
+import { WebGPURenderer } from 'three/webgpu';
 
 (function () {
 	'use strict';
@@ -42,6 +43,8 @@ import * as THREE from 'three';
 	   kaskada węższa (80 zamiast 120 m) – w niej leży zwykle reszta składu za lokomotywą; przy 120 m teksel miał
 	   ok. 12 cm i cienie wagonów były rozmyte. */
 	const CASCADES = [36, 80, 340];
+	// obiekty z materiałem GLSL (ShaderMaterial) – w trybie WebGPU jeszcze bez odpowiednika, ukryte (bez kompilacji z góry)
+	const glslOnly = (o) => NS.gpu && !!o.material && !!o.material.isShaderMaterial;
 
 	// Ustawienia jakości: rozdzielczość, cienie, efekty po renderowaniu, gęstość roślinności, ilość opadu.
 	const QUALITY = {
@@ -88,7 +91,13 @@ import * as THREE from 'three';
 			this.canvas = canvas;
 			this.mini = mini;
 			this.mctx = mini.getContext('2d');
-			this.gl = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+			/* WebGPU (NS.gpu, common.js): WebGPURenderer z materiałami węzłowymi – w budowie, bez efektów po renderowaniu, nieba,
+			   opadów i odbić wody (te są jeszcze w GLSL); gotowy po init() (gpuInit) */
+			if (NS.gpu) {
+				// ?gputime – znaczniki czasu karty (nakładka F3: czas GPU; trochę kosztują, więc tylko na życzenie)
+				this.gl = new WebGPURenderer({ canvas, antialias: true, powerPreference: 'high-performance', forceWebGL: NS.gpuForceWebGL, trackTimestamp: /[?&]gputime/.test(location.search) });
+				this.gpuInit = this.gl.init().catch((e) => console.error('WebGPU:', e));
+			} else this.gl = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 			this.gl.shadowMap.enabled = true;
 			this.gl.shadowMap.type = T.PCFShadowMap; // od r180 PCF z miękkim brzegiem (shadow.radius); PCFSoftShadowMap usunięty
 			this.scene = new T.Scene();
@@ -113,10 +122,12 @@ import * as THREE from 'three';
 				this.cascades.push(l);
 			}
 			this.csmFrame = 0;
+			if (NS.gpu) NS.nodes.setupCascades(this.cascades); // wybór kaskady i cienie chmur w węzłach świateł
 
 			this.post = NS.createPost3D(T, this.gl);
 			this.sky = NS.createSky3D(T);
-			this.scene.add(this.sky.mesh);
+			if (!NS.gpu) this.scene.add(this.sky.mesh); // (WebGPU: niebo jeszcze w GLSL – tło w kolorze mgły)
+			this.envGpu = NS.gpu ? NS.nodes.createEnvironment(this.gl) : null;
 			this.horizon = new NS.Horizon(this.scene);
 			// promienie słońca w powietrzu i flara obiektywu (z Pogranicza)
 			this.sunFx = NS.createSunFx3D(T, { scene: this.scene, heightAt: () => this.focus.y - 1 });
@@ -126,7 +137,7 @@ import * as THREE from 'three';
 			this.moonGlow.renderOrder = 950;
 			this.scene.add(this.moonGlow);
 			this.weather = new NS.Weather(this.scene);
-			this.waterRefl = new NS.WaterReflection(this.gl); // odbicie lustrzane wody (js/3d/water.js)
+			this.waterRefl = NS.gpu ? new NS.WaterReflectionGPU(this.scene) : new NS.WaterReflection(this.gl); // odbicie lustrzane wody (js/3d/water.js)
 			this.waterWind = new T.Vector2();
 			this.weatherKey = 'auto';
 			this.env = { zenith: new T.Color(), horizon: new T.Color(), ground: new T.Color('#3a4a2a'), sunDir: new T.Vector3(), sunColor: new T.Color() };
@@ -199,8 +210,8 @@ import * as THREE from 'three';
 			const el = document.createElement('div');
 			el.id = 'perf';
 			document.body.appendChild(el);
-			const gl = this.gl.getContext();
-			this.perf = { el, gl, ext: gl.getExtension('EXT_disjoint_timer_query_webgl2'), queries: [], sum: {}, n: 0, gpu: 0, gpuN: 0, t: performance.now(), last: null };
+			const gl = NS.gpu ? null : this.gl.getContext();
+			this.perf = { el, gl, ext: gl && gl.getExtension('EXT_disjoint_timer_query_webgl2'), queries: [], sum: {}, n: 0, gpu: 0, gpuN: 0, t: performance.now(), last: null };
 			this.gl.info.autoReset = false;
 			return true;
 		}
@@ -219,7 +230,12 @@ import * as THREE from 'three';
 			P.n++;
 			// wyniki zapytań czasu karty graficznej (dostępne po kilku klatkach)
 			const gl = P.gl;
-			while (P.queries.length && gl.getQueryParameter(P.queries[0], gl.QUERY_RESULT_AVAILABLE)) {
+			// WebGPU: czas karty ze znaczników czasu (?gputime), odczyt asynchroniczny co klatkę
+			if (NS.gpu && this.gl.backend.trackTimestamp && !P.tsBusy) {
+				P.tsBusy = true;
+				this.gl.resolveTimestampsAsync('render').then((ms) => { if (ms > 0) { P.gpu += ms; P.gpuN++; } P.tsBusy = false; }, () => { P.tsBusy = false; });
+			}
+			while (gl && P.queries.length && gl.getQueryParameter(P.queries[0], gl.QUERY_RESULT_AVAILABLE)) {
 				const q = P.queries.shift();
 				if (!gl.getParameter(P.ext.GPU_DISJOINT_EXT)) { P.gpu += gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6; P.gpuN++; }
 				gl.deleteQuery(q);
@@ -234,11 +250,11 @@ import * as THREE from 'three';
 				row('FPS', fps.toFixed(0)),
 				row('klatka CPU', f(S.klatka), 'ms'),
 				...['pociąg', 'otoczenie', 'świat', 'ruch', 'rysowanie'].map((x) => row('  ' + x, f(S[x] || 0), 'ms')),
-				row('GPU', P.ext ? (P.gpuN ? (P.gpu / P.gpuN).toFixed(1) : '…') : '–', P.ext ? 'ms' : ''),
+				row('GPU', P.ext || P.gpuN ? (P.gpuN ? (P.gpu / P.gpuN).toFixed(1) : '…') : '–', P.ext || P.gpuN ? 'ms' : ''),
 				row('wywołania', Math.round(S.calls * k)),
 				row('trójkąty', (S.tris * k / 1e6).toFixed(2), 'mln'),
 				row('siatki', meshes),
-				row('programy', info.programs.length),
+				row('programy', info.programs ? info.programs.length : '–'),
 				row('geometrie', info.memory.geometries),
 				row('kawałki', this.world.chunks.size) + (this.world.pending ? ` (+${this.world.pending})` : ''),
 			].join('\n');
@@ -250,12 +266,13 @@ import * as THREE from 'three';
 		   pokazaniu obiektu (przycięcie przy wejściu do kabiny). Równolegle (KHR_parallel_shader_compile), gdy dostępne;
 		   najwyżej 20 s. */
 		precompile() {
+			if (NS.gpu && !this.gl.hasInitialized()) return this.gpuInit.then(() => this.precompile());
 			const hidden = [];
-			this.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+			this.scene.traverse((o) => { if (!o.visible && !glslOnly(o)) { hidden.push(o); o.visible = true; } });
 			let p;
 			// ten sam bufor docelowy co przy rysowaniu (z efektami – bufor sceny), inaczej powstaje inny wariant programu
 			const rt = this.gl.getRenderTarget();
-			this.gl.setRenderTarget(this.quality.post ? this.post.target : null);
+			this.gl.setRenderTarget(this.usePost ? this.post.target : null);
 			try {
 				p = this.gl.compileAsync(this.scene, this.camera);
 			} catch (e) {
@@ -272,13 +289,13 @@ import * as THREE from 'three';
 		warmUp() {
 			const hidden = [], culled = [];
 			this.scene.traverse((o) => {
-				if (!o.visible) { hidden.push(o); o.visible = true; }
+				if (!o.visible && !glslOnly(o)) { hidden.push(o); o.visible = true; }
 				if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
 			});
 			const rt = this.gl.getRenderTarget(), shadows = this.gl.shadowMap.autoUpdate;
 			this.gl.shadowMap.autoUpdate = false;
 			try {
-				this.gl.setRenderTarget(this.quality.post ? this.post.target : null);
+				this.gl.setRenderTarget(this.usePost ? this.post.target : null);
 				this.gl.render(this.scene, this.camera);
 			} catch (e) {
 				// rozgrzanie jest tylko przyspieszeniem – błąd nie blokuje startu
@@ -294,8 +311,9 @@ import * as THREE from 'three';
 		   klatka, wywołania, trójkąty i siatki. Symulacja stoi
 		   (dt = 0 poza pomiarem animacji). */
 		bench(sim, n = 20) {
-			const gl = this.gl, ctx = gl.getContext(), px = new Uint8Array(4);
-			const sync = () => ctx.readPixels(0, 0, 1, 1, ctx.RGBA, ctx.UNSIGNED_BYTE, px);
+			const gl = this.gl, ctx = NS.gpu ? null : gl.getContext(), px = new Uint8Array(4);
+			// (WebGPU: bez czekania na kartę – tylko czas procesora)
+			const sync = () => ctx && ctx.readPixels(0, 0, 1, 1, ctx.RGBA, ctx.UNSIGNED_BYTE, px);
 			const keep = this.camMode, auto = gl.info.autoReset;
 			const view = (mode) => {
 				this.camMode = mode;
@@ -325,11 +343,16 @@ import * as THREE from 'three';
 				gl.info.autoReset = auto;
 				return r;
 			};
-			const out = { trasa: sim.route.id, km: +(sim.st.pos / 1000).toFixed(2), bufor: `${ctx.drawingBufferWidth}×${ctx.drawingBufferHeight}`, jakość: this.quality.name, kabina: view('cab'), zaPociągiem: view('follow') };
+			const out = { trasa: sim.route.id, km: +(sim.st.pos / 1000).toFixed(2), bufor: ctx ? `${ctx.drawingBufferWidth}×${ctx.drawingBufferHeight}` : `${this.canvas.width}×${this.canvas.height}`, jakość: this.quality.name, kabina: view('cab'), zaPociągiem: view('follow') };
 			this.camMode = keep;
 			this.resetView();
 			this.camState.snap = true;
 			return out;
+		}
+
+		// efekty po renderowaniu (post.js – GLSL): tylko w trybie WebGL
+		get usePost() {
+			return this.quality.post && !NS.gpu;
 		}
 
 		cycleZoom() {
@@ -359,12 +382,13 @@ import * as THREE from 'three';
 			const q = QUALITY[key] || QUALITY.medium;
 			if (this.quality === q) return;
 			this.quality = q;
-			this.gl.toneMapping = q.post ? T.NoToneMapping : T.ACESFilmicToneMapping;
+			this.gl.toneMapping = q.post && !NS.gpu ? T.NoToneMapping : T.ACESFilmicToneMapping;
 			this.cascades.forEach((l, k) => {
 				// dwie bliższe kaskady w pełnej rozdzielczości jakości (pociąg i otoczenie przy nim), najdalsza do 2048
 				const n = k < 2 ? q.shadow : Math.min(2048, q.shadow);
 				l.shadow.mapSize.set(n, n);
-				if (l.shadow.map) {
+				// (WebGPU: mapę trzyma ShadowNode i sam zmienia jej rozmiar – zniszczona psuła wszystkie materiały z cieniami)
+				if (l.shadow.map && !NS.gpu) {
 					l.shadow.map.dispose();
 					l.shadow.map = null;
 				}
@@ -403,6 +427,10 @@ import * as THREE from 'three';
 		// nazwa karty graficznej (do ustawień)
 		gpuName() {
 			try {
+				if (NS.gpu) {
+					const b = this.gl.backend, i = b && b.device && b.device.adapterInfo;
+					return (b && b.isWebGPUBackend ? 'WebGPU' : 'WebGL 2 (WebGPURenderer)') + (i ? ': ' + (i.description || [i.vendor, i.architecture].filter(Boolean).join(' ')) : '');
+				}
 				const gl = this.gl.getContext();
 				const ext = gl.getExtension('WEBGL_debug_renderer_info');
 				return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
@@ -515,7 +543,7 @@ import * as THREE from 'three';
 			cityGlow.setRGB(1.0, 0.56, 0.28).multiplyScalar(glowK);
 			this.sky.update({ camera: this.camera, time: this.time, e, sunDir: this.sunDir, moonDir: this.moonDir, zenith: zen, horizon: hor, sunlight: sunCol, haze: W.haze, hazeColor: gray, cover: W.cover, cityGlow, urban: urban * nightK });
 			this.sky.clouds(this.time, W.shadow * clamp01((e + 0.02) / 0.15));
-			this.sky.renderClouds(this.gl, this.time); // panorama chmur wolumetrycznych (co ok. 0,4 s)
+			if (!NS.gpu) this.sky.renderClouds(this.gl, this.time); // panorama chmur wolumetrycznych (co ok. 0,4 s)
 
 			// światło kierunkowe: słońce w dzień, księżyc w nocy
 			if (e > -0.03) {
@@ -563,7 +591,8 @@ import * as THREE from 'three';
 				this.envT = 2;
 				this.env.sunDir.copy(this.sunDir);
 				const env = { zenith: zen.clone().lerp(gray, W.haze), horizon: hor.clone().lerp(gray, W.haze), ground: this.env.ground, sunDir: this.sunDir, sunColor: sunCol.clone().multiplyScalar(dayK * W.sun) };
-				this.scene.environment = this.post.environment(env);
+				const tex = this.envGpu ? this.envGpu(env) : this.post.environment(env);
+				if (tex) this.scene.environment = tex;
 			}
 			this.horizon.update(this.camera, this.focus.y - 3, fog.color, 0.25 + 0.75 * dayK, W.haze, this.free ? this.free.s : sim.st.pos);
 			// słońce: promienie i flara; księżyc: poświata
@@ -1213,7 +1242,7 @@ import * as THREE from 'three';
 				const wt = this.weather;
 				this.waterRefl.update(this.scene, this.camera, this.scene, this.time, this.waterWind, [wt.rain, wt.rainNear, wt.snow, wt.splash, wt.leaves, this.cab && this.cab.group].concat(this.sunFx.objects || []), q.post ? (q.ao ? 0.6 : 0.5) : 0.35);
 			}
-			if (q.post) {
+			if (this.usePost) {
 				const W = this.W;
 				const rays = this.e > 0 ? 0.4 * (1 - W.haze) * W.sun * (1 - smoothstep(0.25, 0.55, this.e)) : 0;
 				this.post.render(this.scene, this.camera, {
@@ -1243,7 +1272,14 @@ import * as THREE from 'three';
 			} else {
 				this.gl.toneMappingExposure = exposure;
 				this.gl.setRenderTarget(null);
-				this.gl.render(this.scene, this.camera);
+				if (NS.gpu && this.gl.hasInitialized()) {
+					NS.nodes.sync(); // wspólne uniformy materiałów węzłowych (raz na klatkę)
+					// macierze świata raz na klatkę – WebGPURenderer liczy je przy każdym render() (też dla każdej mapy cieni)
+					this.scene.updateMatrixWorld();
+					this.scene.matrixWorldAutoUpdate = false;
+					this.gl.render(this.scene, this.camera);
+					this.scene.matrixWorldAutoUpdate = true;
+				} else if (!NS.gpu) this.gl.render(this.scene, this.camera);
 			}
 			this.drawMinimap(sim);
 			if (P) {

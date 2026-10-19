@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.49.0',
+			date: '19 października 2026',
+			groups: [
+				['Grafika', [
+					'Tryb WebGPU do wypróbowania (w budowie): dopisz ?webgpu do adresu gry. Teren, tory, budynki, pociągi, pogoda na powierzchniach, ludzie, szyby i woda wyglądają jak dotąd; nieba, opadów i efektów obrazu jeszcze w nim nie ma, a płynność jest na razie mniejsza niż w zwykłym trybie.',
+				]],
+			],
+		},
+		{
 			version: '0.48.6',
 			date: '18 października 2026',
 			groups: [

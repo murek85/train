@@ -11,7 +11,7 @@
 	<link rel="stylesheet" href="style.css">
 	<!-- Three.js jako moduł ES (vendor/three – npm run vendor); warstwa 3D i to, co z niej korzysta, to moduły (wykonują się po zwykłych skryptach, w tej kolejności) -->
 	<script type="importmap">
-		{ "imports": { "three": "./vendor/three/three.module.js" } }
+		{ "imports": { "three": "./vendor/three/three.module.js", "three/webgpu": "./vendor/three/three.webgpu.js", "three/tsl": "./vendor/three/three.tsl.js", "three/addons/": "./vendor/three/addons/" } }
 	</script>
 </head>
 <body>
@@ -594,6 +594,7 @@
 	<script src="js/audio.js"></script>
 	<script type="module" src="js/3d/sky.js"></script>
 	<script type="module" src="js/3d/common.js"></script>
+	<script type="module" src="js/3d/nodes.js"></script>
 	<script type="module" src="js/3d/post.js"></script>
 	<script type="module" src="js/3d/sunfx.js"></script>
 	<script type="module" src="js/3d/horizon.js"></script>
