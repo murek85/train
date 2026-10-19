@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.2',
+			date: '19 października 2026',
+			groups: [
+				['Pauza', [
+					'Zmiana pogody albo pory roku w pauzie pokazuje okienko z postępem (efekty pogody, przebudowa świata, kompilacja shaderów) – bez zawieszenia obrazu.',
+				]],
+			],
+		},
+		{
 			version: '0.54.1',
 			date: '19 października 2026',
 			groups: [

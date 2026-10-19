@@ -1183,6 +1183,42 @@
 		setTimeout(() => { if (seq === loadSeq) routeLoading(null); }, 150);
 	}
 
+	/* Zmiana warunków w pauzie (pogoda, pora roku): to samo okienko co w menu, nad pauzą – najpierw okienko się rysuje,
+	   potem work(); kompilacja shaderów nowych efektów (opady, mokre nawierzchnie, śnieg – w WebGPU bez rysowania sceny
+	   do jej końca, scene.js hold) i – gdy rebuild – przebudowa świata wokół pociągu. Kolejna zmiana przerywa poprzednią. */
+	async function pauseBusy(title, work, rebuild = false, step = 'Wczytywanie efektów pogody…') {
+		const seq = ++loadSeq;
+		const live = () => seq === loadSeq && mode === 'pause';
+		const quit = () => { renderer.hold = false; if (seq === loadSeq) routeLoading(null); };
+		routeLoading('Przygotowanie…', 0.1, title, 'Zmiana warunków');
+		await nextFrame();
+		if (!live()) return quit();
+		work();
+		routeLoading(step, 0.3);
+		await nextFrame();
+		if (!live()) return quit();
+		if (rebuild) {
+			let total = 0;
+			for (let k = 0; k < 3600 && live(); k++) {
+				await nextFrame();
+				const p = renderer.world ? renderer.world.pending || 0 : 0;
+				total = Math.max(total, p);
+				if (k > 2 && p === 0) break;
+				if (total) routeLoading(`Przebudowa świata… (${total - p} z ${total})`, 0.3 + 0.4 * (1 - p / total));
+			}
+			if (!live()) return quit();
+		}
+		routeLoading('Kompilacja shaderów…', 0.75);
+		await nextFrame();
+		if (!live()) return quit();
+		if (window.Train3D.gpu) renderer.hold = true;
+		await renderer.precompile();
+		renderer.hold = false;
+		if (!live()) return quit();
+		routeLoading('Gotowe ✓', 1);
+		setTimeout(() => { if (seq === loadSeq) routeLoading(null); }, 150);
+	}
+
 	function startDemo() {
 		// bez tras: menu bez podglądu jazdy w tle
 		if (!defs.length || !selected) { demo = null; return; }
@@ -2386,7 +2422,11 @@
 	$('opt-quality').addEventListener('change', () => { applyGraphics(mode === 'menu' ? undefined : 'pause'); if (mode === 'menu') startDemo(); });
 	const weatherName = () => { const s = $('opt-weather'); return s.options[s.selectedIndex].text; };
 	$('opt-weather').addEventListener('change', () => menuBusy('Zmiana warunków', 'Pogoda: ' + weatherName(), () => { applyGraphics(); buildMenu(); }));
-	$('pause-weather').addEventListener('change', () => { applyGraphics('pause'); buildPause(); });
+	const pauseWeatherName = () => { const s = $('pause-weather'); return s.options[s.selectedIndex].text; };
+	$('pause-weather').addEventListener('change', () => {
+		if (mode !== 'pause') { applyGraphics('pause'); buildPause(); return; }
+		pauseBusy('Pogoda: ' + pauseWeatherName(), () => { applyGraphics('pause'); buildPause(); });
+	});
 	// pora dnia: w menu – godzina odjazdu (przebudowa podglądu), w pauzie – przestawienie bieżącej godziny
 	$('opt-time').value = $('pause-time').value = load('opt.time', 'auto');
 	$('opt-time-custom').value = $('pause-time-custom').value = load('opt.timeCustom', '21:30');
@@ -2612,7 +2652,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.54.1';
+	$('version').textContent = 'wersja 0.54.2';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');
@@ -2636,6 +2676,16 @@
 		const v = $('pause-season').value;
 		$('opt-season').value = v;
 		save('opt.season', v);
+		if (sim && mode === 'pause' && sim.opts.season !== v) {
+			pauseBusy('Pora roku: ' + $('pause-season').selectedOptions[0].text, () => {
+				if (sim.setSeason(v)) {
+					renderer.reseason(sim);
+					seasonBuild = true;
+				}
+				buildPause();
+			}, true, 'Zmiana roślinności i nawierzchni…');
+			return;
+		}
 		if (sim && sim.setSeason(v)) {
 			renderer.reseason(sim);
 			seasonBuild = true;

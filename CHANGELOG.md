@@ -4,6 +4,14 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.2 – 19 października 2026
+
+### Pauza – zmiana warunków (`js/main.js`)
+- Zmiana pogody i pory roku w pauzie („Warunki na trasie”) pokazuje okienko przeładowania jak w menu („Zmiana warunków ·
+  komunikat meteo”), nad pauzą i blokujące ją do końca: najpierw okienko, potem zmiana; przy porze roku – postęp
+  przebudowy świata (kawałki), na końcu kompilacja shaderów nowych efektów (`precompile`; w WebGPU bez rysowania
+  sceny do jej końca). Kolejna zmiana przerywa poprzednią (`pauseBusy`). Pora dnia – bez okienka (zmiana od razu).
+
 ## 0.54.1 – 19 października 2026
 
 Krótsze wczytywanie w trybie WebGPU. Pomiar (Gliwice – Zabrze, RX 6800 XT, Electron): start gry do menu 64 s → ok. 22 s,
