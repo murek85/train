@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.52.0',
+			date: '19 października 2026',
+			groups: [
+				['Grafika', [
+					'Tryb WebGPU (?webgpu): prawdziwe chmury – trójwymiarowe cumulusy oświetlone słońcem (o zachodzie różowe, nocą srebrne od księżyca), ich ilość i wysokość wg pogody, cienie chmur przesuwające się po polach i torach.',
+				]],
+			],
+		},
+		{
 			version: '0.51.0',
 			date: '19 października 2026',
 			groups: [

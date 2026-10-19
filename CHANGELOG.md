@@ -4,6 +4,28 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.52.0 – 19 października 2026
+
+Chmury wolumetryczne w trybie WebGPU (etap 4) – z projektu Lot nad Polską.
+
+### Chmury – WebGPU (`js/3d/clouds-gpu.js`, nowy)
+- Chmury z lot (`lot/src/clouds/clouds.js`, `noise3d.js`; przepis z „Horizon Zero Dawn”): warstwa cumulusów między
+  dwiema sferami nad Ziemią, gęstość z mapy pogody i szumów 3D (kształt Perlin–Worley 64³, detal Worley 32³, liczone raz
+  na procesorze), marsz promienia do 110 kroków (krok rośnie z odległością), 5 próbek ku słońcu, trzy oktawy
+  rozpraszania wielokrotnego i „powder”, światło nieba, mgiełka atmosfery przed chmurą; połowa rozdzielczości, drganie
+  kroku i akumulacja czasowa (reprojekcja z poprzedniej klatki), wygładzenie namiotem 4 × 4.
+- Bez głębi sceny: chmury (od 1–1,5 km) zawsze są za geometrią train (świat do 2,6 km) – składane w kopule nieba
+  (niebo × przepuszczalność + światło chmur), więc działają też bez efektów po renderowaniu (jakość niska).
+- Pogoda → warstwa: zasięg = zachmurzenie; w opadzie niższa podstawa (1000 m), grubsza (2200 m) i gęstsza warstwa,
+  w burzy wypiętrzona (do 3900 m); błyskawica rozświetla chmury. Nocą chmury oświetla księżyc (natężenie wg fazy).
+- Cień chmur na ziemi z tych samych chmur (zamiast szumu): tekstura 256² wokół kamery (6 km, co 4 klatki, środek
+  przesuwany skokowo), w kolorze światła słońca – w materiałach tylko próbka.
+- Atmosfera (`sky-gpu.js`): dodane `sunLight`, `aerial` (perspektywa powietrzna – marsz po atmosferze) i światło
+  księżyca dla chmur; mgła i odbicia biorą zachmurzenie jako barwę horyzontu z szarością pogody (nie widzą kopuły).
+- Wydajność: procesor ok. 18 ms na klatkę (+1 ms), karta ok. 3 ms (Gliwice – Zabrze, jakość średnia).
+- Znane ograniczenia: w odbiciu na wodzie chmury z kopuły są w złym miejscu (bufor chmur liczony dla kamery gracza);
+  w odbiciach materiałów (mapa otoczenia) chmur nie ma.
+
 ## 0.51.0 – 19 października 2026
 
 Niebo i atmosfera w trybie WebGPU (etap 3): fizyczna atmosfera z projektu Lot nad Polską.

@@ -16,7 +16,7 @@ import { RenderTarget, NodeMaterial, QuadMesh, MeshBasicNodeMaterial } from 'thr
 import {
 	Fn, float, vec2, vec3, vec4, uniform, uv, texture, Loop, If, exp, sqrt, max, min, clamp, abs, dot, normalize, length,
 	cos, sin, acos, asin, atan, pow, select, int, floor, fract, smoothstep, time, mx_fractal_noise_float, mix, positionLocal,
-	positionWorld, cameraPosition, fog, rangeFogFactor, renderGroup,
+	positionWorld, cameraPosition, fog, rangeFogFactor, renderGroup, screenUV,
 } from 'three/tsl';
 
 (function () {
@@ -108,9 +108,13 @@ import {
 			this.u.skyToEq.value.copy(skyToEq);
 			this.u.pixelAngle.value = pixelAngle;
 		}
-		update(sunDir, cameraY) {
+		/* light – główne światło (słońce albo nocą księżyc): kierunek i natężenie RGB (oświetlenie chmur) */
+		update(sunDir, cameraY, light) {
 			this.u.sunDir.value.copy(sunDir).normalize();
-			this.u.lightDir.value.copy(this.u.sunDir.value);
+			if (light) {
+				this.u.lightDir.value.copy(light.dir).normalize();
+				this.u.lightE.value.copy(light.e);
+			} else this.u.lightDir.value.copy(this.u.sunDir.value);
 			this.u.viewH.value = this.u.Rg.value + Math.max(0.002, cameraY / 1000);
 			const r = this.renderer, prev = r.getRenderTarget();
 			if (this.dirty) {
@@ -292,6 +296,41 @@ import {
 				return select(c.greaterThan(cosR), T.mul(U.sunE).mul(limb).mul(60), vec3(0));
 			};
 			this.viewTransmittance = (dir) => sampleT(U.viewH, dir.y);
+			/** Główne światło (słońce, nocą księżyc) – natężenie RGB docierające na wysokość yM metrów n.p.m. */
+			this.sunLight = (yM) => sunT(U.Rg.add(max(0.001, yM.div(1000))), U.lightDir.y).mul(U.lightE);
+			/** Całkowanie rozpraszania wzdłuż promienia: { L (bez E słońca), T }. W Fn. */
+			const march = (pos, dir, tMax, steps) => {
+				const L = vec3(0).toVar(), T = vec3(1).toVar(), tPrev = float(0).toVar();
+				const sun = U.sunDir;
+				const cosV = dot(dir, sun);
+				const pR = phaseRayleigh(cosV), pM = phaseMie(cosV);
+				const n = float(steps);
+				Loop({ start: int(0), end: int(n) }, ({ i }) => {
+					const t1 = tMax.mul(float(i).add(1).div(n));
+					const dt = t1.sub(tPrev);
+					const p = pos.add(dir.mul(tPrev.add(dt.mul(0.5))));
+					const r = length(p);
+					const h = r.sub(U.Rg);
+					const muS = dot(p.div(r), sun);
+					const sR = rayleighScat(h), sM = mieScat(h);
+					const ext = extinctionAt(h);
+					const S = sR.mul(pR).add(sM.mul(pM)).mul(sunT(r, muS)).add(sR.add(sM).mul(sampleMS(r, muS)));
+					const tr = exp(ext.negate().mul(dt));
+					L.addAssign(T.mul(S.sub(S.mul(tr)).div(max(ext, vec3(1e-7)))));
+					T.mulAssign(tr);
+					tPrev.assign(t1);
+				});
+				return { L, T };
+			};
+			/** Perspektywa powietrzna między kamerą (y w metrach) a punktem odległym o offset (metry). */
+			this.aerial = (cameraY, offsetM) => {
+				const pos = vec3(0, U.Rg.add(max(0.002, cameraY.div(1000))), 0);
+				const d = offsetM.div(1000).mul(0.55);
+				const dist = length(d);
+				const steps = clamp(dist.mul(0.8).floor().add(3), 3, 12);
+				const { L, T } = march(pos, d.div(max(1e-6, dist)), dist, steps);
+				return { inscatter: L.mul(U.sunE), transmittance: T };
+			};
 			const mix3 = (a, b, t) => a.add(b.sub(a).mul(t));
 			/** Niebo nocne: gwiazdy, Droga Mleczna i tarcza księżyca z fazą. */
 			this.nightSky = (dir) => {
@@ -392,21 +431,26 @@ import {
 				skyK: G(0.55), nightK: G(2.5), cover: G(0), coverC: G(new THREE.Color()), city: G(new THREE.Color()),
 				hazeC: G(new THREE.Color()), hazeK: G(0), fogNear: G(450), fogFar: G(1500), sunK: G(1),
 			});
-			/* niebo w kierunku d: atmosfera, zachmurzenie (szarość pogody), łuna miasta; full – też tarcza słońca i niebo nocne
-			   (tylko kopuła – w mgle i odbiciach, czyli w każdym materiale, byłyby kosztowne: szumy Drogi Mlecznej i księżyca) */
+			/* niebo w kierunku d: atmosfera, łuna miasta; full – też tarcza słońca i niebo nocne (tylko kopuła – w mgle
+			   i odbiciach, czyli w każdym materiale, byłyby kosztowne: szumy Drogi Mlecznej i księżyca); bez full – też
+			   zachmurzenie jako barwa horyzontu z szarością pogody (mgła i odbicia nie widzą chmur z kopuły) */
 			const skyColor = (d, full) => {
 				const c = atmo.skyRadiance(d).mul(u.skyK).toVar();
 				if (full) {
-					c.addAssign(atmo.sunDisk(d).mul(u.skyK).mul(u.sunK));
-					c.addAssign(atmo.nightSky(d).mul(u.nightK).mul(u.cover.mul(0.95).oneMinus()));
-				}
-				c.assign(mix(c, u.coverC, u.cover));
+					c.addAssign(atmo.sunDisk(d).mul(u.skyK));
+					c.addAssign(atmo.nightSky(d).mul(u.nightK));
+				} else c.assign(mix(c, u.coverC, u.cover));
 				c.addAssign(u.city.mul(smoothstep(0.0, 0.35, d.y.max(0)).oneMinus().add(0.15)));
 				return c;
 			};
 			this.skyColor = skyColor;
+			// chmury wolumetryczne (clouds-gpu.js) – w kopule: niebo za chmurą × przepuszczalność + światło chmur
+			const clouds = (this.clouds = new NS.CloudsGPU(renderer, atmo));
 			const mat = new MeshBasicNodeMaterial({ side: THREE.BackSide, depthWrite: false, fog: false });
-			mat.colorNode = Fn(() => skyColor(normalize(positionLocal), true))();
+			mat.colorNode = Fn(() => {
+				const cl = clouds.sample(screenUV).toVar();
+				return skyColor(normalize(positionLocal), true).mul(cl.a).add(cl.rgb.mul(u.skyK));
+			})();
 			this.mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), mat);
 			this.mesh.frustumCulled = false;
 			this.mesh.renderOrder = 1000;
@@ -442,23 +486,37 @@ import {
 		   haze (pogoda 0…1), cover (0…1), coverColor, hazeColor, cityGlow, fog (near, far) */
 		update(o) {
 			const atmo = this.atmo, u = this.u;
+			const ill = (1 - o.sunDir.dot(o.moonDir)) / 2;
 			atmo.setHaze(6 + 34 * o.haze);
 			// sfera niebieska: czas gwiazdowy z godziny (strefa CEST), szerokość ok. 50,3° N, długość 18,7° E
 			const hUtc = o.clock / 3600 - 2, day = SEASON_DAY[o.season] || 196;
 			const m = equatorialToScene(localSiderealTime(daysSinceJ2000(2026, day, hUtc), 18.7), 50.3);
 			this.skyToEq.set(m[0][0], m[1][0], m[2][0], m[0][1], m[1][1], m[2][1], m[0][2], m[1][2], m[2][2]);
-			const ill = (1 - o.sunDir.dot(o.moonDir)) / 2;
 			const cam = o.camera;
 			atmo.setNight({ moonDir: o.moonDir, moonE: 0.06 * Math.pow(ill, 1.5) * 0.2, skyToEq: this.skyToEq, pixelAngle: (2 * Math.tan((cam.fov * Math.PI) / 360)) / Math.max(1, this.renderer.domElement.height) });
-			atmo.update(o.sunDir, cam.position.y + 250); // (wysokość n.p.m. – trasy na Śląsku ok. 250 m)
+			/* główne światło chmur: słońce, a gdy zajdzie – księżyc (jak w lot: natężenie wg fazy, chłodna barwa) */
+			const night = o.sunDir.y < -0.02, moonKey = Math.min(1, Math.max(0, (-0.02 - o.sunDir.y) / 0.1));
+			const light = this.light || (this.light = { dir: new THREE.Vector3(), e: new THREE.Vector3() });
+			light.dir.copy(night ? o.moonDir : o.sunDir);
+			const le = night ? 0.06 * Math.pow(ill, 1.5) * moonKey : 12;
+			light.e.set(le * (night ? 0.72 : 1), le * (night ? 0.84 : 1), le);
+			atmo.update(o.sunDir, cam.position.y + 250, light); // (wysokość n.p.m. – trasy na Śląsku ok. 250 m)
+			// chmury wg pogody: zasięg = zachmurzenie, w opadzie niższa podstawa, grubsza i gęstsza warstwa (lot: deszcz, śnieg, burza)
+			const C = this.clouds.u, wet = Math.max(o.rain || 0, o.snow || 0), storm = Math.min(1, o.lightning || 0);
+			C.coverage.value = Math.min(1, o.cover);
+			C.base.value = 1500 - 500 * wet - 100 * storm;
+			C.thickness.value = 1600 + 600 * wet + 2300 * storm;
+			C.extinction.value = 0.12 + 0.04 * wet + 0.04 * storm;
+			C.sunGain.value = night ? 0.6 : 2.0;
+			C.ambient.value = 0.5 + (o.flash || 0) * 1.2;
+			this.clouds.update(o.dt || 0);
 			const prev = this.renderer.getRenderTarget();
 			this.renderer.setRenderTarget(this.fogRT);
 			this.fogQuad.render(this.renderer);
 			this.renderer.setRenderTarget(prev);
-			// (bez chmur – etap 4: niebo szarzeje dopiero od średniego zachmurzenia; „słonecznie” ma 0,25 – drobne chmury)
+			// (mgła i odbicia: szarość nieba dopiero od średniego zachmurzenia; „słonecznie” ma 0,25 – drobne cumulusy)
 			const ck = Math.max(0, Math.min(1, (o.cover - 0.3) / 0.7));
 			u.cover.value = ck * ck * (3 - 2 * ck) * 0.95;
-			u.sunK.value = 1 - Math.min(1, Math.max(0, (o.cover - 0.5) / 0.4));
 			u.coverC.value.copy(o.coverColor);
 			u.hazeC.value.copy(o.hazeColor);
 			u.hazeK.value = Math.min(0.85, o.haze * 0.9);
@@ -467,6 +525,13 @@ import {
 			u.fogFar.value = o.fog.far;
 			this.mesh.position.copy(cam.position);
 			this.mesh.scale.setScalar(cam.far * 0.9);
+		}
+		// przed rysowaniem sceny (scene.js draw) – chmury z kamerą tej klatki; rozmiar bufora (połowa rozdzielczości)
+		renderClouds(camera) {
+			this.clouds.render(camera);
+		}
+		setSize(w, h) {
+			this.clouds.setSize(w, h);
 		}
 	}
 

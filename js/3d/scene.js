@@ -379,6 +379,7 @@ import { WebGPURenderer } from 'three/webgpu';
 			this.gl.setPixelRatio(pr);
 			this.gl.setSize(w, h, true);
 			this.post.setSize(w * pr, h * pr, this.renderOpts.aa ? this.quality.msaa : 0);
+			if (this.skyGpu) this.skyGpu.setSize(w * pr, h * pr);
 			this.camera.aspect = w / h;
 			this.camera.updateProjectionMatrix();
 			const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -559,7 +560,7 @@ import { WebGPURenderer } from 'three/webgpu';
 			if (this.skyGpu && this.gl.hasInitialized()) {
 				const cover = this.coverC || (this.coverC = new T.Color());
 				cover.copy(hor).lerp(gray, 0.5).multiplyScalar(1.1); // (chmury biorą barwę horyzontu – o zachodzie ciepłe)
-				this.skyGpu.update({ sunDir: this.sunDir, moonDir: this.moonDir, clock: sim.route.startClock + sim.time, season: this.world.season, camera: this.camera, haze: W.haze, cover: W.cover, coverColor: cover, hazeColor: gray, cityGlow, fog: { near: W.fogNear, far: W.fogFar } });
+				this.skyGpu.update({ dt, sunDir: this.sunDir, moonDir: this.moonDir, clock: sim.route.startClock + sim.time, season: this.world.season, camera: this.camera, haze: W.haze, cover: W.cover, rain: W.rain, snow: W.snow, lightning: W.lightning, flash: fl, coverColor: cover, hazeColor: gray, cityGlow, fog: { near: W.fogNear, far: W.fogFar } });
 			}
 			if (!NS.gpu) this.sky.renderClouds(this.gl, this.time); // panorama chmur wolumetrycznych (co ok. 0,4 s)
 
@@ -1264,6 +1265,7 @@ import { WebGPURenderer } from 'three/webgpu';
 			// (WebGPURenderer liczy je przy każdym render() – też dla każdej mapy cieni i przebiegów efektów)
 			const gpuOk = !NS.gpu || this.gl.hasInitialized();
 			if (NS.gpu && gpuOk) {
+				if (this.skyGpu) this.skyGpu.renderClouds(this.camera); // chmury wolumetryczne z kamerą tej klatki
 				NS.nodes.sync();
 				this.scene.updateMatrixWorld();
 				this.scene.matrixWorldAutoUpdate = false;

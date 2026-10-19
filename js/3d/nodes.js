@@ -159,10 +159,12 @@ import {
 			const col = uniform(new THREE.Color()).setGroup(renderGroup);
 			syncs.push(() => col.value.copy(l.color).multiplyScalar(l.intensity));
 			const base = col;
-			const shaded = base.mul(cloudShadow(positionWorld));
 			l.colorNode = Fn((builder) => {
 				if (i > 0 && !builder.object.receiveShadow) return vec3(0);
-				return builder.material.userData.cloudShade ? shaded : base;
+				if (!builder.material.userData.cloudShade) return base;
+				// cień chmur: z chmur wolumetrycznych (tekstura wokół kamery – clouds-gpu.js), bez nich – szum jak w GLSL
+				const cl = NS.skyGpu && NS.skyGpu.clouds;
+				return base.mul(cl ? cl.groundShadow(positionWorld) : cloudShadow(positionWorld));
 			})();
 			if (n < 2) return;
 			let before = float(0);
