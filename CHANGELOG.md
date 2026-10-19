@@ -4,6 +4,28 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.50.0 – 19 października 2026
+
+Efekty po renderowaniu w trybie WebGPU (etap 2): okluzja, bloom, promienie słońca, mgła wysokościowa, ACES i gradacja.
+
+### Efekty po renderowaniu – WebGPU (`js/3d/post-gpu.js`, nowy)
+- Odpowiednik `post.js` w TSL z tymi samymi przebiegami, wzorami i ustawieniami (`render(scene, camera, settings)`):
+  scena do bufora HDR z teksturą głębi; okluzja z głębi w połowie rozdzielczości (16 próbek) z rozmyciem wg głębi;
+  bloom (jasne → 5 poziomów w dół i w górę z dodawaniem); promienie słońca (maska nieba wokół słońca, rozmycie
+  promieniste 40 próbek); wykończenie – okluzja, mgła wysokościowa, promienie, bloom, ekspozycja, ACES (dopasowanie
+  Hilla), nasycenie i odcień cieni / świateł, sRGB, kontrast, winieta, szum. Przebiegi `QuadMesh` + `NodeMaterial`.
+- Wygładzanie: FXAA (`addons/tsl/display/FXAANode.js` – dołączony do paczki i wersji przeglądarkowej) zamiast MSAA –
+  WebGPU nie scala głębi wielu próbek, a z głębi biorą okluzja, mgła i promienie.
+- Renderer z efektami: bez własnego tone mappingu i konwersji barw (`outputColorSpace` liniowa – płótno bez bufora
+  pośredniego), wykończenie zapisuje gotowe sRGB; bez efektów (jakość niska) – ACES i sRGB renderera jak dotąd.
+- Paczki kawałków (`BundleGroup`) przy rysowaniu do bufora odtwarzały się bez odświeżenia wspólnych uniformów
+  (obraz z nieaktualnej kamery): co najmniej odświeżenie współdzielone (`scene.js`, nakładka na `needsRefresh`).
+- Zgodność z WebGL: jakość średnia – średnia różnica pikseli 5,7/255 (krawędzie – FXAA zamiast MSAA, obraz ok. 3/255
+  ciemniejszy), wysoka – 3,1/255. Wydajność (procesor, Gliwice – Zabrze): średnia ok. 15 ms, wysoka ok. 18 ms na klatkę
+  (WebGL ok. 8 i 11 ms).
+- `tools/render-check/shot.js`: `SHOT_LS` – `localStorage` przed startem gry; czekanie na pełną przebudowę świata po
+  zmianie jakości do 300 s.
+
 ## 0.49.1 – 19 października 2026
 
 Tryb WebGPU szybszy: procesor ok. 15 ms na klatkę zamiast 34 ms (Gliwice – Zabrze, jakość średnia; WebGL ok. 8 ms).

@@ -14,7 +14,7 @@ const WEB = path.join(ROOT, 'web'), OUT = path.join(WEB, 'maszynista');
 const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 
 // pliki i foldery gry (ścieżki względem katalogu projektu)
-const FILES = ['index.html', 'style.css', 'favicon.ico', 'vendor/three/three.core.js', 'vendor/three/three.module.js', 'vendor/three/three.webgpu.js', 'vendor/three/three.tsl.js', 'vendor/three/LICENSE'];
+const FILES = ['index.html', 'style.css', 'favicon.ico', 'vendor/three/three.core.js', 'vendor/three/three.module.js', 'vendor/three/three.webgpu.js', 'vendor/three/three.tsl.js', 'vendor/three/addons/tsl/display/FXAANode.js', 'vendor/three/LICENSE'];
 const DIRS = ['js', 'routes', 'icons', 'sounds'];
 const skip = (rel) => /\.md$/i.test(rel) || /(^|\/)\./.test(rel); // opisy i pliki ukryte
 

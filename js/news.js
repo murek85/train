@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.50.0',
+			date: '19 października 2026',
+			groups: [
+				['Grafika', [
+					'Tryb WebGPU (?webgpu): efekty obrazu jak w zwykłym trybie – poświata jasnych świateł, zacienienie zakamarków, promienie słońca, mgła w dolinach i filmowa kolorystyka (jakość średnia i wysoka).',
+				]],
+			],
+		},
+		{
 			version: '0.49.1',
 			date: '19 października 2026',
 			groups: [

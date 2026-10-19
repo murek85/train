@@ -96,7 +96,13 @@ import { WebGPURenderer } from 'three/webgpu';
 			if (NS.gpu) {
 				// ?gputime – znaczniki czasu karty (nakładka F3: czas GPU; trochę kosztują, więc tylko na życzenie)
 				this.gl = new WebGPURenderer({ canvas, antialias: true, powerPreference: 'high-performance', forceWebGL: NS.gpuForceWebGL, trackTimestamp: /[?&]gputime/.test(location.search) });
-				this.gpuInit = this.gl.init().catch((e) => console.error('WebGPU:', e));
+				this.gpuInit = this.gl.init().then(() => {
+					/* paczki (world.js bundleStatic) przy rysowaniu do bufora (efekty po renderowaniu): odtwarzane bez odświeżenia
+					   wspólnych uniformów (kamera) – obraz z nieaktualnej kamery; co najmniej odświeżenie współdzielone (tanie – jak
+					   przy rysowaniu wprost na ekran) */
+					const N = this.gl._nodes, need = N.needsRefresh.bind(N);
+					N.needsRefresh = (ro) => { const t = need(ro); return t === 0 && ro.bundle ? 1 : t; };
+				}).catch((e) => console.error('WebGPU:', e));
 			} else this.gl = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 			this.gl.shadowMap.enabled = true;
 			this.gl.shadowMap.type = T.PCFShadowMap; // od r180 PCF z miękkim brzegiem (shadow.radius); PCFSoftShadowMap usunięty
@@ -124,7 +130,7 @@ import { WebGPURenderer } from 'three/webgpu';
 			this.csmFrame = 0;
 			if (NS.gpu) NS.nodes.setupCascades(this.cascades); // wybór kaskady i cienie chmur w węzłach świateł
 
-			this.post = NS.createPost3D(T, this.gl);
+			this.post = NS.gpu ? NS.createPostGPU(this.gl) : NS.createPost3D(T, this.gl); // efekty po renderowaniu (WebGPU – post-gpu.js)
 			this.sky = NS.createSky3D(T);
 			if (!NS.gpu) this.scene.add(this.sky.mesh); // (WebGPU: niebo jeszcze w GLSL – tło w kolorze mgły)
 			this.envGpu = NS.gpu ? NS.nodes.createEnvironment(this.gl) : null;
@@ -350,9 +356,9 @@ import { WebGPURenderer } from 'three/webgpu';
 			return out;
 		}
 
-		// efekty po renderowaniu (post.js – GLSL): tylko w trybie WebGL
+		// efekty po renderowaniu (post.js / post-gpu.js) – wg jakości
 		get usePost() {
-			return this.quality.post && !NS.gpu;
+			return this.quality.post;
 		}
 
 		cycleZoom() {
@@ -382,7 +388,9 @@ import { WebGPURenderer } from 'three/webgpu';
 			const q = QUALITY[key] || QUALITY.medium;
 			if (this.quality === q) return;
 			this.quality = q;
-			this.gl.toneMapping = q.post && !NS.gpu ? T.NoToneMapping : T.ACESFilmicToneMapping;
+			this.gl.toneMapping = q.post ? T.NoToneMapping : T.ACESFilmicToneMapping;
+			// WebGPU z efektami: wykończenie zapisuje gotowe sRGB – bez konwersji renderera (płótno bez bufora pośredniego)
+			if (NS.gpu) this.gl.outputColorSpace = q.post ? T.LinearSRGBColorSpace : T.SRGBColorSpace;
 			this.cascades.forEach((l, k) => {
 				// dwie bliższe kaskady w pełnej rozdzielczości jakości (pociąg i otoczenie przy nim), najdalsza do 2048
 				const n = k < 2 ? q.shadow : Math.min(2048, q.shadow);
@@ -1242,7 +1250,17 @@ import { WebGPURenderer } from 'three/webgpu';
 				const wt = this.weather;
 				this.waterRefl.update(this.scene, this.camera, this.scene, this.time, this.waterWind, [wt.rain, wt.rainNear, wt.snow, wt.splash, wt.leaves, this.cab && this.cab.group].concat(this.sunFx.objects || []), q.post ? (q.ao ? 0.6 : 0.5) : 0.35);
 			}
-			if (this.usePost) {
+			// WebGPU: rysowanie po init(); wspólne uniformy materiałów węzłowych raz na klatkę; macierze świata raz na klatkę
+			// (WebGPURenderer liczy je przy każdym render() – też dla każdej mapy cieni i przebiegów efektów)
+			const gpuOk = !NS.gpu || this.gl.hasInitialized();
+			if (NS.gpu && gpuOk) {
+				NS.nodes.sync();
+				this.scene.updateMatrixWorld();
+				this.scene.matrixWorldAutoUpdate = false;
+			}
+			if (!gpuOk) {
+				// (karta jeszcze niegotowa – klatka bez rysowania)
+			} else if (this.usePost) {
 				const W = this.W;
 				const rays = this.e > 0 ? 0.4 * (1 - W.haze) * W.sun * (1 - smoothstep(0.25, 0.55, this.e)) : 0;
 				this.post.render(this.scene, this.camera, {
@@ -1272,15 +1290,9 @@ import { WebGPURenderer } from 'three/webgpu';
 			} else {
 				this.gl.toneMappingExposure = exposure;
 				this.gl.setRenderTarget(null);
-				if (NS.gpu && this.gl.hasInitialized()) {
-					NS.nodes.sync(); // wspólne uniformy materiałów węzłowych (raz na klatkę)
-					// macierze świata raz na klatkę – WebGPURenderer liczy je przy każdym render() (też dla każdej mapy cieni)
-					this.scene.updateMatrixWorld();
-					this.scene.matrixWorldAutoUpdate = false;
-					this.gl.render(this.scene, this.camera);
-					this.scene.matrixWorldAutoUpdate = true;
-				} else if (!NS.gpu) this.gl.render(this.scene, this.camera);
+				this.gl.render(this.scene, this.camera);
 			}
+			if (NS.gpu) this.scene.matrixWorldAutoUpdate = true;
 			this.drawMinimap(sim);
 			if (P) {
 				if (query) { P.gl.endQuery(P.ext.TIME_ELAPSED_EXT); P.queries.push(query); }

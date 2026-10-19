@@ -17,6 +17,8 @@ app.whenReady().then(async () => {
 	const errs = [];
 	w.webContents.on('console-message', (e) => { if (e.level === 'error' || e.level === 'warning') errs.push(e.level + ': ' + e.message.slice(0, 400)); });
 	await w.loadURL(url);
+	// SHOT_LS – JSON { klucz: wartość } do localStorage przed startem gry (np. maszynista.perfOpt)
+	if (process.env.SHOT_LS) { await w.webContents.executeJavaScript('(() => { const o = ' + process.env.SHOT_LS + '; for (const k in o) localStorage.setItem(k, typeof o[k] === "string" ? o[k] : JSON.stringify(o[k])); })()'); await w.loadURL(url); }
 	if (process.env.SHOT_JS) await w.webContents.executeJavaScript('window.SHOT_JS = ' + JSON.stringify(require('fs').readFileSync(process.env.SHOT_JS, 'utf8')));
 	if (process.env.SHOT_CASE) await w.webContents.executeJavaScript('window.SHOT_CASE = ' + JSON.stringify(process.env.SHOT_CASE));
 	if (process.env.SHOT_Q) await w.webContents.executeJavaScript('window.SHOT_Q = ' + JSON.stringify(process.env.SHOT_Q));
@@ -32,7 +34,7 @@ app.whenReady().then(async () => {
 			for (let i = 0; i < 1200 && document.querySelector('.scr-load'); i++) await wait(250);
 			const s = window.maszynista.sim;
 			s.route.startClock = ${hour} * 3600 - s.time;
-			if (window.SHOT_Q) { window.maszynista.renderer.setQuality(window.SHOT_Q); await wait(500); for (let i = 0; i < (window.SHOT_JS ? 40 : 400) && window.maszynista.renderer.world.pending; i++) await wait(250); }
+			if (window.SHOT_Q) { window.maszynista.renderer.setQuality(window.SHOT_Q); await wait(500); for (let i = 0; i < 1200 && window.maszynista.renderer.world.pending; i++) await wait(250); }
 			await wait(5000);
 			const r = window.maszynista.renderer;
 			const extra = window.SHOT_JS ? await (0, eval)('(async () => {' + window.SHOT_JS + '})()') : null;
