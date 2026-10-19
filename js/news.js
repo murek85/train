@@ -4,6 +4,16 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.3',
+			date: '19 października 2026',
+			groups: [
+				['Grafika', [
+					'WebGPU: koniec kilkunastosekundowego zatrzymania obrazu przy pierwszym akwenie w kadrze (odbicie w wodzie) – shadery odbić kompilują się na ekranie wczytywania; mniej przycięć przy obrocie kamery.',
+					'Szybszy start gry: przed menu tylko to, co w kadrze, reszta w tle.',
+				]],
+			],
+		},
+		{
 			version: '0.54.2',
 			date: '19 października 2026',
 			groups: [

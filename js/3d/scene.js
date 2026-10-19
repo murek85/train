@@ -347,29 +347,67 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 		   w widoku z zewnątrz, dalsze poziomy szczegółów) – bez tego program cieniowania kompiluje się przy pierwszym
 		   pokazaniu obiektu (przycięcie przy wejściu do kabiny). Równolegle (KHR_parallel_shader_compile), gdy dostępne;
 		   najwyżej 20 s. */
-		precompile() {
-			if (NS.gpu && !this.gl.hasInitialized()) return this.gpuInit.then(() => this.precompile());
-			const hidden = [];
-			this.scene.traverse((o) => { if (!o.visible && !glslOnly(o)) { hidden.push(o); o.visible = true; } });
-			let p;
+		/* opts: { all – także obiekty poza kadrem (domyślnie tak), reflect – odbicie w wodzie (WebGPU, domyślnie tak), warm –
+		   rozgrzanie na końcu (domyślnie tak) }. Ekran startowy: tylko kadr (szybciej do menu), reszta w tle (main.js). */
+		precompile(opts = {}) {
+			if (NS.gpu && !this.gl.hasInitialized()) return this.gpuInit.then(() => this.precompile(opts));
+			const all = opts.all !== false, reflect = opts.reflect !== false, warm = opts.warm !== false;
+			/* kompilacja dla bufora i kamery: obiekty ukryte i poza kadrem włączone tylko na czas synchronicznej części
+			   compileAsync (rzut sceny na listę obiektów) – bez tego obrót kamery w jeździe budowałby nowe shadery */
+			const compileFor = (target, camera, depth = 0) => {
+				const hidden = [], culled = [];
+				this.scene.traverse((o) => {
+					if (!o.visible && !glslOnly(o)) { hidden.push(o); o.visible = true; }
+					if (all && o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
+				});
+				const rt = this.gl.getRenderTarget();
+				this.gl.setRenderTarget(target);
+				/* depth – poziom zagnieżdżenia rysowania (kontekst w kluczu shadera): odbicie rysuje się wewnątrz rysowania
+				   sceny (poziom 1), a compileAsync bierze zawsze kontekst poziomu 0 – inaczej shadery budowałyby się od nowa */
+				const C = this.gl._renderContexts, cget = C.get;
+				if (depth) C.get = (t, mrt, d) => cget.call(C, t, mrt, d === undefined ? depth : d);
+				let q;
+				try {
+					q = this.gl.compileAsync(this.scene, camera);
+				} catch (e) {
+					q = Promise.resolve();
+				}
+				C.get = cget;
+				this.gl.setRenderTarget(rt);
+				for (const o of hidden) o.visible = false;
+				for (const o of culled) o.frustumCulled = true;
+				return q;
+			};
 			// ten sam bufor docelowy co przy rysowaniu (z efektami – bufor sceny), inaczej powstaje inny wariant programu
-			const rt = this.gl.getRenderTarget();
-			this.gl.setRenderTarget(this.usePost ? this.post.target : null);
-			try {
-				if (NS.gpu) {
-					/* compileAsync (Three 0.186) czeka na każdy potok osobno, obiekt po obiekcie – kompilacja szeregowa.
-					   Obietnice potoków zbierane tu, a nie w pętli Three: wszystkie potoki powstają naraz (createRenderPipelineAsync
-					   – równolegle w procesie karty), czekamy na komplet na końcu */
-					const pl = this.gl._pipelines, get = pl.getForRender, pend = [];
-					pl.getForRender = (ro, promises) => get.call(pl, ro, promises ? pend : promises);
-					p = this.gl.compileAsync(this.scene, this.camera).finally(() => { pl.getForRender = get; }).then(() => Promise.all(pend));
-				} else p = this.gl.compileAsync(this.scene, this.camera);
-			} catch (e) {
-				p = Promise.resolve();
-			}
-			this.gl.setRenderTarget(rt);
-			for (const o of hidden) o.visible = false;
-			return Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, 20000))]).then(() => this.warmUp());
+			const main = this.usePost ? this.post.target : null;
+			let p;
+			if (NS.gpu) {
+				/* compileAsync (Three 0.186) czeka na każdy potok osobno, obiekt po obiekcie – kompilacja szeregowa.
+				   Obietnice potoków zbierane tu, a nie w pętli Three: wszystkie potoki powstają naraz (createRenderPipelineAsync
+				   – równolegle w procesie karty), czekamy na komplet na końcu.
+				   Odbicie w wodzie (reflector): scena rysowana do jego bufora z kamery odbitej – inny kontekst, więc osobne
+				   shadery i potoki dla wszystkich materiałów; bez kompilacji tutaj powstawały przy pierwszym akwenie w kadrze
+				   (ok. 100 shaderów i 80 potoków w jednej klatce: 3,5 s + kilkanaście sekund czekania na kartę) */
+				// (podmiana raz; kilka kompilacji naraz – np. dokompilowanie w tle w menu i start jazdy – zbiera do wspólnej listy)
+				if (!this.pipeWrap) {
+					const pl = this.gl._pipelines, get = pl.getForRender;
+					this.pipeWrap = { n: 0, pend: [] };
+					pl.getForRender = (ro, promises) => get.call(pl, ro, promises && this.pipeWrap.n ? this.pipeWrap.pend : promises);
+				}
+				const W = this.pipeWrap;
+				W.n++;
+				const R = reflect && this.waterRefl && this.waterRefl.refl && this.waterRefl.refl.reflector;
+				p = compileFor(main, this.camera)
+					.then(() => {
+						if (!R) return;
+						const vc = R.getVirtualCamera(this.camera);
+						vc.copy(this.camera);
+						return compileFor(R.getRenderTarget(vc), vc, 1);
+					})
+					.finally(() => { W.n--; })
+					.then(() => Promise.all(W.pend.splice(0)));
+			} else p = compileFor(main, this.camera);
+			return Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, 20000))]).then(() => { if (warm) this.warmUp(); });
 		}
 
 		/* Jedno rysowanie całej sceny (także obiektów ukrytych i poza kadrem) do bufora sceny: tekstury i bryły trafiają

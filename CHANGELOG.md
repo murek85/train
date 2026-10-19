@@ -4,6 +4,32 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.3 – 19 października 2026
+
+Przycięcia w czasie jazdy (WebGPU). Pomiar `tools/render-check/stutter.js` (Gliwice – Zabrze, 4 min jazdy automatem,
+ok. 3,5 km): najdłuższa klatka 17 s → 0,45 s, klatek ponad 100 ms 14 → 6, mediana 19 → 15 ms.
+
+### Wątki – stan
+- W osobnych wątkach (Web Worker): generator tras (`gen-worker.js`) i głos Piper (`tts-worker.js`). Reszta – budowa
+  kawałków świata, modele pociągów, rozkład jazdy, budowa shaderów – w wątku głównym; świat budowany porcjami
+  w limicie czasu na klatkę (3 / 8 / 40 ms), kompilacja potoków WebGPU w procesie karty (równolegle, 0.54.1).
+
+### Przyczyna największego przycięcia
+- Odbicie w wodzie (`reflector`) rysuje scenę do własnego bufora, w zagnieżdżonym rysowaniu (inny kontekst w kluczu
+  shadera) – przy pierwszym akwenie w kadrze ok. 100 shaderów (3,5 s JS) i 80 potoków w jednej klatce, potem
+  kilkanaście sekund czekania na kartę.
+
+### Zmiany (`js/3d/scene.js`, `main.js`)
+- `precompile`: także dla bufora odbicia z kamerą odbitą i kontekstem poziomu 1 (jak przy rysowaniu odbicia), oraz dla
+  obiektów poza kadrem (bez tego obrót kamery budował nowe shadery). Opcje `all`, `reflect`, `warm`.
+- Ekran startowy: kompilacja tylko tego, co w kadrze (start do menu ok. 22 s → ok. 20 s), reszta w tle po otwarciu menu.
+- Zbieranie obietnic potoków odporne na kilka kompilacji naraz (dokompilowanie w tle i start jazdy).
+
+### Zostaje
+- Kroki budowy świata do ok. 130 ms (drogi i teren tras rzeczywistych, `real-env.js`) – w wątku głównym.
+- Shadery cieni obiektów wchodzących w kaskady (ok. 40 małych w 4 min) – kompilacja przebiegu cieni wymagałaby
+  wewnętrznego materiału `ShadowNode`.
+
 ## 0.54.2 – 19 października 2026
 
 ### Pauza – zmiana warunków (`js/main.js`)

@@ -2652,7 +2652,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.54.2';
+	$('version').textContent = 'wersja 0.54.3';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');
@@ -2738,7 +2738,15 @@
 	const bootReady = () => {
 		if (!demo) { renderer.hold = false; return true; }
 		if (renderer.world.pending !== 0) return false;
-		if (bootWarm === 0) { bootWarm = 1; renderer.precompile().then(() => { bootWarm = 2; if (mode === 'menu') renderer.hold = false; }); }
+		if (bootWarm === 0) {
+			bootWarm = 1;
+			// do menu tylko to, co w kadrze; obiekty poza kadrem i odbicie w wodzie – w tle, gdy menu już działa
+			renderer.precompile({ all: false, reflect: false }).then(() => {
+				bootWarm = 2;
+				if (mode === 'menu') renderer.hold = false;
+				setTimeout(() => { if (mode === 'menu') renderer.precompile({ warm: false }); }, 1500);
+			});
+		}
 		return bootWarm === 2;
 	};
 	if (window.TrainScreens) window.TrainScreens.boot({ version: $('version').textContent, ready: bootReady });

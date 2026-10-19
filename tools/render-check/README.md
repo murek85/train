@@ -21,6 +21,8 @@ Skrypty Electron do sprawdzania trybu WebGPU (`?webgpu`) wobec WebGL. Gra musi d
 | `loadtime.js` | czasy wczytywania: start gry do menu, „Start” do jazdy (budowa świata, kompilacja, rozgrzanie, najdłuższe klatki); `LT_SWITCH` – przełączniki Chromium |
 | `loadprof.js` | profil procesora wczytywania jazdy (czas własny i łączny) |
 | `builds.js` | budowy shaderów przy wczytywaniu: ile, jak długo, dla jakich materiałów; programy i potoki (`menu` – także start gry) |
+| `stutter.js` | przycięcia w jeździe (automatyczny maszynista, `SHOT_SEC` s): klatki ponad 33/50/100 ms z rozbiciem (świat, shadery, potoki) i co budowało shadery |
+| `menuops.js` | zmiany w menu (inna trasa, pogoda): czas okienka, etapy, najdłuższa klatka; `MENU_PROF=1` – profil zmiany trasy. Uwaga: zapisuje wybór trasy i pogody w profilu skryptów |
 | `wgsldump.js` | kod WGSL wszystkich programów – porównanie dwóch uruchomień (powtarzalność) |
 
 Przykład (jakość niska – bez efektów po renderowaniu, więc porównuje same materiały):
