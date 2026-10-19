@@ -432,8 +432,11 @@
 				<button id="set-autoq" class="small">Dobierz jakość automatycznie</button>
 				<label class="row-opt"><input type="checkbox" id="set-autodetail" checked> Automatyczne dopasowanie szczegółów – gdy w czasie jazdy długo spada płynność, zmniejsza się zasięg świata</label>
 				<h3>Renderer</h3>
+				<label class="row-opt">Grafika <select id="set-renderer"><option value="auto">automatycznie (WebGPU, gdy dostępne)</option><option value="webgpu">WebGPU</option><option value="webgl">WebGL (zgodność ze starszymi kartami)</option></select></label>
+				<p class="hint" id="renderer-hint"></p>
+				<button id="set-restart" class="small hidden">Uruchom ponownie</button>
 				<label class="row-opt">Rozdzielczość renderowania <select id="set-scale"><option value="0.5">50%</option><option value="0.67">67%</option><option value="0.85">85%</option><option value="1">100%</option></select></label>
-				<label class="row-opt"><input type="checkbox" id="set-aa" checked> Wygładzanie krawędzi (MSAA)</label>
+				<label class="row-opt"><input type="checkbox" id="set-aa" checked> Wygładzanie krawędzi (MSAA, w WebGPU z efektami – FXAA)</label>
 				<label class="row-opt"><input type="checkbox" id="set-shadows" checked> Cienie</label>
 				<label class="row-opt"><input type="checkbox" id="set-fps"> Licznik klatek na sekundę</label>
 				<h3>Pociągi tła</h3>

@@ -6,13 +6,22 @@ import * as THREE from 'three';
 	const T = THREE;
 	const NS = (window.Train3D = window.Train3D || {});
 
-	/* Renderer: WebGL (domyślny, łatki GLSL) albo WebGPURenderer (w budowie – materiały węzłowe TSL z js/3d/nodes.js).
-	   ?webgpu w adresie (albo localStorage maszynista.renderer = 'webgpu') – WebGPU; ?webgpu=gl – WebGPURenderer z zapleczem
-	   WebGL 2 (te same materiały węzłowe, do porównań i na kartach bez WebGPU). */
+	/* Renderer: WebGPU (domyślny – materiały węzłowe TSL z js/3d/nodes.js) albo WebGL (zgodność – łatki GLSL).
+	   Ustawienia (localStorage maszynista.renderer): 'auto' (domyślnie: WebGPU, gdy przeglądarka je ma), 'webgpu', 'webgl';
+	   'webgpu-gl' – WebGPURenderer z zapleczem WebGL 2 (do porównań). W adresie: ?webgpu, ?webgpu=gl, ?webgpu=0 (WebGL).
+	   Gdy WebGPU w trybie auto nie wystartuje (scene.js gpuFallback), maszynista.gpuFail = 1 i następny start – WebGL. */
+	const lsGet = (k) => {
+		try { const v = localStorage.getItem('maszynista.' + k); return v === null ? null : v[0] === '"' ? JSON.parse(v) : v; } catch { return null; }
+	};
 	const gpuMode = (() => {
 		const q = new URLSearchParams(location.search).get('webgpu');
 		if (q !== null) return q === 'gl' ? 'gl' : q === '0' ? '' : 'gpu';
-		try { const v = localStorage.getItem('maszynista.renderer'); return v === 'webgpu' ? 'gpu' : v === 'webgpu-gl' ? 'gl' : ''; } catch { return ''; }
+		const v = lsGet('renderer');
+		if (v === 'webgpu') return 'gpu';
+		if (v === 'webgpu-gl') return 'gl';
+		if (v === 'webgl') return '';
+		NS.gpuAuto = true;
+		return typeof navigator !== 'undefined' && navigator.gpu && lsGet('gpuFail') === null ? 'gpu' : '';
 	})();
 	NS.gpu = gpuMode !== '';
 	NS.gpuForceWebGL = gpuMode === 'gl';

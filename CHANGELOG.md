@@ -4,6 +4,34 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.0 – 19 października 2026
+
+WebGPU domyślnym rendererem (etap 6); WebGL zostaje jako tryb zgodności.
+
+### Wybór renderera (`js/3d/common.js`, `scene.js`, `main.js`, `index.html`)
+- Ustawienia → Grafika → Renderer: *automatycznie* (domyślnie – WebGPU, gdy przeglądarka ma `navigator.gpu`), *WebGPU*,
+  *WebGL* (zgodność ze starszymi kartami); zmiana po ponownym uruchomieniu (przycisk „Uruchom ponownie”), pod spodem
+  bieżący renderer i karta. `localStorage['maszynista.renderer']`: `auto`, `webgpu`, `webgl` (i testowy `webgpu-gl`).
+- Zapas: gdy WebGPU w trybie automatycznym nie wystartuje – Three przeszedł na zaplecze WebGL 2 (brak karty WebGPU),
+  błąd `init()` albo utrata urządzenia – `gpuFallback` zapisuje `maszynista.gpuFail` i przeładowuje grę na WebGL
+  (ustawienia mówią dlaczego; wybór WebGPU kasuje wpis). Przy WebGPU wybranym ręcznie – tylko wpis w konsoli.
+- `?webgpu=0` w adresie – WebGL; `?webgpu`, `?webgpu=gl` jak dotąd.
+- Opcja wygładzania krawędzi: w WebGPU z efektami to FXAA (opis w ustawieniach).
+
+### Aplikacja desktopowa (`electron/main.js`)
+- `force_high_performance_gpu` – na laptopach z dwiema kartami wydajniejsza (WebGPU w Chromium nie zawsze słucha
+  `powerPreference`).
+- Samosprawdzenie: `MASZYNISTA_RENDERER=webgl|webgpu|gl`, raport podaje renderer i kartę. Sprawdzone: WebGPU, WebGL,
+  zaplecze WebGL 2 i zapas (`--disable-gpu` → przeładowanie na WebGL) bez błędów.
+
+### Poprawki
+- Chmury WebGPU na zapleczu WebGL 2: `select` zagnieżdżony w gałęzi `select` psuł budowę GLSL (błąd TSL `addToStack`,
+  chmury z pustym materiałem) – waga historii akumulacji jako zmienna.
+
+### Wydajność
+- WebGPU nadal bardziej obciąża procesor niż WebGL (ok. 15–18 ms na klatkę przy pogodzie, ok. 21 ms w deszczu, wobec
+  8–11 ms) – na słabszych procesorach lepszy tryb WebGL.
+
 ## 0.53.0 – 19 października 2026
 
 Opady w trybie WebGPU (etap 5) – tryb WebGPU ma już wszystkie efekty trybu WebGL.

@@ -4,6 +4,16 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.0',
+			date: '19 października 2026',
+			groups: [
+				['Grafika', [
+					'Nowy renderer WebGPU domyślnie: fizyczne niebo, trójwymiarowe chmury z cieniami na ziemi i nowe opady. Na kartach bez WebGPU gra sama przechodzi na WebGL.',
+					'Ustawienia → Grafika → Renderer: automatycznie, WebGPU albo WebGL (dla starszych kart – mniejsze obciążenie procesora).',
+				]],
+			],
+		},
+		{
 			version: '0.53.0',
 			date: '19 października 2026',
 			groups: [

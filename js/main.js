@@ -1224,10 +1224,24 @@
 		requestAnimationFrame(() => fillRanges($('settings')));
 		settingsFrom = from;
 		const gpu = renderer.gpuName();
-		$('gpu-info').textContent = gpu ? 'Karta graficzna: ' + gpu : '';
+		$('gpu-info').textContent = gpu ? 'Teraz: ' + gpu : '';
+		rendererHint();
 		showSetTab(setTab);
 		setSummary();
 		showOverlay('settings');
+	}
+	/* renderer (common.js): auto / WebGPU / WebGL – zmiana po ponownym uruchomieniu; gpuFail – WebGPU nie wystartowało
+	   w trybie auto (scene.js gpuFallback), więc gra działa na WebGL */
+	const rendererNow = load('renderer', 'auto');
+	function rendererHint() {
+		const v = $('set-renderer').value, fail = load('gpuFail', null);
+		const changed = v !== rendererNow;
+		$('renderer-hint').textContent = changed ? 'Zmiana zadziała po ponownym uruchomieniu gry.'
+			: v === 'auto' && fail && !window.Train3D.gpu ? `WebGPU nie wystartowało (${fail}) – gra używa WebGL. Wybierz WebGPU, żeby spróbować ponownie.`
+			: v === 'auto' && !navigator.gpu ? 'Ta przeglądarka nie obsługuje WebGPU – gra używa WebGL.'
+			: v === 'webgl' ? 'WebGL: starszy renderer, mniejsze obciążenie procesora, prostsze niebo i chmury.'
+			: 'WebGPU: niebo z atmosferą, chmury wolumetryczne i ich cienie.';
+		$('set-restart').classList.toggle('hidden', !changed);
 	}
 	/* zakładki ustawień (Dźwięk, Zapowiedzi, Grafika): ostatnio otwarta zapamiętana; pod nazwą – podsumowanie */
 	let setTab = load('setTab', 'sound');
@@ -2403,6 +2417,15 @@
 	$('set-autodetail').addEventListener('change', () => { save('opt.autoDetail', $('set-autodetail').checked); if (!$('set-autodetail').checked) renderer.world.detailDyn = 1; });
 	$('set-autoq').addEventListener('click', () => { autoQ = { t: [] }; closeSettings(); hud.toast('Pomiar wydajności w menu (kilka sekund)…', 'info'); });
 	$('set-traffic-people').checked = load('opt.trafficPeople', false);
+	if (rendererNow === 'webgpu-gl') $('set-renderer').add(new Option('WebGPURenderer z zapleczem WebGL 2 (test)', 'webgpu-gl'));
+	$('set-renderer').value = rendererNow;
+	$('set-renderer').addEventListener('change', () => {
+		const v = $('set-renderer').value;
+		save('renderer', v);
+		if (v === 'webgpu') try { localStorage.removeItem('maszynista.gpuFail'); } catch (e) { /* brak dostępu */ }
+		rendererHint();
+	});
+	$('set-restart').addEventListener('click', () => location.reload());
 	$('set-announce').value = load('opt.announce', 'text');
 	const voice0 = load('opt.voice', {});
 	$('set-voice-all').checked = !!voice0.all;
@@ -2587,7 +2610,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.53.0';
+	$('version').textContent = 'wersja 0.54.0';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');

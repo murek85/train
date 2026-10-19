@@ -24,6 +24,8 @@ const STATE_FILE = () => path.join(app.getPath('userData'), 'window.json');
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 Menu.setApplicationMenu(null);
+// laptopy z dwiema kartami: WebGPU w Chromium nie zawsze słucha powerPreference – wydajniejsza karta na stałe
+app.commandLine.appendSwitch('force_high_performance_gpu');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -111,12 +113,14 @@ function createWindow() {
 	win.on('close', () => saveState(win));
 	win.on('closed', () => (win = null));
 	if (process.env.MASZYNISTA_CHECK) selfCheck(win);
-	win.loadURL(ORIGIN + '/index.html');
+	// MASZYNISTA_RENDERER=webgl|webgpu|gl – renderer na ten start (samosprawdzenie obu trybów; common.js ?webgpu)
+	const rq = { webgl: '?webgpu=0', webgpu: '?webgpu', gl: '?webgpu=gl' }[process.env.MASZYNISTA_RENDERER] || '';
+	win.loadURL(ORIGIN + '/index.html' + rq);
 }
 
 /* npm run app:check – aplikacja startuje, wczytuje grę, rusza jazdę na pierwszej trasie (świat 3D, symulacja),
    wypisuje raport z błędami strony i kończy się (kod wyjścia 1 przy problemie). MASZYNISTA_SHOT=<plik.png> –
-   zrzut okna z jazdy. */
+   zrzut okna z jazdy; MASZYNISTA_RENDERER – renderer (webgl, webgpu). */
 function selfCheck(w) {
 	const errors = [];
 	w.webContents.on('console-message', (e) => {
@@ -140,6 +144,7 @@ function selfCheck(w) {
 					route: s && s.route.title,
 					train: s && s.train.name,
 					time: s ? Math.round(s.time) : 0,
+					renderer: window.maszynista.renderer ? window.maszynista.renderer.gpuName() : '',
 					storage: (() => { try { localStorage.setItem('maszynista.check', '1'); localStorage.removeItem('maszynista.check'); return true; } catch { return false; } })(),
 				};
 			})()`);

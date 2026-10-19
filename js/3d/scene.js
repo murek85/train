@@ -86,13 +86,22 @@ import { WebGPURenderer } from 'three/webgpu';
 		return a + d * t;
 	}
 
+	/* WebGPU nie wystartowało albo karta się zawiesiła: w trybie auto zapamiętany zapas (common.js gpuFail) i ponowny start
+	   z WebGL; przy WebGPU wybranym w ustawieniach – tylko wpis w konsoli */
+	function gpuFallback(why) {
+		console.warn('WebGPU: przejście na WebGL –', why);
+		if (!NS.gpuAuto) return;
+		try { localStorage.setItem('maszynista.gpuFail', JSON.stringify(String(why || 1))); } catch { return; }
+		location.reload();
+	}
+
 	class Renderer3D {
 		constructor(canvas, mini) {
 			this.canvas = canvas;
 			this.mini = mini;
 			this.mctx = mini.getContext('2d');
-			/* WebGPU (NS.gpu, common.js): WebGPURenderer z materiałami węzłowymi – w budowie, bez efektów po renderowaniu, nieba,
-			   opadów i odbić wody (te są jeszcze w GLSL); gotowy po init() (gpuInit) */
+			/* WebGPU (NS.gpu, common.js – domyślnie): WebGPURenderer z materiałami węzłowymi; gotowy po init() (gpuInit).
+			   WebGL (zgodność): WebGLRenderer z łatkami GLSL */
 			if (NS.gpu) {
 				// ?gputime – znaczniki czasu karty (nakładka F3: czas GPU; trochę kosztują, więc tylko na życzenie)
 				this.gl = new WebGPURenderer({ canvas, antialias: true, powerPreference: 'high-performance', forceWebGL: NS.gpuForceWebGL, trackTimestamp: /[?&]gputime/.test(location.search) });
@@ -102,7 +111,10 @@ import { WebGPURenderer } from 'three/webgpu';
 					   przy rysowaniu wprost na ekran) */
 					const N = this.gl._nodes, need = N.needsRefresh.bind(N);
 					N.needsRefresh = (ro) => { const t = need(ro); return t === 0 && ro.bundle ? 1 : t; };
-				}).catch((e) => console.error('WebGPU:', e));
+					// Three przy braku karty WebGPU sam przechodzi na zaplecze WebGL 2 – w trybie auto wtedy lepszy zwykły WebGL
+					if (!NS.gpuForceWebGL && !this.gl.backend.isWebGPUBackend) gpuFallback('brak karty WebGPU');
+				}).catch((e) => { console.error('WebGPU:', e); gpuFallback(e && e.message); });
+				this.gl.onDeviceLost = (info) => { console.error('WebGPU: utracono urządzenie', info); gpuFallback('utracono urządzenie'); };
 			} else this.gl = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 			this.gl.shadowMap.enabled = true;
 			this.gl.shadowMap.type = T.PCFShadowMap; // od r180 PCF z miękkim brzegiem (shadow.radius); PCFSoftShadowMap usunięty
@@ -447,7 +459,7 @@ import { WebGPURenderer } from 'three/webgpu';
 				}
 				const gl = this.gl.getContext();
 				const ext = gl.getExtension('WEBGL_debug_renderer_info');
-				return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+				return 'WebGL: ' + (ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
 			} catch (e) {
 				return '';
 			}

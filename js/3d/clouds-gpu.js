@@ -267,7 +267,9 @@ import {
 				const inside = prevUv.x.greaterThan(0).and(prevUv.x.lessThan(1)).and(prevUv.y.greaterThan(0)).and(prevUv.y.lessThan(1)).and(clip.w.greaterThan(0));
 				const hist = self.historyNode.sample(prevUv).level(0);
 				const valid = inside.and(U.history.greaterThan(0.5)).and(hist.a.lessThan(1.5));
-				return select(seg.greaterThan(1), mix(current, hist, select(valid, float(0.9), float(0))), vec4(0, 0, 0, 1));
+				// waga historii jako zmienna: select zagnieżdżony w gałęzi select psuje GLSL (zaplecze WebGL 2)
+				const keep = select(valid, float(0.9), float(0)).toVar();
+				return select(seg.greaterThan(1), mix(current, hist, keep), vec4(0, 0, 0, 1));
 			});
 			const m = new NodeMaterial();
 			m.fragmentNode = cloudFn();
