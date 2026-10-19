@@ -9,6 +9,10 @@ Skrypty Electron do sprawdzania trybu WebGPU (`?webgpu`) wobec WebGL. Gra musi d
 | `lights.js` | wyłączanie składników światła (`noenv`, `nolamp`, `nonight`, `nohemi`, `nosun`) – szukanie różnic jasności |
 | `perf.js` | odczyt nakładki F3 po rozgrzaniu (FPS, czas procesora, czas karty z `?gputime`) |
 | `cpuprof.js` | profil procesora (najdroższe funkcje, czas własny) |
+| `draws.js` | wywołania rysowania na klatkę wg kategorii (obraz / cienie; bez poleceń z paczek) |
+| `updates.js` | aktualizacje obiektów na klatkę: pełne / współdzielone, w paczkach i poza nimi |
+| `shadowcost.js` | czas klatki z mapami cieni i z zamrożonymi |
+| `observers.js` | stany budowania shaderów i ile z nich odświeża się w całości (hasNode) |
 | `diff.js` | różnica dwóch zrzutów: średnia, odsetek pikseli > 24, obraz różnicy |
 | `crop.js` | dwa wycinki obok siebie (powiększenie) |
 | `lum.js` | średnia jasność zrzutów |

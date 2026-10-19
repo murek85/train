@@ -4,6 +4,25 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.49.1 – 19 października 2026
+
+Tryb WebGPU szybszy: procesor ok. 15 ms na klatkę zamiast 34 ms (Gliwice – Zabrze, jakość średnia; WebGL ok. 8 ms).
+
+### WebGPU – wydajność (`nodes.js`, `world.js`, `scene.js`)
+- Materiały: węzły (`normalNode`, `emissiveNode`, `roughnessNode`, `metalnessNode`, powłoka) podstawiane tylko na czas
+  budowy shadera (`Patched.build`, `setupObserver`). Materiał z węzłem we właściwości WebGPURenderer odświeżał co klatkę
+  w całości (`NodeMaterialObserver.hasNode` – wszystkie uniformy obiektu) – każdy obiekt w każdej klatce.
+- Kawałki świata: nieruchome siatki w paczce (`BundleGroup`, `World.bundleStatic`) – polecenia rysowania nagrane raz,
+  bez przeglądania sceny i przygotowania obiektu co klatkę; bez odcinania pojedynczych brył (paczka nagrywa widoczne
+  w chwili nagrania; karta ma zapas – ok. 4 ms); nowe nagranie przy zmianie poziomów szczegółów i cieni (`updateLod`);
+  poddrzewo bez przeliczania macierzy (`matrixWorldAutoUpdate`). Poza paczką: to, czego dotyka dyn, siatki lamp, woda.
+- Cień nieruchomych brył kawałka jedną scaloną bryłą (`World.shadowMerge`, jak cień składu): w mapach cieni WebGPURenderer
+  odświeża każdy obiekt w całości (materiał cienia ma `colorNode`) – pełne odświeżenia w cieniach 355 → 189 na klatkę.
+- `World.opt` (localStorage `maszynista.perfOpt`): `bundle`, `shadowMerge` – wyłączenie do porównań.
+- Zgodność z WebGL bez zmian (jakość niska, w dzień i w nocy średnia różnica pikseli 1,8–1,9/255, ta sama jasność).
+- `tools/render-check`: `draws.js` (wywołania wg kategorii), `updates.js` (aktualizacje obiektów: pełne / współdzielone),
+  `shadowcost.js` (koszt map cieni), `observers.js`.
+
 ## 0.49.0 – 19 października 2026
 
 Tryb WebGPU (etap 1 przejścia, w budowie): `?webgpu` – WebGPURenderer z materiałami węzłowymi (TSL). Domyślnie WebGL.

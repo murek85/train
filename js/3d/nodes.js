@@ -647,6 +647,21 @@ import {
 				}
 				night(S, wN);
 			}
+			build(builder) {
+				const P = this.patchNodes;
+				if (P) Object.assign(this, P);
+				try {
+					super.build(builder);
+				} finally {
+					if (P) for (const k in P) this[k] = null;
+				}
+			}
+			// (obserwator powstaje na końcu setup – bez podstawionych węzłów, inaczej hasNode)
+			setupObserver(builder) {
+				const P = this.patchNodes;
+				if (P) for (const k in P) this[k] = null;
+				return super.setupObserver(builder);
+			}
 			setupLighting(builder) {
 				const out = super.setupLighting(builder), H = this.patchHooks;
 				return H && H.lighting ? H.lighting(out, builder) : out;
@@ -660,18 +675,27 @@ import {
 			   muszą trafić do klucza, inaczej materiały różniące się tylko nimi dzieliłyby jeden shader */
 			customProgramCacheKey() {
 				const o = this.patchOpt || {}, d = this.defines ? Object.keys(this.defines).sort().join('+') : '';
-				const h = this.patchHooks ? Object.keys(this.patchHooks).sort().join('+') + (this.patchHooks.tag || '') : '';
+				const h = (this.patchHooks ? Object.keys(this.patchHooks).sort().join('+') + (this.patchHooks.tag || '') : '') + (this.patchNodes ? '|' + Object.keys(this.patchNodes).sort().join('+') : '');
 				return super.customProgramCacheKey() + '|' + this.patchVariant + '|' + [o.grime, o.panels ? 1 : 0, o.rm ? 1 : 0, o.noSnow ? 1 : 0].join(',') + '|' + d + '|' + h;
 			}
 			copy(source) {
 				super.copy(source);
 				if (source.patchVariant !== undefined) initVariant(this, source.patchVariant, source.patchOpt);
 				if (source.patchHooks) this.patchHooks = source.patchHooks;
+				if (source.patchNodes) this.patchNodes = Object.assign({}, this.patchNodes, source.patchNodes);
 				return this;
 			}
 		}
 		classes.set(Base, Patched);
 		return Patched;
+	}
+
+	/* Węzły materiału (normalNode, emissiveNode…) podstawiane tylko na czas budowy shadera (Patched.build): materiał
+	   z węzłem we właściwości WebGPURenderer odświeża co klatkę w całości (NodeMaterialObserver.hasNode – wszystkie
+	   uniformy obiektu, także w paczkach i dla obiektów static) – ok. 900 obiektów × każda klatka. */
+	function nodeProps(m, props) {
+		m.patchNodes = Object.assign({}, m.patchNodes, props);
+		m.needsUpdate = true;
 	}
 
 	// zmienne wariantu i węzły materiału, które z nich biorą
@@ -685,16 +709,9 @@ import {
 			rough: property('float', 'tRough'), metal: property('float', 'tMetal'), normal: property('vec3', 'tNormal'), night: property('vec3', 'tNight'),
 			wearG: property('float', 'tWearG'), wearAO: property('float', 'tWearAO'),
 		});
-		m.normalNode = S.normal;
-		m.emissiveNode = materialEmissive.add(S.night);
-		if (m.isMeshStandardMaterial) {
-			m.roughnessNode = S.rough;
-			m.metalnessNode = S.metal;
-		}
-		if (variant === 'train' && m.isMeshPhysicalMaterial) {
-			m.clearcoatNode = materialClearcoat.mul(S.wearG.mul(0.85).oneMinus());
-			m.clearcoatNormalNode = S.normal;
-		}
+		nodeProps(m, { normalNode: S.normal, emissiveNode: materialEmissive.add(S.night) });
+		if (m.isMeshStandardMaterial) nodeProps(m, { roughnessNode: S.rough, metalnessNode: S.metal });
+		if (variant === 'train' && m.isMeshPhysicalMaterial) nodeProps(m, { clearcoatNode: materialClearcoat.mul(S.wearG.mul(0.85).oneMinus()), clearcoatNormalNode: S.normal });
 		return m;
 	}
 
@@ -839,7 +856,7 @@ import {
 	   zachowuje barwy); person – pasażerowie (palety jak ludzie na peronach, bez plecaków) */
 	function interior(material, person) {
 		const m = patch(material, 'indoor');
-		m.emissiveNode = materialEmissive.mul(diffuseColor.rgb);
+		nodeProps(m, { emissiveNode: materialEmissive.mul(diffuseColor.rgb) });
 		if (person) extend(m, { tag: 'pax', diffuse: paletteDiffuse(false) });
 		return m;
 	}
@@ -888,7 +905,7 @@ import {
 	}
 	function waterMaterial(material, WU) {
 		const m = extend(patch(material, 'clean'), waterHooks(WU));
-		m.normalNode = waterNV;
+		nodeProps(m, { normalNode: waterNV });
 		return m;
 	}
 
@@ -1015,7 +1032,7 @@ import {
 				});
 			},
 		});
-		m.normalNode = nOut;
+		nodeProps(m, { normalNode: nOut });
 		return m;
 	}
 

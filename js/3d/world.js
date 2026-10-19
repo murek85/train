@@ -1,6 +1,7 @@
 /* Świat wzdłuż toru budowany kawałkami: teren, tor, sieć trakcyjna, drzewa, stacje, semafory,
    przejazdy, mosty i tunele. Kawałki przed pociągiem powstają, za pociągiem są usuwane. */
 import * as THREE from 'three';
+import { BundleGroup } from 'three/webgpu';
 
 (function () {
 	'use strict';
@@ -1277,6 +1278,76 @@ import * as THREE from 'three';
 			});
 			lod.casters = lod.casters.filter((o) => o.castShadow);
 			group.userData.lod = lod;
+			if (NS.gpu && World.opt.shadowMerge !== false) this.shadowMerge(group, lod);
+			if (NS.gpu && World.opt.bundle !== false) lod.bundle = this.bundleStatic(group, prot, LAMP);
+		}
+
+		/* WebGPU: cień nieruchomych brył kawałka jedną scaloną bryłą (jak cień składu – train.js shadowMerge). W mapach cieni
+		   WebGPURenderer odświeża w całości każdy obiekt w każdej klatce (materiał cienia ma colorNode), więc setki brył
+		   rzucających cień kosztowały kilka ms. Do bryły: siatki zwykłe (nie instancje – korony z alphaTest, pnie, drobiazgi
+		   zostają same), nieprzezroczyste, bez alphaTest; bryła rysowana tylko w mapach cieni (w obrazie zakres 0 – kamery
+		   cieni słońca są ortograficzne). lod.casters – zamiast nich bryła (updateLod przełącza jej castShadow). */
+		shadowMerge(group, lod) {
+			const inv = new T.Matrix4().copy(group.matrixWorld).invert(), m = new T.Matrix4(), v = new T.Vector3();
+			const take = lod.casters.filter((o) => !o.isInstancedMesh && o.geometry.attributes.position && !Array.isArray(o.material) && !o.material.transparent && !o.material.alphaTest && !o.material.map);
+			if (take.length < 2) return;
+			let n = 0;
+			for (const o of take) n += o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count;
+			const pos = new Float32Array(n * 3);
+			let k = 0;
+			for (const o of take) {
+				m.multiplyMatrices(inv, o.matrixWorld);
+				const p = o.geometry.attributes.position, idx = o.geometry.index, cnt = idx ? idx.count : p.count;
+				const flip = m.determinant() < 0;
+				for (let q = 0; q < cnt; q += 3) for (let j = 0; j < 3; j++) {
+					const qq = q + (flip && j ? 3 - j : j);
+					v.fromBufferAttribute(p, idx ? idx.getX(qq) : qq).applyMatrix4(m);
+					pos[k++] = v.x; pos[k++] = v.y; pos[k++] = v.z;
+				}
+				o.castShadow = false;
+			}
+			const geo = new T.BufferGeometry();
+			geo.setAttribute('position', new T.BufferAttribute(pos, 3));
+			geo.computeBoundingSphere();
+			const sh = new T.Mesh(geo, World.shadowProxyMat || (World.shadowProxyMat = new T.MeshBasicMaterial({ colorWrite: false, depthWrite: false })));
+			sh.castShadow = true;
+			sh.receiveShadow = false;
+			sh.onBeforeRender = (r, sc, c, g) => { g.drawRange.count = c.isOrthographicCamera ? Infinity : 0; };
+			sh.userData.shadowProxy = true;
+			group.add(sh);
+			sh.updateMatrixWorld(true);
+			sh.matrixAutoUpdate = false;
+			lod.casters = lod.casters.filter((o) => o.castShadow).concat([sh]);
+		}
+
+		/* WebGPU: nieruchome siatki kawałka w paczce (BundleGroup) – polecenia rysowania nagrane raz i odtwarzane, bez
+		   przeglądania sceny, odcinania i przygotowania każdego obiektu co klatkę (WebGPURenderer ma duży narzut na obiekt:
+		   ok. 30 µs; kawałki to ok. 2/3 wywołań w obrazie i cieniach). Paczka nagrywa obiekty widoczne w chwili nagrania, więc
+		   w niej bez odcinania pojedynczych brył (rysowane zawsze – karta ma zapas). Nowe nagranie przy zmianie poziomów
+		   szczegółów i cieni (updateLod). Poza paczką: to, czego dotyka dyn (lampy, semafory, auta, pasażerowie…), siatki lamp,
+		   woda (odbicie lustrzane ukrywa ją na czas rysowania odbicia). */
+		bundleStatic(group, prot, LAMP) {
+			const list = [];
+			group.traverse((o) => {
+				if (!o.isMesh || prot.has(o) || o.matrixAutoUpdate !== false || !o.visible && !o.userData.fine) return;
+				if (LAMP.some((k) => o.userData[k] !== undefined) || (o.material && !Array.isArray(o.material) && o.material.userData && o.material.userData.water)) return;
+				for (let p = o.parent; p && p !== group; p = p.parent) if (prot.has(p) || p.isLOD) return;
+				list.push(o);
+			});
+			if (!list.length) return null;
+			const b = new BundleGroup();
+			b.name = 'static';
+			group.add(b);
+			group.updateMatrixWorld(true);
+			for (const o of list) {
+				b.attach(o);
+				o.updateMatrix();
+				o.frustumCulled = false;
+			}
+			b.updateMatrixWorld(true);
+			b.matrixAutoUpdate = false;
+			b.matrixWorldAutoUpdate = false; // całe poddrzewo bez przeliczania macierzy co klatkę
+			return b;
 		}
 
 		/* Poziom szczegółów kawałków wg odległości kamery od kawałka wzdłuż toru (s – kilometraż kamery): korony bliżej niż
@@ -1293,17 +1364,20 @@ import * as THREE from 'three';
 				if (L.hi !== hi) {
 					L.hi = hi;
 					for (const m of L.trees) m.geometry = hi ? m.userData.hi : m.userData.lo;
+					if (L.bundle) L.bundle.needsUpdate = true;
 				}
 				const show = d < far;
 				if (L.show !== show) {
 					L.show = show;
 					for (const m of L.fine) m.visible = show;
+					if (L.bundle) L.bundle.needsUpdate = true;
 				}
 				// cienie: kawałki dalej niż shadowFar nie rzucają cienia (najdalsza kaskada – mniej brył do rysowania)
 				const cast = d < shadowFar;
 				if (L.cast !== cast) {
 					L.cast = cast;
 					for (const m of L.casters) m.castShadow = cast;
+					if (L.bundle) L.bundle.needsUpdate = true;
 				}
 			}
 		}

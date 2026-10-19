@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.49.1',
+			date: '19 października 2026',
+			groups: [
+				['Grafika', [
+					'Tryb WebGPU (?webgpu) ponad dwa razy płynniejszy – nieruchome otoczenie rysowane z gotowych, nagranych poleceń, cienie otoczenia jedną bryłą na odcinek.',
+				]],
+			],
+		},
+		{
 			version: '0.49.0',
 			date: '19 października 2026',
 			groups: [
