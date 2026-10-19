@@ -364,15 +364,16 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				this.gl.setRenderTarget(target);
 				/* depth – poziom zagnieżdżenia rysowania (kontekst w kluczu shadera): odbicie rysuje się wewnątrz rysowania
 				   sceny (poziom 1), a compileAsync bierze zawsze kontekst poziomu 0 – inaczej shadery budowałyby się od nowa */
-				const C = this.gl._renderContexts, cget = C.get;
-				if (depth) C.get = (t, mrt, d) => cget.call(C, t, mrt, d === undefined ? depth : d);
+				// (tylko WebGPU – WebGLRenderer nie ma _renderContexts)
+				const C = depth ? this.gl._renderContexts : null, cget = C && C.get;
+				if (C) C.get = (t, mrt, d) => cget.call(C, t, mrt, d === undefined ? depth : d);
 				let q;
 				try {
 					q = this.gl.compileAsync(this.scene, camera);
 				} catch (e) {
 					q = Promise.resolve();
 				}
-				C.get = cget;
+				if (C) C.get = cget;
 				this.gl.setRenderTarget(rt);
 				for (const o of hidden) o.visible = false;
 				for (const o of culled) o.frustumCulled = true;
@@ -676,7 +677,10 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			if (this.skyGpu && this.gl.hasInitialized()) {
 				const cover = this.coverC || (this.coverC = new T.Color());
 				cover.copy(hor).lerp(gray, 0.5).multiplyScalar(1.1); // (chmury biorą barwę horyzontu – o zachodzie ciepłe)
-				this.skyGpu.update({ dt, sunDir: this.sunDir, moonDir: this.moonDir, clock: sim.route.startClock + sim.time, season: this.world.season, camera: this.camera, haze: W.haze, cover: W.cover, rain: W.rain, snow: W.snow, lightning: W.lightning, flash: fl, coverColor: cover, hazeColor: gray, cityGlow, fog: { near: W.fogNear, far: W.fogFar } });
+				// tło mgły nocą (jak mgła WebGL: horyzont i zenit z palety), tylko w pełnej nocy – o zmierzchu barwi atmosfera
+				const fogNight = this.fogNightC || (this.fogNightC = new T.Color());
+				fogNight.copy(hor).lerp(zen, 0.45).multiplyScalar(1 - smoothstep(-0.12, -0.02, e));
+				this.skyGpu.update({ dt, sunDir: this.sunDir, moonDir: this.moonDir, clock: sim.route.startClock + sim.time, season: this.world.season, camera: this.camera, haze: W.haze, cover: W.cover, rain: W.rain, snow: W.snow, lightning: W.lightning, flash: fl, coverColor: cover, hazeColor: gray, cityGlow, fogNight, fog: { near: W.fogNear, far: W.fogFar } });
 			}
 			if (!NS.gpu) this.sky.renderClouds(this.gl, this.time); // panorama chmur wolumetrycznych (co ok. 0,4 s)
 

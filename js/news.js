@@ -4,6 +4,16 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.4',
+			date: '19 października 2026',
+			groups: [
+				['Grafika', [
+					'WebGPU: nocą bez czerwono-pomarańczowej poświaty na drzewach i horyzoncie – mgła w oddali jak w trybie WebGL.',
+					'WebGL: naprawione wczytywanie jazdy (zatrzymywało się na 90%).',
+				]],
+			],
+		},
+		{
 			version: '0.54.3',
 			date: '19 października 2026',
 			groups: [

@@ -4,6 +4,20 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.4 – 19 października 2026
+
+### Poprawki
+- WebGL: wczytywanie jazdy stawało na 90% (od 0.54.3) – `precompile` sięgał do `_renderContexts`, którego
+  `WebGLRenderer` nie ma (wyjątek przed końcem kompilacji); teraz tylko w WebGPU.
+- WebGPU: nocą czerwono-pomarańczowa poświata na drzewach i horyzoncie w oddali. Mgła brała kolor z atmosfery (nocą
+  prawie czarnej) i łuny miasta ×1,15 – teraz jak mgła WebGL: łuna ×0,6 i ciemne, chłodne tło z palety nieba
+  w pełnej nocy (`fogNight`, `sky-gpu.js`); o zmierzchu bez zmian (atmosfera). Kopuła nieba bez zmian.
+
+### Narzędzia (`tools/render-check`)
+- `shot.js`: start dopiero po gotowym menu (kompilacja na ekranie startowym), czekanie na koniec wczytywania i ruszenie
+  symulacji (ekran wczytywania pojawia się dopiero po chwili – zrzuty łapały go zamiast jazdy).
+- `nightview.js`: widok na oddal z kamery swobodnej.
+
 ## 0.54.3 – 19 października 2026
 
 Przycięcia w czasie jazdy (WebGPU). Pomiar `tools/render-check/stutter.js` (Gliwice – Zabrze, 4 min jazdy automatem,

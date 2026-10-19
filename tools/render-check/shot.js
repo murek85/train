@@ -28,10 +28,13 @@ app.whenReady().then(async () => {
 	try {
 		res = await w.webContents.executeJavaScript(`(async () => {
 			const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+			// menu gotowe: świat podglądu zbudowany i (WebGPU) potoki skompilowane (scene.js hold)
+			{ const m = window.maszynista, r = m.renderer; for (let i = 0; i < 4800 && !(m.sim && r.world && r.world.pending === 0 && r.world.chunks.size && !r.hold); i++) await wait(25); }
 			document.querySelector('.scr-boot')?.remove();
 			await wait(1200);
 			document.getElementById('btn-start').click();
-			for (let i = 0; i < 1200 && document.querySelector('.scr-load'); i++) await wait(250);
+			// (ekran wczytywania pojawia się dopiero po chwili – czekamy na koniec wczytywania i ruszenie symulacji)
+			for (let i = 0; i < 3600 && (document.querySelector('.scr-load') || !(window.maszynista.sim && window.maszynista.sim.time > 0.5)); i++) await wait(250);
 			const s = window.maszynista.sim;
 			s.route.startClock = ${hour} * 3600 - s.time;
 			if (window.SHOT_Q) { window.maszynista.renderer.setQuality(window.SHOT_Q); await wait(500); for (let i = 0; i < 1200 && window.maszynista.renderer.world.pending; i++) await wait(250); }

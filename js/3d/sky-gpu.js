@@ -429,18 +429,18 @@ import {
 			const G = (v) => uniform(v).setGroup(renderGroup);
 			const u = (this.u = {
 				skyK: G(0.55), nightK: G(2.5), cover: G(0), coverC: G(new THREE.Color()), city: G(new THREE.Color()),
-				hazeC: G(new THREE.Color()), hazeK: G(0), fogNear: G(450), fogFar: G(1500), sunK: G(1),
+				hazeC: G(new THREE.Color()), hazeK: G(0), fogNear: G(450), fogFar: G(1500), sunK: G(1), fogNight: G(new THREE.Color()),
 			});
 			/* niebo w kierunku d: atmosfera, łuna miasta; full – też tarcza słońca i niebo nocne (tylko kopuła – w mgle
 			   i odbiciach, czyli w każdym materiale, byłyby kosztowne: szumy Drogi Mlecznej i księżyca); bez full – też
 			   zachmurzenie jako barwa horyzontu z szarością pogody (mgła i odbicia nie widzą chmur z kopuły) */
-			const skyColor = (d, full) => {
+			const skyColor = (d, full, cityK = null) => {
 				const c = atmo.skyRadiance(d).mul(u.skyK).toVar();
 				if (full) {
 					c.addAssign(atmo.sunDisk(d).mul(u.skyK));
 					c.addAssign(atmo.nightSky(d).mul(u.nightK));
 				} else c.assign(mix(c, u.coverC, u.cover));
-				c.addAssign(u.city.mul(smoothstep(0.0, 0.35, d.y.max(0)).oneMinus().add(0.15)));
+				c.addAssign(u.city.mul(cityK === null ? smoothstep(0.0, 0.35, d.y.max(0)).oneMinus().add(0.15) : cityK));
 				return c;
 			};
 			this.skyColor = skyColor;
@@ -467,7 +467,10 @@ import {
 			fogMat.fragmentNode = Fn(() => {
 				const az = uv().x.sub(0.5).mul(2 * PI);
 				const d = normalize(vec3(cos(az), 0.03, sin(az)));
-				return vec4(mix(skyColor(d, false), u.hazeC, u.hazeK), 1);
+				/* nocą jak w trybie WebGL: łuna miasta w mgle ×0,6 (w kopule przy horyzoncie ×1,15 – w oddali dawała
+				   czerwono-pomarańczową poświatę na drzewach) i ciemne, chłodne tło z palety nieba (fogNight) – atmosfera
+				   nocą jest prawie czarna, więc sama łuna barwiła mgłę */
+				return vec4(mix(skyColor(d, false, 0.6).add(u.fogNight), u.hazeC, u.hazeK), 1);
 			})();
 			fogMat.depthTest = fogMat.depthWrite = false;
 			this.fogQuad = new QuadMesh(fogMat);
@@ -486,6 +489,7 @@ import {
 		   haze (pogoda 0…1), cover (0…1), coverColor, hazeColor, cityGlow, fog (near, far) */
 		update(o) {
 			const atmo = this.atmo, u = this.u;
+			if (o.fogNight) u.fogNight.value.copy(o.fogNight);
 			const ill = (1 - o.sunDir.dot(o.moonDir)) / 2;
 			atmo.setHaze(6 + 34 * o.haze);
 			// sfera niebieska: czas gwiazdowy z godziny (strefa CEST), szerokość ok. 50,3° N, długość 18,7° E
