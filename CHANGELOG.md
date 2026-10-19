@@ -4,6 +4,21 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.5 – 19 października 2026
+
+### Poprawki – WebGPU, wspólne shadery instancji (`js/3d/scene.js` shareInstancing, od 0.54.1)
+- Na niektórych trasach (np. Orzesze Jaśkowice – Mikołów) części świata rysowały się w złym miejscu – wiszący
+  w powietrzu peron, rozciągnięte cysterny, krzywa sieć trakcyjna. Podmiana buforów instancji na bufory obiektu
+  obejmowała tylko kolumny macierzy (vec4); inne widoki na bufor macierzy – pozycja instancji do kołysania roślin
+  (`nodes.js` instanceOrigin, vec3 z przesunięciem 12) – zostawały przy buforze obiektu, dla którego zbudowano
+  shader (cudze dane, przy większej liczbie egzemplarzy – odczyt poza buforem). Teraz podmieniany każdy widok
+  (stride 16) na bufor danego obiektu.
+- Bufory obiektu w `WeakMap`, nie w `userData` (klonowanie obiektu kopiuje `userData` przez JSON).
+- `?noshare` w adresie – bez wspólnych shaderów instancji (porównania).
+
+### Narzędzia (`tools/render-check`)
+- `stutter.js` – także błędy konsoli; `yardview.js` – widok na bocznice i sieć z kamery swobodnej.
+
 ## 0.54.4 – 19 października 2026
 
 ### Poprawki

@@ -11,6 +11,8 @@ app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.whenReady().then(async () => {
 	const w = new BrowserWindow({ width: 1280, height: 720, show: true, x: -4000, y: 0, focusable: false, skipTaskbar: true, frame: false, webPreferences: { backgroundThrottling: false } });
+	const errs = new Map(); // błędy konsoli (np. walidacja WebGPU) – treść → liczba
+	w.webContents.on('console-message', (e) => { if (e.level === 'error') { const k = e.message.slice(0, 200); errs.set(k, (errs.get(k) || 0) + 1); } });
 	await w.loadURL('http://localhost:' + port + '/' + (query === '-' ? '' : '?' + query));
 	let res;
 	try {
@@ -56,6 +58,7 @@ app.whenReady().then(async () => {
 			return { frames: F.length, km: +((m.sim.st.pos - s0) / 1000).toFixed(2), median: +dts[dts.length >> 1].toFixed(1), p99: +dts[Math.floor(dts.length * 0.99)].toFixed(1), over33: n(33), over50: n(50), over100: n(100), builds: F.reduce((s, f) => s + f.builds, 0), syncPipes: F.reduce((s, f) => s + f.pipes, 0), worldMs: r1(F.reduce((s, f) => s + f.world, 0)), top, who: [...who].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([k, v]) => v + '× ' + k), renderer: r.gpuName() };
 		})()`);
 	} catch (e) { res = { error: String(e) }; }
+	if (res && !res.error) res.errors = [...errs].map(([k, n]) => n + '× ' + k);
 	console.log(JSON.stringify(res, null, 1));
 	app.exit(0);
 });

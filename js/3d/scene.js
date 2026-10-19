@@ -105,12 +105,14 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 	function shareInstancing(gl) {
 		gl.backend.capabilities.getUniformBufferLimit = () => 0;
 		gl.gpuShared = true; // tylko ten renderer (prototyp RenderObject jest wspólny – podgląd taboru ma własny renderer)
+		const owned = new WeakMap(); // (nie w userData – klonowanie obiektu kopiuje je przez JSON)
 		const own = (o) => {
-			let d = o.userData.gpuInst;
+			let d = owned.get(o);
 			if (d && d.m === o.instanceMatrix && d.c === o.instanceColor) return d;
 			const follow = (buf, src) => { Object.defineProperty(buf, 'version', { get: () => src.version, set() {}, configurable: true }); buf.setUsage(src.usage); return buf; };
 			const im = follow(new InstancedInterleavedBuffer(o.instanceMatrix.array, 16, 1), o.instanceMatrix);
-			d = o.userData.gpuInst = { m: o.instanceMatrix, c: o.instanceColor, cols: [0, 4, 8, 12].map((k) => new InterleavedBufferAttribute(im, 4, k)) };
+			d = { m: o.instanceMatrix, c: o.instanceColor, im, views: new Map() };
+			owned.set(o, d);
 			if (o.instanceColor) d.color = follow(new InstancedBufferAttribute(o.instanceColor.array, 3), o.instanceColor);
 			return d;
 		};
@@ -140,7 +142,15 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				const list = attrs.call(this), d = own(this.object);
 				for (let i = 0; i < list.length; i++) {
 					const a = list[i];
-					if (a.isInterleavedBufferAttribute && a.data.isInstancedInterleavedBuffer && a.data.stride === 16 && a.itemSize === 4) list[i] = d.cols[a.offset / 4];
+					/* każdy widok na bufor macierzy instancji (stride 16): kolumny macierzy (vec4, przesunięcia 0/4/8/12) i np.
+					   pozycja instancji do kołysania roślin (nodes.js instanceOrigin – vec3, przesunięcie 12); bez podmiany
+					   czytałby bufor obiektu, dla którego zbudowano shader (inne macierze, za krótki przy większej liczbie) */
+					if (a.isInterleavedBufferAttribute && a.data.isInstancedInterleavedBuffer && a.data.stride === 16) {
+						const k = a.itemSize + ':' + a.offset;
+						let v = d.views.get(k);
+						if (!v) d.views.set(k, (v = new InterleavedBufferAttribute(d.im, a.itemSize, a.offset)));
+						list[i] = v;
+					}
 					else if (a.isInstancedBufferAttribute && a.itemSize === 3 && d.color && !Object.values(this.geometry.attributes).includes(a)) list[i] = d.color;
 				}
 				this.vertexBuffers = Array.from(new Set(list.map((a) => (a.isInterleavedBufferAttribute ? a.data : a))));
@@ -160,7 +170,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				// ?gputime – znaczniki czasu karty (nakładka F3: czas GPU; trochę kosztują, więc tylko na życzenie)
 				this.gl = new WebGPURenderer({ canvas, antialias: true, powerPreference: 'high-performance', forceWebGL: NS.gpuForceWebGL, trackTimestamp: /[?&]gputime/.test(location.search) });
 				this.gpuInit = this.gl.init().then(() => {
-					shareInstancing(this.gl);
+					if (!/[?&]noshare/.test(location.search)) shareInstancing(this.gl); // (?noshare – bez wspólnych shaderów instancji, do porównań)
 					/* paczki (world.js bundleStatic) przy rysowaniu do bufora (efekty po renderowaniu): odtwarzane bez odświeżenia
 					   wspólnych uniformów (kamera) – obraz z nieaktualnej kamery; co najmniej odświeżenie współdzielone (tanie – jak
 					   przy rysowaniu wprost na ekran) */

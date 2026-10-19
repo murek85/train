@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.5',
+			date: '19 października 2026',
+			groups: [
+				['Grafika', [
+					'WebGPU: naprawione wiszące w powietrzu perony, wagony i krzywa sieć trakcyjna na niektórych trasach (np. Orzesze Jaśkowice – Mikołów).',
+				]],
+			],
+		},
+		{
 			version: '0.54.4',
 			date: '19 października 2026',
 			groups: [
