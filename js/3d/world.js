@@ -4634,6 +4634,8 @@ import { BundleGroup } from 'three/webgpu';
 	// przełączniki diagnostyczne (porównanie wydajności; localStorage „maszynista.perfOpt”, np. {"merge":false} – od uruchomienia)
 	World.opt = { merge: true, lod: true, cabMerge: true };
 	try { Object.assign(World.opt, JSON.parse(localStorage.getItem('maszynista.perfOpt') || '{}')); } catch (e) { /* brak dostępu do localStorage */ }
+	// ?nobundle w adresie – świat bez paczek WebGPU (BundleGroup), do porównań przy błędach obrazu
+	if (typeof location !== 'undefined' && /[?&]nobundle/.test(location.search)) World.opt.bundle = false;
 	NS.World = World;
 	World.TERRAIN_D = TERRAIN_D;
 	World.PEOPLE = PEOPLE; // kolory ubrań i skóry ludzi (tłum na peronach z mapy – real-env.js)

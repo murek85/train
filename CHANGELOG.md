@@ -4,6 +4,60 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.15 – 20 października 2026
+
+### Poprawka – świat rysowany z kamery cienia albo odbicia (`js/3d/scene.js` gpuInit, draw)
+- Zgłoszenie: po zmianie pory roku w pauzie peron „podąża” za ruchem kamery; wcześniej pomniejszona sieć trakcyjna
+  z peronem i wózkami, losowe glicze z elementami świata. Złapane na żywo w grze gracza (Orzesze Jaśkowice – Mikołów,
+  wiosna): bufory instancji, uniformy obiektów, shadery i potoki zgodne – glicz znikał dopiero po nagraniu paczek
+  (BundleGroup) od nowa. Sonda paczek (zasoby nagrane w koderze paczki a bieżące powiązania obiektów) w ustawieniach
+  gracza znalazła trzy błędy Three:
+  - `Renderer._renderObjectDirect` dopisuje rysowany obiekt do nagrywanej paczki (`_currentRenderBundle`), a zagnieżdżony
+    `render()` jej nie zeruje – mapa cieni albo odbicie wody wywołane w czasie nagrywania dokładały do paczki swoje
+    obiekty. Każde odtworzenie paczki odświeżało je kamerą cienia / odbicia do wspólnego bufora kamery głównego
+    przebiegu: część świata z kamery cienia (miniatura) albo odbicia (obiekt jadący za widokiem). Poprawka:
+    `render()` opakowany – zagnieżdżony bez nagrywanej paczki.
+  - obiekty rysowania (RenderObject) są wspólne dla kamer w tym samym kontekście (format bufora – np. kaskady cieni);
+    pobranie ustawia im kamerę, a odtworzenie paczki odświeża je bez pobrania. Poprawka: przed odtworzeniem paczki jej
+    obiekty dostają kamerę tej paczki.
+  - obiekt paczki bez gotowego potoku (kompilacja w tle) nie trafia do nagrania i brakowało go do następnej zmiany
+    paczki. Poprawka: paczka nagrywana od nowa, gdy potoki jej pominiętych obiektów są gotowe (najdalej po ok. 10 s).
+- Po poprawce sonda: 0 obcych obiektów w paczkach; niezgodność zasobów tylko w jednej klatce przy zamknięciu okienka
+  (stary, poprawny potok przed ponownym nagraniem).
+
+### Poprawka – znikające na stałe obiekty po błędzie karty (`js/3d/scene.js` gpuInit)
+- Three otwiera zakres błędów karty przy asynchronicznym tworzeniu potoku i zamyka go po jego gotowości; błąd wysłania
+  klatki w tym czasie („Destroyed texture ShadowDepthTexture used in a submit” – zmiana rozmiaru map cieni przy
+  doborze jakości na starcie) trafiał do zakresu potoku i Three uznawał poprawny potok za błędny – obiektów z nim nie
+  rysował już nigdy. `queue.submit` i `GPUCommandEncoder.finish` we własnych zakresach błędów (błąd zgłaszany
+  w konsoli jako „WebGPU: …”).
+
+## 0.54.14 – 20 października 2026
+
+### Poprawka – paczki po zmianie jakości i po kompilacji (`js/3d/scene.js`)
+- Zgłoszenie: zniekształcone cienie („miniatura” sieci trakcyjnej, peronu i wózków na ziemi) po zmianie warunków w pauzie
+  (pora roku albo pogoda) i ruchu kamery. Śledzenie w świeżym profilu: automatyczny dobór jakości zmienia rozmiar map
+  cieni – ShadowNode niszczy tekstury głębi i tworzy nowe; raz błąd walidacji „Destroyed texture ShadowDepthTexture used
+  in a submit”. Paczki (BundleGroup) trzymają nagrane polecenia z powiązaniami z chwili nagrania – po takiej zmianie
+  (i po kompilacji, w której paczki są na chwilę zwykłymi grupami) mogły rysować z nieaktualną albo zniszczoną mapą.
+- `rebundle(n)`: wszystkie paczki nagrywane od nowa przez n klatek – po zmianie jakości (6 klatek, także wszystkie
+  kaskady cieni od nowa) i po każdej kompilacji (`precompile`, 3 klatki – start, wczytywanie jazdy, zmiany w menu
+  i w pauzie).
+- Samego zniekształcenia według przepisu nie udało się odtworzyć skryptem (WebGPU, trasy Gliwice – Zabrze i Orzesze
+  Jaśkowice – Mikołów, zmiana pogody i pory roku, obrót oddalonej kamery).
+
+## 0.54.13 – 20 października 2026
+
+### Poprawka – przesunięte i pomniejszone cienie w WebGPU (`js/3d/scene.js` aimSun)
+- Zgłoszenie: na ziemi „pomniejszona sieć trakcyjna z peronem i podwoziem pociągu” (Orzesze Jaśkowice – Mikołów, kamera
+  oddalona), wcześniej losowe glicze. Po stronie procesora w tym miejscu tylko droga i ziemia – rysunek pochodził
+  z cieni: dalsze kaskady odświeżają mapę co 2–4 klatki, ale ich światło (położenie, cel, zasięg) przesuwało się co
+  klatkę, a w WebGPU macierz cienia liczona jest co klatkę z bieżącego położenia (nodes.js setupCascades, ShadowNode –
+  `shadow.matrix`). Mapa z poprzedniego położenia i zasięgu próbkowana nową macierzą – cienie przesunięte i pomniejszone
+  (przy zmianie zasięgu kaskady, np. po oddaleniu kamery). W WebGL macierz zmieniała się tylko przy rysowaniu mapy.
+- Teraz kaskada bez odświeżenia w danej klatce zostaje tam, gdzie była przy rysowaniu swojej mapy.
+- `?nobundle` w adresie – świat bez paczek WebGPU (porównania przy błędach obrazu; World.opt.bundle).
+
 ## 0.54.12 – 20 października 2026
 
 ### Poprawka – przezroczyste obiekty w WebGPU (`js/3d/scene.js`)

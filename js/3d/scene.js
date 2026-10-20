@@ -196,6 +196,61 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 							d.currentSets = { attributes: {}, bindingGroups: [], pipeline: null, index: null };
 						};
 					}
+					/* Three (Renderer._renderObjectDirect) dopisuje każdy rysowany obiekt do nagrywanej właśnie paczki
+					   (_currentRenderBundle) i nie zeruje jej w zagnieżdżonym render(): mapa cieni albo odbicie wody wywołane
+					   w czasie nagrywania paczki dokładały do niej swoje obiekty (z kamerą cienia / odbicia). Każde odtworzenie
+					   paczki odświeżało je potem tą kamerą – do wspólnego bufora kamery głównego przebiegu: część świata
+					   rysowana z kamery cienia (pomniejszona sieć, peron, wózki) albo odbicia (peron jadący za widokiem).
+					   Zagnieżdżony render() bez nagrywanej paczki */
+					/* zakresy błędów karty to stos wspólny dla całego urządzenia: Three otwiera zakres przy asynchronicznym
+					   tworzeniu potoku i zamyka go dopiero po jego gotowości – błąd wysłania klatki w tym czasie (np. zniszczona
+					   mapa cieni po zmianie jej rozmiaru) trafiał do zakresu potoku, Three uznawał poprawny potok za błędny
+					   (pipelineData.error) i obiektów z nim nie rysował już nigdy (znikające elementy świata). Wysłanie
+					   i zakończenie kodera we własnym zakresie */
+					if (B.isWebGPUBackend && B.device) {
+						const dev = B.device, Q = dev.queue, submit0 = Q.submit.bind(Q);
+						const report = (e) => { if (e) console.error('WebGPU:', e.message); };
+						Q.submit = (list) => { dev.pushErrorScope('validation'); try { submit0(list); } finally { dev.popErrorScope().then(report); } };
+						const CE = GPUCommandEncoder.prototype, finish0 = CE.finish;
+						if (!CE.finish.scoped) {
+							CE.finish = function (...a) { dev.pushErrorScope('validation'); try { return finish0.apply(this, a); } finally { dev.popErrorScope().then(report); } };
+							CE.finish.scoped = true;
+						}
+					}
+					const GL = this.gl, render0 = GL.render;
+					GL.render = function (...a) {
+						const b = this._currentRenderBundle;
+						this._currentRenderBundle = null;
+						try {
+							return render0.apply(this, a);
+						} finally {
+							this._currentRenderBundle = b;
+						}
+					};
+					/* obiekty rysowania (RenderObject) są wspólne dla kamer w tym samym kontekście (format bufora docelowego –
+					   np. kaskady cieni) – każde pobranie ustawia im swoją kamerę, a odtworzenie paczki odświeża je bez
+					   pobrania, więc z kamerą ostatniego innego przebiegu. Przed odtworzeniem kamera tej paczki */
+					const renderBundle0 = GL._renderBundle;
+					GL._renderBundle = function (bundle, ...a) {
+						const d = this.backend.get(this._bundles.get(bundle.bundleGroup, bundle.camera, this._currentRenderContext));
+						if (d.renderObjects) for (const ro of d.renderObjects) ro.camera = bundle.camera;
+						return renderBundle0.call(this, bundle, ...a);
+					};
+					/* obiekt paczki bez gotowego potoku (kompilacja w tle – asyncPipelines) nie trafia do nagrania i brakowałby
+					   w niej do następnej zmiany paczki – paczka nagrywana od nowa, gdy jego potok będzie gotowy (draw) */
+					const Pp = GL._pipelines, ready = Pp.isReady.bind(Pp);
+					this.pipeReady = ready;
+					this.bundleWait = new Map();
+					Pp.isReady = (ro) => {
+						const ok = ready(ro);
+						if (!ok && GL._currentRenderBundle) {
+							const bg = GL._currentRenderBundle.bundleGroup;
+							let w = this.bundleWait.get(bg);
+							if (!w) this.bundleWait.set(bg, (w = { ros: new Set(), t: 0 }));
+							w.ros.add(ro);
+						}
+						return ok;
+					};
 					const O = this.gl._objects, oget = O.get.bind(O);
 					O.get = (...a) => { const ro = oget(...a); if (this.pipes && this.pipes.n) fresh.add(ro); return ro; };
 					this.asyncPipelines();
@@ -524,6 +579,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			/* rozgrzanie (synchroniczne rysowanie całej sceny, ok. 2 s): najpierw jedna klatka z etapem „rozgrzanie” (compileInfo
 			   – etykieta na ekranie wczytywania), potem rysowanie */
 			return Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, 20000))]).then(async () => {
+				if (NS.gpu) this.rebundle(3);
 				if (!warm) return;
 				if (this.compileStat) this.compileStat.pass = 'rozgrzanie';
 				await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 100); });
@@ -661,6 +717,19 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				});
 			}
 			if (this.world.route) this.world.setRoute(this.world.route);
+			// WebGPU: mapy cieni nowego rozmiaru (ShadowNode tworzy tekstury od nowa) – wszystkie kaskady i paczki od nowa
+			if (NS.gpu) {
+				for (const l of this.cascades) l.shadowPlaced = false;
+				this.rebundle(6);
+			}
+		}
+
+		/* WebGPU: paczki (BundleGroup) nagrane od nowa przez n kolejnych klatek – nagrane polecenia trzymają powiązania
+		   z teksturami i stanami z chwili nagrania (mapa cieni sprzed zmiany rozmiaru, stan po kompilacji); po zmianie jakości
+		   i po kompilacji (precompile – paczki na chwilę jako zwykłe grupy) świeże nagranie (zniszczona tekstura mapy cieni,
+		   cienie „miniatury” z nieaktualnej mapy) */
+		rebundle(n = 2) {
+			this.rebundleFrames = Math.max(this.rebundleFrames || 0, n);
 		}
 
 		setRenderOptions(o) {
@@ -1421,6 +1490,20 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			const n = this.cascades.length;
 			this.csmFrame++;
 			this.cascades.forEach((l, i) => {
+				/* dalsze kaskady odświeżane na zmianę (co drugą klatkę każda) – w klatce rysują się dwie mapy cieni; najdalsza
+				   (szeroka, mało szczegółów) – co czwartą klatkę. Kaskada bez odświeżenia w tej klatce zostaje tam, gdzie była
+				   przy rysowaniu mapy (położenie, cel, zasięg): macierz cienia (WebGPU – liczona co klatkę z położenia światła,
+				   nodes.js setupCascades) musi pasować do zawartości mapy, inaczej cienie z poprzedniego położenia lub zasięgu
+				   lądowały przesunięte i pomniejszone (np. „miniatura” sieci trakcyjnej, peronu i wózków na ziemi) */
+				let upd = true;
+				if (i > 0) {
+					const every = i === n - 1 && n > 2 ? 4 : 2;
+					upd = this.csmFrame % every === i % every || this.csmFrame < 3 || !l.shadowPlaced;
+					l.shadow.autoUpdate = false;
+					if (upd) l.shadow.needsUpdate = true;
+				}
+				if (!upd) return;
+				l.shadowPlaced = true;
 				// jedna mapa (bez kaskad): dawny zasięg wokół punktu widoku
 				const ext = n === 1 ? Math.min(400, 110 * mul) : Math.min(i === n - 1 ? 700 : 400, CASCADES[i] * mul);
 				const shc = l.shadow.camera;
@@ -1444,13 +1527,6 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				c.copy(r).multiplyScalar(Math.round(cr / ts) * ts).addScaledVector(u, Math.round(cu / ts) * ts).addScaledVector(f, cf);
 				l.target.position.copy(c);
 				l.position.copy(c).addScaledVector(f, -D);
-				// dalsze kaskady odświeżane na zmianę (co drugą klatkę każda) – w klatce rysują się dwie mapy cieni
-				// najdalsza (szeroka, mało szczegółów) – co czwartą klatkę
-				if (i > 0) {
-					l.shadow.autoUpdate = false;
-					const every = i === n - 1 && n > 2 ? 4 : 2;
-					if (this.csmFrame % every === i % every || this.csmFrame < 3) l.shadow.needsUpdate = true;
-				}
 			});
 			this.syncCascades();
 		}
@@ -1516,8 +1592,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			if (NS.gpu && gpuOk) {
 				NS.nodes.sync();
 				this.scene.updateMatrixWorld();
-				this.scene.matrixWorldAutoUpdate = false;
-			}
+				this.scene.matrixWorldAutoUpdate = false;			}
 			if (!gpuOk) {
 				// (karta jeszcze niegotowa – klatka bez rysowania)
 			} else if (this.usePost) {
@@ -1554,6 +1629,18 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			}
 			if (NS.gpu) this.scene.matrixWorldAutoUpdate = true;
 			if (NS.gpu && gpuOk) this.endAsyncPipelines();
+			if (NS.gpu && gpuOk && this.rebundleFrames > 0) {
+				this.rebundleFrames--;
+				this.scene.traverse((o) => { if (o.isBundleGroup) o.needsUpdate = true; });
+			}
+			// paczki z obiektami nagranymi bez gotowego potoku: od nowa, gdy potoki gotowe (najdalej po ok. 10 s – obiekt mógł zniknąć)
+			if (NS.gpu && gpuOk && this.bundleWait && this.bundleWait.size) {
+				for (const [bg, w] of this.bundleWait) {
+					let all = ++w.t > 600;
+					if (!all) { all = true; for (const ro of w.ros) if (!this.pipeReady(ro)) { all = false; break; } }
+					if (all) { bg.needsUpdate = true; this.bundleWait.delete(bg); }
+				}
+			}
 			this.drawMinimap(sim);
 			if (P) {
 				if (query) { P.gl.endQuery(P.ext.TIME_ELAPSED_EXT); P.queries.push(query); }

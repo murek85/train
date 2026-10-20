@@ -4,6 +4,34 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.15',
+			date: '20 października 2026',
+			groups: [
+				['Grafika', [
+					'WebGPU: bez fragmentów świata rysowanych z cudzej kamery – pomniejszonej sieci trakcyjnej, peronów czy torów wiszących w powietrzu albo jadących razem z widokiem (np. po zmianie pory roku lub pogody w pauzie).',
+					'WebGPU: elementy świata nie znikają już na stałe po chwilowym błędzie karty graficznej.',
+				]],
+			],
+		},
+		{
+			version: '0.54.14',
+			date: '20 października 2026',
+			groups: [
+				['Grafika', [
+					'WebGPU: statyczny świat odświeżany po zmianie jakości i warunków (pogoda, pora roku) – bez zniekształconych cieni po takiej zmianie.',
+				]],
+			],
+		},
+		{
+			version: '0.54.13',
+			date: '20 października 2026',
+			groups: [
+				['Grafika', [
+					'WebGPU: bez „miniatur” i przesuniętych cieni (np. sieć trakcyjna, peron i wózki pociągu w złym miejscu na ziemi) – dalsze kaskady cieni przesuwają się razem z odświeżeniem swojej mapy.',
+				]],
+			],
+		},
+		{
 			version: '0.54.12',
 			date: '20 października 2026',
 			groups: [
