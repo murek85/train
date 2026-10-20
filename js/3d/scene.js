@@ -382,7 +382,12 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			const gl = this.gl, pl = gl._pipelines, get = pl.getForRender;
 			const P = (this.pipes = { n: 0, pend: [], async: gl.backend.isWebGPUBackend === true, wait: 0, calm: 0 });
 			pl.getForRender = (ro, promises) => {
-				if (promises && P.n) return get.call(pl, ro, P.pend);
+				if (promises && P.n) {
+					// (licznik potoków kompilacji – compileInfo, etap na ekranie startowym)
+					const k = P.pend.length, r = get.call(pl, ro, P.pend), C = this.compileStat;
+					for (let i = k; i < P.pend.length; i++) { C.pipeTotal++; P.pend[i].then(() => C.pipeDone++, () => C.pipeDone++); }
+					return r;
+				}
 				if (promises || !P.async || gl._currentRenderBundle !== null) return get.call(pl, ro, promises);
 				const q = [], r = get.call(pl, ro, q);
 				if (q.length) {
@@ -407,6 +412,11 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			if (P.calm >= 2) P.async = false;
 		}
 
+		// postęp bieżącej kompilacji: { objDone, objTotal, pipeDone, pipeTotal } (WebGPU; null, gdy nie było kompilacji)
+		compileInfo() {
+			return this.compileStat || null;
+		}
+
 		precompile(opts = {}) {
 			if (NS.gpu && !this.gl.hasInitialized()) return this.gpuInit.then(() => this.precompile(opts));
 			const all = opts.all !== false, reflect = opts.reflect !== false, warm = opts.warm !== false;
@@ -415,6 +425,10 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			/* paczki (BundleGroup, world.js bundleStatic) na ten czas jak zwykłe grupy – compileAsync Three pomija paczki, więc
 			   ich obiekty (większość świata) budowały shadery i potoki synchronicznie w pierwszej pełnej klatce (ok. 4 s
 			   zawieszenia przed menu); obiekt rysowany potem w paczce ma ten sam stan (klucz bez paczki) */
+			/* postęp kompilacji (compileInfo – etap na ekranie startowym): obiekty sceny przejrzane przez compileAsync (budowa
+			   shaderów) i potoki karty, na które czekamy; zerowany, gdy nie trwa żadna inna kompilacja */
+			if (!this.pipes || !this.pipes.n) this.compileStat = { objDone: 0, objTotal: 0, pipeDone: 0, pipeTotal: 0 };
+			const CS = this.compileStat;
 			const compileFor = (target, camera, depth = 0) => {
 				const hidden = [], culled = [], bundles = [];
 				this.scene.traverse((o) => {
@@ -431,7 +445,10 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				if (C) C.get = (t, mrt, d) => cget.call(C, t, mrt, d === undefined ? depth : d);
 				let q;
 				try {
-					q = this.gl.compileAsync(this.scene, camera);
+					if (NS.gpu) {
+						const base = { d: CS.objDone, t: CS.objTotal };
+						q = this.gl.compileAsync(this.scene, camera, null, (e) => { CS.objDone = base.d + e.loaded; CS.objTotal = base.t + e.total; });
+					} else q = this.gl.compileAsync(this.scene, camera);
 				} catch (e) {
 					q = Promise.resolve();
 				}
@@ -454,6 +471,27 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				   (ok. 100 shaderów i 80 potoków w jednej klatce: 3,5 s + kilkanaście sekund czekania na kartę) */
 				// (kilka kompilacji naraz – np. dokompilowanie w tle w menu i start jazdy – zbiera do wspólnej listy; asyncPipelines)
 				if (!this.pipes) this.asyncPipelines();
+				/* compileAsync Three oddaje sterowanie przez scheduler.yield po każdym obiekcie, ale jego kontynuacje mają
+				   pierwszeństwo – przez całą kompilację (8–10 s przed menu) przeglądarka nie rysowała ani jednej klatki
+				   (etap i liczniki na ekranie startowym stały, zadania z setTimeout czekały). Na czas kompilacji co ok. 40 ms
+				   czekanie na klatkę (requestAnimationFrame, najwyżej 100 ms – karta w tle), poza tym jak dotąd. */
+				const S = typeof self !== 'undefined' && self.scheduler;
+				if (S && typeof S.yield === 'function' && !this.yieldShim) {
+					const orig = S.yield.bind(S);
+					let last = performance.now();
+					this.yieldShim = true;
+					S.yield = () => {
+						if (!this.pipes || !this.pipes.n) return orig();
+						const now = performance.now();
+						if (now - last < 40) return orig();
+						return new Promise((res) => {
+							let done = false;
+							const go = () => { if (!done) { done = true; last = performance.now(); res(); } };
+							requestAnimationFrame(go);
+							setTimeout(go, 100);
+						});
+					};
+				}
 				const W = this.pipes;
 				W.n++;
 				const R = reflect && this.waterRefl && this.waterRefl.refl && this.waterRefl.refl.reflector;

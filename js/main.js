@@ -2652,7 +2652,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.54.7';
+	$('version').textContent = 'wersja 0.54.8';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');
@@ -2751,6 +2751,24 @@
 		}
 		return bootWarm === 2;
 	};
-	if (window.TrainScreens) window.TrainScreens.boot({ version: $('version').textContent, ready: bootReady });
+	// etap wczytywania pod paskiem ekranu startowego (screens.js status)
+	let bootChunks = 0;
+	const bootStatus = () => {
+		if (window.Train3D.gpu && !renderer.gl.hasInitialized()) return 'Uruchamianie karty graficznej (WebGPU)…';
+		if (!demo) return 'Wczytywanie tras…';
+		if (bootWarm === 1) { // (świat może jeszcze dobudować kawałek – etap już dalej)
+			// shadery: obiekty sceny przejrzane przez compileAsync; potem potoki karty, na które czekamy (scene.js compileInfo)
+			const c = renderer.compileInfo();
+			if (c && c.objTotal && c.objDone < c.objTotal) return `Kompilacja shaderów… ${c.objDone} z ${c.objTotal}`;
+			if (c && c.pipeTotal && c.pipeDone < c.pipeTotal) return `Kompilacja potoków karty graficznej… ${c.pipeDone} z ${c.pipeTotal}`;
+			return 'Kompilacja shaderów karty graficznej…';
+		}
+		const left = renderer.world ? renderer.world.pending || 0 : 0;
+		bootChunks = Math.max(bootChunks, left);
+		if (left > 0 || !renderer.world || !renderer.world.chunks.size) return bootChunks ? `Budowa świata podglądu… ${bootChunks - left} z ${bootChunks}` : 'Budowa świata podglądu…';
+		if (bootWarm < 2) return 'Kompilacja shaderów karty graficznej…';
+		return 'Gotowe';
+	};
+	if (window.TrainScreens) window.TrainScreens.boot({ version: $('version').textContent, ready: bootReady, status: bootStatus });
 	else { renderer.hold = false; if ($('boot')) $('boot').remove(); }
 })();

@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.8',
+			date: '20 października 2026',
+			groups: [
+				['Ekrany', [
+					'Ekran startowy: pod paskiem postępu napis, co się właśnie wczytuje – pliki gry, karta graficzna, świat podglądu (z liczbą kawałków), shadery i potoki karty graficznej (ile z ilu).',
+				]],
+			],
+		},
+		{
 			version: '0.54.7',
 			date: '20 października 2026',
 			groups: [

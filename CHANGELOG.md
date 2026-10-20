@@ -4,6 +4,21 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.8 – 20 października 2026
+
+### Ekran startowy (`index.html`, `js/screens.js`, `js/main.js`, `style.css`)
+- Pod paskiem postępu etap wczytywania (`.scr-step`): „Wczytywanie plików gry…” (do wczytania main.js), „Uruchamianie
+  karty graficznej (WebGPU)…”, „Wczytywanie tras…”, „Budowa świata podglądu… N z M” (kawałki świata w menu),
+  „Kompilacja shaderów… N z M” (obiekty sceny przejrzane przez compileAsync – `onProgress`), „Kompilacja potoków karty
+  graficznej… N z M” (potoki, na które czekamy – licznik w `asyncPipelines`; `renderer.compileInfo()`), „Gotowe”.
+  main.js podaje etap funkcją `status()` w `boot()`, ekran odczytuje ją co klatkę (requestAnimationFrame) i co
+  ok. 120 ms. Po gotowości napis gaśnie, w jego miejscu zachęta – bez przesunięcia układu.
+- Kompilacja (`precompile`, WebGPU) co ok. 40 ms czeka na klatkę przeglądarki: `compileAsync` Three oddaje sterowanie
+  przez `scheduler.yield`, którego kontynuacje mają pierwszeństwo – przez całą kompilację nie było żadnej klatki
+  (etap stał, zadania z `setTimeout` czekały). Na ten czas `scheduler.yield` podmieniony (requestAnimationFrame,
+  najwyżej 100 ms – karta w tle); czas kompilacji bez zmian (ok. 11–12 s przed menu).
+- Napis zmienia się tylko, gdy wątek główny ma chwilę (przy długich krokach budowy stoi – pasek i tło idą dalej).
+
 ## 0.54.7 – 20 października 2026
 
 Dwie przerwy przy starcie w trybie WebGPU, które zostały po 0.54.6. Nowe narzędzie

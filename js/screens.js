@@ -108,16 +108,21 @@
 	const LOGO = `<svg class="scr-logo" viewBox="0 0 120 120" aria-hidden="true"><rect x="4" y="4" width="112" height="112" rx="26" fill="#161c26" stroke="#2c3646" stroke-width="3"/><rect x="28" y="22" width="64" height="66" rx="14" fill="#ffb020"/><rect x="34" y="30" width="23" height="20" rx="4" fill="#0d1118"/><rect x="63" y="30" width="23" height="20" rx="4" fill="#0d1118"/><rect x="28" y="57" width="64" height="5" fill="#c77d0a"/><circle cx="41" cy="73" r="5.5" fill="#fff4d6"/><circle cx="79" cy="73" r="5.5" fill="#fff4d6"/><path d="M40 92 L31 108 M80 92 L89 108" stroke="#8f9bad" stroke-width="4" stroke-linecap="round"/><path d="M33 98 H87 M29 105 H91" stroke="#2c3646" stroke-width="3"/></svg>`;
 
 	/* Ekran startowy: element #boot z index.html (widoczny od pierwszej klatki). Animacja tła rusza od razu po wczytaniu
-	   tego skryptu (przed ciężkimi plikami gry); boot({ version, ready(), onEnter }) z main.js dopina warunek
-	   gotowości (świat podglądu w menu zbudowany) i wersję. Po gotowości pasek dochodzi do końca i pojawia się zachęta;
+	   tego skryptu (przed ciężkimi plikami gry); boot({ version, ready(), status(), onEnter }) z main.js dopina warunek
+	   gotowości (świat podglądu w menu zbudowany), wersję i bieżący etap wczytywania (status() – tekst pod paskiem;
+	   do wczytania main.js – „Wczytywanie plików gry…”). Po gotowości pasek dochodzi do końca i pojawia się zachęta;
 	   klik albo klawisz zamyka ekran (klawisz nie trafia dalej do gry; onEnter po zniknięciu). */
 	let bootState = null;
 	function startBoot() {
 		if (bootState) return bootState;
 		const el = document.getElementById('boot');
 		const night = 0.85;
-		const ov = overlay('scr-boot', `<div class="scr-boot-card">${LOGO}<h1>MASZYNISTA</h1><p class="scr-sub">symulator jazdy pociągiem po prawdziwych liniach</p><div class="scr-bar"><b></b></div><p class="scr-press">Kliknij lub naciśnij dowolny klawisz</p><p class="scr-ver"></p></div>`,
-			(c, W, H, t) => { if (c) railScene(c, W, H, reducedMotion() ? 40 : t * 9, night); }, el,
+		/* etap pod paskiem odświeżany co klatkę (requestAnimationFrame) – zadania z setTimeout nie dostają kolejki, gdy
+		   kompilacja Three oddaje sterowanie przez scheduler.yield (jej kontynuacje mają pierwszeństwo); klatki
+		   przeglądarka i tak co jakiś czas wymusza */
+		let stepTick = null;
+		const ov = overlay('scr-boot', `<div class="scr-boot-card">${LOGO}<h1>MASZYNISTA</h1><p class="scr-sub">symulator jazdy pociągiem po prawdziwych liniach</p><div class="scr-bar"><b></b></div><p class="scr-step" aria-hidden="true">Wczytywanie plików gry…</p><p class="scr-press">Kliknij lub naciśnij dowolny klawisz</p><p class="scr-ver"></p></div>`,
+			(c, W, H, t) => { if (c) railScene(c, W, H, reducedMotion() ? 40 : t * 9, night); if (stepTick) stepTick(); }, el,
 			{ night, s: reducedMotion() ? 40 : 0, speed: reducedMotion() ? 0 : 9 });
 		const st = (bootState = { ov, opts: null });
 		const pr = progress(ov.root);
@@ -134,10 +139,15 @@
 		ov.root.addEventListener('pointerdown', enter);
 		st.enter = enter;
 		const minTime = 1.2;
+		const step = ov.root.querySelector('.scr-step');
+		const setStep = (s) => { if (step && s && step.textContent !== s) step.textContent = s; };
+		stepTick = () => { if (!ready && st.opts && st.opts.status) setStep(st.opts.status()); };
 		const poll = () => {
 			if (!ov.root.isConnected) return;
 			const t = (performance.now() - ov.start) / 1000;
+			if (st.opts && st.opts.status) setStep(st.opts.status());
 			if (t >= minTime && st.opts && (!st.opts.ready || st.opts.ready())) {
+				setStep('Gotowe');
 				pr.finish();
 				setTimeout(() => { ready = true; ov.root.classList.add('ready'); }, 420);
 				return;
