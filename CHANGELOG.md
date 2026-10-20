@@ -4,6 +4,46 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.7 – 20 października 2026
+
+Dwie przerwy przy starcie w trybie WebGPU, które zostały po 0.54.6. Nowe narzędzie
+`tools/render-check/bootprof.js`: profil procesora najdłuższych zawieszeń (albo całej kompilacji – `BP_COMPILE=1`)
+i licznik potoków karty: synchronicznych (`createRenderPipeline`, z materiałem i miejscem wywołania)
+i asynchronicznych.
+
+### Start karty – przerwa ok. 2,7 s (`js/3d/scene.js` asyncPipelines, `js/3d/nodes.js`)
+- Przyczyna: pierwsza klatka po starcie karty (jeszcze bez rysowania sceny) liczy LUT-y atmosfery, niebo, chmury,
+  mgłę i PMREM otoczenia – 11 potoków tworzonych synchronicznie. Synchroniczny potok kompiluje się w procesie karty
+  i wstrzymuje go całego, więc stało też tło ekranu startowego w workerze.
+- Teraz na starcie (do dwóch pełnych klatek bez nowych potoków) brakujące potoki powstają asynchronicznie, a Three
+  pomija obiekt, dopóki jego potok nie jest gotowy. Jednorazowe rysowania (LUT przepuszczalności, PMREM otoczenia)
+  powtarzają się, gdy potoki są gotowe. Nie dotyczy paczek (BundleGroup) – pominięty obiekt zostałby w nagranej
+  paczce na stałe.
+
+### Koniec kompilacji – przerwa ok. 3,7 s (`js/3d/scene.js` precompile)
+- Przyczyna: `compileAsync` Three pomija paczki (BundleGroup – statyczne części świata, world.js bundleStatic), więc
+  pierwsza pełna klatka po kompilacji budowała ok. 100 shaderów i potoków synchronicznie (ok. 3 s samej budowy
+  węzłów w wątku głównym).
+- Na czas kompilacji paczki są zwykłymi grupami – ich obiekty kompilują się razem z resztą (ten sam stan shadera
+  przy późniejszym rysowaniu w paczce). Dotyczy też kompilacji przed jazdą.
+- Kompilacja przed menu trwa przez to dłużej (budowa shaderów z oddawaniem sterowania, ok. 11 s zamiast ok. 4,5 s
+  + 4 s zawieszenia).
+- Poprawka: obiekt skompilowany poza paczką miał przy rysowaniu w paczce stan z kompilacji – na niektórych trasach część
+  świata w złym miejscu (wiszący kawałek peronu, Toruń – Chełmża). Obiekty utworzone przy kompilacji dostają przy
+  pierwszym rysowaniu w paczce pełne odświeżenie (geometria, uniformy obiektu, powiązania). `?nobc` w adresie – paczki
+  bez kompilacji (porównania).
+
+### Pomiar (`bootframes.js`, WebGPU)
+- Przed: tło w workerze – najdłuższa klatka 2,6–2,9 s; wątek główny – 2 klatki ponad 500 ms (2,4–2,9 s po starcie
+  karty i 3,8–4,0 s na końcu kompilacji); menu po 16,7–19,7 s (przerwa bywała już po oznaczeniu gotowości).
+- Po: tło w workerze – najdłuższa klatka ok. 0,42 s; wątek główny – żadnej klatki ponad 500 ms (najdłuższa
+  0,25–0,35 s); menu po 22,4–24,6 s.
+- `bootframes.js` oznacza też koniec budowy shaderów kompilacji (`shadery gotowe`).
+- `loadtime.js`, nowy profil (trasa domyślna Gliwice – Zabrze), 2 przebiegi: przed – menu po 49–53 s, w jeździe
+  pierwsza klatka po ekranie wczytywania 19,6–23,5 s (paczki budowane synchronicznie) i rozgrzanie 3,3 s, koniec
+  wczytywania po 33,5–39,2 s; po – menu po 19,6–22,6 s, najdłuższa klatka wczytywania jazdy 0,34 s (poza 1,9–2,3 s
+  na samym początku, jak dotąd), koniec po 30,3–32,4 s.
+
 ## 0.54.6 – 19 października 2026
 
 Płynność ekranu startowego i ekranu wczytywania. Pomiar `tools/render-check/bootframes.js` (WebGPU): wątek główny

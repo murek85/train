@@ -175,7 +175,18 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 					   wspólnych uniformów (kamera) – obraz z nieaktualnej kamery; co najmniej odświeżenie współdzielone (tanie – jak
 					   przy rysowaniu wprost na ekran) */
 					const N = this.gl._nodes, need = N.needsRefresh.bind(N);
-					N.needsRefresh = (ro) => { const t = need(ro); return t === 0 && ro.bundle ? 1 : t; };
+					/* obiekty utworzone przy kompilacji (precompile – paczki jako zwykłe grupy): przy pierwszym rysowaniu
+					   w paczce pełne odświeżenie (geometria, uniformy obiektu, powiązania); stan z kompilacji poza paczką dawał
+					   na niektórych trasach część świata w złym miejscu (wiszący peron, Toruń – Chełmża) */
+					const fresh = (this.compiledFresh = new WeakSet());
+					N.needsRefresh = (ro) => {
+						if (ro.bundle && fresh.has(ro)) { fresh.delete(ro); return 2; }
+						const t = need(ro);
+						return t === 0 && ro.bundle ? 1 : t;
+					};
+					const O = this.gl._objects, oget = O.get.bind(O);
+					O.get = (...a) => { const ro = oget(...a); if (this.pipes && this.pipes.n) fresh.add(ro); return ro; };
+					this.asyncPipelines();
 					// Three przy braku karty WebGPU sam przechodzi na zaplecze WebGL 2 – w trybie auto wtedy lepszy zwykły WebGL
 					if (!NS.gpuForceWebGL && !this.gl.backend.isWebGPUBackend) gpuFallback('brak karty WebGPU');
 				}).catch((e) => { console.error('WebGPU:', e); gpuFallback(e && e.message); });
@@ -359,16 +370,57 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 		   najwyżej 20 s. */
 		/* opts: { all – także obiekty poza kadrem (domyślnie tak), reflect – odbicie w wodzie (WebGPU, domyślnie tak), warm –
 		   rozgrzanie na końcu (domyślnie tak) }. Ekran startowy: tylko kadr (szybciej do menu), reszta w tle (main.js). */
+		/* Potoki karty (WebGPU) – podmiana Pipelines.getForRender (raz, po init):
+		   – w precompile (pipes.n > 0) obietnice potoków do wspólnej listy (pipes.pend) zamiast czekania na każdy osobno;
+		   – na starcie (pipes.async, do pierwszych pełnych klatek – endAsyncPipelines) zwykłe rysowanie tworzy brakujące
+		     potoki asynchronicznie (createRenderPipelineAsync), a Three pomija obiekt, dopóki potok nie jest gotowy.
+		     Synchroniczny createRenderPipeline kompiluje w procesie karty i wstrzymuje go całego (także tło ekranu
+		     startowego w workerze): LUT-y atmosfery, chmury i PMREM otoczenia w pierwszej klatce po init – ok. 2,7 s.
+		     Rysowania jednorazowe (LUT przepuszczalności, PMREM) powtarzane, gdy potoki gotowe (pipesReady).
+		   Bez paczek (BundleGroup): pominięty obiekt zostałby w nagranej paczce na stałe. */
+		asyncPipelines() {
+			const gl = this.gl, pl = gl._pipelines, get = pl.getForRender;
+			const P = (this.pipes = { n: 0, pend: [], async: gl.backend.isWebGPUBackend === true, wait: 0, calm: 0 });
+			pl.getForRender = (ro, promises) => {
+				if (promises && P.n) return get.call(pl, ro, P.pend);
+				if (promises || !P.async || gl._currentRenderBundle !== null) return get.call(pl, ro, promises);
+				const q = [], r = get.call(pl, ro, q);
+				if (q.length) {
+					P.wait++;
+					Promise.all(q).finally(() => { if (--P.wait === 0) this.pipesReady(); });
+				}
+				return r;
+			};
+		}
+
+		pipesReady() {
+			if (this.skyGpu) this.skyGpu.atmo.dirty = true;
+			if (this.envGpu) this.envGpu.reset();
+		}
+
+		/* koniec asynchronicznych potoków startu: dwie pełne klatki bez nowych potoków (potem jak dotąd – brakujący potok
+		   synchronicznie, bez pomijania obiektów) */
+		endAsyncPipelines() {
+			const P = this.pipes;
+			if (!P || !P.async) return;
+			P.calm = P.wait === 0 ? P.calm + 1 : 0;
+			if (P.calm >= 2) P.async = false;
+		}
+
 		precompile(opts = {}) {
 			if (NS.gpu && !this.gl.hasInitialized()) return this.gpuInit.then(() => this.precompile(opts));
 			const all = opts.all !== false, reflect = opts.reflect !== false, warm = opts.warm !== false;
 			/* kompilacja dla bufora i kamery: obiekty ukryte i poza kadrem włączone tylko na czas synchronicznej części
 			   compileAsync (rzut sceny na listę obiektów) – bez tego obrót kamery w jeździe budowałby nowe shadery */
+			/* paczki (BundleGroup, world.js bundleStatic) na ten czas jak zwykłe grupy – compileAsync Three pomija paczki, więc
+			   ich obiekty (większość świata) budowały shadery i potoki synchronicznie w pierwszej pełnej klatce (ok. 4 s
+			   zawieszenia przed menu); obiekt rysowany potem w paczce ma ten sam stan (klucz bez paczki) */
 			const compileFor = (target, camera, depth = 0) => {
-				const hidden = [], culled = [];
+				const hidden = [], culled = [], bundles = [];
 				this.scene.traverse((o) => {
 					if (!o.visible && !glslOnly(o)) { hidden.push(o); o.visible = true; }
 					if (all && o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
+					if (o.isBundleGroup && !/[?&]nobc/.test(location.search)) { bundles.push(o); o.isBundleGroup = false; } // (?nobc – paczki bez kompilacji, do porównań)
 				});
 				const rt = this.gl.getRenderTarget();
 				this.gl.setRenderTarget(target);
@@ -387,6 +439,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				this.gl.setRenderTarget(rt);
 				for (const o of hidden) o.visible = false;
 				for (const o of culled) o.frustumCulled = true;
+				for (const o of bundles) o.isBundleGroup = true;
 				return q;
 			};
 			// ten sam bufor docelowy co przy rysowaniu (z efektami – bufor sceny), inaczej powstaje inny wariant programu
@@ -399,13 +452,9 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				   Odbicie w wodzie (reflector): scena rysowana do jego bufora z kamery odbitej – inny kontekst, więc osobne
 				   shadery i potoki dla wszystkich materiałów; bez kompilacji tutaj powstawały przy pierwszym akwenie w kadrze
 				   (ok. 100 shaderów i 80 potoków w jednej klatce: 3,5 s + kilkanaście sekund czekania na kartę) */
-				// (podmiana raz; kilka kompilacji naraz – np. dokompilowanie w tle w menu i start jazdy – zbiera do wspólnej listy)
-				if (!this.pipeWrap) {
-					const pl = this.gl._pipelines, get = pl.getForRender;
-					this.pipeWrap = { n: 0, pend: [] };
-					pl.getForRender = (ro, promises) => get.call(pl, ro, promises && this.pipeWrap.n ? this.pipeWrap.pend : promises);
-				}
-				const W = this.pipeWrap;
+				// (kilka kompilacji naraz – np. dokompilowanie w tle w menu i start jazdy – zbiera do wspólnej listy; asyncPipelines)
+				if (!this.pipes) this.asyncPipelines();
+				const W = this.pipes;
 				W.n++;
 				const R = reflect && this.waterRefl && this.waterRefl.refl && this.waterRefl.refl.reflector;
 				p = compileFor(main, this.camera)
@@ -1438,6 +1487,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				this.gl.render(this.scene, this.camera);
 			}
 			if (NS.gpu) this.scene.matrixWorldAutoUpdate = true;
+			if (NS.gpu && gpuOk) this.endAsyncPipelines();
 			this.drawMinimap(sim);
 			if (P) {
 				if (query) { P.gl.endQuery(P.ext.TIME_ELAPSED_EXT); P.queries.push(query); }

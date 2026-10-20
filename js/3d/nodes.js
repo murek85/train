@@ -759,7 +759,7 @@ import {
 		scene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), mat));
 		const pmrem = new PMREMGenerator(renderer);
 		let target = null, key = '';
-		return (sky) => {
+		const update = (sky) => {
 			if (!renderer.hasInitialized()) return null;
 			const k = [sky.zenith, sky.horizon, sky.ground, sky.sunColor].map((c) => c.getHexString()).join('') + sky.sunDir.toArray().map((v) => v.toFixed(1)).join();
 			if (k === key && target) return target.texture;
@@ -772,6 +772,9 @@ import {
 			target = pmrem.fromScene(scene, 0, 0.1, 10, { renderTarget: target });
 			return target.texture;
 		};
+		// ponowne wyliczenie przy następnym wywołaniu (scene.js pipesReady – pierwsze było bez gotowych potoków)
+		update.reset = () => { key = ''; };
+		return update;
 	}
 
 	// haki dla materiału (zob. Patched); zwraca materiał

@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.7',
+			date: '20 października 2026',
+			groups: [
+				['Ekrany', [
+					'Ekran startowy (WebGPU): bez kilkusekundowych zatrzymań – tuż po starcie karty graficznej i na końcu przygotowania shaderów przed menu.',
+				]],
+			],
+		},
+		{
 			version: '0.54.6',
 			date: '19 października 2026',
 			groups: [

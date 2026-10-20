@@ -24,6 +24,7 @@ Skrypty Electron do sprawdzania trybu WebGPU (`?webgpu`) wobec WebGL. Gra musi d
 | `nightview.js` | dla `SHOT_JS`: kamera swobodna 25 m nad torem `SHOT_S` m przed pociągiem (domyślnie 2500), wzdłuż trasy – oddal, mgła, łuna nocą |
 | `yardview.js` | dla `SHOT_JS`: kamera swobodna 40 m nad stacją, w poprzek torów (bocznice z wagonami, sieć) – porównania instancji, np. z `?noshare` |
 | `bootframes.js` | płynność ekranu startowego: klatki wątku głównego z etapem startu i klatki tła w workerze (`tloWorker`) |
+| `bootprof.js` | profil procesora startu gry: najdłuższe zawieszenia wątku głównego (`BP_COMPILE=1` – cała kompilacja przed menu) i potoki karty – synchroniczne (z materiałem i miejscem wywołania) i asynchroniczne |
 | `stutter.js` | przycięcia w jeździe (automatyczny maszynista, `SHOT_SEC` s): klatki ponad 33/50/100 ms z rozbiciem (świat, shadery, potoki), co budowało shadery i błędy konsoli (walidacja WebGPU) |
 | `menuops.js` | zmiany w menu (inna trasa, pogoda): czas okienka, etapy, najdłuższa klatka; `MENU_PROF=1` – profil zmiany trasy. Uwaga: zapisuje wybór trasy i pogody w profilu skryptów |
 | `wgsldump.js` | kod WGSL wszystkich programów – porównanie dwóch uruchomień (powtarzalność) |

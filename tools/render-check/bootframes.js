@@ -23,6 +23,9 @@ const INJ = `(() => {
 			const pc = r.precompile.bind(r), wu = r.warmUp.bind(r);
 			r.precompile = (o) => { mark('kompilacja'); return pc(o); };
 			r.warmUp = () => { mark('rozgrzanie'); const x = wu(); mark('po rozgrzaniu'); return x; };
+			// koniec budowy shaderów kompilacji (compileAsync Three) – dalej tylko czekanie na potoki karty
+			const ca = r.gl.compileAsync.bind(r.gl);
+			r.gl.compileAsync = (...a) => { const p = ca(...a); p.then(() => mark('shadery gotowe')); return p; };
 		}
 		if (!F.world && r.world && r.world.chunks.size) { F.world = true; mark('pierwszy kawałek'); }
 		if (!F.built && r.world && r.world.chunks.size && r.world.pending === 0) { F.built = true; mark('świat zbudowany'); }
