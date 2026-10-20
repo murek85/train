@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.9',
+			date: '20 października 2026',
+			groups: [
+				['Menu', [
+					'Wybór trasy (WebGPU): okienko kilka razy krótsze i bez wielosekundowych zatrzymań, z licznikiem kompilacji shaderów i potoków karty graficznej.',
+				]],
+			],
+		},
+		{
 			version: '0.54.8',
 			date: '20 października 2026',
 			groups: [

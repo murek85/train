@@ -1120,7 +1120,7 @@
 		const seq = ++loadSeq, def = defById(id);
 		const live = () => seq === loadSeq && mode === 'menu';
 		// przerwane (inny wybór albo start gry) – okienko znika, chyba że wyświetla je już nowszy wybór
-		const quit = () => { if (seq === loadSeq) routeLoading(null); };
+		const quit = () => { if (seq === loadSeq) routeLoading(null); menuRelease(seq); };
 		selected = id;
 		save('route', selected);
 		// tytuł przebiegu (od wybranej stacji początkowej)
@@ -1136,14 +1136,47 @@
 		routeLoading('Budowa otoczenia linii…', 0.45);
 		await nextFrame();
 		if (!live()) return quit();
+		menuHold();
 		startDemo();
-		await worldNear(live, 0.45);
-		if (seq !== loadSeq) return;
+		await worldNear(live, 0.45, window.Train3D.gpu ? 0.75 : 1);
+		if (!live()) return quit();
+		await menuSettle(live, 0.75, 0.99);
+		if (!live()) return quit();
+		menuRelease(seq);
 		routeLoading('Droga przebiegu ułożona ✓', 1);
 		setTimeout(() => { if (seq === loadSeq) routeLoading(null); }, 250);
 	}
+	/* WebGPU, wybór trasy w menu: świat podglądu (nowa trasa – nowe materiały) buduje się bez rysowania sceny (scene.js hold), potem
+	   kompilacja shaderów i potoków nowych obiektów naraz (precompile – potoki równolegle, także odbicie w wodzie) z licznikami
+	   w okienku. Wcześniej rysowanie w trakcie budowy tworzyło brakujące shadery i potoki synchronicznie, jeden po drugim:
+	   zmiana trasy ok. 60 s z klatkami po kilkanaście sekund (okienko stało). */
+	const menuHold = () => { if (window.Train3D.gpu) renderer.hold = true; };
+	const menuRelease = (seq) => { if (seq === loadSeq && mode === 'menu') renderer.hold = false; };
+	async function menuSettle(live, f0, f1) {
+		if (!window.Train3D.gpu) return;
+		renderer.hold = true;
+		/* najpierw koniec kompilacji w tle (po starcie menu – obiekty poza kadrem i odbicie w wodzie): dwie naraz przy budowie
+		   nowego świata przeliczały bufory odbicia (compileAsync wywołuje updateBefore obiektów) – zniszczona tekstura
+		   odbicia w poleceniach karty (błąd walidacji WebGPU) */
+		while (renderer.pipes && renderer.pipes.n > 0 && live()) {
+			routeLoading('Kończenie przygotowania shaderów…', f0);
+			await nextFrame();
+		}
+		if (!live()) return;
+		let done = false;
+		/* tylko to, co widzi kamera podglądu (jak rysowanie); obiekty ukryte, poza kadrem i odbicie w wodzie – przed jazdą
+		   (ekran wczytywania); bez rozgrzania (synchroniczne rysowanie wszystkiego budowało kilka sekund) */
+		renderer.precompile({ all: false, reflect: false, hidden: false, warm: false }).then(() => { done = true; });
+		while (!done && live()) {
+			const c = renderer.compileInfo();
+			if (c && c.objTotal && c.objDone < c.objTotal) routeLoading(`Kompilacja shaderów… (${c.objDone} z ${c.objTotal})`, f0 + (f1 - f0) * 0.7 * (c.objDone / c.objTotal));
+			else if (c && c.pipeTotal && c.pipeDone < c.pipeTotal) routeLoading(`Kompilacja potoków karty graficznej… (${c.pipeDone} z ${c.pipeTotal})`, f0 + (f1 - f0) * (0.7 + 0.3 * (c.pipeDone / c.pipeTotal)));
+			else routeLoading('Kompilacja shaderów…', f0);
+			await nextFrame();
+		}
+	}
 	// doczytywanie kawałków świata podglądu przy pociągu (najwyżej ok. 20 s – potem okienko i tak znika); pasek od f0 do 1
-	async function worldNear(live, f0) {
+	async function worldNear(live, f0, f1 = 1) {
 		let total = 0;
 		for (let k = 0; k < 1200 && live(); k++) {
 			await nextFrame();
@@ -1151,7 +1184,7 @@
 			const p = renderer.world ? renderer.world.pendingNear || 0 : 0;
 			total = Math.max(total, p);
 			if (k > 2 && p === 0) break;
-			if (total) routeLoading(`Budowa otoczenia linii… (${total - p} z ${total})`, f0 + (1 - f0) * (1 - p / total));
+			if (total) routeLoading(`Budowa otoczenia linii… (${total - p} z ${total})`, f0 + (f1 - f0) * (1 - p / total));
 		}
 	}
 	/* Zmiana w menu „Gra jednoosobowa” (skład, warunki, pierwsze otwarcie podglądu): okienko jak przy wyborze trasy,
@@ -2652,7 +2685,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.54.8';
+	$('version').textContent = 'wersja 0.54.9';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');

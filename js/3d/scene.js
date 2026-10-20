@@ -369,7 +369,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 		   pokazaniu obiektu (przycięcie przy wejściu do kabiny). Równolegle (KHR_parallel_shader_compile), gdy dostępne;
 		   najwyżej 20 s. */
 		/* opts: { all – także obiekty poza kadrem (domyślnie tak), reflect – odbicie w wodzie (WebGPU, domyślnie tak), warm –
-		   rozgrzanie na końcu (domyślnie tak) }. Ekran startowy: tylko kadr (szybciej do menu), reszta w tle (main.js). */
+		   rozgrzanie na końcu (domyślnie tak), hidden – także obiekty ukryte (dalsze poziomy szczegółów, kabina; domyślnie tak) }. Ekran startowy: tylko kadr (szybciej do menu), reszta w tle (main.js). */
 		/* Potoki karty (WebGPU) – podmiana Pipelines.getForRender (raz, po init):
 		   – w precompile (pipes.n > 0) obietnice potoków do wspólnej listy (pipes.pend) zamiast czekania na każdy osobno;
 		   – na starcie (pipes.async, do pierwszych pełnych klatek – endAsyncPipelines) zwykłe rysowanie tworzy brakujące
@@ -419,7 +419,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 
 		precompile(opts = {}) {
 			if (NS.gpu && !this.gl.hasInitialized()) return this.gpuInit.then(() => this.precompile(opts));
-			const all = opts.all !== false, reflect = opts.reflect !== false, warm = opts.warm !== false;
+			const all = opts.all !== false, reflect = opts.reflect !== false, warm = opts.warm !== false, hiddenToo = opts.hidden !== false;
 			/* kompilacja dla bufora i kamery: obiekty ukryte i poza kadrem włączone tylko na czas synchronicznej części
 			   compileAsync (rzut sceny na listę obiektów) – bez tego obrót kamery w jeździe budowałby nowe shadery */
 			/* paczki (BundleGroup, world.js bundleStatic) na ten czas jak zwykłe grupy – compileAsync Three pomija paczki, więc
@@ -432,7 +432,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			const compileFor = (target, camera, depth = 0) => {
 				const hidden = [], culled = [], bundles = [];
 				this.scene.traverse((o) => {
-					if (!o.visible && !glslOnly(o)) { hidden.push(o); o.visible = true; }
+					if (hiddenToo && !o.visible && !glslOnly(o)) { hidden.push(o); o.visible = true; }
 					if (all && o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
 					if (o.isBundleGroup && !/[?&]nobc/.test(location.search)) { bundles.push(o); o.isBundleGroup = false; } // (?nobc – paczki bez kompilacji, do porównań)
 				});

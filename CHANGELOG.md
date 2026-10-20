@@ -4,6 +4,33 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.9 – 20 października 2026
+
+Okienko wyboru trasy w menu (WebGPU). Pomiar `tools/render-check/menuops.js` (profil tymczasowy): inna trasa 60,8 s →
+ok. 24–28 s (najdłuższa klatka 28,2 → ok. 5 s), powrót do trasy 44,0 → ok. 7,5–10,7 s (16,5 → ok. 3–5 s); zmiana
+składu i pogody bez zmian w kodzie (ok. 2 s).
+
+### Przyczyna
+- Rysowanie podglądu w trakcie budowy świata nowej trasy (nowe materiały): brakujące shadery budowane w zwykłych
+  klatkach (ok. 12 s) i potoki tworzone synchronicznie, jeden po drugim (ok. 38 s czekania na kartę), odbicie w wodzie
+  ok. 5 s – okienko stało po kilkanaście sekund.
+
+### Zmiany (`js/main.js` selectRoute, menuSettle)
+- Świat nowej trasy buduje się bez rysowania sceny (`renderer.hold`), potem kompilacja tego, co widzi kamera podglądu
+  (`precompile({ all: false, reflect: false, hidden: false, warm: false })` – potoki równolegle), z licznikami w okienku:
+  „Kompilacja shaderów… (N z M)”, „Kompilacja potoków karty graficznej… (N z M)”. Reszta (obiekty ukryte, poza kadrem,
+  odbicie) – przed jazdą na ekranie wczytywania.
+- Najpierw koniec kompilacji w tle (po starcie menu): dwie naraz przy budowie nowego świata przeliczały bufory odbicia
+  w wodzie (compileAsync wywołuje updateBefore obiektów) – zniszczona tekstura 640×360 w poleceniach karty (błąd
+  walidacji WebGPU). Okienko pokazuje wtedy „Kończenie przygotowania shaderów…”.
+- Zmiana składu i warunków – bez tego (świat podglądu buduje się od nowa i pełna kompilacja kilkuset shaderów trwała
+  ok. 20 s zamiast ok. 2–5 s).
+- `precompile`: opcja `hidden` (także obiekty ukryte, domyślnie tak).
+
+### Narzędzia
+- `menuops.js`: profil przeglądarki tymczasowy (wybory menu nie zostają w profilu skryptów), zmiana składu, klatki po
+  zamknięciu okienka, `MENU_PROF=tabor` / `pogoda`, licznik budów shaderów w profilu.
+
 ## 0.54.8 – 20 października 2026
 
 ### Ekran startowy (`index.html`, `js/screens.js`, `js/main.js`, `style.css`)
