@@ -1104,7 +1104,7 @@
 	});
 	// head – nagłówek okienka (domyślnie „Wczytywanie trasy”; zmiana składu i warunków – własny)
 	// nadtytuły małych wczytywań (kolejowo): rodzaj – co się dzieje
-	const RL_HEAD = { 'Wczytywanie trasy': 'Wczytywanie trasy · zestawianie przebiegu', 'Zmiana składu': 'Zmiana składu · manewry', 'Podgląd składu': 'Podgląd składu · hala postojowa', 'Zmiana warunków': 'Zmiana warunków · komunikat meteo' };
+	const RL_HEAD = { 'Wczytywanie trasy': 'Wczytywanie trasy · zestawianie przebiegu', 'Zmiana składu': 'Zmiana składu · manewry', 'Podgląd składu': 'Podgląd składu · hala postojowa', 'Zmiana warunków': 'Zmiana warunków · komunikat meteo', 'Zmiana jakości': 'Zmiana jakości · ustawienia grafiki' };
 	function routeLoading(step, frac, title, head) {
 		const box = $('route-loading');
 		if (step === null) { box.classList.add('hidden'); return; }
@@ -1163,10 +1163,14 @@
 			await nextFrame();
 		}
 		if (!live()) return;
-		let done = false;
 		/* tylko to, co widzi kamera podglądu (jak rysowanie); obiekty ukryte, poza kadrem i odbicie w wodzie – przed jazdą
 		   (ekran wczytywania); bez rozgrzania (synchroniczne rysowanie wszystkiego budowało kilka sekund) */
-		renderer.precompile({ all: false, reflect: false, hidden: false, warm: false }).then(() => { done = true; });
+		await compileCounted(live, f0, f1, { all: false, reflect: false, hidden: false, warm: false });
+	}
+	// precompile z licznikami w okienku (shadery – obiekty sceny, potem potoki karty); do końca kompilacji albo przerwania
+	async function compileCounted(live, f0, f1, opts) {
+		let done = false;
+		renderer.precompile(opts).then(() => { done = true; });
 		while (!done && live()) {
 			const c = renderer.compileInfo();
 			if (c && c.objTotal && c.objDone < c.objTotal) routeLoading(`Kompilacja shaderów… (${c.objDone} z ${c.objTotal})`, f0 + (f1 - f0) * 0.7 * (c.objDone / c.objTotal));
@@ -1191,14 +1195,18 @@
 	   blokujące menu na czas przebudowy – najpierw okienko się rysuje, potem praca etapami z odświeżeniem między nimi:
 	   work() (lista, podsumowanie, model podglądu 3D), pierwsze rysowanie podglądu (kompilacja shaderów), pociąg
 	   w tle (demo: model w scenie, świat) – gdy demo. Kolejna zmiana (albo wybór trasy) przerywa poprzednią. */
-	async function menuBusy(head, title, work, demo = true) {
+	/* settle – WebGPU: świat bez rysowania i kompilacja widocznych obiektów z licznikami (menuSettle) – przy zmianie jakości
+	   (inny sposób rysowania: efekty, cienie – prawie wszystko nowe); przy składzie i warunkach bez (pełna kompilacja
+	   przebudowanego świata trwała dłużej niż budowa w klatkach) */
+	async function menuBusy(head, title, work, demo = true, settle = false) {
 		const seq = ++loadSeq;
 		const live = () => seq === loadSeq && mode === 'menu';
-		const quit = () => { if (seq === loadSeq) routeLoading(null); };
+		const quit = () => { if (seq === loadSeq) routeLoading(null); if (settle) menuRelease(seq); };
 		clearTimeout(demoT);
 		routeLoading('Przygotowanie…', 0.1, title, head);
 		await nextFrame();
 		if (!live()) return quit();
+		if (settle) menuHold(); // (przed zmianą – klatki po niej budowałyby shadery synchronicznie)
 		work();
 		routeLoading('Podgląd w hali…', 0.35);
 		await nextFrame();
@@ -1209,8 +1217,13 @@
 			await nextFrame();
 			if (!live()) return quit();
 			startDemo();
-			await worldNear(live, 0.6);
+			await worldNear(live, 0.6, settle && window.Train3D.gpu ? 0.8 : 1);
 			if (!live()) return quit();
+			if (settle) {
+				await menuSettle(live, 0.8, 0.99);
+				if (!live()) return quit();
+				menuRelease(seq);
+			}
 		}
 		routeLoading('Gotowe ✓', 1);
 		setTimeout(() => { if (seq === loadSeq) routeLoading(null); }, 150);
@@ -1219,11 +1232,11 @@
 	/* Zmiana warunków w pauzie (pogoda, pora roku): to samo okienko co w menu, nad pauzą – najpierw okienko się rysuje,
 	   potem work(); kompilacja shaderów nowych efektów (opady, mokre nawierzchnie, śnieg – w WebGPU bez rysowania sceny
 	   do jej końca, scene.js hold) i – gdy rebuild – przebudowa świata wokół pociągu. Kolejna zmiana przerywa poprzednią. */
-	async function pauseBusy(title, work, rebuild = false, step = 'Wczytywanie efektów pogody…') {
+	async function pauseBusy(title, work, rebuild = false, step = 'Wczytywanie efektów pogody…', head = 'Zmiana warunków') {
 		const seq = ++loadSeq;
 		const live = () => seq === loadSeq && mode === 'pause';
 		const quit = () => { renderer.hold = false; if (seq === loadSeq) routeLoading(null); };
-		routeLoading('Przygotowanie…', 0.1, title, 'Zmiana warunków');
+		routeLoading('Przygotowanie…', 0.1, title, head);
 		await nextFrame();
 		if (!live()) return quit();
 		work();
@@ -1244,8 +1257,10 @@
 		routeLoading('Kompilacja shaderów…', 0.75);
 		await nextFrame();
 		if (!live()) return quit();
-		if (window.Train3D.gpu) renderer.hold = true;
-		await renderer.precompile();
+		if (window.Train3D.gpu) {
+			renderer.hold = true;
+			await compileCounted(live, 0.75, 0.99, {});
+		} else await renderer.precompile();
 		renderer.hold = false;
 		if (!live()) return quit();
 		routeLoading('Gotowe ✓', 1);
@@ -1717,6 +1732,7 @@
 		loadingFrames = 0;
 		loadingMax = 0;
 		if (loadingScreen && loadingScreen.progress) loadingScreen.progress(0.03); // od początku rzeczywisty postęp (bez animacji „na czas”)
+		if (loadingScreen && loadingScreen.status) loadingScreen.status('Przygotowanie trasy i składu…');
 		precompiled = 0;
 		renderer.hold = !!window.Train3D.gpu; // WebGPU: bez rysowania do kompilacji potoków (scene.js hold)
 		sim = null;
@@ -2148,11 +2164,32 @@
 			if (sim) {
 				renderer.miniRect = false;
 				renderer.draw(sim, 0, 0);
-				/* postęp na ekranie wczytywania: budowa kawałków świata (8–85%, wg największej liczby czekających), kompilacja
-				   shaderów (90%), start – 100% */
+				/* postęp i etap na ekranie wczytywania: budowa kawałków świata (8–85%, wg największej liczby czekających),
+				   kompilacja shaderów (85–93%, obiekty sceny), odbić w wodzie (93–97%) i potoków karty (97–99%) z licznikami (scene.js compileInfo;
+				   WebGL – bez liczników, 90%), start – 100% */
 				const pend = renderer.world.pending || 0;
 				loadingMax = Math.max(loadingMax, pend);
-				if (loadingScreen && loadingScreen.progress) loadingScreen.progress(precompiled ? 0.9 : 0.08 + 0.77 * (loadingMax ? 1 - pend / loadingMax : loadingFrames >= 4 ? 1 : 0));
+				let lp, lt;
+				if (!precompiled) {
+					lp = 0.08 + 0.77 * (loadingMax ? 1 - pend / loadingMax : loadingFrames >= 4 ? 1 : 0);
+					lt = loadingMax ? `Budowa świata… ${loadingMax - pend} z ${loadingMax} kawałków` : 'Budowa świata…';
+				} else if (precompiled === 1) {
+					const c = renderer.compileInfo && renderer.compileInfo();
+					// (progi rosną z przebiegiem – pasek się nie cofa: scena 85–92%, odbicia 92–97%, potoki 97–99%, rozgrzanie 99%)
+					const refl = c && c.pass === 'odbicie';
+					if (c && c.pass === 'rozgrzanie') { lp = 0.99; lt = 'Rozgrzewanie karty graficznej…'; }
+					else if (refl && !c.objTotal) { lp = 0.92; lt = 'Kompilacja odbić w wodzie…'; } // (przebieg ruszył, liczba obiektów jeszcze nieznana)
+					else if (c && c.objTotal && c.objDone < c.objTotal) {
+						lp = refl ? 0.92 + 0.05 * (c.objDone / c.objTotal) : 0.85 + 0.07 * (c.objDone / c.objTotal);
+						lt = `${refl ? 'Kompilacja odbić w wodzie' : 'Kompilacja shaderów'}… ${c.objDone} z ${c.objTotal}`;
+					} else if (c && c.pipeTotal && c.pipeDone < c.pipeTotal) {
+						lp = refl ? 0.97 + 0.02 * (c.pipeDone / c.pipeTotal) : 0.92;
+						lt = `Kompilacja potoków karty graficznej… ${c.pipeDone} z ${c.pipeTotal}`;
+					} else if (c && c.objTotal) { lp = refl ? 0.97 : 0.92; lt = 'Kompilacja potoków karty graficznej…'; }
+					else { lp = 0.85; lt = 'Kompilacja shaderów…'; }
+				} else { lp = 0.99; lt = 'Wjazd na peron…'; }
+				if (loadingScreen && loadingScreen.progress) loadingScreen.progress(lp);
+				if (loadingScreen && loadingScreen.status) loadingScreen.status(lt);
 				// świat zbudowany – jeszcze kompilacja shaderów wszystkich obiektów (także ukrytych, np. kabiny), potem start
 				if (++loadingFrames >= 4 && !(renderer.world.pending > 0)) {
 					if (!precompiled) {
@@ -2452,7 +2489,14 @@
 	let autoQ = load('opt.quality', null) === null ? { t: [] } : null;
 	$('opt-quality').value = load('opt.quality', 'medium');
 	$('opt-weather').value = $('pause-weather').value = load('opt.weather', 'auto');
-	$('opt-quality').addEventListener('change', () => { applyGraphics(mode === 'menu' ? undefined : 'pause'); if (mode === 'menu') startDemo(); });
+	/* jakość grafiki: nowe shadery (wszystkie materiały), mapy cieni, efekty po renderowaniu i przebudowa świata (zasięg,
+	   gęstość) – okienko przeładowania jak przy zmianie składu (menu) albo warunków (pauza) */
+	$('opt-quality').addEventListener('change', () => {
+		const title = 'Jakość: ' + $('opt-quality').selectedOptions[0].text;
+		if (mode === 'menu') menuBusy('Zmiana jakości', title, () => applyGraphics(), true, true);
+		else if (mode === 'pause') pauseBusy(title, () => applyGraphics('pause'), true, 'Przebudowa świata i shaderów…', 'Zmiana jakości');
+		else applyGraphics('pause');
+	});
 	const weatherName = () => { const s = $('opt-weather'); return s.options[s.selectedIndex].text; };
 	$('opt-weather').addEventListener('change', () => menuBusy('Zmiana warunków', 'Pogoda: ' + weatherName(), () => { applyGraphics(); buildMenu(); }));
 	const pauseWeatherName = () => { const s = $('pause-weather'); return s.options[s.selectedIndex].text; };
@@ -2685,7 +2729,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.54.9';
+	$('version').textContent = 'wersja 0.54.12';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');

@@ -46,6 +46,12 @@
 		}
 		if (reducedMotion()) root.classList.add('reduced');
 		const canvas = root.querySelector('canvas');
+		/* zapas pod tłem z workera: gradient w kolorach sceny (niebo, horyzont, grunt wg pory) – zanim worker narysuje
+		   pierwszą klatkę (proces karty bywa na początku wczytywania zajęty), zamiast czarnego ekranu */
+		if (bg) {
+			const n = bg.night ?? 0.5, mx = (a, b) => `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * n)).join(',')})`;
+			canvas.style.background = `linear-gradient(${mx([92, 146, 205], [6, 10, 24])} 0%, ${mx([226, 214, 190], [40, 32, 58])} 50%, ${mx([96, 110, 80], [16, 20, 18])} 50%, ${mx([58, 70, 46], [8, 10, 10])} 100%)`;
+		}
 		const dpr = () => Math.min(2, window.devicePixelRatio || 1);
 		let W = Math.round(innerWidth * dpr()), H = Math.round(innerHeight * dpr()), worker = null, c = null;
 		if (bg && typeof Worker === 'function' && typeof OffscreenCanvas === 'function' && canvas.transferControlToOffscreen) {
@@ -165,17 +171,19 @@
 		return { close: () => st.enter() };
 	}
 
-	/* Ekran wczytywania trasy: { eyebrow, title, sub, night } – zwraca { done() }: po zakończeniu pracy pasek dochodzi
+	/* Ekran wczytywania trasy: { eyebrow, title, sub, night } – zwraca { progress(p), status(tekst), done() }: po zakończeniu pracy pasek dochodzi
 	   do końca, ekran czeka minimalny czas i znika (klik zamyka wcześniej, gdy praca skończona). */
 	function loading(o = {}) {
 		const tip = TIPS[Math.floor(Math.random() * TIPS.length)];
 		const esc = (x) => String(x == null ? '' : x).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
 		let speedS = 0, lastT = 0, lastV = -1, finished = false, finishedAt = 0;
 		const minTime = o.minTime ?? 1.6;
-		let pr = null, stage = null, pct = null, real = null;
+		let pr = null, stage = null, pct = null, real = null, custom = null;
+		// etap: tekst z main.js (status – budowa świata, kompilacja z licznikami), bez niego – etapy wg postępu
 		const label = (p) => {
 			pct.textContent = Math.round(p * 100) + '%';
-			stage.textContent = p >= 0.99 ? STAGES[STAGES.length - 1] : STAGES[Math.min(STAGES.length - 2, Math.floor(p * (STAGES.length - 1)))];
+			const t = custom && !finished ? custom : p >= 0.99 ? STAGES[STAGES.length - 1] : STAGES[Math.min(STAGES.length - 2, Math.floor(p * (STAGES.length - 1)))];
+			if (stage.textContent !== t) stage.textContent = t;
 		};
 		const ov = overlay('scr-load', `<div class="scr-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div class="scr-card"><span class="scr-eyebrow">${esc(o.eyebrow || 'TRASA')}</span><h1>${esc(o.title || '')}</h1><p class="scr-route">${esc(o.sub || '')}</p><div class="scr-bar"><b></b></div><div class="scr-stage"><span></span><em>0%</em></div><p class="scr-tip"><b>Wskazówka</b> ${esc(tip)}</p></div>`,
 			(c, W, H, t) => {
@@ -220,6 +228,8 @@
 				// (gdy klatki animacji stoją – np. okno w tle – zamknięcie na zegarze)
 				setTimeout(() => ov.close(), Math.max(0, minTime * 1000 - (finishedAt - ov.start)) + 1200);
 			},
+			// bieżący etap wczytywania (zastępuje etapy wg postępu do zakończenia – done)
+			status(t) { custom = t || null; },
 			close: () => ov.close(),
 		};
 	}

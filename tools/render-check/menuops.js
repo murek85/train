@@ -1,4 +1,4 @@
-/* Zmiany w menu (Electron, okno poza ekranem): wybór innej trasy, zmiana składu, pogoda, powrót do pierwszej trasy – dla
+/* Zmiany w menu (Electron, okno poza ekranem): wybór innej trasy, zmiana składu, pogoda, jakość grafiki (wysoka, niska), powrót do pierwszej trasy – dla
    każdej czas do zamknięcia okienka, etapy okienka, najdłuższa klatka i klatki ponad 100 ms w czasie okienka i przez 3 s
    po nim. Profil przeglądarki tymczasowy (świeży, usuwany po teście) – wybory menu nie zostają w profilu skryptów.
      node_modules/electron/dist/electron.exe tools/render-check/menuops.js <port> <zapytanie | -> */
@@ -20,7 +20,7 @@ app.whenReady().then(async () => {
 	let res;
 	const prof = process.env.MENU_PROF;
 	if (prof) {
-		// MENU_PROF=1 – profil procesora zmiany trasy (MENU_PROF=tabor / pogoda – zmiany składu / pogody): najdroższe funkcje łącznie
+		// MENU_PROF=1 – profil procesora zmiany trasy (MENU_PROF=tabor / pogoda / jakosc – zmiany składu / pogody / jakości na wysoką): najdroższe funkcje łącznie
 		await w.webContents.executeJavaScript(`(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const m = window.maszynista, r = m.renderer; for (let i = 0; i < 4800 && !(m.sim && r.world && r.world.pending === 0 && r.world.chunks.size && !r.hold); i++) await wait(25); document.querySelector('.scr-boot')?.remove(); await wait(8000); })()`);
 		// budowy shaderów w czasie profilowanej zmiany: materiał, obiekt i przodkowie (co budowało)
 		await w.webContents.executeJavaScript(`(() => { const r = window.maszynista.renderer, W = (window.__who = new Map()); const path = (o) => { const p = []; for (let q = o; q && p.length < 4; q = q.parent) p.push(q.name || q.type); return p.join(' < '); }; r.gl.debug.onNodeBuilderCreated = (nb, ro) => { const b = nb.build.bind(nb), ba = nb.buildAsync && nb.buildAsync.bind(nb); const rec = () => { const k = (ro.material.patchVariant || ro.material.type) + (ro.camera.isOrthographicCamera ? ' [cień]' : '') + (ro.bundle ? ' [paczka]' : '') + ' · ' + path(ro.object); W.set(k, (W.get(k) || 0) + 1); }; nb.build = (...a) => { rec(); return b(...a); }; if (ba) nb.buildAsync = (...a) => { rec(); return ba(...a); }; }; })()`);
@@ -29,7 +29,7 @@ app.whenReady().then(async () => {
 		await dbg.sendCommand('Profiler.enable');
 		await dbg.sendCommand('Profiler.setSamplingInterval', { interval: 1000 });
 		await dbg.sendCommand('Profiler.start');
-		await w.webContents.executeJavaScript(`(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const box = document.getElementById('route-loading'); const routes = [...document.querySelectorAll('#route-list button.route')]; const first = routes.findIndex((b) => b.classList.contains('sel')); (${JSON.stringify(process.env.MENU_PROF)} === 'tabor' ? window.maszynista.setTrain(window.TrainRoutes.defaultConfig({ train: 'ic' })) : ${JSON.stringify(process.env.MENU_PROF)} === 'pogoda' ? (() => { const s = document.getElementById('opt-weather'); s.value = 'rain'; s.dispatchEvent(new Event('change')); })() : routes[routes.findIndex((b, i) => i !== first)].click()); await wait(200); for (let i = 0; i < 4800 && !box.classList.contains('hidden'); i++) await wait(25); })()`);
+		await w.webContents.executeJavaScript(`(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const box = document.getElementById('route-loading'); const routes = [...document.querySelectorAll('#route-list button.route')]; const first = routes.findIndex((b) => b.classList.contains('sel')); (${JSON.stringify(process.env.MENU_PROF)} === 'jakosc' ? (() => { const s = document.getElementById('opt-quality'); s.value = 'high'; s.dispatchEvent(new Event('change')); })() : ${JSON.stringify(process.env.MENU_PROF)} === 'tabor' ? window.maszynista.setTrain(window.TrainRoutes.defaultConfig({ train: 'ic' })) : ${JSON.stringify(process.env.MENU_PROF)} === 'pogoda' ? (() => { const s = document.getElementById('opt-weather'); s.value = 'rain'; s.dispatchEvent(new Event('change')); })() : routes[routes.findIndex((b, i) => i !== first)].click()); await wait(200); for (let i = 0; i < 4800 && !box.classList.contains('hidden'); i++) await wait(25); })()`);
 		const { profile } = await dbg.sendCommand('Profiler.stop');
 		const byId = new Map(profile.nodes.map((n) => [n.id, n])), parent = new Map();
 		for (const n of profile.nodes) for (const c of n.children || []) parent.set(c, n.id);
@@ -51,9 +51,9 @@ app.whenReady().then(async () => {
 			await wait(8000); // dokompilowanie w tle po starcie
 			const box = document.getElementById('route-loading');
 			const op = async (name, act) => {
-				const F = [], steps = [];
+				const F = [], steps = [], long = [];
 				let last = performance.now(), run = true;
-				const tick = () => { const t = performance.now(); F.push(t - last); last = t; const st = box.classList.contains('hidden') ? '' : document.getElementById('rl-step').textContent.replace(/ \\(.*\\)/, ''); if (st && steps[steps.length - 1] !== st) steps.push(st); if (run) requestAnimationFrame(tick); };
+				const tick = () => { const t = performance.now(); const dt0 = t - last; F.push(dt0); last = t; if (dt0 > 1000) long.push(Math.round(dt0) + ' ms po: ' + (steps[steps.length - 1] || '-')); const st = box.classList.contains('hidden') ? '' : document.getElementById('rl-step').textContent.replace(/ \\(.*\\)/, ''); if (st && steps[steps.length - 1] !== st) steps.push(st); if (run) requestAnimationFrame(tick); };
 				requestAnimationFrame(tick);
 				const t0 = performance.now();
 				act();
@@ -63,7 +63,7 @@ app.whenReady().then(async () => {
 				await wait(3000); // po zamknięciu okienka
 				run = false;
 				const A = F.slice(nIn);
-				return { name, ms, steps, maxFrame: Math.round(Math.max(...F.slice(0, nIn))), over100: F.slice(0, nIn).filter((x) => x > 100).length, after: { maxFrame: Math.round(Math.max(0, ...A)), over100: A.filter((x) => x > 100).length } };
+				return { name, ms, steps, maxFrame: Math.round(Math.max(...F.slice(0, nIn))), over100: F.slice(0, nIn).filter((x) => x > 100).length, after: { maxFrame: Math.round(Math.max(0, ...A)), over100: A.filter((x) => x > 100).length }, long };
 			};
 			const routes = [...document.querySelectorAll('#route-list button.route')];
 			const first = routes.findIndex((b) => b.classList.contains('sel'));
@@ -72,6 +72,9 @@ app.whenReady().then(async () => {
 			out.push(await op('trasa', () => routes[other].click()));
 			out.push(await op('tabor', () => window.maszynista.setTrain(window.TrainRoutes.defaultConfig({ train: 'ic' }))));
 			out.push(await op('pogoda', () => { const s = document.getElementById('opt-weather'); s.value = 'rain'; s.dispatchEvent(new Event('change')); }));
+			const q = (v) => () => { const s = document.getElementById('opt-quality'); s.value = v; s.dispatchEvent(new Event('change')); };
+			out.push(await op('jakość wysoka', q('high')));
+			out.push(await op('jakość niska', q('low')));
 			out.push(await op('trasa z powrotem', () => document.querySelectorAll('#route-list button.route')[first].click()));
 			return out;
 		})()`);

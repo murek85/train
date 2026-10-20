@@ -4,6 +4,33 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.12',
+			date: '20 października 2026',
+			groups: [
+				['Grafika', [
+					'WebGPU: znów widać znacznik drogi hamowania H4 na torze przed pociągiem i inne półprzezroczyste elementy (zamalowywał je statyczny świat).',
+				]],
+			],
+		},
+		{
+			version: '0.54.11',
+			date: '20 października 2026',
+			groups: [
+				['Ekrany', [
+					'Ekran wczytywania trasy: zamiast stałych etapów – co się naprawdę dzieje, z licznikami (budowa świata, kompilacja shaderów i odbić w wodzie, rozgrzewanie karty); procent rośnie także przy kompilacji (wcześniej stał na 90%).',
+				]],
+			],
+		},
+		{
+			version: '0.54.10',
+			date: '20 października 2026',
+			groups: [
+				['Ustawienia', [
+					'Zmiana jakości grafiki (niska / średnia / wysoka) – w menu i w pauzie okienko przeładowania z etapami (przebudowa świata, kompilacja shaderów i potoków z licznikami) zamiast zatrzymanego obrazu.',
+				]],
+			],
+		},
+		{
 			version: '0.54.9',
 			date: '20 października 2026',
 			groups: [

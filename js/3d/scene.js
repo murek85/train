@@ -184,6 +184,18 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 						const t = need(ro);
 						return t === 0 && ro.bundle ? 1 : t;
 					};
+					/* paczki (BundleGroup) wykonane od razu, w miejscu rysowania (Three rysuje je przed zwykłymi obiektami), a nie
+					   na końcu przebiegu (WebGPUBackend.finishRender – executeBundles po wszystkich rysowaniach): statyczny świat
+					   z paczek zamalowywał przezroczyste obiekty bez zapisu głębi (znacznik drogi hamowania H4, poświaty, szyby).
+					   executeBundles zeruje stan przebiegu (potok, powiązania, bufory) – podręczny stan Three od nowa */
+					const B = this.gl.backend;
+					if (B.isWebGPUBackend && B.addBundle) {
+						B.addBundle = function (renderContext, bundle) {
+							const d = this.get(renderContext);
+							d.currentPass.executeBundles([this.get(bundle).bundleGPU]);
+							d.currentSets = { attributes: {}, bindingGroups: [], pipeline: null, index: null };
+						};
+					}
 					const O = this.gl._objects, oget = O.get.bind(O);
 					O.get = (...a) => { const ro = oget(...a); if (this.pipes && this.pipes.n) fresh.add(ro); return ro; };
 					this.asyncPipelines();
@@ -412,7 +424,8 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			if (P.calm >= 2) P.async = false;
 		}
 
-		// postęp bieżącej kompilacji: { objDone, objTotal, pipeDone, pipeTotal } (WebGPU; null, gdy nie było kompilacji)
+		// postęp bieżącej kompilacji: { pass ('scena' | 'odbicie' | 'rozgrzanie'), objDone, objTotal – obiekty przebiegu, pipeDone, pipeTotal –
+		// potoki karty } (WebGPU; null, gdy nie było kompilacji)
 		compileInfo() {
 			return this.compileStat || null;
 		}
@@ -427,7 +440,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			   zawieszenia przed menu); obiekt rysowany potem w paczce ma ten sam stan (klucz bez paczki) */
 			/* postęp kompilacji (compileInfo – etap na ekranie startowym): obiekty sceny przejrzane przez compileAsync (budowa
 			   shaderów) i potoki karty, na które czekamy; zerowany, gdy nie trwa żadna inna kompilacja */
-			if (!this.pipes || !this.pipes.n) this.compileStat = { objDone: 0, objTotal: 0, pipeDone: 0, pipeTotal: 0 };
+			if (!this.pipes || !this.pipes.n) this.compileStat = { pass: 'scena', objDone: 0, objTotal: 0, pipeDone: 0, pipeTotal: 0 };
 			const CS = this.compileStat;
 			const compileFor = (target, camera, depth = 0) => {
 				const hidden = [], culled = [], bundles = [];
@@ -446,8 +459,11 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				let q;
 				try {
 					if (NS.gpu) {
-						const base = { d: CS.objDone, t: CS.objTotal };
-						q = this.gl.compileAsync(this.scene, camera, null, (e) => { CS.objDone = base.d + e.loaded; CS.objTotal = base.t + e.total; });
+						// (liczniki obiektów osobno dla przebiegu: scena, odbicie w wodzie – depth 1)
+						CS.pass = depth ? 'odbicie' : 'scena';
+						CS.objDone = 0;
+						CS.objTotal = 0;
+						q = this.gl.compileAsync(this.scene, camera, null, (e) => { CS.objDone = e.loaded; CS.objTotal = e.total; });
 					} else q = this.gl.compileAsync(this.scene, camera);
 				} catch (e) {
 					q = Promise.resolve();
@@ -505,7 +521,14 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 					.finally(() => { W.n--; })
 					.then(() => Promise.all(W.pend.splice(0)));
 			} else p = compileFor(main, this.camera);
-			return Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, 20000))]).then(() => { if (warm) this.warmUp(); });
+			/* rozgrzanie (synchroniczne rysowanie całej sceny, ok. 2 s): najpierw jedna klatka z etapem „rozgrzanie” (compileInfo
+			   – etykieta na ekranie wczytywania), potem rysowanie */
+			return Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, 20000))]).then(async () => {
+				if (!warm) return;
+				if (this.compileStat) this.compileStat.pass = 'rozgrzanie';
+				await new Promise((r) => { requestAnimationFrame(() => r()); setTimeout(r, 100); });
+				this.warmUp();
+			});
 		}
 
 		/* Jedno rysowanie całej sceny (także obiektów ukrytych i poza kadrem) do bufora sceny: tekstury i bryły trafiają
@@ -626,12 +649,17 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			this.world.shadows = q.shadow >= 2048;
 			this.weather.setQuality(q.particles);
 			this.size = { w: 0, h: 0 };
-			// tone mapping jest wkompilowany w shadery – przekompiluj materiały
-			for (const m of NS.util.allMaterials) m.needsUpdate = true;
-			this.scene.traverse((o) => {
-				const m = o.material;
-				if (m) (Array.isArray(m) ? m : [m]).forEach((x) => { x.needsUpdate = true; });
-			});
+			/* tone mapping jest wkompilowany w shadery – przekompiluj materiały (WebGL). WebGPU: bez – przy włączeniu albo
+			   wyłączeniu efektów zmienia się bufor docelowy (inny kontekst w kluczu shadera, nowe shadery powstają same),
+			   a między średnią i wysoką tone mapping się nie zmienia; przebudowa wszystkich (także nieba i chmur, rysowanych
+			   na ekranie przeładowania) dawała kilkusekundową klatkę */
+			if (!NS.gpu) {
+				for (const m of NS.util.allMaterials) m.needsUpdate = true;
+				this.scene.traverse((o) => {
+					const m = o.material;
+					if (m) (Array.isArray(m) ? m : [m]).forEach((x) => { x.needsUpdate = true; });
+				});
+			}
 			if (this.world.route) this.world.setRoute(this.world.route);
 		}
 

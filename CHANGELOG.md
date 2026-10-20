@@ -4,6 +4,47 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.12 – 20 października 2026
+
+### Poprawka – przezroczyste obiekty w WebGPU (`js/3d/scene.js`)
+- Znacznik drogi hamowania (tablica H4 i pasek na torze) i inne obiekty przezroczyste bez zapisu głębi nie były
+  widoczne w trybie WebGPU. Przyczyna: paczki (BundleGroup – statyczny świat, world.js bundleStatic) WebGPUBackend
+  wykonuje dopiero na końcu przebiegu (`finishRender` → `executeBundles`), po wszystkich zwykłych rysowaniach – ziemia,
+  tory i perony z paczek zamalowywały wcześniej narysowane obiekty przezroczyste (bez głębi w buforze nic ich nie
+  chroniło). Teraz `addBundle` wykonuje paczkę od razu (Three rysuje paczki przed obiektami nieprzezroczystymi
+  i przezroczystymi), po niej podręczny stan przebiegu od nowa (executeBundles zeruje potok i powiązania).
+- Diagnoza: obiekt rysowany w każdej klatce, z gotowym potokiem i aktualnymi uniformami, a niewidoczny; nowy
+  nieprzezroczysty obiekt w tym samym miejscu widoczny, przezroczysty – nie; przy paczkach wyłączonych – widoczny.
+
+## 0.54.11 – 20 października 2026
+
+### Ekran wczytywania trasy (`js/screens.js`, `js/main.js`, `js/3d/scene.js`)
+- Etap z main.js (`loading().status(tekst)` zamiast stałych etapów wg postępu): „Przygotowanie trasy i składu…”,
+  „Budowa świata… N z M kawałków” (8–85%), „Kompilacja shaderów… N z M” (obiekty sceny, 85–92%), „Kompilacja odbić
+  w wodzie… N z M” (92–97%), „Kompilacja potoków karty graficznej… N z M” (97–99%), „Rozgrzewanie karty
+  graficznej…” (99%), „Gotowe”. Wcześniej przez całą kompilację (ok. 20 s) pasek stał na 90% z napisem
+  „Wjazd na peron…”. WebGL – bez liczników (90%).
+- `compileInfo()`: przebieg (`pass`: scena, odbicie, rozgrzanie) i liczniki obiektów osobno dla przebiegu.
+- `precompile`: przed rozgrzaniem jedna klatka z etapem „rozgrzanie” (etykieta widoczna podczas synchronicznego
+  rysowania).
+- Tło ekranów (tło z workera): zapas – gradient CSS w kolorach sceny wg pory, zanim worker narysuje pierwszą klatkę
+  (zgłoszone czarne tło na początku wczytywania).
+
+## 0.54.10 – 20 października 2026
+
+### Zmiana jakości grafiki (`js/main.js`, `js/3d/scene.js`)
+- Ustawienia → Grafika → Jakość: okienko przeładowania („Zmiana jakości · ustawienia grafiki”) – w menu jak przy
+  zmianie składu, z budową świata bez rysowania i kompilacją widocznych obiektów z licznikami (`menuBusy(…, settle)`;
+  wstrzymanie rysowania już przed zmianą); w pauzie jak przy zmianie warunków (`pauseBusy` – przebudowa świata, pełna
+  kompilacja). Wcześniej bez okienka: obraz stawał (jakość niska – ok. 26 s z klatką 12 s, wysoka – po zamknięciu
+  ok. 7 s zawieszenia).
+- Pauza: kompilacja w okienku z licznikami (`compileCounted` – wspólne dla menu i pauzy; też zmiana pogody i pory roku).
+- WebGPU: `setQuality` bez oznaczania wszystkich materiałów do przebudowy (tone mapping wkompilowany w shadery dotyczy
+  WebGL; w WebGPU zmiana efektów zmienia bufor docelowy, nowe shadery powstają same).
+- Pomiar (`menuops.js`, profil tymczasowy; liczby zaszumione – gra w drugim oknie): jakość wysoka ok. 14–16 s, niska
+  ok. 16–25 s, w pauzie ok. 21 s; zostaje w okienku pojedyncza klatka kilku sekund (budowa przebudowanego świata).
+- `menuops.js`: zmiany jakości, `MENU_PROF=jakosc`, etap okienka przy klatkach ponad 1 s.
+
 ## 0.54.9 – 20 października 2026
 
 Okienko wyboru trasy w menu (WebGPU). Pomiar `tools/render-check/menuops.js` (profil tymczasowy): inna trasa 60,8 s →
