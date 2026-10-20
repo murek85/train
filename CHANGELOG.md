@@ -4,6 +4,23 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.17 – 20 października 2026
+
+### Poprawka – migające elementy przesuwające się z kamerą (`js/3d/water.js`, `js/3d/scene.js`)
+- Zgłoszenie po 0.54.16: sieć trakcyjna i inne elementy przesuwają się przy ruchu kamery i szybko migają.
+  Sonda (kamera, która ostatnia zapisała wspólny bufor kamery shadera, a kamera obiektu przy wysłaniu przebiegu):
+  w co drugiej klatce (klatki z odbiciem wody) obiekty obrazu – paczki i zwykłe – z kamerą odbicia.
+- Przyczyna: reflector rysował odbicie zagnieżdżone w głównym przebiegu (przy pierwszym obiekcie wody, po paczkach)
+  i zapisywał swoją kamerę do wspólnych buforów kamery. Dawniej każdy obiekt paczki zapisywał kamerę od nowa
+  w każdym przebiegu (tak to maskowało), od 0.54.16 – raz na shader przed odbiciem, więc przy wysłaniu zostawała
+  kamera odbicia; migotanie – odbicie co drugą klatkę.
+- Poprawka: odbicie wody osobnym render() przed klatką (`WaterReflectionGPU.render` – woda w kadrze, co druga klatka,
+  bez pominięcia przy zmianie rozmiaru bufora; wywołanie reflektora z przebiegu nic nie robi). Bufory odbicia mają
+  osobny kontekst rysowania (`_renderContexts`), bo bez zagnieżdżenia miałyby ten sam co obraz (wspólne obiekty
+  rysowania przełączające potoki co klatkę); kompilacja odbicia w tym kontekście.
+- Po poprawce: sonda kamery 0 niezgodności (dzień i noc), sonda paczek 0 nieaktualnych i 0 obcych; FPS bez zmian
+  (noc Rybnik – Katowice ok. 66–75 FPS przy 1920×1080).
+
 ## 0.54.16 – 20 października 2026
 
 ### Wydajność WebGPU (`js/3d/scene.js`, `js/3d/water.js`)

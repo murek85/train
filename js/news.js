@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.17',
+			date: '20 października 2026',
+			groups: [
+				['Grafika', [
+					'WebGPU: bez migających i przesuwających się z kamerą elementów (sieć trakcyjna, perony) po przyspieszeniu z 0.54.16.',
+				]],
+			],
+		},
+		{
 			version: '0.54.16',
 			date: '20 października 2026',
 			groups: [

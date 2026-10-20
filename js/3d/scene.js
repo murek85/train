@@ -238,6 +238,11 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 						};
 					}
 					const GL = this.gl, render0 = GL.render;
+					/* odbicie wody rysowane osobnym render() (water.js) – bez zagnieżdżenia jego bufor ma ten sam kontekst
+					   (format, próbki, głębokość wywołania) co obraz, więc obiekty rysowania obu przebiegów byłyby wspólne
+					   i przełączały potoki co klatkę. Osobny kontekst dla buforów odbicia */
+					const RC = GL._renderContexts, rcGet = RC.get.bind(RC);
+					RC.get = (rt = null, mrt = null, depth = 0) => rcGet(rt, mrt, rt && rt.isWaterReflection ? depth + 50 : depth);
 					GL.render = function (...a) {
 						const b = this._currentRenderBundle;
 						this._currentRenderBundle = null;
@@ -600,7 +605,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 						if (!R) return;
 						const vc = R.getVirtualCamera(this.camera);
 						vc.copy(this.camera);
-						return compileFor(R.getRenderTarget(vc), vc, 1);
+						return compileFor(R.getRenderTarget(vc), vc, 0); // (odbicie osobnym render() – kontekst bez zagnieżdżenia, water.js render)
 					})
 					.finally(() => { W.n--; })
 					.then(() => Promise.all(W.pend.splice(0)));
@@ -1623,7 +1628,10 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			if (NS.gpu && gpuOk) {
 				NS.nodes.sync();
 				this.scene.updateMatrixWorld();
-				this.scene.matrixWorldAutoUpdate = false;			}
+				this.scene.matrixWorldAutoUpdate = false;
+				// odbicie wody osobnym render() przed klatką – nie zagnieżdżone w głównym przebiegu (water.js render)
+				if (this.waterRefl && this.waterRefl.render) this.waterRefl.render(this.gl, this.scene, this.camera);
+			}
 			if (!gpuOk) {
 				// (karta jeszcze niegotowa – klatka bez rysowania)
 			} else if (this.usePost) {

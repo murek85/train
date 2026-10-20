@@ -89,31 +89,51 @@ import * as THREE from 'three';
 			this.list = [];
 			this.n = 0;
 			this.t = new T.Vector3();
-			/* wyjątek w rysowaniu odbicia (ReflectorNode updateBefore) zostawiał ukrytą wodę, nazwę sceny i bufor docelowy
-			   odbicia – przywrócenie stanu (samo odbicie Three wyłącza wtedy do przeładowania) */
-			/* odbicie (pełna scena z drugiej kamery – ok. 1/3 czasu procesora klatki) odświeżane co drugą klatkę: woda jest
-			   daleko i spokojna, przesunięcie o klatkę niewidoczne */
-			const RB = this.refl.reflector, ub = RB.updateBefore.bind(RB);
+			/* reflector rysuje odbicie przy pierwszym napotkanym obiekcie wody – zagnieżdżone w głównym przebiegu. Odbicie
+			   zapisywało swoją kamerę do wspólnych buforów kamery shaderów (grupa render), a obiekty głównego przebiegu
+			   narysowane wcześniej (paczki świata) nie zapisywały jej z powrotem: przy wysłaniu przebiegu część świata
+			   z kamery odbicia – sieć trakcyjna, perony przesuwające się z widokiem. Odbicie tylko z render() poniżej,
+			   osobnym render() przed klatką; wywołanie z przebiegu nic nie robi */
+			const RB = this.refl.reflector;
+			// bufory odbicia oznaczone – osobny kontekst rysowania (scene.js gpuInit, _renderContexts)
+			const grt = RB.getRenderTarget.bind(RB);
+			RB.getRenderTarget = (cam) => { const rt = grt(cam); rt.isWaterReflection = true; return rt; };
+			this.draw = RB.updateBefore.bind(RB);
+			RB.updateBefore = () => undefined;
 			this.every = 2;
 			this.sizeKey = '';
-			RB.updateBefore = (frame) => {
-				// (zmiana rozmiaru bufora odbicia – nowa tekstura: bez pominięcia, inaczej woda z teksturą zniszczoną)
-				const sz = frame.renderer.getDrawingBufferSize(this.sz || (this.sz = new T.Vector2())), key = sz.x + 'x' + sz.y + '@' + RB.resolutionScale;
-				if (this.every > 1 && RB.hasOutput && key === this.sizeKey && frame.frameId % this.every) return;
-				this.sizeKey = key;
-				const { renderer: r, scene: sc, material: m } = frame;
-				const rt = r.getRenderTarget(), mrt = r.getMRT(), ac = r.autoClear, name = sc.name;
-				try {
-					return ub(frame);
-				} catch (e) {
-					if (m) m.visible = true;
-					sc.name = name;
-					r.setMRT(mrt);
-					r.setRenderTarget(rt);
-					r.autoClear = ac;
-					console.error('Odbicie wody:', e);
-				}
-			};
+			this.frame = 0;
+			this.frustum = new T.Frustum();
+			this.pv = new T.Matrix4();
+			this.sz = new T.Vector2();
+			this.dummy = { visible: true };
+		}
+		/* WebGPU, przed rysowaniem klatki (scene.js draw): odbicie z kamery gracza, gdy woda jest w kadrze; wszystkie
+		   powierzchnie wody ukryte na czas odbicia. Co drugą klatkę (pełna scena z drugiej kamery – kilka ms procesora;
+		   woda daleka i spokojna, przesunięcie o klatkę niewidoczne), bez pominięcia przy zmianie rozmiaru bufora (nowa
+		   tekstura). Wyjątek w rysowaniu – przywrócenie stanu (ukryta woda, nazwa sceny, bufor docelowy) */
+		render(gl, scene, camera) {
+			const RB = this.refl.reflector;
+			camera.updateMatrixWorld();
+			this.frustum.setFromProjectionMatrix(this.pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse), camera.coordinateSystem);
+			if (!this.list.some((w) => w.o.visible && w.o.parent && this.frustum.intersectsObject(w.o))) return;
+			const sz = gl.getDrawingBufferSize(this.sz), key = sz.x + 'x' + sz.y + '@' + RB.resolutionScale;
+			if (this.every > 1 && RB.hasOutput && key === this.sizeKey && ++this.frame % this.every) return;
+			this.sizeKey = key;
+			const mats = new Set(this.list.map((w) => w.o.material));
+			for (const m of mats) m.visible = false;
+			const rt = gl.getRenderTarget(), mrt = gl.getMRT(), ac = gl.autoClear, name = scene.name;
+			try {
+				this.draw({ scene, camera, renderer: gl, material: this.dummy });
+			} catch (e) {
+				scene.name = name;
+				gl.setMRT(mrt);
+				gl.setRenderTarget(rt);
+				gl.autoClear = ac;
+				console.error('Odbicie wody:', e);
+			} finally {
+				for (const m of mats) m.visible = true;
+			}
 		}
 		update(scene, camera, root, time, wind, hide, scale = 0.5) {
 			WU.uWTime.value = time;
