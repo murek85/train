@@ -4,6 +4,18 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.16',
+			date: '20 października 2026',
+			groups: [
+				['Wydajność', [
+					'WebGPU: znacznie więcej klatek na sekundę – w nocy na trasie Rybnik – Katowice ok. 61 zamiast 28, w dzień i w deszczu o 25–60% więcej.',
+				]],
+				['Grafika', [
+					'WebGPU: woda znów widoczna (po chwilowym błędzie rysowania odbicia potrafiła zniknąć do końca jazdy).',
+				]],
+			],
+		},
+		{
 			version: '0.54.15',
 			date: '20 października 2026',
 			groups: [

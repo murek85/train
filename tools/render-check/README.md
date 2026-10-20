@@ -28,6 +28,7 @@ Skrypty Electron do sprawdzania trybu WebGPU (`?webgpu`) wobec WebGL. Gra musi d
 | `stutter.js` | przycięcia w jeździe (automatyczny maszynista, `SHOT_SEC` s): klatki ponad 33/50/100 ms z rozbiciem (świat, shadery, potoki), co budowało shadery i błędy konsoli (walidacja WebGPU) |
 | `menuops.js` | zmiany w menu (inna trasa, skład, pogoda, powrót): czas okienka, etapy, najdłuższa klatka w okienku i po nim; `MENU_PROF=1` / `tabor` / `pogoda` – profil zmiany i budowy shaderów. Profil przeglądarki tymczasowy (usuwany po teście) |
 | `bundles.js` | paczki statycznego świata (WebGPU): ustawienia ze zgłoszenia, pauza → pora roku (`SEASON`), obrót kamery; przy każdym odtworzeniu paczki zasoby nagrane w koderze a bieżące (powiązania, bufory, potok) oraz obce obiekty (inna kamera niż paczka). Profil tymczasowy |
+| `fps.js` | wydajność jazdy w ustawieniach gracza (jakość wysoka, Orzesze – Mikołów): FPS, czas procesora z podziałem, czas karty (`gputime`); `FPS_STILL=1` – pociąg stoi (powtarzalnie), `FPS_TIME`, `FPS_WEATHER`, `ROUTE`, `FPS_W`/`FPS_H`, `FPS_NOVSYNC`, `FPS_PROF=1` – profil procesora, `FPS_JS` – kod przed pomiarem, `FPS_SHOT` – zrzut. Profil tymczasowy |
 | `wgsldump.js` | kod WGSL wszystkich programów – porównanie dwóch uruchomień (powtarzalność) |
 
 Przykład (jakość niska – bez efektów po renderowaniu, więc porównuje same materiały):

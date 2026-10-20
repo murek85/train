@@ -89,6 +89,31 @@ import * as THREE from 'three';
 			this.list = [];
 			this.n = 0;
 			this.t = new T.Vector3();
+			/* wyjątek w rysowaniu odbicia (ReflectorNode updateBefore) zostawiał ukrytą wodę, nazwę sceny i bufor docelowy
+			   odbicia – przywrócenie stanu (samo odbicie Three wyłącza wtedy do przeładowania) */
+			/* odbicie (pełna scena z drugiej kamery – ok. 1/3 czasu procesora klatki) odświeżane co drugą klatkę: woda jest
+			   daleko i spokojna, przesunięcie o klatkę niewidoczne */
+			const RB = this.refl.reflector, ub = RB.updateBefore.bind(RB);
+			this.every = 2;
+			this.sizeKey = '';
+			RB.updateBefore = (frame) => {
+				// (zmiana rozmiaru bufora odbicia – nowa tekstura: bez pominięcia, inaczej woda z teksturą zniszczoną)
+				const sz = frame.renderer.getDrawingBufferSize(this.sz || (this.sz = new T.Vector2())), key = sz.x + 'x' + sz.y + '@' + RB.resolutionScale;
+				if (this.every > 1 && RB.hasOutput && key === this.sizeKey && frame.frameId % this.every) return;
+				this.sizeKey = key;
+				const { renderer: r, scene: sc, material: m } = frame;
+				const rt = r.getRenderTarget(), mrt = r.getMRT(), ac = r.autoClear, name = sc.name;
+				try {
+					return ub(frame);
+				} catch (e) {
+					if (m) m.visible = true;
+					sc.name = name;
+					r.setMRT(mrt);
+					r.setRenderTarget(rt);
+					r.autoClear = ac;
+					console.error('Odbicie wody:', e);
+				}
+			};
 		}
 		update(scene, camera, root, time, wind, hide, scale = 0.5) {
 			WU.uWTime.value = time;

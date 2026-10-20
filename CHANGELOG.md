@@ -4,6 +4,31 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.16 – 20 października 2026
+
+### Wydajność WebGPU (`js/3d/scene.js`, `js/3d/water.js`)
+- Zgłoszenie: 23–25 FPS w trybie WebGPU. Pomiar (`tools/render-check/fps.js`, ustawienia gracza, okno 1920×1080):
+  ograniczeniem był procesor (karta 6–9 ms), nie karta. Noc na trasie Rybnik – Katowice: 27,9 FPS, 37 ms procesora.
+- Odtwarzanie paczek (BundleGroup): łatka z 0.54.x wymuszała odświeżenie współdzielone każdego obiektu każdej paczki
+  w każdym przebiegu (obraz, kaskady cieni, odbicie) – ok. 1/3 czasu procesora (w nocy więcej). Teraz tylko pierwszy
+  obiekt danego shadera w danym render() (wspólne bufory kamery i czasu, updateBefore); pełne odświeżenie bez zmian.
+- Najbliższa kaskada cieni rysowana raz na klatkę (autoUpdate rysował ją od nowa dla każdej kamery – gracza i odbicia).
+- Odbicie wody (pełna scena z drugiej kamery, ok. 5 ms procesora) odświeżane co drugą klatkę; przy zmianie rozmiaru
+  bufora odbicia bez pominięcia.
+- Wynik (ta sama maszyna, na przemian z wersją sprzed zmian): noc 27,9 → 61 FPS; dzień w deszczu 50 → 80;
+  2560×1440 w dzień 51 → 66; noc w deszczu 62 → 78. Obraz zgodny (różnica 0,4% pikseli – ruch pasażerów).
+
+### Poprawki
+- Woda niewidoczna do końca jazdy: zwolnienie ostatniego obiektu grupy powiązań czyści w niej tekstury samplerów,
+  a Three przy ponownym tworzeniu powiązań tworzył sampler bez tekstury – wyjątek w rysowaniu odbicia zostawiał
+  wodę ukrytą (i scenę z nazwą „[ Reflector ]”). Tekstura z węzła przed utworzeniem powiązań; odbicie wody
+  przywraca stan po wyjątku.
+- Paczka z obiektem zwolnionym przez Three (zniszczone bufory uniformów – błąd wysłania klatki) nagrywana od nowa.
+
+### Narzędzia
+- `tools/render-check/fps.js` – FPS, czas procesora i karty w ustawieniach gracza (`FPS_STILL`, `FPS_TIME`,
+  `FPS_WEATHER`, `ROUTE`, `FPS_W`/`FPS_H`, `FPS_PROF` – profil procesora, `FPS_JS`, `FPS_SHOT`, `FPS_TD`, `FPS_REFL`).
+
 ## 0.54.15 – 20 października 2026
 
 ### Poprawka – świat rysowany z kamery cienia albo odbicia (`js/3d/scene.js` gpuInit, draw)

@@ -179,10 +179,19 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 					   w paczce pełne odświeżenie (geometria, uniformy obiektu, powiązania); stan z kompilacji poza paczką dawał
 					   na niektórych trasach część świata w złym miejscu (wiszący peron, Toruń – Chełmża) */
 					const fresh = (this.compiledFresh = new WeakSet());
+					/* przy odtwarzaniu paczki odświeżenie współdzielone (wspólne bufory kamery i czasu, updateBefore – cienie,
+					   odbicie) tylko dla pierwszego obiektu danego shadera w tym render(): bufory te są wspólne dla shadera,
+					   a uniformy nieruchomych obiektów paczki się nie zmieniają. Odświeżenie każdego obiektu w każdym przebiegu
+					   (obraz, kaskady cieni, odbicie) brało ok. 1/3 czasu procesora klatki. Przy nagrywaniu paczki – każdy */
 					N.needsRefresh = (ro) => {
 						if (ro.bundle && fresh.has(ro)) { fresh.delete(ro); return 2; }
 						const t = need(ro);
-						return t === 0 && ro.bundle ? 1 : t;
+						if (t === 2 || !ro.bundle) return t;
+						if (this.gl._currentRenderBundle) return 1;
+						const st = ro._nodeBuilderState || ro.getNodeBuilderState(), rid = N.nodeFrame.renderId;
+						if (st.sharedRid === rid) return 0;
+						st.sharedRid = rid;
+						return 1;
 					};
 					/* paczki (BundleGroup) wykonane od razu, w miejscu rysowania (Three rysuje je przed zwykłymi obiektami), a nie
 					   na końcu przebiegu (WebGPUBackend.finishRender – executeBundles po wszystkich rysowaniach): statyczny świat
@@ -217,6 +226,17 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 							CE.finish.scoped = true;
 						}
 					}
+					/* zwolnienie ostatniego obiektu grupy powiązań (Bindings._destroyBindings) czyści w niej tekstury samplerów
+					   (release); ponowne utworzenie powiązań dla nowego obiektu tego samego shadera tworzy sampler przed
+					   odświeżeniem tekstury z węzła – wyjątek (np. cień chmur w materiale ziemi). Wyjątek w odbiciu wody
+					   zostawiał wodę ukrytą na stałe. Tekstura z węzła przed utworzeniem powiązań */
+					const Bd = this.gl._bindings, create0 = Bd._createBindings;
+					if (create0) {
+						Bd._createBindings = function (bindings) {
+							for (const g of bindings) for (const b of g.bindings) if (b.isSampler && b.textureNode && b.texture == null) b.texture = b.textureNode.value;
+							return create0.call(this, bindings);
+						};
+					}
 					const GL = this.gl, render0 = GL.render;
 					GL.render = function (...a) {
 						const b = this._currentRenderBundle;
@@ -250,6 +270,15 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 							w.ros.add(ro);
 						}
 						return ok;
+					};
+					/* zwolniony obiekt rysowania (materiał, geometria albo obiekt usunięty, zmiana shadera) niszczy swoje bufory
+					   uniformów – nagrana paczka z nim odwoływała się do zniszczonego bufora (błąd wysłania, utracona klatka):
+					   paczka do ponownego nagrania */
+					const Ob = this.gl._objects, cro0 = Ob.createRenderObject.bind(Ob);
+					Ob.createRenderObject = (...a) => {
+						const ro = cro0(...a), od = ro.onDispose;
+						ro.onDispose = () => { if (ro.bundle) ro.bundle.needsUpdate = true; od(); };
+						return ro;
 					};
 					const O = this.gl._objects, oget = O.get.bind(O);
 					O.get = (...a) => { const ro = oget(...a); if (this.pipes && this.pipes.n) fresh.add(ro); return ro; };
@@ -1495,13 +1524,15 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				   przy rysowaniu mapy (położenie, cel, zasięg): macierz cienia (WebGPU – liczona co klatkę z położenia światła,
 				   nodes.js setupCascades) musi pasować do zawartości mapy, inaczej cienie z poprzedniego położenia lub zasięgu
 				   lądowały przesunięte i pomniejszone (np. „miniatura” sieci trakcyjnej, peronu i wózków na ziemi) */
+				/* najbliższa kaskada co klatkę, ale raz – przy autoUpdate mapa rysowała się od nowa dla każdej kamery tej
+				   klatki (gracza i odbicia wody), z tym samym wynikiem */
 				let upd = true;
 				if (i > 0) {
 					const every = i === n - 1 && n > 2 ? 4 : 2;
 					upd = this.csmFrame % every === i % every || this.csmFrame < 3 || !l.shadowPlaced;
-					l.shadow.autoUpdate = false;
-					if (upd) l.shadow.needsUpdate = true;
 				}
+				l.shadow.autoUpdate = false;
+				if (upd) l.shadow.needsUpdate = true;
 				if (!upd) return;
 				l.shadowPlaced = true;
 				// jedna mapa (bez kaskad): dawny zasięg wokół punktu widoku
