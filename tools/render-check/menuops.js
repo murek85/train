@@ -17,8 +17,8 @@ app.whenReady().then(async () => {
 	let res;
 	const prof = process.env.MENU_PROF;
 	if (prof) {
-		// MENU_PROF=1 – profil procesora zmiany trasy (MENU_PROF=tabor / pogoda / jakosc – zmiany składu / pogody / jakości na wysoką): najdroższe funkcje łącznie
-		await w.webContents.executeJavaScript(`(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const m = window.maszynista, r = m.renderer; for (let i = 0; i < 4800 && !(m.sim && r.world && r.world.pending === 0 && r.world.chunks.size && !r.hold); i++) await wait(25); document.querySelector('.scr-boot')?.remove(); await wait(8000); const box = document.getElementById('route-loading'); for (let i = 0; i < 2400 && (!box.classList.contains('hidden') || (r.pipes && r.pipes.n) || r.world.pending); i++) await wait(25); await wait(2000); })()`);
+		// MENU_PROF=1 – profil procesora zmiany trasy (MENU_PROF=tabor / pogoda / jakosc / cienie – cienie w pauzie w jeździe – zmiany składu / pogody / jakości na wysoką): najdroższe funkcje łącznie
+		await w.webContents.executeJavaScript(`(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const m = window.maszynista, r = m.renderer; for (let i = 0; i < 4800 && !(m.sim && r.world && r.world.pending === 0 && r.world.chunks.size && !r.hold); i++) await wait(25); document.querySelector('.scr-boot')?.remove(); await wait(8000); const box = document.getElementById('route-loading'); for (let i = 0; i < 2400 && (!box.classList.contains('hidden') || (r.pipes && r.pipes.n) || r.world.pending); i++) await wait(25); await wait(2000); if (/^cienie/.test(${JSON.stringify(process.env.MENU_PROF)})) { document.getElementById('btn-start').click(); for (let i = 0; i < 4800; i++) { await wait(25); if (i > 8 && !document.querySelector('.scr-load')) break; } await wait(3000); document.getElementById('btn-pause').click(); await wait(800); if (${JSON.stringify(process.env.MENU_PROF)} === 'cienie0') return; const el = document.getElementById('set-shadows'); el.checked = false; el.dispatchEvent(new Event('change')); await wait(300); for (let i = 0; i < 4800 && !box.classList.contains('hidden'); i++) await wait(25); await wait(20000); } })()`);
 		// budowy shaderów w czasie profilowanej zmiany: materiał, obiekt i przodkowie (co budowało)
 		await w.webContents.executeJavaScript(`(() => { const r = window.maszynista.renderer, W = (window.__who = new Map()); const path = (o) => { const p = []; for (let q = o; q && p.length < 4; q = q.parent) p.push(q.name || q.type); return p.join(' < '); }; r.gl.debug.onNodeBuilderCreated = (nb, ro) => { const b = nb.build.bind(nb), ba = nb.buildAsync && nb.buildAsync.bind(nb); const rec = () => { const k = (ro.material.patchVariant || ro.material.type) + (ro.camera.isOrthographicCamera ? ' [cień]' : '') + (ro.bundle ? ' [paczka]' : '') + ' · ' + path(ro.object); W.set(k, (W.get(k) || 0) + 1); }; nb.build = (...a) => { rec(); return b(...a); }; if (ba) nb.buildAsync = (...a) => { rec(); return ba(...a); }; }; })()`);
 		const dbg = w.webContents.debugger;
@@ -26,7 +26,7 @@ app.whenReady().then(async () => {
 		await dbg.sendCommand('Profiler.enable');
 		await dbg.sendCommand('Profiler.setSamplingInterval', { interval: 1000 });
 		await dbg.sendCommand('Profiler.start');
-		await w.webContents.executeJavaScript(`(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const box = document.getElementById('route-loading'); const routes = [...document.querySelectorAll('#route-list button.route')]; const first = routes.findIndex((b) => b.classList.contains('sel')); (${JSON.stringify(process.env.MENU_PROF)} === 'jakosc' ? (() => { const s = document.getElementById('opt-quality'); s.value = 'high'; s.dispatchEvent(new Event('change')); })() : ${JSON.stringify(process.env.MENU_PROF)} === 'tabor' ? window.maszynista.setTrain(window.TrainRoutes.defaultConfig({ train: 'ic' })) : ${JSON.stringify(process.env.MENU_PROF)} === 'pogoda' ? (() => { const s = document.getElementById('opt-weather'); s.value = 'rain'; s.dispatchEvent(new Event('change')); })() : routes[routes.findIndex((b, i) => i !== first)].click()); await wait(200); for (let i = 0; i < 4800 && !box.classList.contains('hidden'); i++) await wait(25); })()`);
+		await w.webContents.executeJavaScript(`(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const box = document.getElementById('route-loading'); const routes = [...document.querySelectorAll('#route-list button.route')]; const first = routes.findIndex((b) => b.classList.contains('sel')); (/^cienie/.test(${JSON.stringify(process.env.MENU_PROF)}) ? (() => { const el = document.getElementById('set-shadows'); el.checked = ${JSON.stringify(process.env.MENU_PROF)} === 'cienie'; el.dispatchEvent(new Event('change')); })() : ${JSON.stringify(process.env.MENU_PROF)} === 'jakosc' ? (() => { const s = document.getElementById('opt-quality'); s.value = 'high'; s.dispatchEvent(new Event('change')); })() : ${JSON.stringify(process.env.MENU_PROF)} === 'tabor' ? window.maszynista.setTrain(window.TrainRoutes.defaultConfig({ train: 'ic' })) : ${JSON.stringify(process.env.MENU_PROF)} === 'pogoda' ? (() => { const s = document.getElementById('opt-weather'); s.value = 'rain'; s.dispatchEvent(new Event('change')); })() : routes[routes.findIndex((b, i) => i !== first)].click()); await wait(200); for (let i = 0; i < 4800 && !box.classList.contains('hidden'); i++) await wait(25); if (/^cienie/.test(${JSON.stringify(process.env.MENU_PROF)})) await wait(4000); })()`);
 		const { profile } = await dbg.sendCommand('Profiler.stop');
 		const byId = new Map(profile.nodes.map((n) => [n.id, n])), parent = new Map();
 		for (const n of profile.nodes) for (const c of n.children || []) parent.set(c, n.id);
@@ -69,6 +69,27 @@ app.whenReady().then(async () => {
 			const first = routes.findIndex((b) => b.classList.contains('sel'));
 			const other = routes.findIndex((b, i) => i !== first);
 			const out = [];
+			if (${JSON.stringify(process.env.MENU_OPS || '')} === 'gfxpause') { // MENU_OPS=gfxpause – opcje grafiki w pauzie w czasie jazdy
+				document.getElementById('btn-start').click();
+				for (let i = 0; i < 4800; i++) { await wait(25); if (i > 8 && !document.querySelector('.scr-load')) break; }
+				await wait(3000);
+				document.getElementById('btn-pause').click();
+				await wait(800);
+				const set = (id, v) => () => { const el = document.getElementById(id); if (el.type === 'checkbox') el.checked = v; else el.value = v; el.dispatchEvent(new Event('change')); };
+				for (const [id, a, b] of [['set-scale', '0.67', '1'], ['set-aa', false, true], ['set-shadows', false, true], ['set-traffic-max', '2', '3'], ['set-autodetail', false, true]]) {
+					out.push(await op(id + ' ' + a, set(id, a)));
+					out.push(await op(id + ' ' + b, set(id, b)));
+				}
+				return out;
+			}
+			if (${JSON.stringify(process.env.MENU_OPS || '')} === 'gfx') { // MENU_OPS=gfx – każda opcja grafiki w ustawieniach (zmiana i powrót)
+				const set = (id, v) => () => { const el = document.getElementById(id); if (el.type === 'checkbox') el.checked = v; else el.value = v; el.dispatchEvent(new Event('change')); };
+				for (const [id, a, b] of [['set-scale', '0.67', '1'], ['set-aa', false, true], ['set-shadows', false, true], ['set-traffic-max', '2', '3'], ['set-traffic-people', true, false], ['set-autodetail', false, true]]) {
+					out.push(await op(id + ' ' + a, set(id, a)));
+					out.push(await op(id + ' ' + b, set(id, b)));
+				}
+				return out;
+			}
 			if (${JSON.stringify(process.env.MENU_OPS || '')} === 'tabor') { // MENU_OPS=tabor – tylko zmiany składu (IC ↔ domyślny, trzy razy)
 				for (let i = 0; i < 3; i++) {
 					out.push(await op('tabor ic', () => window.maszynista.setTrain(window.TrainRoutes.defaultConfig({ train: 'ic' }))));

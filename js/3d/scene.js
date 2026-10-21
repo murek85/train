@@ -592,7 +592,9 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			const compileFor = (target, camera, depth = 0) => {
 				const hidden = [], culled = [], bundles = [];
 				this.scene.traverse((o) => {
-					if (hiddenToo && !o.visible && !glslOnly(o)) { hidden.push(o); o.visible = true; }
+					/* (bez świateł: ukryte światło – np. kaskady cieni po wyłączeniu cieni – w kompilacji zmieniało zestaw świateł,
+					   więc klucze shaderów inne niż przy rysowaniu – wszystko budowane drugi raz po zamknięciu okienka) */
+					if (hiddenToo && !o.visible && !o.isLight && !glslOnly(o)) { hidden.push(o); o.visible = true; }
 					if (all && o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
 					if (o.isBundleGroup && !/[?&]nobc/.test(location.search)) { bundles.push(o); o.isBundleGroup = false; } // (?nobc – paczki bez kompilacji, do porównań)
 				});
@@ -685,7 +687,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 		warmUp() {
 			const hidden = [], culled = [];
 			this.scene.traverse((o) => {
-				if (!o.visible && !glslOnly(o)) { hidden.push(o); o.visible = true; }
+				if (!o.visible && !o.isLight && !glslOnly(o)) { hidden.push(o); o.visible = true; } // (bez świateł – precompile)
 				if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; }
 			});
 			const rt = this.gl.getRenderTarget(), shadows = this.gl.shadowMap.autoUpdate;

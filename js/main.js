@@ -1241,7 +1241,7 @@
 	/* Zmiana warunków w pauzie (pogoda, pora roku): to samo okienko co w menu, nad pauzą – najpierw okienko się rysuje,
 	   potem work(); kompilacja shaderów nowych efektów (opady, mokre nawierzchnie, śnieg – w WebGPU bez rysowania sceny
 	   do jej końca, scene.js hold) i – gdy rebuild – przebudowa świata wokół pociągu. Kolejna zmiana przerywa poprzednią. */
-	async function pauseBusy(title, work, rebuild = false, step = 'Wczytywanie efektów pogody…', head = 'Zmiana warunków') {
+	async function pauseBusy(title, work, rebuild = false, step = 'Wczytywanie efektów pogody…', head = 'Zmiana warunków', compileOpts = {}) {
 		const seq = ++loadSeq;
 		const live = () => seq === loadSeq && mode === 'pause';
 		const quit = () => { renderer.hold = false; if (seq === loadSeq) routeLoading(null); };
@@ -1268,7 +1268,7 @@
 		if (!live()) return quit();
 		if (window.Train3D.gpu) {
 			renderer.hold = true;
-			await compileCounted(live, 0.75, 0.99, {});
+			await compileCounted(live, 0.75, 0.99, compileOpts);
 		} else await renderer.precompile();
 		renderer.hold = false;
 		if (!live()) return quit();
@@ -1827,6 +1827,37 @@
 	}
 
 	// jakość grafiki (ustawienia) i pogoda (menu gry albo pauza – oba pola są zsynchronizowane)
+	/* zmiana ustawienia grafiki z okienkiem wczytywania: w menu – jak zmiana jakości (podgląd, kompilacja tego, co
+	   w kadrze), w pauzie – kompilacja shaderów (rebuild – też dobudowa świata); w jeździe od razu */
+	function gfxBusy(title, work, rebuild = false) {
+		if (mode === 'menu' && !window.Train3D.gpu) return gfxBusyGL(title, work);
+		if (mode === 'menu') menuBusy('Zmiana grafiki', title, work, true, true);
+		// (bez rozgrzania – synchroniczne narysowanie całej sceny; po przełączeniu cieni wszystkie materiały nowe: kilkanaście sekund w jednej klatce)
+		else if (mode === 'pause') pauseBusy(title, work, rebuild, rebuild ? 'Przebudowa świata i shaderów…' : 'Zmiana ustawień grafiki…', 'Zmiana grafiki', { warm: false });
+		else work();
+	}
+	/* WebGL w menu: bez rysowania do końca kompilacji (compileAsync – programy w tle, KHR_parallel_shader_compile);
+	   inaczej pierwsza klatka po zmianie (np. wyłączenie cieni – wszystkie materiały od nowa) kompilowała wszystko
+	   synchronicznie – ok. 30 s stojącego okienka */
+	async function gfxBusyGL(title, work) {
+		const seq = ++loadSeq;
+		const live = () => seq === loadSeq && mode === 'menu';
+		routeLoading('Przygotowanie…', 0.1, title, 'Zmiana grafiki');
+		await nextFrame();
+		if (!live()) return;
+		renderer.hold = true;
+		try {
+			work();
+			routeLoading('Kompilacja shaderów…', 0.4);
+			await nextFrame();
+			await renderer.precompile({ all: false, reflect: false, hidden: false, warm: false });
+		} finally {
+			if (seq === loadSeq) renderer.hold = false;
+		}
+		if (!live()) return;
+		routeLoading('Gotowe ✓', 1);
+		setTimeout(() => { if (seq === loadSeq) routeLoading(null); }, 150);
+	}
 	function applyGraphics(src) {
 		const q = $('opt-quality').value;
 		const w = (src === 'pause' ? $('pause-weather') : $('opt-weather')).value;
@@ -2119,8 +2150,8 @@
 		const t = autoQ.t.slice(30).sort((a, b) => a - b), med = t[t.length >> 1];
 		autoQ = null;
 		const q = med < 7 ? 'high' : med < 14 ? 'medium' : 'low';
-		$('opt-quality').value = q;
-		applyGraphics();
+		// inna jakość – przez zmianę wyboru (okienko wczytywania jak przy ręcznej zmianie)
+		if ($('opt-quality').value !== q) { $('opt-quality').value = q; $('opt-quality').dispatchEvent(new Event('change')); }
 		hud.toast(`Dobrano jakość grafiki: ${{ high: 'wysoka', medium: 'średnia', low: 'niska' }[q]} (rysowanie ok. ${med.toFixed(0)} ms) – zmiana w Ustawieniach.`, 'info');
 	}
 	/* Dopasowanie szczegółów w grze: co 5 s średni FPS; dwa okresy poniżej 28 FPS – zasięg świata o 10 % mniejszy (najmniej
@@ -2542,7 +2573,11 @@
 	$('set-fps').checked = load('opt.fps', false);
 	$('set-traffic-max').value = String(load('opt.trafficMax', 3));
 	$('set-autodetail').checked = load('opt.autoDetail', true);
-	$('set-autodetail').addEventListener('change', () => { save('opt.autoDetail', $('set-autodetail').checked); if (!$('set-autodetail').checked) renderer.world.detailDyn = 1; });
+	$('set-autodetail').addEventListener('change', () => {
+		const on = $('set-autodetail').checked;
+		// wyłączenie – zasięg świata z powrotem pełny (dobudowa kawałków)
+		gfxBusy('Dopasowanie szczegółów: ' + (on ? 'włączone' : 'wyłączone'), () => { save('opt.autoDetail', on); if (!on) renderer.world.detailDyn = 1; }, !on);
+	});
 	$('set-autoq').addEventListener('click', () => { autoQ = { t: [] }; closeSettings(); hud.toast('Pomiar wydajności w menu (kilka sekund)…', 'info'); });
 	$('set-traffic-people').checked = load('opt.trafficPeople', false);
 	if (rendererNow === 'webgpu-gl') $('set-renderer').add(new Option('WebGPURenderer z zapleczem WebGL 2 (test)', 'webgpu-gl'));
@@ -2594,7 +2629,19 @@
 	});
 	// Piper wybrany wcześniej – głos wczytywany od razu (z pamięci podręcznej), żeby pierwsza zapowiedź była nim czytana
 	if (voiceEngine() === 'piper' && $('set-announce').value === 'voice') piperLoad();
-	for (const id of ['set-sound', 'set-volume', 'set-scale', 'set-aa', 'set-shadows', 'set-fps', 'set-traffic-max', 'set-traffic-people', 'set-announce']) $(id).addEventListener(id === 'set-volume' ? 'input' : 'change', applySettings);
+	for (const id of ['set-sound', 'set-volume', 'set-fps', 'set-announce']) $(id).addEventListener(id === 'set-volume' ? 'input' : 'change', applySettings);
+	/* opcje wpływające na obraz – okienko wczytywania jak przy zmianie jakości (w menu – z podglądem i kompilacją tego,
+	   co w kadrze; w pauzie – z kompilacją shaderów): wygładzanie i cienie to nowe shadery i potoki (bez okienka gra
+	   stawała na kilka sekund), rozdzielczość – nowe bufory, pociągi tła – nowe modele */
+	const onOff = (el) => (el.checked ? 'włączone' : 'wyłączone');
+	const GFX_OPTS = {
+		'set-scale': (el) => 'Rozdzielczość renderowania: ' + el.selectedOptions[0].text,
+		'set-aa': (el) => 'Wygładzanie krawędzi: ' + onOff(el),
+		'set-shadows': (el) => 'Cienie: ' + onOff(el),
+		'set-traffic-max': (el) => 'Pociągi tła: najwyżej ' + el.value,
+		'set-traffic-people': (el) => 'Ludzie w pociągach tła: ' + (el.checked ? 'tak' : 'nie'),
+	};
+	for (const id in GFX_OPTS) $(id).addEventListener('change', () => gfxBusy(GFX_OPTS[id]($(id)), applySettings));
 	for (const k of MIX_KEYS) $('set-mix-' + k).addEventListener('input', applySettings);
 	applySettings();
 	applyGraphics();
@@ -2738,7 +2785,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.55.6';
+	$('version').textContent = 'wersja 0.55.12';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');

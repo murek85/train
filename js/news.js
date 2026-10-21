@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.55.12',
+			date: '21 października 2026',
+			groups: [
+				['Ustawienia', [
+					'Każda zmiana ustawień grafiki (rozdzielczość, wygładzanie, cienie, pociągi tła, dopasowanie szczegółów, automatyczny dobór jakości) pokazuje okno wczytywania – w menu i w pauzie, bez zawieszenia gry po jego zamknięciu.',
+				]],
+			],
+		},
+		{
 			version: '0.55.6',
 			date: '21 października 2026',
 			groups: [

@@ -4,6 +4,30 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.55.12 – 21 października 2026
+
+Okno wczytywania po każdej zmianie ustawień grafiki.
+
+### Ustawienia grafiki (`main.js`)
+- `gfxBusy(title, work, rebuild)`: rozdzielczość renderowania, wygładzanie krawędzi, cienie, pociągi tła (liczba,
+  ludzie w oknach) i dopasowanie szczegółów – w menu okienko jak przy zmianie jakości (podgląd, kompilacja tego,
+  co w kadrze), w pauzie `pauseBusy` z kompilacją shaderów bez rozgrzania (wyłączenie dopasowania – z dobudową
+  świata). Wcześniej działały od razu: wygładzanie i cienie to nowe shadery i potoki (gra stawała na kilka sekund).
+- Automatyczny dobór jakości zmienia jakość przez zdarzenie wyboru (okienko jak przy ręcznej zmianie), tylko gdy inna.
+- WebGL w menu (`gfxBusyGL`): bez rysowania do końca kompilacji (`precompile`) – wyłączenie cieni 31,8 → 7,1 s.
+- Renderer (WebGPU / WebGL) bez zmian – wymaga ponownego uruchomienia (ekran startowy).
+
+### Poprawka – kompilacja z ukrytymi światłami (`js/3d/scene.js`)
+- `precompile` (opcja `hidden`) i `warmUp` pokazywały na czas kompilacji także ukryte światła (kaskady cieni po
+  wyłączeniu cieni) – inny zestaw świateł niż przy rysowaniu, więc inne klucze shaderów: po zamknięciu okienka
+  wszystko budowane drugi raz (zawieszenie ok. 16 s). Światła zostają ukryte.
+- Wynik (pauza, WebGPU): wyłączenie cieni ok. 22 s w okienku (ok. 300 nowych wariantów; jedna klatka ok. 8 s na
+  początku kompilacji – część synchroniczna Three), po okienku bez zawieszeń; pozostałe opcje 0,5–0,7 s.
+
+### Narzędzia
+- `menuops.js`: `MENU_OPS=gfx` (opcje grafiki w menu), `MENU_OPS=gfxpause` (w pauzie w jeździe),
+  `MENU_PROF=cienie` / `cienie0` – profil włączenia / wyłączenia cieni w pauzie.
+
 ## 0.55.6 – 21 października 2026
 
 Zapowiedzi na wyświetlaczu LED dwa razy.
