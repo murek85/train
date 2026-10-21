@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.57.7',
+			date: '21 października 2026',
+			groups: [
+				['Interfejs', [
+					'Licznik FPS w jednej linii z przyciskiem pauzy, tuż na lewo od niego.',
+				]],
+			],
+		},
+		{
 			version: '0.57.6',
 			date: '21 października 2026',
 			groups: [

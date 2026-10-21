@@ -545,13 +545,19 @@ button.back { padding: 6px 12px; }
 #set-tabs { grid-template-columns: repeat(3, 1fr); flex-shrink: 0; }
 #settings .set-tab .mix-opt { padding-left: 0; }
 #settings .set-tab button.small { margin: 0 0 10px; }
+/* licznik FPS w jednej linii z przyciskiem pauzy (.corner: top 14px, right 16px, ok. 38×34 px) – tuż na lewo od niego */
 #fps {
 	position: fixed;
-	top: 60px;
-	right: 16px;
+	top: 14px;
+	right: 60px;
 	z-index: 6;
-	padding: 3px 8px;
-	border-radius: 6px;
+	box-sizing: border-box;
+	height: 34px;
+	display: flex;
+	align-items: center;
+	white-space: nowrap;
+	padding: 0 8px;
+	border-radius: 0;
 	background: rgba(10, 14, 22, 0.75);
 	font: 600 12px ui-monospace, Consolas, monospace;
 	color: #6be08a;

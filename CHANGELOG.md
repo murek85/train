@@ -4,6 +4,14 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.57.7 – 21 października 2026
+
+Licznik FPS obok przycisku pauzy.
+
+### Interfejs (`style.css`)
+- `#fps`: na wysokości przycisku pauzy (top 14 px, wysokość 34 px, tekst wyśrodkowany w pionie), tuż na lewo od niego
+  (right 60 px) – dotąd pod przyciskiem.
+
 ## 0.57.6 – 21 października 2026
 
 Tor równoległy z szynami, podkładami i podsypką.
