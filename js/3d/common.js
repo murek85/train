@@ -568,8 +568,10 @@ import * as THREE from 'three';
 			diffuseColor.rgb = mix(diffuseColor.rgb, dirtC, wearG * 0.6);
 			${panels ? `
 			// burty: falowanie blach między wręgami (co 0,9 m – odbicia nieba lekko falują), pionowe spoiny co 2,7 m,
-			// rząd nitów nad ostojnicą; drobne wzory gasną, gdy są mniejsze od piksela
-			if (vWear.y > 0.5 && abs(ln.x) > 0.75 && lp.y > 1.1 && lp.y < 3.5) {
+			// rząd nitów nad ostojnicą; drobne wzory gasną, gdy są mniejsze od piksela. Tylko na powierzchni burty (|x| < 1,462):
+			// drzwi i inne części doczepione na zewnątrz – gładkie (spoina wypadała w połowie drzwi kabiny jak styk kabiny
+			// z przedziałem maszynowym)
+			if (vWear.y > 0.5 && abs(ln.x) > 0.75 && lp.y > 1.1 && lp.y < 3.5 && abs(lp.x) < 1.462) {
 				float fine = 1.0 - smoothstep(0.012, 0.04, pxw);
 				float wy = smoothstep(1.15, 1.4, lp.y) * (1.0 - smoothstep(3.2, 3.45, lp.y));
 				float wav = sin(fract(lp.z / 0.9) * 3.14159) * (0.5 + 0.5 * gNoise(vec2(lp.z * 0.8, lp.y * 1.6)));

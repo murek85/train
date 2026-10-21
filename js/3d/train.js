@@ -80,7 +80,12 @@ import * as THREE from 'three';
 		et22: { base: 'loco', paint: '#c9cccb', stripe: '#c8102e', band: '#1f3a70', roof: '#80878c', door: '#c9cccb', head: '#f2c200', frame: '#c9cccb', panto: '#8c8f91', splitY: 1.62, belt: [1.62, 1.74], panes: 2, nose: 0.85, yb: 2.5, round: 0.22, split: true, side: 'et22', panels: 9, numZ: -1.6, numY: 2.95, cabPanes: [[0.12, 0.62], [0.82, 1.38]], prefix: 'ET22', bogieOff: 4.3, wb: 3.4, wR: 0.6, axles: 3, pantoZ: 0.3, seat: '#444',
 			roofLamp: true, twinLamp: true, headY: 1.72, headR: 0.17, plateY: 1.72, plough: 'pair' },
 		// ST44 („Gagarin”): zielona z żółtym pasem, zaokrąglone czoło, wentylatory na dachu, wózki trzyosiowe
-		st44: { base: 'loco', paint: '#3b6b40', stripe: '#e8c860', band: '#3b6b40', roof: '#6d7175', door: '#3b6b40', head: '#a52019', frame: '#3b6b40', splitY: 2.0, belt: [2.05, 2.2], panes: 2, nose: 1.3, yb: 2.45, round: 0.6, split: true, side: 'ports', panels: 8, prefix: 'ST44', bogieOff: 4.2, wb: 3.6, wR: 0.55, axles: 3, diesel: true, bigLamp: true, glassT: 0.8, roofShape: [0.85, 0.7], seat: '#444' },
+		/* ST44 (M62): kabina wysoko – duże szyby czołowe od ok. 2,88 m (dolna krawędź w linii dolnej ramki okien bocznych
+		   kabiny, czarny pasek pod szybą przechodzi w nią) do ok. 3,9 m nad szyną (zdjęcia ST44, np. ST44-321), pod nimi
+		   pionowa ściana czoła z reflektorami, nad szybami duży reflektor na dachu; cabLift – kabina (okna boczne, drzwi,
+		   wnętrze, oczy maszynisty) wyżej o 0,6 m niż w elektrowozach; lampT – położenie dużego reflektora na skosie; round 0,18 – czoło prawie płaskie, narożniki cofnięte tylko
+		   o 18 cm (przy 0,5 m bryła z boku kończyła się za reflektorami, pas i zderzaki wisiały przed nosem) */
+		st44: { base: 'loco', paint: '#3b6b40', stripe: '#e8c860', band: '#3b6b40', roof: '#6d7175', door: '#3b6b40', head: '#a52019', frame: '#3b6b40', splitY: 2.0, belt: [2.05, 2.2], panes: 2, nose: 0.9, yb: 2.78, round: 0.18, split: true, side: 'ports', panels: 8, prefix: 'ST44', bogieOff: 4.2, wb: 3.6, wR: 0.55, axles: 3, diesel: true, bigLamp: true, glassT: 0.35, lampT: 0.12, cabLift: 0.6, sideTop: 3.75, sideYs: [2.9], roofShape: [0.85, 0.7], seat: '#444' },
 		// SU46: czerwono-brązowa z kremowym pasem na wysokości okien kabin, kanciasta, żaluzje pionowe
 		su46: { base: 'loco', paint: '#8e3a2c', stripe: '#e8d9a8', band: '#8e3a2c', roof: '#5a5d60', door: '#8e3a2c', head: '#a52019', frame: '#8e3a2c', splitY: 2.0, belt: [2.12, 2.3], panes: 2, nose: 0.7, yb: 2.5, round: 0.25, split: true, side: 'grilles', panels: 6, prefix: 'SU46', bogieOff: 4.4, wb: 3.5, wR: 0.55, axles: 3, diesel: true, seat: '#444' },
 		// 120A: bezprzedziałowy – jak 111A, więcej węższych okien
@@ -867,6 +872,15 @@ import * as THREE from 'three';
 	NS.wetGlass = wetGlass;
 
 	// środek skosu czoła (oś pojazdu) w postępie tt (0 – początek skosu, 1 – sam przód): jak przekroje loftBody
+	/* Głębokość kabiny od czoła (ściana tylna): pulpit i fotel (0,45·nose + 2,45 m); w lokomotywach co najmniej do 0,1 m za
+	   drzwiami bocznymi kabiny (za oknem bocznym 1,5 m od skosu czoła, skrzydło 0,7 m – do nose + 2,25 m). Wcześniej
+	   ściana stała w połowie drzwi: skrzydło przechodziło przez styk kabiny z przedziałem maszynowym. Tak samo w cab.js. */
+	function cabDepthOf(st, kind) {
+		const d = st.nose * 0.45 + 2.45;
+		return kind === 'loco' || kind === 'cargo' ? Math.max(d, st.nose + 2.35) : d;
+	}
+	NS.cabDepthOf = cabDepthOf;
+
 	function noseCenter(st, H, hl, sgn, tt) {
 		const kTop = 1 - 0.28 / Math.max(0.5, H - st.yb), t = Math.pow(tt, 0.9);
 		return { y: st.yb + (H - st.yb) * (1 - kTop * Math.pow(t, 1.25)), z: sgn * (hl - st.nose * (1 - tt)) };
@@ -1909,15 +1923,23 @@ import * as THREE from 'three';
 		   (granatowy mundur, czapka). Grupa – w widoku z kabiny gracza ukrywana (tam jest pełne wnętrze z cab.js). */
 		cabRoom(group, kind, st, H, hl, sgn, driver) {
 			const M = this.inMats, room = new T.Group();
-			const depth = st.nose * 0.45 + 2.45, zb = sgn * (hl - depth);
+			const depth = cabDepthOf(st, kind), zb = sgn * (hl - depth);
 			// ściany i sufit do początku skosu czoła (przy pochylonym czole nie wystają przez szybę)
 			const zf = sgn * (hl - st.nose - 0.05), zc = (zf + zb) / 2, d2 = Math.abs(zf - zb);
 			const FL = 1.35, TOP = 3.45;
 			const part = (w, h, d, m, x, y, z) => { room.add(box(w, h, d, m, x, y, z)); };
-			const wallM = this.cabWallM || (this.cabWallM = (() => { const m = new T.MeshLambertMaterial({ color: '#5d646b', emissive: '#ffffff', emissiveIntensity: 0.04 }); this.ownMats.push(m); return m; })());
+			// ściany ciemniejsze (jasnoszare wyglądały przez okno z zewnątrz jak płaska plama bez faktury)
+			const wallM = this.cabWallM || (this.cabWallM = (() => { const m = new T.MeshLambertMaterial({ color: '#3f454b', emissive: '#ffffff', emissiveIntensity: 0.03 }); this.ownMats.push(m); return m; })());
 			part(2.6, 0.05, depth - 0.3, M.floor, 0, FL, sgn * (hl - (depth + 0.3) / 2));
 			part(2.6, 0.05, d2, wallM, 0, TOP, zc);
-			for (const sx of [-1, 1]) part(0.05, TOP - FL, d2, wallM, sx * 1.33, (FL + TOP) / 2, zc);
+			/* ściany boczne z otworem w pasie okien bocznych kabiny (2,3–3,3 m, długość okna od czoła – jak w malowaniu
+			   bryły): wcześniej ściana stała tuż za szybą i zasłaniała wnętrze */
+			const WB = 2.3, WT = 3.3, cw = Math.min(d2, kind === 'ezt' ? 1.0 : 1.5);
+			for (const sx of [-1, 1]) {
+				part(0.05, WB - FL, d2, wallM, sx * 1.33, (FL + WB) / 2, zc);
+				part(0.05, TOP - WT, d2, wallM, sx * 1.33, (WT + TOP) / 2, zc);
+				if (d2 - cw > 0.02) part(0.05, WT - WB, d2 - cw, wallM, sx * 1.33, (WB + WT) / 2, (zf - sgn * cw + zb) / 2);
+			}
 			part(2.6, TOP - FL, 0.06, wallM, 0, (FL + TOP) / 2, zb);
 			part(0.8, 2.0, 0.07, M.seatFrame, 0.55 * -sgn, FL + 1.0, zb - sgn * 0.01);
 			part(1.4, 0.03, 0.25, M.lamp, 0, TOP - 0.03, zc);
@@ -1959,6 +1981,7 @@ import * as THREE from 'three';
 				room.add(dg);
 			}
 			room.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
+			room.position.y = st.cabLift || 0;
 			group.add(room);
 			return room;
 		}
@@ -2128,7 +2151,7 @@ import * as THREE from 'three';
 			}
 			// górny reflektor nad szybą
 			// duży reflektor (ST44): na czole tuż nad szybami, w obudowie wystającej przed czoło
-			const tL = st.bigLamp ? ((st.glassT || 0.74) + 0.4) / 2 : 0.12, yL = H;
+			const tL = st.lampT ?? (st.bigLamp ? ((st.glassT || 0.74) + 0.4) / 2 : 0.12), yL = H;
 			const pTop = nosePoint(st, H, tL, 0, yL);
 			const zL = sgn * (hl - st.nose * (1 - tL) + (st.bigLamp ? 0.1 : 0));
 			const tilt = st.bigLamp ? 0.25 : 0.6;
@@ -2226,12 +2249,12 @@ import * as THREE from 'three';
 				return { y: st.yb + (H - st.yb) * (1 - kTop * Math.pow(t, 1.25)), z: sgn * (hl - nl * (1 - tt)) };
 			};
 			// słupek środkowy wzdłuż skośnej szyby
-			const a = at(1), b = at(Math.max(0.6, st.glassT || 0));
+			const a = at(1), b = at((st.glassT ?? 0.6));
 			// słupek środkowy (dwie szyby); przy trzech szybach ramy i słupki są malowane na bryle pudła (równo z szybą)
 			/* słupek między dwiema szybami: krótkie odcinki wzdłuż krzywizny czoła, tuż nad powierzchnią (prosta belka
 			   między końcami odstawała od wygiętego czoła); przy trzech szybach słupki są malowane na bryle */
 			if (st.panes !== 3) {
-				const mm = paint(kind === 'ezt' ? st.stripe : st.paint), N = 10, t0 = Math.max(0.6, st.glassT || 0);
+				const mm = paint(kind === 'ezt' ? st.stripe : st.paint), N = 10, t0 = (st.glassT ?? 0.6);
 				let p0 = at(t0);
 				for (let k = 1; k <= N; k++) {
 					const p1 = at(t0 + ((1 - t0) * k) / N);
@@ -2629,7 +2652,7 @@ import * as THREE from 'three';
 			// wagony pasażerskie: drzwi, okna boczne i zakres wnętrza (współrzędna z, przód = −z)
 			const passenger = kind === 'ezt' || kind === 'coach';
 			const DOOR_W = st.doorW || (kind === 'coach' ? 0.9 : 1.3);
-			const cabDepth = st.nose * 0.45 + 2.45; // ściana tylna kabiny – jak w cab.js
+			const cabDepth = cabDepthOf(st, kind); // ściana tylna kabiny – jak w cab.js
 			const zIn0 = noseF ? -hl + cabDepth + 0.08 : -hl + 0.35;
 			const zIn1 = noseR ? hl - cabDepth - 0.08 : hl - 0.35;
 			// EN57: dwoje drzwi dwuskrzydłowych na burtę; 111A: drzwi w przedsionkach na obu końcach
@@ -2658,7 +2681,8 @@ import * as THREE from 'three';
 					if (yo > 2.3 && yo < 3.3 && wins.some(([a, b]) => zo > a && zo < b)) return 5;
 				}
 				// okna boczne kabiny (przy płaskim czole – tylko na prostej burcie, za narożnikami)
-				if (cabWin && ax > 1.3 && yo > 2.3 && yo < 3.3 && (!st.split || to < 0.01) && ((noseF && zo < -hl + st.nose + cabWin) || (noseR && zo > hl - st.nose - cabWin))) {
+				// (kabina podniesiona – cabLift: okna wyżej, górna krawędź najwyżej na końcu prostej burty – sideTop)
+				if (cabWin && ax > 1.3 && yo > 2.3 + (st.cabLift || 0) && yo < Math.min(3.3 + (st.cabLift || 0), st.sideTop || 3.3) && (!st.split || to < 0.01) && ((noseF && zo < -hl + st.nose + cabWin) || (noseR && zo > hl - st.nose - cabWin))) {
 					if (!st.cabPanes) return 4;
 					const u = zo < 0 ? zo - (-hl + st.nose) : hl - st.nose - zo;
 					if (st.cabPanes.some(([a, b]) => u > a && u < b)) return 4;
@@ -2689,8 +2713,10 @@ import * as THREE from 'three';
 				if (!st.split && yo > st.yb + 0.05 && yo > 2.3 && yo < 3.3 && to > 0.25) return 4;
 				// 111A: szary dach schodzi po łuku aż nad okna i drzwi (rynna tuż nad nimi)
 				// 111A i EN57: szary dach od ok. 0,15 m nad oknami (pas okienny sięga trochę nad okna)
-				if ((kind === 'coach' || kind === 'ezt' || kind === 'loco') && to < 0.01 && yo > 3.45) return 3;
-				if (yo > 3.52 && ax < 1.3) return 3;
+				// dach od krawędzi prostej burty (sideTop – np. ST44 z wyższą burtą przy kabinie podniesionej)
+				const roofY = (st.sideTop || 3.3) + 0.15;
+				if ((kind === 'coach' || kind === 'ezt' || kind === 'loco') && to < 0.01 && yo > roofY) return 3;
+				if (yo > roofY + 0.07 && ax < 1.3) return 3;
 				const side = ax > 1.3;
 				if (kind === 'ezt') {
 					// nowoczesne EZT: pasy malowania wg wysokości (zones)
@@ -2798,16 +2824,17 @@ import * as THREE from 'three';
 				for (const x of [-hl + st.nose + 0.9, hl - st.nose - 0.9]) {
 					const dzc = -x + Math.sign(x) * 1.0;
 					// drzwi kabiny i ramki okien bocznych – osobno na każdej burcie (nic nie przechodzi przez wnętrze kabiny)
+					const lift = st.cabLift || 0; // kabina podniesiona (ST44)
 					for (const sx of [-1, 1]) {
-						add(box(0.06, 1.9, 0.7, paint(st.door), sx * (HALF - 0.01), 2.2, dzc));
-						if (!st.noDoorWin) add(box(0.064, 0.5, 0.4, glass, sx * (HALF - 0.01), 2.75, dzc)); // równo z drzwiami
-						for (const dy of [2.28, 3.32]) add(box(0.04, 0.05, cabWin + 0.1, mat('#1a1a1a'), sx * (HALF + 0.005), dy, -x - Math.sign(x) * (0.9 - cabWin / 2)));
+						add(box(0.06, 1.9, 0.7, paint(st.door), sx * (HALF - 0.01), 2.2 + lift, dzc));
+						if (!st.noDoorWin) add(box(0.064, 0.5, 0.4, glass, sx * (HALF - 0.01), 2.75 + lift, dzc)); // równo z drzwiami
+						for (const dy of [2.28 + lift, Math.min(3.32 + lift, (st.sideTop || 3.3) + 0.02)]) add(box(0.04, 0.05, cabWin + 0.1, mat('#1a1a1a'), sx * (HALF + 0.005), dy, -x - Math.sign(x) * (0.9 - cabWin / 2)));
 					}
 					for (const sx of [-1, 1]) {
 						for (const dz of [-0.45, 0.45]) {
 							const h = new T.Mesh(CYL, rail);
-							h.scale.set(0.05, 1.5, 0.05);
-							h.position.set(sx * (HALF + 0.1), 2.2, dzc + dz);
+							h.scale.set(0.05, 1.5 + lift, 0.05);
+							h.position.set(sx * (HALF + 0.1), 2.2 + lift / 2, dzc + dz);
 							group.add(h);
 						}
 						for (const [sy, sd] of [[0.82, 0.12], [0.45, 0.2]]) add(box(0.22, 0.05, 0.6, mat('#3a3a3a'), sx * (HALF + sd), sy, dzc));
@@ -2816,7 +2843,7 @@ import * as THREE from 'three';
 				// lusterka przy szybie czołowej, syreny na dachu
 				for (const [sgn, on] of [[-1, noseF], [1, noseR]]) {
 					if (!on) continue;
-					for (const sx of [-1, 1]) add(box(0.06, 0.25, 0.18, mat('#1e1e1e'), sx * (HALF + 0.08), 3.05, sgn * (hl - st.nose - 0.15)));
+					for (const sx of [-1, 1]) add(box(0.06, 0.25, 0.18, mat('#1e1e1e'), sx * (HALF + 0.08), 3.05 + (st.cabLift || 0), sgn * (hl - st.nose - 0.15)));
 					for (const sx of st.roofLamp ? [] : [-0.35, 0.35]) group.add(turned(HORN_GEO, rail, sx, H + 0.12, sgn * (hl - st.nose - 0.85), 0.075, 0.42, sgn));
 				}
 				if (kind === 'loco') {
@@ -2952,7 +2979,7 @@ import * as THREE from 'three';
 			const roofMat = matS(st.roof, { roughness: 0.55, metalness: 0.3, panels: true });
 			const gutterLen = len - (noseF ? st.nose + 0.4 : 0.3) - (noseR ? st.nose + 0.4 : 0.3);
 			const gutterZ = ((noseF ? st.nose + 0.4 : 0.3) - (noseR ? st.nose + 0.4 : 0.3)) / 2;
-			for (const sx of [-1, 1]) add(box(0.06, 0.05, gutterLen, kind !== 'cargo' ? roofMat : paint(st.paint), sx * (kind !== 'cargo' ? 1.44 : 1.455), kind !== 'cargo' ? 3.46 : 3.4, gutterZ)); // w kolorze górnej części pudła (111A – dachu)
+			for (const sx of [-1, 1]) add(box(0.06, 0.05, gutterLen, kind !== 'cargo' ? roofMat : paint(st.paint), sx * (kind !== 'cargo' ? 1.44 : 1.455), kind !== 'cargo' ? (st.sideTop || 3.3) + 0.16 : 3.4, gutterZ)); // w kolorze górnej części pudła (111A – dachu)
 			if (kind === 'coach' || (kind === 'ezt' && (!noseF || !noseR))) {
 				// 111A i EN57: szary dach zachodzi też na ściany czołowe (łuk dachu nad drzwiami przejściowymi)
 				const prof = crossSection(H).filter(([, y]) => y >= 3.44);

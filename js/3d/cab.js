@@ -173,11 +173,16 @@ import * as THREE from 'three';
 			// kabina osadzona w części pojazdu (SM42 – kabina między maskami, wyżej): cabSpec – bryła kabiny, jej
 			// połowa długości, przesunięcie (z – środek kabiny, y – podniesiona podłoga)
 			const spec = car.cabSpec;
-			const hl = spec ? spec.hl : car.len / 2, n = spec ? spec.nose : car.st.nose, H = spec ? spec.H : car.H;
+			const hl = spec ? spec.hl : car.len / 2, n = spec ? spec.nose : car.st.nose, H = spec ? spec.H : car.H - (car.st.cabLift || 0);
 			if (spec) g.position.set(0, spec.y, spec.z);
+			/* kabina podniesiona (ST44 – cabLift): całe wnętrze z oczami maszynisty wyżej; H – wysokość pudła w układzie
+			   wnętrza (jak przy cabSpec), lift odejmowany od współrzędnych liczonych na bryle pojazdu */
+			const lift = !spec && car.st.cabLift ? car.st.cabLift : 0;
+			if (lift) g.position.y = lift;
 			const floor = 1.35;
 			const deskFront = -hl + n * 0.45, deskBack = deskFront + 0.8;
-			const back = deskBack + 1.65;
+			// ściana tylna za drzwiami bocznymi kabiny (lokomotywy – train.js cabDepthOf)
+			const back = !spec && NS.cabDepthOf ? -hl + NS.cabDepthOf(car.st, car.kind) : deskBack + 1.65;
 			this.eye = new T.Vector3(-0.35, 3.05, deskBack + 0.72);
 			this.floor = floor;
 
@@ -203,6 +208,7 @@ import * as THREE from 'three';
 			if (model.glassU && NS.wetGlass) NS.wetGlass(inGlass, model.glassU);
 			const shell = new T.Mesh(spec ? spec.geo : car.bodyGeo, [wall, wall, wall, ceiling, inGlass, inGlass, own(new T.MeshBasicMaterial({ visible: false })), wall]);
 			if (spec) shell.position.y = -spec.y; // bryła kabiny w układzie pojazdu (grupa podniesiona o spec.y)
+			else if (lift) shell.position.y = -lift;
 			g.add(shell);
 
 			// materiały: pulpit (lakier strukturalny), blat i półka (czarne, matowe), metal, guma, podłoga, ściana, tapicerka
@@ -229,8 +235,8 @@ import * as THREE from 'three';
 			const lining = cm('#aab2a6', { map: panelTex(), rough: 0.85, glow: 0.1 });
 			if (!spec && car.st.split && car.st.panes !== 3) {
 				// słupek wzdłuż krzywizny czoła (jak flatFront w train.js), 3,5 cm do środka i szerszy niż pasek z zewnątrz
-				const st = car.st, kTop = 1 - 0.28 / Math.max(0.5, H - st.yb), t0 = Math.max(0.6, st.glassT || 0);
-				const at = (tt) => { const t = Math.pow(tt, 0.9); return { y: st.yb + (H - st.yb) * (1 - kTop * Math.pow(t, 1.25)), z: -(hl - n * (1 - tt)) }; };
+				const st = car.st, kTop = 1 - 0.28 / Math.max(0.5, H + lift - st.yb), t0 = (st.glassT ?? 0.6);
+				const at = (tt) => { const t = Math.pow(tt, 0.9); return { y: st.yb + (H + lift - st.yb) * (1 - kTop * Math.pow(t, 1.25)) - lift, z: -(hl - n * (1 - tt)) }; };
 				let p0 = at(t0);
 				for (let k = 1; k <= 10; k++) {
 					const p1 = at(t0 + ((1 - t0) * k) / 10);
@@ -331,7 +337,7 @@ import * as THREE from 'three';
 				}
 				probe.material.forEach((m) => m.dispose());
 				// pochyły blat od półki z przyrządami do krawędzi szyby, przy szybie gumowa uszczelka
-				const y0 = 2.66, z0 = deskFront + 0.08, y1 = yg - 0.035, z1 = zg + 0.03;
+				const y0 = 2.66, z0 = deskFront + 0.08, y1 = yg - lift - 0.035, z1 = zg + 0.03;
 				const Lg = Math.hypot(z1 - z0, y1 - y0);
 				const gl = rb(2.62, 0.03, Lg, cm('#2b2f33', { map: grain, rough: 0.95, glow: 0.1 }), 0, (y0 + y1) / 2, (z0 + z1) / 2, 0.01);
 				gl.rotation.x = Math.atan2(y1 - y0, z0 - z1);

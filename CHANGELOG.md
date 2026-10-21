@@ -4,6 +4,31 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.57.4 – 21 października 2026
+
+ST44 z dużymi szybami czołowymi.
+
+### Tabor (`train.js`, `cab.js`)
+- ST44 (M62): szyby czołowe duże i wysoko, jak na zdjęciach (ST44-321): dolna krawędź ok. 2,9 m nad szyną – w linii
+  dolnej ramki okien bocznych kabiny, czarny pasek pod szybą przechodzi w nią (było 2,45 m), szyba na większej części
+  skosu czoła (`glassT` 0,8 → 0,35 – szyba ok. 0,7–0,9 m wysokości zamiast 0,3–0,55 m), krótszy skos czoła (`nose`
+  1,3 → 0,9), duży reflektor na dachu nad szybami (`lampT`).
+- ST44: czoło prawie płaskie (`round` 0,5 → 0,18 – narożniki cofnięte o 18 cm zamiast 50 cm) – z boku zielona bryła
+  kończy się przy reflektorach (wcześniej pół metra za nimi; pas, reflektory i zderzaki wisiały przed nosem).
+- ST44: okna boczne kabiny w pełnej wysokości (2,9–3,75 m – krawędzie przekroju burty w ich granicach; wcześniej
+  szkło łapało się tylko na wąskim pasku), ramki okien na tych wysokościach; prosta burta wyżej (`sideTop` 3,75 m),
+  dach i rynny od jej krawędzi.
+- Drzwi boczne kabin lokomotyw bez pionowej linii w połowie (`common.js`, `nodes.js`): spoiny i falowanie blach burt
+  (co 2,7 / 0,9 m wzdłuż pojazdu) tylko na powierzchni burty (|x| < 1,462 m) – wcześniej przechodziły przez scalone
+  z burtą skrzydło drzwi (np. w EP09 spoina w połowie drzwi wyglądała jak styk kabiny z przedziałem maszynowym).
+- Kabina lokomotywy głębsza – ściana tylna 0,1 m za drzwiami bocznymi (`cabDepthOf` w `train.js`, także `cab.js`);
+  wcześniej stała w połowie drzwi.
+- Wnętrze kabiny widoczne z zewnątrz: boczne ściany z otworem w pasie okien bocznych (wcześniej jasnoszara ściana tuż
+  za szybą – z zewnątrz wyglądała jak brak grafiki), ściany ciemniejsze; przez okno widać maszynistę i pulpit.
+- Nowy parametr stylu `cabLift` (ST44: 0,6 m): kabina wyżej – okna boczne, drzwi z okienkiem, poręcze, lusterka,
+  kabina widoczna z zewnątrz i kabina gracza (oczy maszynisty 3,65 m – w pasie szyby).
+- Słupek między szybami (z zewnątrz i okładzina od środka) od początku szyby (`glassT`), nie od 0,6 skosu.
+
 ## 0.57.3 – 21 października 2026
 
 Szyny bez szerokich pasów.

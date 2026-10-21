@@ -4,6 +4,17 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.57.4',
+			date: '21 października 2026',
+			groups: [
+				['Tabor', [
+					'ST44 z dużymi szybami czołowymi, wysoko jak w prawdziwej lokomotywie (od linii okien bocznych, ok. 2,9 m nad szyną) – wcześniej małe i za nisko; kabina, okna boczne i drzwi wyżej, z kabiny widok przez szybę.',
+					'Okna boczne kabin lokomotyw i zespołów: przez szybę widać wnętrze kabiny z maszynistą (wcześniej szara ściana tuż za szybą).',
+					'Drzwi boczne kabin lokomotyw bez linii przez środek – spoiny blach tylko na burcie, nie na drzwiach.',
+				]],
+			],
+		},
+		{
 			version: '0.57.3',
 			date: '21 października 2026',
 			groups: [

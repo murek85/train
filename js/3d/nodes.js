@@ -415,7 +415,8 @@ import {
 		const dirtC = vec3(0.2, 0.17, 0.135).mul(n1.mul(0.6).add(0.7));
 		diffuseColor.rgb.assign(mix(diffuseColor.rgb, dirtC, S.wearG.mul(0.6)));
 		if (!panels) return;
-		If(vWear.y.greaterThan(0.5).and(abs(ln.x).greaterThan(0.75)).and(lp.y.greaterThan(1.1)).and(lp.y.lessThan(3.5)), () => {
+		// tylko na powierzchni burty (|x| < 1,462) – drzwi i części doczepione gładkie (jak w common.js)
+		If(vWear.y.greaterThan(0.5).and(abs(ln.x).greaterThan(0.75)).and(lp.y.greaterThan(1.1)).and(lp.y.lessThan(3.5)).and(abs(lp.x).lessThan(1.462)), () => {
 			const fine = nsm(0.012, 0.04, pxw).toVar();
 			const wy = smoothstep(1.15, 1.4, lp.y).mul(nsm(3.2, 3.45, lp.y)).toVar();
 			const wav = sin(fract(lp.z.div(0.9)).mul(3.14159)).mul(gNoise(vec2(lp.z.mul(0.8), lp.y.mul(1.6))).mul(0.5).add(0.5));
