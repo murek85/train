@@ -1644,3 +1644,10 @@ body.radio-on #toasts { top: calc(12px + var(--radio-h, 72px) + 14px); }
 /* OSD u góry na środku pod paskiem zdarzeń (top – hud.js), tytuł i treść do lewej */
 .osd { top: 14px; bottom: auto; align-items: flex-start; text-align: left; }
 @keyframes osd-pop { from { opacity: 0; transform: translate(-50%, -4px); } }
+/* komunikaty w pasku u góry (z lampką): lampka, kategoria i treść w jednej linii (dłuższa treść
+   zawija się w swojej kolumnie) */
+.toast.one { grid-template-columns: auto auto 1fr; gap: 0 8px; padding: 6px 14px 6px 10px; }
+.toast.one span { grid-column: auto; }
+/* pasek komunikatów niżej – jak przed 0.47.0 (66 px od góry); przy radiotelefonie – pod nim (wyżej) */
+#toasts { top: 66px; }
+body.radio-on #toasts { top: max(66px, calc(12px + var(--radio-h, 72px) + 14px)); }

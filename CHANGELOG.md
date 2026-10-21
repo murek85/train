@@ -28,6 +28,48 @@ Okno wczytywania po każdej zmianie ustawień grafiki.
 - `menuops.js`: `MENU_OPS=gfx` (opcje grafiki w menu), `MENU_OPS=gfxpause` (w pauzie w jeździe),
   `MENU_PROF=cienie` / `cienie0` – profil włączenia / wyłączenia cieni w pauzie.
 
+## 0.55.11 – 21 października 2026
+
+Drogi gruntowe bez aut, najwyżej kilku pieszych.
+
+### Ruch uliczny (`street-life.js`)
+- `ch.dirt` – ciąg w większości o nawierzchni 3 (gruntowa); `ch.car` – bez dróg gruntowych (bez wjazdu i skrętu w nie).
+- Piesi: kandydaci na drogach gruntowych (waga 0,12 na 12 m wobec 1–4 na chodnikach), skrajem drogi (0,9 m od krawędzi,
+  na wysokości jezdni), najwyżej 4 naraz. Rybnik – Katowice: 920 ciągów gruntowych (135 km) bez aut.
+
+## 0.55.10 – 21 października 2026
+
+Pasek komunikatów niżej.
+
+### Komunikaty (`style.css`)
+- `#toasts` – `top: 66px`; przy radiotelefonie `max(66px, 12px + --radio-h + 14px)`.
+
+## 0.55.9 – 21 października 2026
+
+Auta nie stają na przejazdach kolejowych.
+
+### Ruch uliczny (`street-life.js`)
+- Przejazd: przed linią zatrzymania (bez rozpoczętego przejazdu przy włączonej sygnalizacji) wymagane wolne miejsce za
+  łącznikiem ≥ długość łącznika do auta + długość auta + 1,5 m; przeszkody: auto przed nami (do 60 m) jadące wolniej niż
+  2,5 m/s, linia zatrzymania skrzyżowania z sygnalizacją (czerwone / żółte) tuż za przejazdem. `c.xwait` – auto czeka.
+- Autobus: przystanek na pasie zaraz za łącznikiem przejazdu bliżej niż długość autobusu – pomijany.
+- Sprawdzone na Rybnik – Katowice (przejazd km 1,49): przez ok. 38 s świecenia sygnalizacji i przejazd pociągu żadne auto
+  nie stało na torach, po przejeździe ruch ruszył, bez trwałego czekania.
+
+## 0.55.8 – 21 października 2026
+
+Komunikaty w pasku u góry w jednej linii.
+
+### Komunikaty (`hud.js`)
+- Każdy komunikat paska `#toasts` z klasą `.one` (dotąd tylko z kluczem stanu).
+
+## 0.55.7 – 21 października 2026
+
+Komunikaty o stanie w jednej linii.
+
+### Komunikaty (`hud.js`, `style.css`)
+- `.toast.one` (komunikat z kluczem stanu): siatka `auto auto 1fr` – lampa, kategoria, treść w jednym wierszu.
+
 ## 0.55.6 – 21 października 2026
 
 Zapowiedzi na wyświetlaczu LED dwa razy.

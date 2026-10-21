@@ -228,7 +228,7 @@
 				this.toasts.appendChild(el);
 			}
 			// pasek jak komunikat dyżurnego: lampa w kolorze wagi, kategoria (wg klucza albo wagi) i treść
-			el.className = 'toast ' + kind;
+			el.className = 'toast one ' + kind; // pasek u góry: lampka, kategoria i treść w jednej linii
 			el.dataset.text = text;
 			el.children[1].textContent = TOAST_CAT[key] || TOAST_CAT[kind] || 'KOMUNIKAT';
 			el.children[2].textContent = text;

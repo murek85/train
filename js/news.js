@@ -13,6 +13,52 @@
 			],
 		},
 		{
+			version: '0.55.11',
+			date: '21 października 2026',
+			groups: [
+				['Ruch uliczny', [
+					'Drogi gruntowe (polne, leśne – nawierzchnia gruntowa w danych z mapy) bez aut; czasem idzie nimi ktoś pieszo, skrajem drogi – najwyżej cztery osoby naraz.',
+				]],
+			],
+		},
+		{
+			version: '0.55.10',
+			date: '21 października 2026',
+			groups: [
+				['Komunikaty w czasie jazdy', [
+					'Pasek komunikatów u góry (czuwak, prędkość, zdarzenia…) znów niżej – 66 px od górnej krawędzi, jak przed 0.47.0; przy radiotelefonie pod jego okienkiem.',
+				]],
+			],
+		},
+		{
+			version: '0.55.9',
+			date: '21 października 2026',
+			groups: [
+				['Ruch uliczny', [
+					'Auta i autobusy nie stają na przejazdach kolejowych: wjeżdżają na przejazd tylko wtedy, gdy za torami jest miejsce na całe auto (jak w przepisach) – czekają przed linią zatrzymania, gdy tuż za przejazdem stoi kolejka albo świeci czerwone na skrzyżowaniu.',
+					'Autobus pomija przystanek tuż za przejazdem, przy którym jego tył zostałby na torach.',
+				]],
+			],
+		},
+		{
+			version: '0.55.8',
+			date: '21 października 2026',
+			groups: [
+				['Komunikaty w czasie jazdy', [
+					'Wszystkie komunikaty w pasku u góry (z lampką – stany pojazdu, „w porządku”, ostrzeżenia, zdarzenia i kary) w jednej linii: lampka, kategoria i treść obok siebie.',
+				]],
+			],
+		},
+		{
+			version: '0.55.7',
+			date: '21 października 2026',
+			groups: [
+				['Komunikaty w czasie jazdy', [
+					'Komunikaty o stanie (czuwak, SHP, prędkość, drzwi, poślizg, pantograf…) w jednej linii: lampka, kategoria i treść obok siebie; zdarzenia i kary – jak dotąd, kategoria nad treścią.',
+				]],
+			],
+		},
+		{
 			version: '0.55.6',
 			date: '21 października 2026',
 			groups: [

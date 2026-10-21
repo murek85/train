@@ -107,7 +107,9 @@ import * as THREE from 'three';
 			ch.ti = g.inf.ti;
 			// jednokierunkowa: +1 – ruch w stronę rosnącego t ciągu, −1 – malejącego, 0 – dwukierunkowa
 			ch.cdir = g.inf.one ? (g.flip ? -1 : 1) : 0;
-			ch.car = ch.ti !== 9 && ch.L > 1.5;
+			// droga gruntowa (nawierzchnia 3 – polna, leśna): bez aut, najwyżej pojedynczy piesi skrajem drogi
+			ch.dirt = ch.seg.filter((x) => x.inf.surf === 3).length * 2 > ch.seg.length;
+			ch.car = ch.ti !== 9 && ch.L > 1.5 && !ch.dirt;
 			ch.wAvg = ch.w.reduce((a, b) => a + b, 0) / ch.w.length;
 			for (const end of [0, 1]) push(net.ends, end ? ch.nb : ch.na, { ch, end });
 		});
@@ -527,7 +529,8 @@ import * as THREE from 'three';
 					if (tt < ch.trim[0].t + 2 || tt > ch.L - ch.trim[1].t - 2) continue;
 					if (ch.car) cars.push({ ch, t: tt, dist });
 					const sw = ch.sw[k];
-					if (sw[0] || sw[1]) {
+					if (ch.dirt) peds.push({ ch, k, t: tt, dist, w: 0.12 }); // droga polna – rzadko ktoś idzie
+					else if (sw[0] || sw[1]) {
 						const nearSt = stations.reduce((m, x) => Math.min(m, Math.abs(x - p[0]) + Math.abs(p[1]) * 0.5), Infinity);
 						peds.push({ ch, k, t: tt, dist, w: 1 + 3 * Math.exp(-nearSt / 180) });
 					}
@@ -610,14 +613,15 @@ import * as THREE from 'three';
 				if (s2 >= 2 || (s2 === 1 && dist > (c.v * c.v) / 8)) cap(dist, 0);
 			}
 			// auto przed sobą (ten sam kierunek, w pasie przed nami)
-			let gap = Infinity;
+			let gap = Infinity, gapV = 0;
 			for (const o of cars) {
 				if (o === c) continue;
 				const rs = o.p[0] - c.p[0], rd = o.p[1] - c.p[1], fwd = rs * c.h[0] + rd * c.h[1];
-				if (fwd <= 0 || fwd > 45) continue;
+				if (fwd <= 0 || fwd > 60) continue;
 				const lat = Math.abs(-rs * c.h[1] + rd * c.h[0]);
 				if (lat > 1.7 || o.h[0] * c.h[0] + o.h[1] * c.h[1] < 0.2) continue;
-				gap = Math.min(gap, fwd - (c.len + o.len) / 2 - 2);
+				const g = fwd - (c.len + o.len) / 2 - 2;
+				if (g < gap) { gap = g; gapV = o.v; }
 			}
 			if (gap < Infinity) cap(gap - 0.5, 0);
 			/* wąska jezdnia dwukierunkowa (do 5,5 m): mijanie z naprzeciwka powoli (do ok. 15 km/h, gdy auto z naprzeciwka
@@ -652,6 +656,7 @@ import * as THREE from 'three';
 			// autobus: postój na przystanku (15–25 s); pasażerowie wsiadają i wysiadają (piesi przy przystanku)
 			if (c.kind === 5) for (let qi = 0; qi < c.q.length && qi < 3; qi++) for (const S of c.q[qi].kind === 'lane' ? c.q[qi].bus : []) {
 				if (c.done.has(S.B.id)) continue;
+				if (qi > 0 && c.q[qi - 1].link && S.u < c.len + 2) { c.done.add(S.B.id); continue; } // tył stałby na torach
 				const du = aheadOf(c, c.q[qi], S.u);
 				if (du < -2 || du > 70) continue;
 				if (du < 1 && c.v < 0.4) {
@@ -676,6 +681,23 @@ import * as THREE from 'three';
 					if (!c.xgo) cap(dist, 0);
 				} else c.xgo = false;
 				c.xseen = on;
+				/* nie wjeżdżaj na przejazd, jeśli za torami nie ma miejsca (przepisy): przed linią zatrzymania – wolne miejsce
+				   za łącznikiem co najmniej na całe auto; przeszkody: auto przed nami, które stoi albo się wlecze (także
+				   czekające na wlocie podporządkowanym), linia zatrzymania skrzyżowania z sygnalizacją (czerwone / żółte) */
+				if (dist > -0.3 && !(on && c.xgo)) {
+					const need = aheadOf(c, Y, Y.L) - c.len / 2 + c.len + 1.5;
+					let free = gapV < 2.5 ? gap : Infinity;
+					for (let k = i + 1; k < c.q.length; k++) {
+						const Z = c.q[k];
+						if (Z.kind !== 'turn' || !Z.J) continue;
+						const dJ = aheadOf(c, Z, 0) - c.len / 2 - 0.4;
+						if (dJ > need + 5) break;
+						const s2 = Z.J.lights ? tlNow(Z.J, Z.inArm, time) : 0;
+						if (Z.J.lights && s2 >= 1) free = Math.min(free, dJ);
+						break;
+					}
+					if (free < need) { cap(dist, 0); c.xwait = true; } else c.xwait = false;
+				}
 				break;
 			}
 			// przyspieszanie / hamowanie
@@ -877,9 +899,10 @@ import * as THREE from 'three';
 
 	/* ---------- piesi ---------- */
 	// punkt chodnika ciągu ch w t po stronie sc (+1 / −1 względem rosnącego t)
-	const swPt = (ch, t, sc) => World.streetUtil.chPt(ch, t, sc, sc * SW_OFF);
+	// droga gruntowa (bez chodników) – skrajem drogi, 0,9 m od krawędzi
+	const swPt = (ch, t, sc) => World.streetUtil.chPt(ch, t, sc, sc * (ch.dirt ? -0.9 : SW_OFF));
 	// czy na odcinku ciągu w t jest chodnik po stronie sc
-	const swHas = (ch, t, sc) => { const k = World.streetUtil.chSeg(ch, t); return !!ch.sw[k][sc > 0 ? 0 : 1]; };
+	const swHas = (ch, t, sc) => { if (ch.dirt) return true; const k = World.streetUtil.chSeg(ch, t); return !!ch.sw[k][sc > 0 ? 0 : 1]; };
 
 	World.prototype.updateStreetPeds = function (sim, dt, L, net, vs, vd, RAD, nPeds, xs) {
 		const peds = L.pedList, time = this.time;
@@ -911,7 +934,9 @@ import * as THREE from 'three';
 			let r = Math.random() * cand.pedW, x = cand.peds[0];
 			for (const y of cand.peds) { r -= y.w; if (r <= 0) { x = y; break; } }
 			if (L.age > 2 && x.dist < RAD * 0.5) continue;
-			const sw = x.ch.sw[x.k], sc = sw[0] && sw[1] ? (Math.random() < 0.5 ? 1 : -1) : sw[0] ? 1 : -1;
+			// drogi gruntowe: najwyżej 4 osoby naraz (na wsi prawie wszystkie drogi są gruntowe), dowolną stroną drogi
+			if (x.ch.dirt && peds.filter((q) => q.ch.dirt).length >= 4) continue;
+			const sw = x.ch.sw[x.k], sc = x.ch.dirt || (sw[0] && sw[1]) ? (Math.random() < 0.5 ? 1 : -1) : sw[0] ? 1 : -1;
 			const p = { ch: x.ch, sc, t: x.t, dir: Math.random() < 0.5 ? 1 : -1, spd: 1.05 + Math.random() * 0.5, seed: Math.random() * 100, state: 'walk', p: [0, 0], h: [1, 0], path: null, u: 0 };
 			const q = swPt(p.ch, p.t, p.sc);
 			p.p = q;
@@ -1063,7 +1088,7 @@ import * as THREE from 'three';
 			const yaw = Math.atan2(tq.x - x0, tq.z - z0) + (L.yawOff || 0);
 			q.setFromAxisAngle(up, yaw);
 			// chodnik – nad krawężnikiem; na jezdni (przejście, przejazd) – na nawierzchni
-			const onRoad = !!(p.z || (p.path && p.path.X)) || (p.state === 'stand' && !p.onSw);
+			const onRoad = !!(p.z || (p.path && p.path.X)) || (p.state === 'stand' && !p.onSw) || (p.ch && p.ch.dirt);
 			const y = onRoad ? this.streetY(p.p[0], p.p[1], p.ch) : this.surfY(p.p[0], p.p[1]) + 0.25;
 			const s0 = 0.95 + (p.seed % 1) * 0.12;
 			m4.compose(p3.set(x0, y, z0), q, sc.set(s0, s0, s0));
