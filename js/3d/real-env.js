@@ -1560,7 +1560,9 @@ import * as THREE from 'three';
 			if (Math.abs(d) < 3.2 || this.envTracksAt(s).some((t) => Math.abs(t.d - d) < 3.2)) { za = Math.min(za, u); zb = Math.max(zb, u); }
 		}
 		if (za > zb) { za = cum[A.length - 1]; zb = cum[A.length]; }
-		return { pts, cum, L, at, link: [cum[A.length - 1], cum[A.length]], zone: [za, zb], w: (this.env.rInfo[best.a.i] && this.env.rInfo[best.a.i].w) || 6 };
+		// sw – chodniki ulicy (którejś z dwóch części drogi przez przejazd): przejazd dostaje je po obu stronach jezdni
+		const inf = (e) => this.env.rInfo[e.i] || {};
+		return { pts, cum, L, at, link: [cum[A.length - 1], cum[A.length]], zone: [za, zb], w: inf(best.a).w || 6, sw: inf(best.a).sw || inf(best.b).sw ? 1 : 0 };
 	};
 	World.prototype.onRoad = function (s, d) {
 		if (!this.env || Math.abs(d) >= MASK_D) return false;
@@ -1698,9 +1700,43 @@ import * as THREE from 'three';
 		for (let t = -0.5; t <= 0.5; t += 0.125) {
 			const s = pr.s + dirs[0] * L * t, d = pr.d + dirs[1] * L * t;
 			if (this.envTrackGap(s, d) < 1.9) return false;
-			if (this.onRoad(s, d)) { const rl = this.roadLevel(s, d); if ((rl !== undefined ? rl : this.terrainY(s, d)) < pr.top - 3) return false; }
+			if (this.roadBelowDeck(s, d, pr.top + 0.9, 0.5)) return false;
 		}
 		return true;
+	};
+	/* ulica z mapy pod pomostem w punkcie (s, d): odcinek drogi (env.r – bez samych obiektów) bliżej niż połowa jej szerokości
+	   + margin, a pomost (wierzch y) ponad 3 m nad terenem. Maska dróg (onRoad) i poziom jezdni z pomiaru (roadLevel) obejmują
+	   też sam pomost – z nimi każdy punkt pod wiaduktem wyglądał jak droga i filary nie stawały nigdzie (wiadukt 140 m nad
+	   stacją towarową bez podpory) */
+	World.prototype.roadBelowDeck = function (s, d, y, margin = 1.5) {
+		if (y - this.terrainY(s, d) <= 3) return false;
+		const e = this.env, G8 = 8;
+		/* siatka odcinków ulic (komórki 8 × 8 m w (s, d), odcinek w komórkach swojego prostokąta poszerzonego o połowę
+		   szerokości jezdni i 2 m) – raz na trasę; dawniej każde zapytanie przeglądało wszystkie odcinki trzech kawałków */
+		if (!e.rSegGrid) {
+			const grid = (e.rSegGrid = new Map());
+			(this.route.env.r || []).forEach((row) => {
+				const hw = (ROAD_W[row[0]] || 6) / 2 + 2, n = (row.length - 1) / 2;
+				for (let k = 0; k < n - 1; k++) {
+					const s1 = row[1 + k * 2], d1 = row[2 + k * 2], s2 = row[3 + k * 2], d2 = row[4 + k * 2];
+					for (let a = Math.floor((Math.min(s1, s2) - hw) / G8); a <= Math.floor((Math.max(s1, s2) + hw) / G8); a++)
+						for (let b = Math.floor((Math.min(d1, d2) - hw) / G8); b <= Math.floor((Math.max(d1, d2) + hw) / G8); b++) {
+							const key = a * 100003 + b;
+							if (!grid.has(key)) grid.set(key, []);
+							grid.get(key).push([s1, d1, s2, d2, row[0]]);
+						}
+				}
+			});
+		}
+		let near = false;
+		for (const [s1, d1, s2, d2, ti] of e.rSegGrid.get(Math.floor(s / G8) * 100003 + Math.floor(d / G8)) || []) {
+			const L2 = (s2 - s1) ** 2 + (d2 - d1) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((s - s1) * (s2 - s1) + (d - d1) * (d2 - d1)) / L2));
+			if (Math.hypot(s1 + (s2 - s1) * t - s, d1 + (d2 - d1) * t - d) < (ROAD_W[ti] || 6) / 2 + margin) { near = true; break; }
+		}
+		if (!near) return false;
+		// ulica obok na poziomie pomostu (np. wzdłuż wiaduktu kolejowego przy przyczółku) – nie pod nim
+		const rl = this.roadLevel(s, d);
+		return rl === undefined || rl < y - 3;
 	};
 
 	/* Plan wiaduktu nad torem (wspólny dla rysowania i kontroli): łamana zagęszczona co ≤ 4 m (P), długość (cum),
@@ -1845,7 +1881,8 @@ import * as THREE from 'three';
 			const order = P.map((p, k) => k).filter((k) => P[k][1] * sg > 6).sort((a, b) => Math.abs(P[a][1]) - Math.abs(P[b][1]));
 			for (const k of order) {
 				if (Y[k] < this.terrainY(P[k][0], P[k][1]) + 3) break;
-				if (this.envTrackGap(P[k][0], P[k][1]) > 3.2 && !this.onRoad(P[k][0], P[k][1])) {
+				// (onRoad – także sam pomost: obiekt to odcinek ulicy z mapy; filar wyklucza tylko ulica pod pomostem)
+				if (this.envTrackGap(P[k][0], P[k][1]) > 3.2 && !this.roadBelowDeck(P[k][0], P[k][1], Y[k])) {
 					const pr = pierAt(k, false);
 					if (pr) { best = k; piers.push(pr); break; }
 				}
@@ -1860,7 +1897,7 @@ import * as THREE from 'three';
 				const cand = [];
 				for (const k of order.slice(0, q0)) {
 					if (Math.abs(P[k][1]) <= Math.abs(P[best][1]) || Y[k] - 0.9 - this.terrainY(P[k][0], P[k][1]) < 3) continue;
-					if (this.envTrackGap(P[k][0], P[k][1]) <= 3.2 || this.onRoad(P[k][0], P[k][1])) continue;
+					if (this.envTrackGap(P[k][0], P[k][1]) <= 3.2 || this.roadBelowDeck(P[k][0], P[k][1], Y[k])) continue;
 					const pr = this.envTrackGap(P[k][0], P[k][1]) > (w + 1) / 2 + 1.5 ? pierAt(k, true) || pierAt(k, false) : pierAt(k, false);
 					if (pr) cand.push({ u: u(k), pr });
 				}
@@ -1917,7 +1954,8 @@ import * as THREE from 'three';
 					for (let t = -0.5; t <= 0.5; t += 0.125) {
 						const s = pr.s + dirs[0] * L * t, d = pr.d + dirs[1] * L * t;
 						if (this.envTrackGap(s, d) < 1.9) { add('pier-track', s, d, `${name}: filar (${fmtD(d)}) stoi na torze z mapy.`, 'Filar trzeba przesunąć w wolne miejsce między torami.'); break; }
-						if (this.onRoad(s, d) && roadY(s, d) < pr.top - 3) { add('pier-road', s, d, `${name}: filar (${fmtD(d)}) stoi na drodze.`, 'Filar trzeba przesunąć poza jezdnię.'); break; }
+						// (maska dróg obejmuje też sam pomost – ulica pod nim tylko z odcinków dróg z mapy)
+						if (this.roadBelowDeck(s, d, pr.top + 0.9, 0.5)) { add('pier-road', s, d, `${name}: filar (${fmtD(d)}) stoi na drodze.`, 'Filar trzeba przesunąć poza jezdnię.'); break; }
 					}
 				}
 				// podpory wzdłuż pomostu: filary, początek nasypu, miejsca przy terenie; przęsło ponad 50 m – brak podpór
@@ -1930,7 +1968,8 @@ import * as THREE from 'three';
 					// długie przęsło nad grupą torów (brak miejsca na filar) jest prawdziwe – błąd tylko, gdy było wolne miejsce
 					let k = -1;
 					for (let k2 = 0; k2 < P.length && k < 0; k2++) {
-						if (cum[k2] < sup[q] + 10 || cum[k2] > sup[q + 1] - 10 || Y[k2] - 0.9 - G[k2] < 3) continue;
+						// (jak w planie: filary nie bliżej niż 6 m od osi toru pociągu)
+						if (cum[k2] < sup[q] + 10 || cum[k2] > sup[q + 1] - 10 || Y[k2] - 0.9 - G[k2] < 3 || Math.abs(P[k2][1]) < 6) continue;
 						const a2 = P[Math.max(0, k2 - 1)], b2 = P[Math.min(P.length - 1, k2 + 1)], n2 = dirN(k2), top = Y[k2] - 0.9;
 						if (this.pierFree({ s: P[k2][0], d: P[k2][1], top, len: Math.min(40, (w + 1) / Math.max(0.25, Math.abs(n2[0]))) }) || this.pierFree({ s: P[k2][0], d: P[k2][1], top, ang: Math.atan2(b2[1] - a2[1], b2[0] - a2[0]), cross: w + 1 })) k = k2;
 					}
@@ -2119,13 +2158,50 @@ import * as THREE from 'three';
 				dst.p.push(...a, ...b, ...c2, ...a, ...c2, ...d2);
 				for (let i = 0; i < 6; i++) dst.c.push(rgb.r, rgb.g, rgb.b);
 			};
+			/* końce bez nasypu (pomost wchodzi w zbocze wykopu albo kończy się nad terenem): przyczółek – ściana w poprzek
+			   pomostu od terenu do spodu w pierwszym miejscu (od końca do środka), gdzie pod pomostem jest prześwit, ława
+			   podłożyskowa i ściany skrzydłowe wzdłuż obu krawędzi między nim a końcem (dawniej pod końcem pomostu widać
+			   było zbocze i pustkę – pomost „leżał na trawie”) */
+			const gapAt = (k) => Y[k] - 0.9 - G[k];
+			const emSides = new Set(ems.map((m) => m.side));
+			for (const kE of P.length > 2 ? [0, P.length - 1] : []) {
+				if (emSides.has(Math.sign(P[kE][1]))) continue;
+				const st2 = kE === 0 ? 1 : -1;
+				let kA = kE;
+				while (kA !== kE + st2 * 12 && kA >= 0 && kA < P.length && Math.abs(P[kA][1]) > 7 && gapAt(kA) < 0.4) kA += st2;
+				if (kA < 0 || kA >= P.length || gapAt(kA) < 0.4 || Math.abs(P[kA][1]) <= 7 || this.envTrackGap(P[kA][0], P[kA][1]) < 3) continue;
+				const yb = (k) => Math.min(G[k], Y[k] - 0.9) - 0.4, L = edge(kA, -1), Rr = edge(kA, 1);
+				quad([L[0], yb(kA), L[1]], [Rr[0], yb(kA), Rr[1]], [Rr[0], Y[kA] - 0.9, Rr[1]], [L[0], Y[kA] - 0.9, L[1]], wallC);
+				const L2 = edge(kA, -1, w / 2 + 0.3), R2 = edge(kA, 1, w / 2 + 0.3);
+				quad([L2[0], Y[kA] - 1.15, L2[1]], [R2[0], Y[kA] - 1.15, R2[1]], [R2[0], Y[kA] - 0.9, R2[1]], [L2[0], Y[kA] - 0.9, L2[1]], wallC);
+				for (let k = kE; k !== kA; k += st2) {
+					for (const sg of [-1, 1]) {
+						const A = edge(k, sg), B = edge(k + st2, sg);
+						quad([A[0], yb(k), A[1]], [B[0], yb(k + st2), B[1]], [B[0], Y[k + st2] - 0.9, B[1]], [A[0], Y[k] - 0.9, A[1]], wallC);
+					}
+				}
+			}
+			/* odcinek pomostu wyniesiony nad teren (ponad 1,2 m albo nad torami): tylko tam balustrady i gzyms – na zjazdach
+			   przy ziemi pomost przechodzi w ulicę z krawężnikiem (dawniej betonowe ściany 1 m stały przy jezdni aż do końca
+			   obiektu, także tam, gdzie jezdnia leżała już na terenie) */
+			const elev = (k) => Y[k] - G[k] > 1.2 || this.envTrackGap(P[k][0], P[k][1]) < 6;
+			// gzyms pomostu: pas wysunięty 0,15 m na zewnątrz boków na wysokości jezdni (cień pod nim)
+			for (let k = 0; k < P.length - 1; k++) {
+				if (!elev(k) && !elev(k + 1)) continue;
+				for (const sg of [-1, 1]) {
+					const A = edge(k, sg, w / 2 + 0.15), B = edge(k + 1, sg, w / 2 + 0.15), A0 = edge(k, sg), B0 = edge(k + 1, sg);
+					quad([A[0], Y[k] - 0.25, A[1]], [B[0], Y[k + 1] - 0.25, B[1]], [B[0], Y[k + 1] + 0.12, B[1]], [A[0], Y[k] + 0.12, A[1]], wallC);
+					quad([A0[0], Y[k] - 0.25, A0[1]], [B0[0], Y[k + 1] - 0.25, B0[1]], [B[0], Y[k + 1] - 0.25, B[1]], [A[0], Y[k] - 0.25, A[1]], wallC);
+				}
+			}
 			for (let k = 0; k < P.length - 1; k++) {
 				const L0 = edge(k, -1), R0 = edge(k, 1), L1 = edge(k + 1, -1), R1 = edge(k + 1, 1);
 				const y0 = Y[k], y1 = Y[k + 1];
 				const top = (p, y) => [p[0], y, p[1]];
 				// jezdnia; boki pomostu (0,9 m) z balustradami (1 m) – materiał dwustronny (kierunek łamanej bywa dowolny)
 				quad(top(L0, y0), top(R0, y0), top(R1, y1), top(L1, y1), asph);
-				for (const [A, B] of [[L0, L1], [R0, R1]]) quad([A[0], y0 - 0.9, A[1]], [B[0], y1 - 0.9, B[1]], [B[0], y1 + 1.0, B[1]], [A[0], y0 + 1.0, A[1]], conc);
+				const h0 = elev(k) ? 1.0 : 0.15, h1 = elev(k + 1) ? 1.0 : 0.15;
+				for (const [A, B] of [[L0, L1], [R0, R1]]) quad([A[0], y0 - 0.9, A[1]], [B[0], y1 - 0.9, B[1]], [B[0], y1 + h1, B[1]], [A[0], y0 + h0, A[1]], conc);
 				// spód pomostu
 				quad(top(L0, y0 - 0.9), top(L1, y1 - 0.9), top(R1, y1 - 0.9), top(R0, y0 - 0.9), conc);
 				if (rail) {
@@ -2164,6 +2240,14 @@ import * as THREE from 'three';
 			pm.position.set(tp.x, y0 + h / 2, tp.z);
 			pm.castShadow = this.shadows;
 			group.add(pm);
+			// oczep: szerszy i dłuższy od filaru pas pod spodem pomostu
+			const cap = new T.Mesh(NS.util.GEO.box, pm.material);
+			if (pr.ang !== undefined) cap.scale.set(pr.cross + 0.6, 0.7, 1.9);
+			else cap.scale.set(1.9, 0.7, (pr.len || 6) + 0.6);
+			cap.rotation.y = pm.rotation.y;
+			cap.position.set(tp.x, pr.top - 0.35, tp.z);
+			cap.castShadow = this.shadows;
+			group.add(cap);
 		}
 	};
 
@@ -2590,14 +2674,29 @@ import * as THREE from 'three';
 	};
 
 	// strefy stacji (model stacji w grze) – bez dróg i wód z mapy
+	/* miejsce zajęte przez stację z gry (bez ulic, latarń i wód z mapy): peron z wyposażeniem za tylną krawędzią (1,5 m),
+	   a przy stacji bez dworca z mapy także dworzec z gry za peronem (elewacja w x = 12, do ok. 24 m od osi). Dawniej pas
+	   od −16 do 12 m od osi na całej długości stacji – ulice z mapy obok peronu znikały (zostawały ich chodniki, a teren
+	   pod jezdnią przyjmował jej wysokość: uskoki i urwane chodniki przy torach) */
 	World.prototype.envStationZone = function (s, d) {
-		for (const st of this.route.stations) if (s > st.platformStart - 30 && s < st.platformEnd + 40 && d > -16 && d < 12) return true;
+		this.route.stations.forEach((st, i) => { if (st._zone === undefined) {
+			const pl = st.platform, sg = pl ? pl.side : 1, a = pl ? pl.edge : 2.15, b = pl ? pl.edge + pl.width : 6.1;
+			const genB = st.type !== 'halt' && !this.envStationBuilding(i) && !(pl && pl.island) && !(this.envUnderground && this.envUnderground(st));
+			st._zone = { sg, a: a - 0.5, b: genB ? Math.max(b + 1.5, 24) : b + 1.5 };
+		} });
+		for (const st of this.route.stations) {
+			if (s <= st.platformStart - 30 || s >= st.platformEnd + 40) continue;
+			const z = st._zone, x = d * z.sg;
+			if (x > z.a && x < z.b) return true;
+		}
 		for (const q of (this.env && this.env.reserved) || []) if (s > q.s0 && s < q.s1 && d > q.d0 && d < q.d1) return true;
 		return false;
 	};
 
 	// miejsca zajęte przez tor gracza, drugi tor i perony z gry (tory i perony z mapy tam nie wchodzą)
-	World.prototype.envOccupied = function (s, d, margin) {
+	// forTrack – pytanie przy rysowaniu toru z mapy: tor dalej niż skrajnia za krawędzią peronu zostaje (peron z gry jest
+	// przed nim przycinany – buildStation backAbs), wcześniej znikał w nominalnej szerokości peronu z danych
+	World.prototype.envOccupied = function (s, d, margin, forTrack) {
 		const r = this.route, m = margin || 0;
 		if (Math.abs(d) < 2.6 + m) return true;
 		// na trasach rzeczywistych drugi tor jest z mapy; zajęty jest tylko peron stacji (prawdziwy albo domyślny)
@@ -2606,6 +2705,7 @@ import * as THREE from 'three';
 			const pl = st.platform;
 			const a = pl ? pl.edge : 2.15, b = pl ? pl.edge + pl.width : 6.1, sg = pl ? pl.side : 1;
 			const x = d * sg;
+			if (forTrack && x >= Math.max(a, 1.72) + 1.72 + 0.8) continue;
 			if (x > a - 0.2 - m && x < b + 0.3 + m) return true;
 		}
 		return false;
@@ -3368,9 +3468,15 @@ import * as THREE from 'three';
 		// droga lub tor z mapy z pomiaru: teren w ich pasie na ich wysokości (za koroną torowiska; w jej obrębie – gdy
 		// tor leży niżej niż korona); na stacjach – poza peronami (od 14 m od osi)
 		// pod przęsłem naszego mostu także przy torze: droga przechodząca pod mostem (łącznik) – teren w jej poziomie
-		if ((fl < 0.5 && Math.abs(d) >= 8) || Math.abs(d) >= 14 || tk > 0.5 || (Math.abs(d) < 14 && this.underBridge(s, d))) {
-			const ry = this.roadLevel(s, d);
-			if (ry !== undefined && (beyond > 1.5 || ry - 0.12 < y - 0.3)) y = ry - 0.12;
+		const far = (fl < 0.5 && Math.abs(d) >= 8) || Math.abs(d) >= 14 || tk > 0.5 || (Math.abs(d) < 14 && this.underBridge(s, d));
+		const ry = this.roadLevel(s, d);
+		if (ry !== undefined) {
+			if (far) { if (beyond > 1.5 || ry - 0.12 < y - 0.3) y = ry - 0.12; }
+			/* ulica obok toru albo przy stacji (poza koroną torowiska i peronem), wyżej niż teren tutaj: teren i jezdnia
+			   z chodnikiem w poziomie ulicy w całej szerokości – dawniej teren do 8 m (na stacjach do 14 m) od osi zostawał
+			   na poziomie torowiska i jezdnia przechylała się ku torom, a chodnik po drugiej stronie stał wyżej */
+			// (do 2 m – wyżej to zwykle dojazd do wiaduktu albo ulica na murze oporowym)
+			else if (beyond > 0.5 && ry - 0.12 > y && ry - 0.12 - y < 2 && !this.envStationZone(s, d)) y = ry - 0.12;
 		}
 		// nad obudową tunelu (płytkie przykrycie przy portalu): teren nie niżej niż 0,35 m nad stropem
 		if (tk > 0) {
@@ -4299,7 +4405,7 @@ import * as THREE from 'three';
 					continue;
 				}
 				// tor równoległy tuż obok: z pasa naszego toru (envOccupied – do 3,2 m od osi) nie odrzucany – tylko perony
-				const occ = parallel && Math.abs(dm) < 3.6 ? this.envOccupied(sm, Math.sign(dm) * 3.6, 0) : this.envOccupied(sm, dm, 0.6);
+				const occ = parallel && Math.abs(dm) < 3.6 ? this.envOccupied(sm, Math.sign(dm) * 3.6, 0) : this.envOccupied(sm, dm, 0.6, true);
 				if (occ || (!(row[0] & 18) && (this.envRowFromTunnel(i) || this.envBuriedNearTunnel(sm, dm, R.heightAt(r, sm) - dzOf(sm, dm))))) continue;
 				quadStrip(disused ? balWeed : side ? balOld : bal, [-2.2, -1.6, 1.6, 2.2], [-0.95, -0.31, -0.31, -0.95], sa, da, sb, db);
 				// tor wyżej niż teren (rampa do wiaduktu innej linii, tor na nasypie): nasyp ze skarpami 1:1,5; wiadukt – filary
@@ -4760,7 +4866,20 @@ import * as THREE from 'three';
 			return out;
 		};
 		const draw = (poly, yAt, cuts) => {
-			const map = ([s, d]) => {
+			/* skrajnia: punkt obrysu bliżej niż 1,72 m od osi toru (pociągu albo z mapy, wzdłuż naszego) – odsunięty na tę
+			   odległość po stronie, po której leży peron (obrys z mapy bywa niedokładny i płyta zachodziła na tor) */
+			const CLR = 1.72;
+			let dC = 0;
+			for (const p of poly) dC += p[1] / poly.length;
+			const clear = (s, d) => {
+				for (const t of [{ d: 0 }].concat(this.envTracksAt(s).filter((x) => !x.sk))) {
+					const side = Math.sign(dC - t.d) || 1;
+					if (Math.abs(d - t.d) < CLR + 1 && side * (d - t.d) < CLR) d = t.d + side * CLR;
+				}
+				return d;
+			};
+			const map = ([s, d0]) => {
+				const d = clear(s, d0);
 				R.sidePoint(r, s, d, tp);
 				const y = yAt(s, d);
 				// ściana boczna do terenu (obniżony teren przy wiadukcie, nasyp) – peron nie wisi nad ziemią
@@ -4866,7 +4985,9 @@ import * as THREE from 'three';
 				if (Math.abs(no[1]) < 0.9) continue; // bok w poprzek toru
 				const m = Math.max(1, Math.ceil(L / 4));
 				for (let q = 0; q < m; q++) {
-					const p0 = [a[0] + ((b[0] - a[0]) * q) / m, a[1] + ((b[1] - a[1]) * q) / m], p1 = [a[0] + ((b[0] - a[0]) * (q + 1)) / m, a[1] + ((b[1] - a[1]) * (q + 1)) / m];
+					// (punkty boku odsunięte ze skrajni jak wierzch i ściany – clear)
+					const s0q = a[0] + ((b[0] - a[0]) * q) / m, s1q = a[0] + ((b[0] - a[0]) * (q + 1)) / m;
+					const p0 = [s0q, clear(s0q, a[1] + ((b[1] - a[1]) * q) / m)], p1 = [s1q, clear(s1q, a[1] + ((b[1] - a[1]) * (q + 1)) / m)];
 					const ms = (p0[0] + p1[0]) / 2, md = (p0[1] + p1[1]) / 2;
 					const tr = [0].concat(this.envTracksAt(ms).filter((t) => !t.sk).map((t) => t.d));
 					if (!tr.some((td) => { const g = (td - md) * Math.sign(no[1]); return g > 1.2 && g < 2.8; })) continue;
@@ -6380,7 +6501,7 @@ import * as THREE from 'three';
 		const onCrossing = (s, d) => crPaths.some(([x, cp]) => {
 			if (Math.abs(s - x.pos) > 45 || Math.abs(d) > 40) return false;
 			if (!cp) return Math.abs(s - x.pos) < 12 && Math.abs(d) < 12;
-			const P = cp.pts, hw = cp.w / 2 + 1.5;
+			const P = cp.pts, hw = cp.w / 2 + (cp.sw ? 2.6 : 1.5); // z chodnikami (rysuje je przejazd)
 			for (let k = 0; k + 1 < P.length; k++) {
 				const [sa, da] = P[k], [sb, db] = P[k + 1], ux = sb - sa, uy = db - da, L2 = ux * ux + uy * uy || 1e-9;
 				const t = Math.max(0, Math.min(1, ((s - sa) * ux + (d - da) * uy) / L2));

@@ -4,6 +4,101 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.14 – 21 października 2026
+
+Poprawki przycinania peronów z 0.58.13.
+
+- Płyta i ściana peronu stacji jedną bryłą (`platformSlabVar` – wierzchołki co 3 m wzdłuż peronu, ściana od toru
+  w stałej odległości, tylna w szerokości z `backAbs`, między wierzchołkami skośnie); w 0.58.13 osobne prostokąty co
+  3 m – poszarpana, schodkowa krawędź. Tam, gdzie peronu nie ma (tor z mapy w skrajni), płyta i ściana zwężone do zera.
+- Tory z mapy za peronem: `envOccupied(…, forTrack)` – tor co najmniej 1,72 + 0,8 m za krawędzią peronu nie jest
+  odrzucany jako „pod peronem” (peron jest przed nim przycinany). Dotąd tor w nominalnej szerokości peronu z danych
+  znikał – po przycięciu peronu zostawała przerwa w torze.
+
+## 0.58.13 – 21 października 2026
+
+Perony w skrajni.
+
+### Peron stacji z gry (`world.js` buildStation)
+- Krawędź od strony toru pociągu co najmniej 1,72 m od jego osi (`CLR` – perony 0,76 m wg PKP PLK); dane z mapy bliżej –
+  krawędź odsunięta, szerokość zmniejszona o tyle samo.
+- Druga krawędź (tył albo druga krawędź peronu wyspowego) w każdym miejscu co najmniej `CLR` przed osią toru z mapy po
+  tej stronie (`backAbs`): płyta i ściana peronu odcinkami co 3 m (sąsiednie o tej samej szerokości – jedną płytą),
+  węższe niż 0,8 m – bez peronu. Dotąd stała szerokość na całej długości – na końcach zwężającego się peronu wyspowego
+  tor z mapy przechodził przez płytę.
+- Pochylnie, latarnie przy tylnej krawędzi, oś wyposażenia (ławki, tablice) i barierka przystanku – w przyciętej
+  szerokości.
+
+### Perony z mapy (`real-env.js` buildEnvPlatforms)
+- Punkty obrysu (wierzch, ściany, krawężnik i pas ostrzegawczy) bliżej niż 1,72 m od osi toru pociągu albo toru z mapy
+  biegnącego wzdłuż niego – odsunięte na tę odległość po stronie, po której leży peron.
+
+## 0.58.12 – 21 października 2026
+
+Ulice przy torach i stacjach w poziomie ulicy.
+
+- `real-env.js` demTerrainY: ulica z pomiaru (`roadLevel` – wysokość osi jezdni na całej szerokości z chodnikami)
+  obok toru albo przy stacji – poza koroną torowiska (0,5 m za jej krawędzią) i peronem (`envStationZone`), gdy leży
+  wyżej niż teren tutaj (do 2 m): teren w jej pasie na jej poziomie, a nawierzchnia (`surfY` – nie niżej niż teren) za nim.
+  Dotąd teren do 8 m od osi (na stacjach – do 14 m) zostawał na poziomie torowiska i jezdnia przechylała się ku torom,
+  a chodnik po drugiej stronie stał wyżej.
+
+## 0.58.11 – 21 października 2026
+
+Przejazdy w poziomie szyn, ulice przy stacjach.
+
+### Przejazdy (`world.js` roadY – trasy z mapy)
+- Jezdnia przejazdu w poziomie główek szyn wszystkich torów, które przecina: toru pociągu i torów z mapy (każdy na swojej
+  wysokości – `envRowY`), 2 cm pod główką; między torami (do 9 m) wysokość liniowo od jednego do drugiego, za skrajnym
+  torem (1,6 m od osi) zjazd do nawierzchni ulicy o długości co najmniej 6 m i pochyleniu do ok. 8%. Dotąd poziom toru
+  pociągu (14 cm pod główką) do 3,4 m od osi i zaraz nawierzchnia ulicy – sąsiednie tory z mapy wystawały ponad jezdnię
+  albo chowały się pod nią. Chodniki przejazdu i auta – na tej samej wysokości.
+
+### Ulice przy stacjach (`real-env.js` envStationZone)
+- Strefa stacji z gry (bez ulic, latarń i wód z mapy): peron od krawędzi (−0,5 m) do 1,5 m za tylną krawędzią,
+  a przy stacji bez dworca z mapy (dworzec z gry za peronem) – do 24 m od osi. Dawniej pas od −16 do 12 m od osi na
+  całej długości stacji: ulice z mapy obok peronu znikały, zostawały ich chodniki, a teren pod jezdnią przyjmował jej
+  wysokość (uskoki i urwane chodniki przy torach).
+
+## 0.58.10 – 21 października 2026
+
+Przejazdy kolejowe na trasach z mapy: ciągła jezdnia i chodniki.
+
+- Jezdnia przejazdu (`world.js` buildCrossing – droga z `envCrossingPath`) rysowana w tym samym zasięgu, w którym ulica
+  z mapy przy przejeździe nie jest rysowana (`real-env.js` onCrossing: do 45 m wzdłuż toru i 40 m od osi). Dotąd tylko
+  do 12,5 m wzdłuż toru – na ulicy skośnej do toru zostawała między jezdnią przejazdu a ulicą z mapy szczelina z trawą.
+- Chodniki: gdy ulica przez przejazd ma chodniki (`rInfo.sw` którejś z dwóch części – `envCrossingPath` zwraca `sw`),
+  przejazd dostaje je po obu stronach jezdni: 2 m, krawężnik 0,12 m, w pasie torów – w poziomie jezdni. Wycięcie ulicy
+  z mapy przy przejeździe obejmuje wtedy także jej chodniki (bez dublowania).
+
+## 0.58.9 – 21 października 2026
+
+Wiadukty drogowe nad torami (`real-env.js` overpassPlan, buildEnvOverpasses, envAudit).
+
+### Logika
+- Filary: ulica pod pomostem rozpoznawana z odcinków dróg z mapy (`roadBelowDeck` – odcinek bliżej niż połowa szerokości
+  jezdni + zapas, poziom jezdni co najmniej 3 m pod pomostem; siatka odcinków 8 × 8 m liczona raz na trasę). Dotąd
+  używana maska dróg (`onRoad`) i poziom jezdni z pomiaru (`roadLevel`) obejmowały też sam pomost (obiekt to odcinek
+  ulicy z mapy, pod nim pomiar daje poziom terenu) – każdy punkt pod wiaduktem wyglądał jak droga i filary nie stawały
+  nigdzie: wiadukt 140 m nad stacją towarową w Gliwicach (km 1,7) bez podpory, teraz 4 filary; estakada DTŚ (km 3,6) –
+  33 filary.
+- Audyt: kontrola „filar na drodze” tym samym testem (bez fałszywych zgłoszeń przy każdym filarze); „przęsło bez podpór”
+  szuka wolnego miejsca jak plan (nie bliżej niż 6 m od osi toru).
+
+### Przyczółki i skarpy
+- Końce bez nasypu (pomost wchodzi w zbocze wykopu albo kończy się nad terenem): przyczółek – ściana w poprzek pomostu
+  od terenu do spodu w pierwszym miejscu (od końca), gdzie pod pomostem jest prześwit, ława podłożyskowa i ściany
+  skrzydłowe wzdłuż obu krawędzi do końca obiektu. Dotąd pod końcem pomostu było widać zbocze i pustkę (pomost „leżał na
+  trawie”), a koniec estakady urwanej w danych wisiał w powietrzu.
+
+### Konstrukcja
+- Oczepy na filarach (szerszy i dłuższy pas pod spodem pomostu); gzyms wzdłuż pomostu (pas wysunięty 0,15 m na wysokości
+  jezdni).
+
+### Połączenie z ulicą
+- Betonowe balustrady i gzyms tylko na odcinkach wyniesionych (ponad 1,2 m nad terenem albo nad torami); na zjazdach przy
+  ziemi bok pomostu jako niski krawężnik – dotąd ściany 1 m stały przy jezdni do samego końca obiektu.
+
 ## 0.58.8 – 21 października 2026
 
 Żółty pas peronu: wyposażenie i pasażerowie za nim.

@@ -4,6 +4,68 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.14',
+			date: '21 października 2026',
+			groups: [
+				['Perony', [
+					'Zwężający się peron z gładką, skośną krawędzią zamiast schodków.',
+					'Tor z mapy za peronem nie jest już ucinany – to peron ustępuje torowi.',
+				]],
+			],
+		},
+		{
+			version: '0.58.13',
+			date: '21 października 2026',
+			groups: [
+				['Perony', [
+					'Krawędź peronu co najmniej 1,72 m od osi toru – pociąg nie zahacza o peron.',
+					'Peron przycięty przed sąsiednim torem: zwężający się peron wyspowy nie wchodzi na tor (także pochylnie, latarnie, barierki i perony z mapy).',
+				]],
+			],
+		},
+		{
+			version: '0.58.12',
+			date: '21 października 2026',
+			groups: [
+				['Ulice przy torach', [
+					'Ulica biegnąca obok torów albo przy stacji leży poziomo na wysokości ulicy (z chodnikiem), a teren pod nią jest wyrównany – bez przechyłu ku torom.',
+				]],
+			],
+		},
+		{
+			version: '0.58.11',
+			date: '21 października 2026',
+			groups: [
+				['Przejazdy', [
+					'Jezdnia przejazdu w poziomie główek szyn wszystkich torów, które przecina (także torów z mapy na innej wysokości); między torami płynnie, za torami zjazd do ulicy.',
+				]],
+				['Stacje', [
+					'Ulice z mapy obok peronów nie znikają: strefa stacji obejmuje tylko peron z wyposażeniem (i miejsce na dworzec z gry), a nie cały pas 16 m od toru.',
+				]],
+			],
+		},
+		{
+			version: '0.58.10',
+			date: '21 października 2026',
+			groups: [
+				['Przejazdy', [
+					'Bez przerwy z trawą między ulicą a przejazdem – jezdnia przejazdu sięga tam, gdzie zaczyna się ulica z mapy.',
+					'Chodniki na przejeździe (gdy ulica je ma): z krawężnikiem po obu stronach jezdni, przez tory w poziomie jezdni.',
+				]],
+			],
+		},
+		{
+			version: '0.58.9',
+			date: '21 października 2026',
+			groups: [
+				['Wiadukty drogowe', [
+					'Filary pod wiaduktami nad stacjami – dotąd przez błąd w wykrywaniu dróg pod pomostem długie wiadukty (np. 140 m w Gliwicach) nie miały żadnej podpory.',
+					'Przyczółki ze ścianami skrzydłowymi tam, gdzie pomost wchodzi w zbocze wykopu albo kończy się nad terenem – pomost nie leży już na trawie.',
+					'Oczepy na filarach, gzyms wzdłuż pomostu; betonowe balustrady tylko nad przęsłami – przy zjeździe na poziomie ulicy niski krawężnik.',
+				]],
+			],
+		},
+		{
 			version: '0.58.8',
 			date: '21 października 2026',
 			groups: [

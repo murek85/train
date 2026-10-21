@@ -243,6 +243,22 @@ import { BundleGroup } from 'three/webgpu';
 			return geo;
 		}
 		// płyta peronu w układzie toru stacji (x – odsunięcie, z – wzdłuż; mid – kilometraż z = 0), dzielona co 3 m (wygina się po łuku)
+		/* płyta o zmiennej szerokości: ściana od toru w odległości x0(z) od osi, tylna w x1(z) (po stronie sg), wysokość h,
+		   środek na y; wierzchołki co 3 m wzdłuż peronu; attr – wzór płyt (shader peronu, jak platformSlab) */
+		platformSlabVar(sg, x0, x1, h, len, y, mid, material, attr) {
+			const geo = new T.BoxGeometry(1, h, len, 1, 1, Math.max(1, Math.ceil(len / 3))).toNonIndexed();
+			const p = geo.attributes.position;
+			for (let i = 0; i < p.count; i++) { const z = p.getZ(i); p.setX(i, sg * (p.getX(i) * sg < 0 ? x0(z) : x1(z))); }
+			geo.translate(0, y, 0);
+			geo.computeVertexNormals();
+			if (attr) World.plAttr(geo, (i, q) => mid - q.getZ(i), (i, q) => q.getX(i));
+			const m = new T.Mesh(geo, material);
+			m.userData.ownGeometry = true;
+			m.castShadow = this.shadows;
+			m.receiveShadow = true;
+			return m;
+		}
+
 		platformSlab(w, h, len, x, y, z, mid, material) {
 			const geo = new T.BoxGeometry(w, h, len, 1, 1, Math.max(1, Math.ceil(len / 3))).toNonIndexed();
 			geo.translate(x, y, z);
@@ -1898,19 +1914,24 @@ import { BundleGroup } from 'three/webgpu';
 			// (albo wywnioskowane z torów); peron wyspowy ma wyposażenie pośrodku („tył” = oś peronu)
 			const PL = st.platform;
 			let sides;
+			/* skrajnia: krawędź peronu co najmniej 1,72 m od osi toru (perony 0,76 m, PKP PLK) – dane z mapy bywają bliżej
+			   (peron rysowany na obrysie zachodził pod pudło pociągu) */
+			const CLR = 1.72;
 			if (PL) {
-				const sg = PL.side, c = sg * (PL.edge + PL.width / 2);
+				const pe = Math.max(PL.edge, CLR), pw = Math.max(1.2, PL.edge + PL.width - pe);
+				const PLc = { edge: pe, width: pw };
+				const sg = PL.side, c = sg * (PLc.edge + PLc.width / 2);
 				/* tor z mapy tuż za tylną krawędzią (0,8–3 m od niej, na ponad połowie długości) – peron w praktyce wyspowy, choć
 				   w danych bez tej cechy: wyposażenie i latarnie w osi peronu (dawniej przy tylnej krawędzi – przy torze, np. Orzesze) */
 				let island = !!PL.island;
 				if (!island && this.env && this.envTracksAt) {
 					let n = 0, hit = 0;
 					for (let s = st.platformStart + 10; s < st.platformEnd - 10; s += 10, n++) {
-						if (this.envTracksAt(s).some((t) => { const x = t.d * sg - (PL.edge + PL.width); return x > 0.8 && x < 3; })) hit++;
+						if (this.envTracksAt(s).some((t) => { const x = t.d * sg - (PLc.edge + PLc.width); return x > 0.8 && x < 3; })) hit++;
 					}
 					island = n > 0 && hit > n / 2;
 				}
-				sides = [{ c, edge: sg * PL.edge, line: sg * (PL.edge + 0.45), back: island ? c : sg * (PL.edge + PL.width), sgn: sg, width: PL.width, island }];
+				sides = [{ c, edge: sg * PLc.edge, line: sg * (PLc.edge + 0.45), back: island ? c : sg * (PLc.edge + PLc.width), sgn: sg, width: PLc.width, island }];
 			} else {
 				sides = [{ c: 4.15, edge: 2.15, line: 2.6, back: 6.1, sgn: 1, width: 4.4 }];
 				if (dbl && !this.env) sides.push({ c: -8.75, edge: -6.75, line: -7.2, back: -10.7, sgn: -1, width: 4.4 });
@@ -1920,16 +1941,34 @@ import { BundleGroup } from 'three/webgpu';
 			for (const P of sides) {
 				/* płyta wierzchnia 0,22 m (płyty chodnikowe) nawisa 0,18 m nad ścianą od strony toru (jak na peronach PKP PLK –
 				   pod krawędzią cień); trasa rzeczywista: ściana głębsza (peron na nasypie, przy moście lub obniżeniu terenu) */
-				g.add(this.platformSlab(P.width, 0.22, len, P.c, 0.65, 0, mid, PM.top));
+				/* druga krawędź peronu (tył albo druga krawędź wyspy) w miejscu z: z szerokości peronu, ale co najmniej CLR przed
+				   osią toru z mapy po tej stronie – peron zwężający się ku końcom (obrys z mapy) nie wchodzi na sąsiedni tor
+				   (dawniej płyta o stałej szerokości na całej długości – tor z mapy przechodził przez peron) */
+				const eA = Math.abs(P.edge), bNom = eA + P.width;
+				const backAbs = (z) => {
+					let b = bNom;
+					if (this.env && this.envTracksAt) for (const t of this.envTracksAt(mid - z)) { const x = t.d * P.sgn; if (Math.abs(t.d) > 1 && x > eA + 0.5) b = Math.min(b, x - CLR); }
+					return b;
+				};
+				P.backAbs = backAbs;
 				const wb = this.env ? -2.24 : -0.24;
-				const rc = P.island ? 0.36 : 0.18; // peron wyspowy – nawis z obu stron
-				add(box(P.width - rc, 0.54 - wb, len, PM.wall, P.c + (P.island ? 0 : P.sgn * 0.09), (0.54 + wb) / 2, 0));
+				/* płyta i ściana jedną bryłą z wierzchołkami co 3 m wzdłuż peronu: krawędź od toru prosta, tylna – w szerokości
+				   z backAbs, między wierzchołkami skośnie (bez schodków – dawniej osobne prostokąty co 3 m dawały poszarpaną
+				   krawędź) */
+				const wAt = (z) => Math.max(0, backAbs(z) - eA);
+				g.add(this.platformSlabVar(P.sgn, () => eA, (z) => eA + wAt(z), 0.22, len, 0.65, mid, PM.top, true));
+				// ściana pod nawisem płyty (0,18 m od krawędzi; peron wyspowy – z obu stron)
+				const wall = this.platformSlabVar(P.sgn, () => eA + 0.18, (z) => Math.max(eA + 0.18, eA + wAt(z) - (P.island ? 0.18 : 0)), 0.54 - wb, len, (0.54 + wb) / 2, mid, PM.wall, false);
+				add(wall);
 				// pochylnie na końcach (z = +len/2 – początek peronu, s = platformStart); nie tam, gdzie peron z mapy
 				// biegnie dalej (dorysowana reszta obrysu)
 				const ext = this.env && this.envPlatformExt ? this.envPlatformExt(st) : { start: false, end: false };
 				// przystanek (bez wyspy) ma od strony z = +len/2 własną pochylnię przy tylnej krawędzi (haltPlatformExtras)
-				if (!ext.start && (big || P.island)) this.platformRamp(g, P, len / 2, 1, concrete, this.env ? 2.2 : 0.25);
-				if (!ext.end) this.platformRamp(g, P, -len / 2, -1, concrete, this.env ? 2.2 : 0.25);
+				// pochylnia (6 m za końcem) – szerokość przycięta jak peron w jej zasięgu
+				const rampP = (z) => { const w = Math.min(backAbs(z), backAbs(z + Math.sign(z) * 6)) - eA; return w < 0.8 ? null : { c: P.sgn * (eA + w / 2), width: w }; };
+				const rS = rampP(len / 2), rE = rampP(-len / 2);
+				if (!ext.start && (big || P.island) && rS) this.platformRamp(g, rS, len / 2, 1, concrete, this.env ? 2.2 : 0.25);
+				if (!ext.end && rE) this.platformRamp(g, rE, -len / 2, -1, concrete, this.env ? 2.2 : 0.25);
 				// krawężnik peronowy (jasne płyty 0,5 m) i pas ostrzegawczy z wypustkami (0,4 m, 0,55–0,95 m od krawędzi)
 				g.add(this.platformSlab(0.5, 0.03, len, P.edge + P.sgn * 0.25, 0.77, 0, mid, PM.edge));
 				g.add(this.platformSlab(0.4, 0.03, len, P.edge + P.sgn * 0.75, 0.77, 0, mid, PM.tact));
@@ -1944,8 +1983,9 @@ import { BundleGroup } from 'three/webgpu';
 				for (let z = -len / 2 + 12; z < len / 2; z += 30) zs.push(z);
 				// oś peronu w miejscu z: środek prawdziwej szerokości (obrys z mapy – peron bywa szerszy od modelu i zwęża się),
 				// inaczej środek modelu; wyposażenie (tablice, ławki, kosze, gabloty) i latarnie peronu wyspowego stoją w tej osi
-				const xm = (z) => { const m = this.env && this.envPlatformMid ? this.envPlatformMid(st, mid - z) : null; return m === null ? P.c : P.sgn * Math.max(P.edge + 1.6, Math.abs(m)); };
-				const lampX = (z) => (P.island ? xm(z) : P.back);
+				// (nie dalej niż środek przyciętej szerokości – przy torze z mapy za tylną krawędzią)
+				const xm = (z) => { const m = this.env && this.envPlatformMid ? this.envPlatformMid(st, mid - z) : null; const x = m === null ? Math.abs(P.c) : Math.max(eA + 1.6, Math.abs(m)); return P.sgn * Math.min(x, (eA + backAbs(z)) / 2); };
+				const lampX = (z) => (P.island ? xm(z) : P.sgn * Math.min(Math.abs(P.back), backAbs(z)));
 				const sxAt = (z) => lampX(z) - P.sgn * 0.55; // pod wysięgnikiem latarni
 				zs.forEach((z, k) => {
 					if (under || underRoof(z)) return;
@@ -2827,12 +2867,15 @@ import { BundleGroup } from 'three/webgpu';
 		haltPlatformExtras(g, P, len, mid, st) {
 			const sg = P.sgn, y0 = 0.77;
 			const h0 = R.heightAt(this.route, mid);
-			// barierka wzdłuż tyłu i w poprzek na drugim końcu (przy pochylni otwarte)
-			const xr = P.back - sg * 0.08;
+			// barierka wzdłuż tyłu i w poprzek na drugim końcu (przy pochylni otwarte); tył – najwęższe miejsce peronu
+			// (peron przycięty przed torem z mapy – backAbs)
+			let bMin = Math.abs(P.back);
+			if (P.backAbs) for (let z = -len / 2; z <= len / 2; z += 3) bMin = Math.min(bMin, P.backAbs(z));
+			const back = sg * bMin, xr = back - sg * 0.08;
 			this.railing(g, -len / 2 + 0.2, len / 2 - 0.2, xr, y0);
-			this.railing(g, P.edge + sg * 0.6, P.back - sg * 0.1, -len / 2 + 0.15, y0, 'x');
+			this.railing(g, P.edge + sg * 0.6, back - sg * 0.1, -len / 2 + 0.15, y0, 'x');
 			// pochylnia: od końca peronu w dół do terenu, przy tylnej krawędzi
-			const RL = 18, RW = 2.4, xc = P.back - sg * (RW / 2 + 0.1), z0 = len / 2;
+			const RL = 18, RW = 2.4, xc = back - sg * (RW / 2 + 0.1), z0 = len / 2;
 			const yb = this.terrainY(mid - (z0 + RL), xc) - h0 + 0.06;
 			const geo = new T.BoxGeometry(RW, 1, RL);
 			const pa = geo.attributes.position;
@@ -3659,9 +3702,27 @@ import { BundleGroup } from 'three/webgpu';
 		roadY(s, d) {
 			const h = R.heightAt(this.route, s);
 			const ad = this.eff(d);
+			/* trasa rzeczywista: jezdnia przejazdu w poziomie główek szyn wszystkich torów, które przecina – naszego i torów
+			   z mapy (każdy na swojej wysokości, envRowY) – 2 cm pod główką (szyny widoczne, bez progu); między torami
+			   wysokość liniowo od jednego do drugiego, za skrajnym torem zjazd do nawierzchni ulicy (do ok. 8%). Dawniej
+			   poziom naszego toru do 3,4 m od osi i zaraz nawierzchnia ulicy – sąsiednie tory z mapy (na innej wysokości)
+			   wystawały ponad jezdnię albo chowały się pod nią */
+			if (this.env && this.surfY && this.envTracksAt) {
+				const tr = [{ d: 0, y: h }];
+				for (const t of this.envTracksAt(s)) if (Math.abs(t.d - d) < 25 && Math.abs(t.d) > 1) tr.push({ d: t.d, y: this.envRowY(t.i, t.k, s, t.d) });
+				tr.sort((a, b) => a.d - b.d);
+				const RAIL = 1.6; // od osi toru: szyny i podkłady pod płytami przejazdu
+				let lo = null, hi = null;
+				for (const t of tr) { if (t.d <= d) lo = t; else if (!hi) hi = t; }
+				const top = (t) => t.y - 0.02;
+				if (lo && hi && hi.d - lo.d < 9) { const u = (d - lo.d) / (hi.d - lo.d || 1); return top(lo) + (top(hi) - top(lo)) * u; }
+				const near = !lo ? hi : !hi ? lo : d - lo.d < hi.d - d ? lo : hi, m = Math.abs(d - near.d);
+				if (m <= RAIL) return top(near);
+				const ys = this.surfY(s, d) + 0.1, ramp = Math.max(6, Math.abs(ys - top(near)) / 0.08);
+				const t = smoothstep(0, 1, Math.min(1, (m - RAIL) / ramp));
+				return top(near) * (1 - t) + ys * t;
+			}
 			if (ad < 3.4) return h - 0.14;
-			// trasa rzeczywista: przy torze – poziom torowiska, dalej nawierzchnia (jak jezdnie z mapy)
-			if (this.env && this.surfY) { const t = smoothstep(3.4, 7, ad); return (h - 0.14) * (1 - t) + (this.surfY(s, d) + 0.1) * t; }
 			const t = smoothstep(3.4, 7, ad);
 			return (h - 0.14) * (1 - t) + (this.terrainY(s, d) + 0.08) * t;
 		}
@@ -3671,22 +3732,40 @@ import { BundleGroup } from 'three/webgpu';
 			// trasa rzeczywista: prawdziwa ulica z mapy przez przejazd (envCrossingPath); jezdnia z gry tylko na łączniku
 			// i w pasie, w którym ulica z mapy przy przejeździe nie jest rysowana
 			const path = this.env && this.envCrossingPath ? this.envCrossingPath(cr) : null;
+			const wp = [], wi = []; // chodniki (osobna siatka – jaśniejsza nawierzchnia)
 			if (path) {
-				const half = Math.max(2.8, path.w / 2);
+				const half = Math.max(2.8, path.w / 2), SW = 2.0, CURB = 0.12;
+				/* jezdnia przejazdu w tym samym zasięgu, w którym ulica z mapy nie jest rysowana (real-env onCrossing: do 45 m
+				   wzdłuż toru i 40 m od osi) – dawniej tylko do 12,5 m wzdłuż toru i na ulicy skośnej do toru zostawała między
+				   nią a ulicą z mapy szczelina z trawą; chodniki (gdy ulica je ma) po obu stronach: krawężnik 0,12 m, przez
+				   pas torów – w poziomie jezdni */
 				const rows = [];
 				for (let u = 0; u <= path.L; u += 2) {
 					const [s, d] = path.at(u);
-					const inSkip = (Math.abs(s - cr.pos) < 12.5 && Math.abs(d) < 40.5) || (u >= path.link[0] - 2 && u <= path.link[1] + 2);
+					const inSkip = (Math.abs(s - cr.pos) <= 45 && Math.abs(d) <= 40) || (u >= path.link[0] - 2 && u <= path.link[1] + 2);
 					if (!inSkip) { rows.push(null); continue; }
 					const [s2, d2] = path.at(Math.min(path.L, u + 0.5)), [s1, d1] = path.at(Math.max(0, u - 0.5));
 					const L = Math.hypot(s2 - s1, d2 - d1) || 1, ns = -(d2 - d1) / L, nd = (s2 - s1) / L;
-					rows.push([-half, half].map((o) => { const ss = s + ns * o, dd = d + nd * o; R.sidePoint(this.route, ss, dd, tp); return [tp.x, this.roadY(ss, dd), tp.z]; }));
+					const atO = (o, dy) => { const ss = s + ns * o, dd = d + nd * o; R.sidePoint(this.route, ss, dd, tp); return [tp.x, this.roadY(ss, dd) + dy, tp.z]; };
+					const inZone = u >= path.zone[0] - 1 && u <= path.zone[1] + 1, cy = inZone ? 0.01 : CURB;
+					rows.push({ road: [atO(-half, 0), atO(half, 0)], walk: path.sw ? [[atO(-half - SW, cy), atO(-half, cy), atO(-half, 0)], [atO(half, 0), atO(half, cy), atO(half + SW, cy)]] : null });
 				}
 				rows.forEach((r2, j) => {
-					if (!r2 || !rows[j - 1]) return;
+					const r1 = rows[j - 1];
+					if (!r2 || !r1) return;
 					const b0 = pts.length / 3;
-					pts.push(...rows[j - 1][0], ...rows[j - 1][1], ...r2[0], ...r2[1]);
+					pts.push(...r1.road[0], ...r1.road[1], ...r2.road[0], ...r2.road[1]);
 					idx.push(b0, b0 + 2, b0 + 1, b0 + 1, b0 + 2, b0 + 3);
+					if (!r2.walk) return;
+					for (const side of [0, 1]) {
+						// pasy: chodnik (płaski) i lico krawężnika (pionowe, od strony jezdni)
+						const A = r1.walk[side], B = r2.walk[side];
+						for (const [i0, i1] of side ? [[0, 1], [1, 2]] : [[1, 2], [0, 1]]) {
+							const c0 = wp.length / 3;
+							wp.push(...A[i0], ...A[i1], ...B[i0], ...B[i1]);
+							wi.push(c0, c0 + 2, c0 + 1, c0 + 1, c0 + 2, c0 + 3);
+						}
+					}
 				});
 			}
 			const ds = [];
@@ -3708,6 +3787,15 @@ import { BundleGroup } from 'three/webgpu';
 			const road = new T.Mesh(geo, mat('#4c4c52', { side: T.DoubleSide }));
 			road.receiveShadow = true;
 			group.add(road);
+			if (wp.length) {
+				const wg = new T.BufferGeometry();
+				wg.setAttribute('position', new T.Float32BufferAttribute(wp, 3));
+				wg.setIndex(wi);
+				wg.computeVertexNormals();
+				const walk = new T.Mesh(wg, mat('#a7a49d', { side: T.DoubleSide, roughness: 0.9 }));
+				walk.receiveShadow = true;
+				group.add(walk);
+			}
 
 			const lights = [], glows = [], arms = [];
 			/* Pas torów przejazdu: wszystkie tory, które przecina droga – tor pociągu, drugi tor z gry i tory z mapy
