@@ -1354,6 +1354,10 @@ import { BundleGroup } from 'three/webgpu';
 			sh.castShadow = true;
 			sh.receiveShadow = false;
 			sh.onBeforeRender = (r, sc, c, g) => { g.drawRange.count = c.isOrthographicCamera ? Infinity : 0; };
+			/* tylko warstwa cieni (World.SHADOW_LAYER – widzą ją wyłącznie kamery map cieni, scene.js): onBeforeRender nie
+			   działa przy odtwarzaniu paczki (BundleGroup) – bryła nagrana w przebiegu cieni rysowała się w obrazie i odbiciu
+			   wody (z cieniami terenu – pokrywała cały kawałek: woda bez odbić) */
+			sh.layers.set(World.SHADOW_LAYER);
 			sh.userData.shadowProxy = true;
 			group.add(sh);
 			sh.updateMatrixWorld(true);
@@ -4680,6 +4684,7 @@ import { BundleGroup } from 'three/webgpu';
 	if (typeof location !== 'undefined' && /[?&]nobundle/.test(location.search)) World.opt.bundle = false;
 	NS.World = World;
 	World.TERRAIN_D = TERRAIN_D;
+	World.SHADOW_LAYER = 3; // bryły zastępcze cieni (shadowMerge) – tylko kamery map cieni
 	World.RAIL_U = { uRailPxK: { value: 0 }, uRailCam: { value: new T.Vector3() } }; // szyny min. 1 piksel (railPxMat)
 	World.PEOPLE = PEOPLE; // kolory ubrań i skóry ludzi (tłum na peronach z mapy – real-env.js)
 	World.SKIN = SKIN; // kolumny siatki terenu (odsunięcia od osi), wiersze co 4 m

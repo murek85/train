@@ -4,6 +4,17 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.57.2 – 21 października 2026
+
+Cienie terenu z powrotem, woda z odbiciami.
+
+### Cienie (`world.js`, `scene.js`, `index.html`)
+- Bryły zastępcze cieni (`shadowMerge`, WebGPU) na warstwie `World.SHADOW_LAYER` (3), widocznej tylko dla kamer map
+  cieni (`shadow.camera.layers.enable`). Dotąd ukrywał je `onBeforeRender` (zakres rysowania 0 poza kamerą
+  ortograficzną), który nie działa przy odtwarzaniu paczki (BundleGroup) – bryła nagrana w przebiegu cieni rysowała się
+  w obrazie i w odbiciu wody; z cieniami terenu pokrywała cały kawałek świata (woda bez odbić).
+- `SHADOWQ.high.terrain = true` (znów).
+
 ## 0.57.1 – 21 października 2026
 
 Wysoka jakość cieni tymczasowo bez cieni terenu.

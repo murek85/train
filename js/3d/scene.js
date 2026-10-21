@@ -70,8 +70,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 	const SHADOWQ = {
 		low: { size: 1024, radius: [1, 1, 1], far: 0.35, terrain: false },
 		medium: { size: 2048, radius: [1.6, 2, 2], far: 1, terrain: false },
-		// cienie terenu na razie wyłączone: na wysokiej część tafli wody (cały kawałek świata) bez odbić – sprawdzane
-		high: { size: 4096, radius: [1.8, 2.4, 2.6], far: 1.15, terrain: false },
+		high: { size: 4096, radius: [1.8, 2.4, 2.6], far: 1.15, terrain: true },
 	};
 	/* Jakość wody (ustawienie „Woda”): odbicie lustrzane (niska – bez; rozdzielczość odbicia wg jakości ogólnej – jej
 	   zmiana w trakcie gry niszczy teksturę odbicia, water.js) i poziom shadera (water.js uWQ: zmarszczki z nurtem, piana
@@ -387,6 +386,8 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				this.scene.add(l, l.target);
 				this.cascades.push(l);
 			}
+			// kamery map cieni widzą też warstwę brył zastępczych (world.js shadowMerge) – kamera gracza i odbicia nie
+			for (const l of this.cascades) l.shadow.camera.layers.enable(NS.World.SHADOW_LAYER);
 			this.csmFrame = 0;
 			/* hold – klatki bez rysowania (świat i kamera liczone dalej): na ekranie startowym i ekranie wczytywania
 			   w WebGPU, zanim compileAsync (precompile) skompiluje potoki równolegle – rysowanie tworzy brakujące potoki

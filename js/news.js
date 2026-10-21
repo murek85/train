@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.57.2',
+			date: '21 października 2026',
+			groups: [
+				['Cienie', [
+					'Cienie terenu (wzgórza, wykopy) wróciły na wysoką jakość cieni – bez utraty odbić na wodzie: niewidoczne bryły do rzucania cieni (WebGPU) nie trafiają już do obrazu ani do odbicia wody.',
+				]],
+			],
+		},
+		{
 			version: '0.57.1',
 			date: '21 października 2026',
 			groups: [
