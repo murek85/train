@@ -4,6 +4,74 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.57.1 – 21 października 2026
+
+Wysoka jakość cieni tymczasowo bez cieni terenu.
+
+### Cienie (`scene.js`, `index.html`)
+- `SHADOWQ.high.terrain = false` – na wysokiej woda w części kawałków świata bez odbić (granica na granicy kawałka,
+  znika na średniej). Teren nad wodą nie jest przyczyną (ponad lustrem ok. 1% punktów wody, przy krawędziach).
+
+## 0.57.0 – 21 października 2026
+
+Ostrzejsze szyny i obraz: szyny min. 1 piksel, wyostrzanie, 125/150%, anizotropia 16×.
+
+### Ostrość (`world.js`, `nodes.js`, `real-env.js`, `post.js`, `post-gpu.js`, `scene.js`, `common.js`, `main.js`, `index.html`)
+- Szyny: atrybut `aRail` (kierunek w poprzek × strona kolumny – `World.railAttr`, tory z mapy – `quadStrip`, `dst.r`);
+  materiał szyn (`World.railPxMat`, GLSL i `nodes.railHooks`) przesuwa wierzchołki na boki tak, by połowa szerokości
+  była ≥ 0,5 piksela z odległości od kamery gracza (`World.RAIL_U`: `uRailPxK` – rozmiar piksela na metr, `uRailCam`;
+  scene.js co klatkę – nie kamera mapy cieni ani odbicia). Materiał szyn nie jest „plain” (scalanie kawałka zastępowało
+  go wspólnym materiałem z kolorem w wierzchołkach – bez poszerzania).
+- Wyostrzanie adaptacyjne (jak CAS: krzyż sąsiadów, siła wg lokalnego kontrastu) – ostatni przebieg: WebGPU po FXAA
+  (`aaTarget`) albo po wykończeniu, WebGL po wykończeniu (`finishTarget`); `renderOpts.sharpen` (`set-sharpen`, 0–100%).
+- `set-scale`: 125% i 150%. `Texture.DEFAULT_ANISOTROPY = 16`, tekstury z napisami i fasady – 16 (było 4 / 8).
+
+## 0.56.1 – 21 października 2026
+
+Wisła bez pasa wzdłuż środka, odbicia na całej tafli.
+
+### Woda (`real-env.js`)
+- Cieki: odcinki tafli w komórkach rastra „woda” pomijane (tafla zbiornika) – dawniej linia biegu Wisły na tafli (poziom
+  z profilu cieku, piana na krawędziach).
+- `envWaterComps`: wygładzenie poziomu wierszy – mediana ±15, średnia ±10 wierszy (dawniej ±3 / ±2); Wisła w Toruniu –
+  46 wierszy na jednym poziomie (dawniej różnice ponad 1,2 m – część tafli poza lustrem odbicia).
+
+## 0.56.0 – 21 października 2026
+
+Woda etap 2 i cienie etap 3, ustawienia jakości cieni i wody.
+
+### Woda – etap 2 (`real-env.js`, `water.js`, `nodes.js`)
+- Atrybuty wody: `aShal` (płytkość: 1 – brzeg, 0 – od 0,5 m głębokości; cieki – krawędzie 1, oś z dna koryta) i `aFlow`
+  (nurt w świecie, 0,3–1 m/s, kierunek biegu z profilu – `P.dir`). Shader (GLSL i TSL): kolor płycizny, piana przy brzegu
+  (`uWQ` ≥ 1), zmarszczki 0,55 / 0,3 m przesuwane z nurtem (mocniejsze przy `uWQ` = 2), odbicie słabsze na płyciźnie
+  i pianie; chropowatość 0,035.
+- `WaterReflectionGPU`: ukrywa listę `hide` (opady, kabina, flara); `off` (woda niska) – odbicie w shaderze wyłączone,
+  rysowane co 8. klatkę; `force` – klatki po zmianie jakości rysowane bez względu na kadr. Rozdzielczość odbicia tylko
+  wg jakości ogólnej (zmiana w trakcie gry niszczyła teksturę używaną przez materiał wody – „Destroyed texture used in
+  a submit”, woda bez odbicia do przebudowy świata); włączenie / wyłączenie odbicia – pełne odświeżenie (`setQuality`).
+### Cienie – etap 3 (`scene.js`, `nodes.js`, `world.js`)
+- Kaskady: waga w pasie 8% przy brzegu mapy (smoothstep), reszta do następnej; za ostatnią – wygaszanie (GLSL –
+  `lights_fragment_begin`, TSL – `setupCascades`).
+- `SHADOWQ` (low / medium / high): mapy 1024 / 2048 / 4096, `shadow.radius` kaskad (1 / 1,6–2 / 1,8–2,6), zasięg
+  rzucających cień obiektów świata × 0,35 / 1 / 1,15 (`world.shadowFarK`), cienie terenu na wysokiej
+  (`world.terrainShadows`). Pociąg gracza zawsze z cieniem, pociągi tła od mapy 2048. Dalsze kaskady odświeżane od razu,
+  gdy kamera przesunęła się o ponad 4% zasięgu.
+- Ustawienia `set-shadowq`, `set-water` (`opt.shadowQ`, `opt.waterQ`), `setQuality(key, { shadow, water })`.
+
+## 0.55.13 – 21 października 2026
+
+Woda etap 1: lustro i koryta cieków, gładkie brzegi zbiorników.
+
+### Woda – etap 1 (`real-env.js`)
+- Cieki: `envStreamProfile(row)` – próbki co 4 m: najniższy pomiar z osi i brzegów, filtr medianowy (5), bez wznoszenia
+  z biegiem (przeciek 3 mm na próbkę; kierunek z mniejszym przycięciem), średnia z 3. `envStreamSegs()` – odcinki
+  z poziomami po kawałkach; `envStreamBed(s, d)` w `demTerrainY` – dno (głębokość 0,35–1,4 m wg szerokości), skarpa do
+  0,35 m nad lustrem, dalej 0,6 m/m. `envTerrainCols` – kolumny co 1,5–3 m w pasie cieku biegnącego wzdłuż toru.
+  Tafla: trzy wierzchołki w poprzek (krawędzie na poziomie, oś nie niżej niż nawierzchnia), szerokość do 0,7 skarpy.
+- Zbiorniki: `envWaterComps()` – składowe połączone komórek „woda”, poziom wiersza – mediana pomiaru wygładzona (mediana
+  ±3, średnia ±2 wiersze); `envWaterLevel` / `envCompLevel` z niego. Kontur: pole „woda” rozmyte 1-2-1, próbki co 5 m,
+  marching squares (izolinia 0,5, siodła wg środka), poziom wierzchołka między wierszami.
+
 ## 0.55.12 – 21 października 2026
 
 Okno wczytywania po każdej zmianie ustawień grafiki.

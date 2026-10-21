@@ -4,6 +4,66 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.57.1',
+			date: '21 października 2026',
+			groups: [
+				['Cienie', [
+					'Wysoka jakość cieni na razie bez cieni terenu (wzgórz i wykopów): przy nich część tafli wody – pas wzdłuż kawałka świata – traciła odbicia. Wrócą po znalezieniu przyczyny.',
+				]],
+			],
+		},
+		{
+			version: '0.57.0',
+			date: '21 października 2026',
+			groups: [
+				['Ostrość obrazu', [
+					'Szyny w oddali nie chudną poniżej ok. 1 piksela – zamiast przerywanej, migoczącej kreski ciągła, wyraźna linia toru (z bliska bez zmian).',
+					'Wyostrzanie obrazu po wygładzaniu krawędzi (z efektami – jakość średnia i wysoka): przywraca ostrość cienkich linii (szyny, sieć trakcyjna), którą rozmywało wygładzanie FXAA w WebGPU; suwak „Wyostrzanie obrazu” w ustawieniach grafiki (domyślnie 35%).',
+					'Rozdzielczość renderowania 125% i 150% – najostrzejszy obraz (supersampling), kosztem płynności.',
+					'Filtrowanie anizotropowe 16× wszystkich tekstur – ostrzejsze pod ostrym kątem tablice, fasady i liście.',
+				]],
+			],
+		},
+		{
+			version: '0.56.1',
+			date: '21 października 2026',
+			groups: [
+				['Woda', [
+					'Szerokie rzeki (np. Wisła w Toruniu) bez jasnego pasa wzdłuż środka – linia biegu rzeki nie jest już rysowana na tafli rzeki jako osobny ciek.',
+					'Cała tafla szerokiej rzeki na jednym poziomie – odbicia po obu stronach, dawniej część tafli (inny poziom z zaszumionego pomiaru) bez odbić.',
+				]],
+			],
+		},
+		{
+			version: '0.56.0',
+			date: '21 października 2026',
+			groups: [
+				['Woda (etap 2 – wygląd)', [
+					'Kolor wody wg głębokości: przy brzegu i na płyciznach jaśniejsza, zielonkawo-piaskowa (prześwitujące dno), na głębi ciemna; przy samym brzegu jasna, falująca linia piany; na płyciźnie słabsze odbicie.',
+					'Na rzekach i potokach drobne zmarszczki płyną z nurtem (szybciej na szerszych), gładsza tafla – ostrzejszy odblask słońca na falach.',
+					'Odbicie wody w WebGPU bez deszczu, śniegu, wnętrza kabiny i flary słońca (jak w WebGL).',
+				]],
+				['Cienie (etap 3)', [
+					'Płynne przejście między kaskadami cieni (bez widocznego szwu, gdzie zmienia się ostrość cienia) i łagodne wygaszanie cieni na końcu ich zasięgu.',
+					'Miękkie krawędzie cieni – dalej od kamery bardziej rozmyte; najdalsza kaskada odświeżana od razu przy szybkim ruchu kamery.',
+					'Wysoka jakość cieni: wzgórza i wykopy rzucają cień; niska: budynki, perony i słupy blisko pociągu też rzucają cień (dotąd tylko pociąg).',
+				]],
+				['Ustawienia', [
+					'Grafika: nowe ustawienia „Cienie – jakość” i „Woda – jakość” (domyślnie jak jakość ogólna) – niska / średnia / wysoka niezależnie od reszty grafiki.',
+				]],
+			],
+		},
+		{
+			version: '0.55.13',
+			date: '21 października 2026',
+			groups: [
+				['Woda (etap 1 – kształt i poziom)', [
+					'Rzeki i potoki z płaskim lustrem wody zamiast wstęgi położonej na terenie: poziom liczony wzdłuż biegu (bez płynięcia pod górę, odfiltrowany szum pomiaru), w poprzek poziomo; koryto z dnem i skarpami brzegów wycięte w terenie, gęstsza siatka terenu przy potokach biegnących wzdłuż toru.',
+					'Jeziora, stawy i szerokie rzeki: brzeg z gładkiego konturu zamiast schodków co 10 m, jeden wygładzony poziom dla całego zbiornika (bez schodków lustra między pasami).',
+				]],
+			],
+		},
+		{
 			version: '0.55.12',
 			date: '21 października 2026',
 			groups: [

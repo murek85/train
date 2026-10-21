@@ -25,9 +25,9 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 
 	/* Cienie kaskadowe: słońce to kilka świateł kierunkowych o tym samym kierunku i kolorze, każde z mapą cieni
 	   o innym zasięgu (od najmniejszego). W shaderze oświetlenia (lights_fragment_begin – podmieniony dla wszystkich
-	   materiałów, także tych z cieniami chmur) piksel bierze światło tylko z pierwszej kaskady, w której mapie leży
-	   (z marginesem 3% od brzegu), a poza wszystkimi – z ostatniej, bez cienia; materiały bez cieni – z pierwszej.
-	   Światło liczy się więc raz, a cień pochodzi z najostrzejszej mapy obejmującej piksel. */
+	   materiałów, także tych z cieniami chmur) piksel bierze światło z pierwszej kaskady, w której mapie leży (waga 1
+	   w głębi mapy, w pasie 8% przy brzegu maleje do 0 – reszta z następnej kaskady: przejście bez szwu), za ostatnią –
+	   bez cienia (wygaszanie w jej pasie brzegowym); materiały bez cieni – z pierwszej. Suma wag zawsze 1. */
 	const CSM_OK = (() => {
 		const C = T.ShaderChunk;
 		const a = 'DirectionalLightShadow directionalLightShadow;\n\t#endif\n\t#pragma unroll_loop_start\n\tfor ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {';
@@ -35,17 +35,17 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 		const src = C.lights_fragment_begin;
 		if (!src.includes(a) || !src.includes(b)) return false;
 		C.lights_fragment_begin = src
-			.replace(a, 'DirectionalLightShadow directionalLightShadow;\n\t#endif\n\tbool csmDone = false;\n\t#pragma unroll_loop_start\n\tfor ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {')
+			.replace(a, 'DirectionalLightShadow directionalLightShadow;\n\t#endif\n\tfloat csmRest = 1.0;\n\t#pragma unroll_loop_start\n\tfor ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {')
 			.replace(b, [
 				'\t\tdirectionalLightShadow = directionalLightShadows[ i ];',
 				'\t\t{',
 				'\t\t\tvec3 csmP = vDirectionalShadowCoord[ i ].xyz / vDirectionalShadowCoord[ i ].w;',
-				'\t\t\tbool csmIn = all( greaterThan( csmP.xy, vec2( 0.03 ) ) ) && all( lessThan( csmP.xy, vec2( 0.97 ) ) ) && csmP.z < 1.0;',
-				'\t\t\tbool csmUse = ! csmDone && ( csmIn || ! receiveShadow || UNROLLED_LOOP_INDEX == NUM_DIR_LIGHT_SHADOWS - 1 );',
-				'\t\t\tif ( csmUse ) {',
-				'\t\t\t\tcsmDone = true;',
-				'\t\t\t\tdirectLight.color *= ( directLight.visible && receiveShadow && csmIn ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;',
-				'\t\t\t} else directLight.color = vec3( 0.0 );',
+				'\t\t\tvec2 csmE = min( csmP.xy, 1.0 - csmP.xy );',
+				'\t\t\tfloat csmW = smoothstep( 0.03, 0.11, min( csmE.x, csmE.y ) ) * step( csmP.z, 0.9999 );',
+				'\t\t\tfloat csmSh = ( directLight.visible && receiveShadow && csmW > 0.0 ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;',
+				'\t\t\tif ( ! receiveShadow ) { directLight.color *= csmRest; csmRest = 0.0; }',
+				'\t\t\telse if ( UNROLLED_LOOP_INDEX == NUM_DIR_LIGHT_SHADOWS - 1 ) { directLight.color *= csmRest * ( csmW * csmSh + 1.0 - csmW ); csmRest = 0.0; }',
+				'\t\t\telse { float csmU = csmRest * csmW; directLight.color *= csmU * csmSh; csmRest -= csmU; }',
 				'\t\t}',
 			].join('\n'));
 		return true;
@@ -64,6 +64,19 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 		medium: { name: 'średnia', pr: 1.5, shadow: 2048, post: true, bloom: true, ao: false, atmo: false, msaa: 4, density: 0.8, particles: 0.7, range: 1 },
 		high: { name: 'wysoka', pr: 2, shadow: 4096, post: true, bloom: true, ao: true, atmo: true, msaa: 4, density: 1.15, particles: 1, range: 1.15 },
 	};
+	/* Jakość cieni (ustawienie „Cienie”, domyślnie jak jakość ogólna): rozmiar map (dwie bliższe kaskady; najdalsza do
+	   2048), promień rozmycia krawędzi (PCF) kaskad, zasięg obiektów świata rzucających cień (× 450 m) i cienie terenu
+	   (wzgórza, wykopy) */
+	const SHADOWQ = {
+		low: { size: 1024, radius: [1, 1, 1], far: 0.35, terrain: false },
+		medium: { size: 2048, radius: [1.6, 2, 2], far: 1, terrain: false },
+		// cienie terenu na razie wyłączone: na wysokiej część tafli wody (cały kawałek świata) bez odbić – sprawdzane
+		high: { size: 4096, radius: [1.8, 2.4, 2.6], far: 1.15, terrain: false },
+	};
+	/* Jakość wody (ustawienie „Woda”): odbicie lustrzane (niska – bez; rozdzielczość odbicia wg jakości ogólnej – jej
+	   zmiana w trakcie gry niszczy teksturę odbicia, water.js) i poziom shadera (water.js uWQ: zmarszczki z nurtem, piana
+	   przy brzegu – od średniej; wysoka – mocniejsze zmarszczki) */
+	const WATERQ = { low: { refl: false, wq: 0 }, medium: { refl: true, wq: 1 }, high: { refl: true, wq: 2 } };
 	const ASPECT = { red: '#ff3b30', yellow: '#ffb020', green: '#34d058' };
 	const FOV = 45;
 	const PITCH = (36 * Math.PI) / 180; // domyślne pochylenie osi kamery w dół
@@ -420,7 +433,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			this.routeId = null;
 			this.quality = null;
 			// opcje renderera z ustawień: skala rozdzielczości, wygładzanie (MSAA), cienie
-			this.renderOpts = { scale: 1, aa: true, shadows: true };
+			this.renderOpts = { scale: 1, aa: true, shadows: true, sharpen: 0.35 };
 			this.setQuality('medium');
 
 			// znacznik drogi hamowania
@@ -777,17 +790,29 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			this.mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		}
 
-		setQuality(key) {
+		// over – { shadow, water }: 'auto' (jak jakość) albo low / medium / high
+		setQuality(key, over = {}) {
 			const q = QUALITY[key] || QUALITY.medium;
-			if (this.quality === q) return;
+			const qk = QUALITY[key] ? key : 'medium';
+			const sk = SHADOWQ[over.shadow] ? over.shadow : qk, wk = WATERQ[over.water] ? over.water : qk;
+			this.waterQ = WATERQ[wk];
+			if (NS.waterUniforms) NS.waterUniforms.uWQ.value = this.waterQ.wq;
+			/* włączenie / wyłączenie odbicia wody też z pełnym odświeżeniem (WebGPU: po przebudowie świata bez odbicia
+			   w shaderze woda zostawała bez odbicia do następnej przebudowy przy włączonym) */
+			if (this.quality === q && this.shadowKey === sk && this.waterReflKey === this.waterQ.refl) return;
+			this.waterReflKey = this.waterQ.refl;
+			this.shadowKey = sk;
+			this.shadowQ = SHADOWQ[sk];
 			this.quality = q;
 			this.gl.toneMapping = q.post ? T.NoToneMapping : T.ACESFilmicToneMapping;
 			// WebGPU z efektami: wykończenie zapisuje gotowe sRGB – bez konwersji renderera (płótno bez bufora pośredniego)
 			if (NS.gpu) this.gl.outputColorSpace = q.post ? T.LinearSRGBColorSpace : T.SRGBColorSpace;
+			const sq = this.shadowQ;
 			this.cascades.forEach((l, k) => {
-				// dwie bliższe kaskady w pełnej rozdzielczości jakości (pociąg i otoczenie przy nim), najdalsza do 2048
-				const n = k < 2 ? q.shadow : Math.min(2048, q.shadow);
+				// dwie bliższe kaskady w pełnej rozdzielczości jakości cieni (pociąg i otoczenie przy nim), najdalsza do 2048
+				const n = k < 2 ? sq.size : Math.min(2048, sq.size);
 				l.shadow.mapSize.set(n, n);
+				l.shadow.radius = sq.radius[Math.min(k, sq.radius.length - 1)]; // miękkie krawędzie (PCF), dalej szersze
 				// (WebGPU: mapę trzyma ShadowNode i sam zmienia jej rozmiar – zniszczona psuła wszystkie materiały z cieniami)
 				if (l.shadow.map && !NS.gpu) {
 					l.shadow.map.dispose();
@@ -796,7 +821,10 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			});
 			this.world.density = q.density;
 			this.world.detail = q.range;
-			this.world.shadows = q.shadow >= 2048;
+			// obiekty świata rzucają cień na każdej jakości cieni – na niskiej tylko najbliższe (zasięg × 0,35)
+			this.world.shadows = true;
+			this.world.shadowFarK = sq.far;
+			this.world.terrainShadows = sq.terrain;
 			this.weather.setQuality(q.particles);
 			this.size = { w: 0, h: 0 };
 			/* tone mapping jest wkompilowany w shadery – przekompiluj materiały (WebGL). WebGPU: bez – przy włączeniu albo
@@ -815,6 +843,8 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			if (NS.gpu) {
 				for (const l of this.cascades) l.shadowPlaced = false;
 				this.rebundle(6);
+				// odbicie wody rysowane w pierwszych klatkach po przebudowie także bez wody w kadrze (water.js render – force)
+				if (this.waterRefl) this.waterRefl.force = 8;
 			}
 		}
 
@@ -892,10 +922,10 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			this.weather.setSeason(season);
 			this.horizon.setRoute(sim.route);
 			if (this.trainModel) this.trainModel.dispose();
-			this.trainModel = new NS.TrainModel(this.scene, sim.train, { shadows: this.quality.shadow >= 1024, player: true, destination: sim.route.stations[sim.route.stations.length - 1].name });
+			this.trainModel = new NS.TrainModel(this.scene, sim.train, { shadows: true, player: true, destination: sim.route.stations[sim.route.stations.length - 1].name });
 			if (this.cab) this.cab.dispose();
 			this.cab = new NS.CabInterior(this.trainModel);
-			this.life.reset(sim.route, { shadows: this.quality.shadow >= 2048 });
+			this.life.reset(sim.route, { shadows: (this.shadowQ || SHADOWQ.medium).size >= 2048 });
 			this.life.prewarm(sim); // modele pociągów tła na ekranie wczytywania (pula)
 			this.life.setLocals(this.world.env ? this.world.envLocalTracks() : []); // pociągi podmiejskie na peronach w tunelu
 			/* trasa rzeczywista: pociągi z przeciwka po prawdziwym torze z mapy (nie po torze z gry); linia jednotorowa
@@ -1595,11 +1625,14 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				if (i > 0) {
 					const every = i === n - 1 && n > 2 ? 4 : 2;
 					upd = this.csmFrame % every === i % every || this.csmFrame < 3 || !l.shadowPlaced;
+					// kamera przesunęła się o ponad 4% zasięgu od ostatniego rysowania mapy – od razu (szybki lot, jazda)
+					if (!upd && l.shadowAt && l.shadowAt.distanceToSquared(cam) > (l.shadow.camera.right * 0.04) ** 2) upd = true;
 				}
 				l.shadow.autoUpdate = false;
 				if (upd) l.shadow.needsUpdate = true;
 				if (!upd) return;
 				l.shadowPlaced = true;
+				(l.shadowAt || (l.shadowAt = new T.Vector3())).copy(cam);
 				// jedna mapa (bez kaskad): dawny zasięg wokół punktu widoku
 				const ext = n === 1 ? Math.min(400, 110 * mul) : Math.min(i === n - 1 ? 700 : 400, CASCADES[i] * mul);
 				const shc = l.shadow.camera;
@@ -1671,12 +1704,18 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			}
 			const q = this.quality;
 			const exposure = 1 + 0.7 * (1 - this.dayK);
+			// szyny min. 1 piksel (world.js railPxMat): rozmiar piksela na metr odległości i kamera gracza
+			const RU = NS.World && NS.World.RAIL_U;
+			if (RU) {
+				RU.uRailPxK.value = (2 * Math.tan((this.camera.fov * Math.PI) / 360)) / Math.max(1, this.gl.domElement.height); // wysokość bufora rysowania w pikselach
+				RU.uRailCam.value.copy(this.camera.position);
+			}
 			// odbicie wody (przed klatką): bez opadów, flary i wnętrza kabiny; rozdzielczość wg jakości
 			if (this.waterRefl && !this.hold) {
 				const wv = (this.W && this.W.wind) || 0.4;
 				this.waterWind.set(0.8 * wv, 0.35 * wv);
 				const wt = this.weather;
-				this.waterRefl.update(this.scene, this.camera, this.scene, this.time, this.waterWind, [wt.rain, wt.rainNear, wt.snow, wt.splash, wt.leaves, this.cab && this.cab.group].concat(this.sunFx.objects || []), q.post ? (q.ao ? 0.6 : 0.5) : 0.35);
+				this.waterRefl.update(this.scene, this.camera, this.scene, this.time, this.waterWind, [wt.rain, wt.rainNear, wt.snow, wt.splash, wt.leaves, this.cab && this.cab.group].concat(this.sunFx.objects || []), q.post ? (q.ao ? 0.6 : 0.5) : 0.35, !(this.waterQ || WATERQ.medium).refl);
 			}
 			// WebGPU: rysowanie po init(); wspólne uniformy materiałów węzłowych raz na klatkę; macierze świata raz na klatkę
 			// (WebGPURenderer liczy je przy każdym render() – też dla każdej mapy cieni i przebiegów efektów)
@@ -1698,6 +1737,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				const W = this.W;
 				const rays = this.e > 0 ? 0.4 * (1 - W.haze) * W.sun * (1 - smoothstep(0.25, 0.55, this.e)) : 0;
 				this.post.render(this.scene, this.camera, {
+					sharpen: this.renderOpts.sharpen ?? 0.35, // wyostrzanie po wygładzaniu (ustawienia)
 					bloom: q.bloom,
 					bloomStrength: 0.5,
 					/* AO w każdym widoku z zewnątrz, niezależnie od wysokości kamery – wcześniej tylko w widoku z góry

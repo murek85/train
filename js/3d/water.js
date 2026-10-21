@@ -18,12 +18,14 @@ import * as THREE from 'three';
 		uReflY: { value: -1e5 },
 		uWTime: { value: 0 },
 		uWWind: { value: new T.Vector2(0.8, 0.35) },
+		uWQ: { value: 1 }, // jakość wody: 0 niska (bez zmarszczek i linii brzegu), 1 średnia, 2 wysoka
 	};
 
 	/* materiał wody: cienie chmur ('clean'), fale w shaderze (normalna z sumy fal – 4 kierunki i drobna zmarszczka),
 	   odbicie lustrzane z WaterReflection */
 	function waterMaterial() {
-		const src = new T.MeshStandardMaterial({ color: '#18323b', roughness: 0.05, metalness: 0, envMapIntensity: 1.0 });
+		// gładsza tafla – ostrzejszy odblask słońca na falach
+		const src = new T.MeshStandardMaterial({ color: '#18323b', roughness: 0.035, metalness: 0, envMapIntensity: 1.0 });
 		if (NS.gpu) { const g = NS.nodes.waterMaterial(src, WU); g.userData.water = true; return g; } // WebGPU: fale i odbicie w TSL
 		const m = NS.util.patch(src, 'clean');
 		const base = m.onBeforeCompile;
@@ -32,12 +34,12 @@ import * as THREE from 'three';
 			base(sh, r);
 			Object.assign(sh.uniforms, WU);
 			sh.vertexShader = sh.vertexShader
-				.replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
-				.replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+				.replace('#include <common>', '#include <common>\nvarying vec3 vWP;\nattribute float aShal;\nattribute vec2 aFlow;\nvarying float vShal;\nvarying vec2 vFlow;')
+				.replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvShal = aShal;\nvFlow = aFlow;');
 			sh.fragmentShader = sh.fragmentShader
 				.replace('#include <common>', `#include <common>
-				varying vec3 vWP;
-				uniform sampler2D uReflTex; uniform mat4 uReflMat; uniform float uReflOn; uniform float uReflY; uniform float uWTime; uniform vec2 uWWind;
+				varying vec3 vWP; varying float vShal; varying vec2 vFlow;
+				uniform sampler2D uReflTex; uniform mat4 uReflMat; uniform float uReflOn; uniform float uReflY; uniform float uWTime; uniform vec2 uWWind; uniform float uWQ;
 				// wysokość fal (pochodne – normalna): cztery fale kierunkowe (z wiatrem i w poprzek) i drobna zmarszczka
 				vec2 waveGrad(vec2 p, float t, float fw) {
 					vec2 g = vec2(0.0);
@@ -52,7 +54,31 @@ import * as THREE from 'three';
 						float ph = dot(dirs[i], p) * k - w * t + float(i) * 1.7;
 						g += dirs[i] * (a * k * cos(ph));
 					}
+					// zmarszczki (0,55 i 0,3 m) – przesuwane z nurtem rzeki; tylko średnia i wysoka jakość
+					if (uWQ > 0.5) {
+						vec2 pf = p - vFlow * t;
+						vec2 rd[2]; rd[0] = normalize(wd + vec2(-wd.y, wd.x) * 1.7); rd[1] = normalize(-wd + vec2(-wd.y, wd.x) * 0.4);
+						float rl[2]; rl[0] = 0.55; rl[1] = 0.3;
+						for (int i = 0; i < 2; i++) {
+							float k = 6.2831853 / rl[i];
+							float a = amp * (0.25 + 0.1 * uWQ) * rl[i] * (1.0 - smoothstep(rl[i] * 0.12, rl[i] * 0.35, fw)); // wysoka – mocniejsze
+							float ph = dot(rd[i], pf) * k - sqrt(9.81 * k) * 0.25 * t + float(i) * 2.3;
+							g += rd[i] * (a * k * cos(ph));
+						}
+					}
 					return g;
+				}
+				// linia brzegu: jasna piana falująca wzdłuż brzegu (płytkość przy 1)
+				float shoreFoam(vec2 p, float t) {
+					float n = sin(p.x * 0.9 + t * 0.8) * sin(p.y * 1.1 - t * 0.6) * 0.5 + 0.5;
+					return smoothstep(0.78, 0.97, vShal + n * 0.08) * (0.55 + 0.45 * n);
+				}`)
+				// kolor wg głębokości: płycizna jaśniejsza, zielonkawo-piaskowa (dno), głęboko – kolor materiału; piana przy brzegu
+				.replace('#include <color_fragment>', `#include <color_fragment>
+				{
+					float sh = clamp(vShal, 0.0, 1.0);
+					diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.20, 0.27, 0.20), smoothstep(0.25, 0.95, sh) * 0.85);
+					if (uWQ > 0.5) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.72, 0.74, 0.70), shoreFoam(vWP.xz, uWTime) * 0.6);
 				}`)
 				.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 				float wDist = length(vWP - cameraPosition);
@@ -69,7 +95,8 @@ import * as THREE from 'three';
 						vec4 rc = uReflMat * vec4(vWP.x, uReflY, vWP.z, 1.0);
 						vec2 ruv = rc.xy / rc.w + wN.xz * 0.035;
 						vec3 refl = texture2D(uReflTex, clamp(ruv, vec2(0.002), vec2(0.998))).rgb;
-						outgoingLight = mix(outgoingLight, refl, clamp(F * 1.1 + 0.08, 0.0, 1.0) * onPlane);
+						float rk = 1.0 - 0.35 * smoothstep(0.4, 1.0, vShal) - (uWQ > 0.5 ? 0.5 * shoreFoam(vWP.xz, uWTime) : 0.0);
+						outgoingLight = mix(outgoingLight, refl, clamp(F * 1.1 + 0.08, 0.0, 1.0) * onPlane * rk);
 					}
 				}
 				#include <opaque_fragment>`);
@@ -112,16 +139,27 @@ import * as THREE from 'three';
 		   powierzchnie wody ukryte na czas odbicia. Co drugą klatkę (pełna scena z drugiej kamery – kilka ms procesora;
 		   woda daleka i spokojna, przesunięcie o klatkę niewidoczne), bez pominięcia przy zmianie rozmiaru bufora (nowa
 		   tekstura). Wyjątek w rysowaniu – przywrócenie stanu (ukryta woda, nazwa sceny, bufor docelowy) */
+		/* force – klatki rysowane bez względu na kadr (po zmianie jakości: przebudowa świata, gdy odbicie się nie rysowało,
+		   zostawiała wodę bez odbicia do następnej przebudowy); off – jakość wody niska: odbicie w małej rozdzielczości co
+		   ósmą klatkę, w shaderze wyłączone (uReflOn = 0) – z tego samego powodu nie zatrzymane całkiem. Rozdzielczość odbicia
+		   bez zmian (wg jakości ogólnej): zmiana niszczy teksturę, a materiał wody trzyma powiązanie ze starą („Destroyed
+		   texture used in a submit”) – woda bez odbicia do przebudowy świata */
 		render(gl, scene, camera) {
+			const force = this.force > 0;
+			if (force) this.force--;
+			if (!force && !this.off && !WU.uReflOn.value) return; // brak akwenu w zasięgu
 			const RB = this.refl.reflector;
 			camera.updateMatrixWorld();
 			this.frustum.setFromProjectionMatrix(this.pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse), camera.coordinateSystem);
-			if (!this.list.some((w) => w.o.visible && w.o.parent && this.frustum.intersectsObject(w.o))) return;
-			const sz = gl.getDrawingBufferSize(this.sz), key = sz.x + 'x' + sz.y + '@' + RB.resolutionScale;
-			if (this.every > 1 && RB.hasOutput && key === this.sizeKey && ++this.frame % this.every) return;
+			if (!force && !this.list.some((w) => w.o.visible && w.o.parent && this.frustum.intersectsObject(w.o))) return;
+			const sz = gl.getDrawingBufferSize(this.sz), key = sz.x + 'x' + sz.y + '@' + RB.resolutionScale, every = this.off ? 8 : this.every;
+			if (!force && every > 1 && RB.hasOutput && key === this.sizeKey && ++this.frame % every) return;
 			this.sizeKey = key;
 			const mats = new Set(this.list.map((w) => w.o.material));
 			for (const m of mats) m.visible = false;
+			// opady, kabina, flara słońca – jak w WebGL (WaterReflection.update)
+			const hid = (this.hide || []).filter((o) => o && o.visible);
+			for (const o of hid) o.visible = false;
 			const rt = gl.getRenderTarget(), mrt = gl.getMRT(), ac = gl.autoClear, name = scene.name;
 			try {
 				this.draw({ scene, camera, renderer: gl, material: this.dummy });
@@ -133,11 +171,15 @@ import * as THREE from 'three';
 				console.error('Odbicie wody:', e);
 			} finally {
 				for (const m of mats) m.visible = true;
+				for (const o of hid) o.visible = true;
 			}
 		}
-		update(scene, camera, root, time, wind, hide, scale = 0.5) {
+		update(scene, camera, root, time, wind, hide, scale = 0.5, off = false) {
 			WU.uWTime.value = time;
 			if (wind) WU.uWWind.value.copy(wind);
+			this.hide = hide;
+			// jakość wody niska – bez odbicia w shaderze (samo niebo z mapy otoczenia); rysowane rzadko (render)
+			this.off = off;
 			if (this.n++ % 30 === 0) WaterReflection.prototype.scan.call(this, root);
 			const cp = camera.position;
 			camera.getWorldDirection(this.t);
@@ -148,7 +190,7 @@ import * as THREE from 'three';
 				const d = Math.max(0, Math.hypot(w.c.x - fx, w.c.z - fz) - w.r);
 				if (d < 1500 && cp.y > w.y + 0.3 && (!best || d < best.d)) best = { d, w };
 			}
-			WU.uReflOn.value = best ? 1 : 0;
+			WU.uReflOn.value = best && !this.off ? 1 : 0;
 			if (!best) return;
 			WU.uReflY.value = best.w.y;
 			this.refl.reflector.resolutionScale = scale;
@@ -190,9 +232,11 @@ import * as THREE from 'three';
 		}
 		/* przed klatką: najbliższy akwen (do 1,5 km poza jego zasięgiem) – jego lustro; hide – obiekty ukryte w odbiciu
 		   (opady, wnętrze kabiny); scale – rozdzielczość odbicia względem ekranu */
-		update(scene, camera, root, time, wind, hide, scale = 0.5) {
+		update(scene, camera, root, time, wind, hide, scale = 0.5, off = false) {
 			WU.uWTime.value = time;
 			if (wind) WU.uWWind.value.copy(wind);
+			// jakość wody niska – bez odbicia lustrzanego (samo niebo z mapy otoczenia)
+			if (off) { WU.uReflOn.value = 0; return; }
 			if (this.n++ % 30 === 0) this.scan(root);
 			const cp = camera.position;
 			// punkt ok. 200 m przed kamerą (w poziomie) – akwen najbliżej niego (ten, na który się patrzy)

@@ -141,7 +141,7 @@ import * as THREE from 'three';
 			cv.width = cv.height = 1024;
 			const tex = new T.CanvasTexture(cv);
 			tex.colorSpace = T.SRGBColorSpace;
-			tex.anisotropy = 4;
+			tex.anisotropy = 16;
 			const mat2 = new T.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: '#ffffff', emissiveIntensity: 0.22, roughness: 0.5 });
 			mat2.userData.shared = true;
 			pg = { cv, g: cv.getContext('2d'), tex, mat: mat2, n: 0 };
@@ -268,7 +268,7 @@ import * as THREE from 'three';
 				g.fillRect(W2.x0 + 7, W2.y0 + 7, W2.x1 - W2.x0 - 14, W2.y1 - W2.y0 - 12);
 			}
 		});
-		for (const t of [facadeTex, litTex, facadeNorm]) { t.wrapS = t.wrapT = T.RepeatWrapping; t.anisotropy = 8; }
+		for (const t of [facadeTex, litTex, facadeNorm]) { t.wrapS = t.wrapT = T.RepeatWrapping; t.anisotropy = 16; }
 		litTex.colorSpace = T.SRGBColorSpace;
 		const m = (o, v) => patch(new T.MeshStandardMaterial(Object.assign({ vertexColors: true, roughness: 0.9 }, o)), v || 'lit');
 		World.envM = {
@@ -887,26 +887,15 @@ import * as THREE from 'three';
 		return e.grid[ri * e.g.cols + ci];
 	};
 
-	/* poziom wody (pomiar lidarowy): mediana terenu z pomiaru w serii komórek „woda” wiersza rastra, w której leży
-	   punkt; undefined – poza wodą. Pomiar nad wodą jest zaszumiony (łachy, schodki lustra) – lustro i dno z tego poziomu. */
+	/* poziom wody (pomiar lidarowy): poziom połączonego zbiornika w wierszu rastra (mediana pomiaru wygładzona wzdłuż –
+	   envWaterComps); undefined – poza wodą. Pomiar nad wodą jest zaszumiony (łachy, schodki lustra) – lustro i dno z tego
+	   poziomu. */
 	World.prototype.envWaterLevel = function (s, d) {
 		const e = this.env;
 		if (!e || !e.dem || !e.dem.lidar) return undefined;
 		const g = e.g, ri = Math.round((s - g.s0) / g.step), ci = Math.round((d - g.d0) / g.step);
 		if (ri < 0 || ri >= e.rows || ci < 0 || ci >= g.cols || e.grid[ri * g.cols + ci] !== 9) return undefined;
-		let a = ci;
-		while (a > 0 && e.grid[ri * g.cols + a - 1] === 9) a--;
-		if (!e.wLvl) e.wLvl = new Map();
-		const key = ri * g.cols + a;
-		let v = e.wLvl.get(key);
-		if (v === undefined) {
-			const hs = [], s0 = g.s0 + ri * g.step;
-			for (let c2 = a; c2 < g.cols && e.grid[ri * g.cols + c2] === 9; c2++) hs.push(this.demGround(s0, g.d0 + c2 * g.step));
-			hs.sort((x, y) => x - y);
-			v = hs[hs.length >> 1];
-			e.wLvl.set(key, v);
-		}
-		return v;
+		return this.envCompLevel(ri, ci);
 	};
 
 	// czy punkt leży w obrysie budynku (drzewa, trawa)
@@ -1464,13 +1453,22 @@ import * as THREE from 'three';
 		if (!e.tCols) e.tCols = new Map();
 		let cols = e.tCols.get(c);
 		if (cols) return cols;
-		const segs = e.trByChunk.get(c);
-		if (!segs || !segs.length) cols = TD;
+		const segs = e.trByChunk.get(c) || [];
+		// cieki w tym kawałku: pas koryta (z brzegami) – tylko odcinki biegnące wzdłuż toru (pas w poprzek < 40 m)
+		const wsegs = (e.dem && this.envStreamSegs().get(c)) || [];
+		if (!segs.length && !wsegs.length) cols = TD;
 		else {
 			const add = [];
 			for (const [, da, , db, hw] of segs) {
 				const a = Math.min(da, db) - hw - 6, b = Math.max(da, db) + hw + 6;
 				for (let d = Math.ceil(a / 2.5) * 2.5; d <= b; d += 2.5) if (Math.abs(d) > 10 && d > TD[0] && d < TD[TD.length - 1]) add.push(d);
+			}
+			for (const [sa, da, sb, db, w] of wsegs) {
+				if (Math.max(sa, sb) < c * C - 4 || Math.min(sa, sb) > (c + 1) * C + 4) continue;
+				const hb = w / 2 + wBank(w) + 3;
+				if (Math.abs(db - da) + 2 * hb > 40) continue;
+				const a = Math.min(da, db) - hb, b = Math.max(da, db) + hb, stp = Math.max(1.5, Math.min(3, w / 3));
+				for (let d = Math.ceil(a / stp) * stp; d <= b; d += stp) if (Math.abs(d) > 10 && d > TD[0] && d < TD[TD.length - 1]) add.push(d);
 			}
 			const all = [...TD, ...add].sort((x, y) => x - y);
 			cols = all.filter((d, j) => j === 0 || d - all[j - 1] > 0.8 || TD.includes(d));
@@ -3343,6 +3341,8 @@ import * as THREE from 'three';
 		let y = F + diff - (this.areaAt(s, d) === 9 && (Math.abs(d) > 10 || wk > 0.5) ? 1.1 : 0);
 		// dno pod wodą nie wyżej niż 0,9 m pod poziomem wody (łachy z zaszumionego pomiaru przebijały lustro)
 		if (Math.abs(d) > 10 || wk > 0.5) { const wl = this.envWaterLevel(s, d); if (wl !== undefined) y = Math.min(y, wl - 0.9); }
+		// koryto cieku: dno i skarpy brzegów (poziom wody z profilu cieku – envStreamBed)
+		if (Math.abs(d) > 10 || wk > 0.5) y = Math.min(y, this.envStreamBed(s, d));
 		if (dp > 0) y = Math.min(y, F - dp);
 		// droga lub tor z mapy z pomiaru: teren w ich pasie na ich wysokości (za koroną torowiska; w jej obrębie – gdy
 		// tor leży niżej niż korona); na stacjach – poza peronami (od 14 m od osi)
@@ -4223,18 +4223,27 @@ import * as THREE from 'three';
 	World.prototype.buildEnvTracks = function* (group, segs) {
 		if (!segs.length) return;
 		const r = this.route, M = World.materials();
-		const bal = { p: [] }, balOld = { p: [] }, rails = { p: [] }, rust = { p: [] };
+		const bal = { p: [] }, balOld = { p: [] }, rails = { p: [], r: [] }, rust = { p: [] };
 		const sleepers = [], woodSl = [];
 		const quadStrip = (dst, cols, ys, sa, da, sb, db) => {
 			// cols – odsunięcia w poprzek łamanej, ys – wysokości względem główki szyny
 			const L = Math.hypot(sb - sa, db - da) || 1;
 			const ns = -(db - da) / L, nd = (sb - sa) / L;
 			const P = (s, d, o, y) => { R.sidePoint(r, s + ns * o, d + nd * o, tp); return [tp.x, tp.y + y - (dzOf ? dzOf(s, d) : 0) - (o && yWide ? yWide(s, d, o) : 0), tp.z]; };
+			// szyny (dst.r): kierunek w poprzek (od pierwszej do ostatniej kolumny) × strona kolumny – World.railAttr
+			let lat = null;
+			if (dst.r) {
+				const L0 = P(sa, da, cols[0], 0), L1 = P(sa, da, cols[cols.length - 1], 0), ll = Math.hypot(L1[0] - L0[0], L1[2] - L0[2]) || 1;
+				lat = [(L1[0] - L0[0]) / ll, (L1[2] - L0[2]) / ll];
+			}
+			const mid = (cols[0] + cols[cols.length - 1]) / 2;
+			const R3 = (c) => { const sd = c < mid ? -1 : 1; dst.r.push(lat[0] * sd, 0, lat[1] * sd); };
 			for (let j = 0; j < cols.length - 1; j++) {
 				const a = P(sa, da, cols[j], ys[j]), b = P(sa, da, cols[j + 1], ys[j + 1]), c2 = P(sb, db, cols[j + 1], ys[j + 1]), d2 = P(sb, db, cols[j], ys[j]);
 				const up = ((c2[2] - a[2]) * (b[0] - a[0]) - (c2[0] - a[0]) * (b[2] - a[2])) < 0;
 				if (up) dst.p.push(...a, ...b, ...c2, ...a, ...c2, ...d2);
 				else dst.p.push(...a, ...c2, ...b, ...a, ...d2, ...c2);
+				if (lat) for (const c of up ? [cols[j], cols[j + 1], cols[j + 1], cols[j], cols[j + 1], cols[j]] : [cols[j], cols[j + 1], cols[j + 1], cols[j], cols[j], cols[j + 1]]) R3(c);
 			}
 		};
 		const deck = { p: [] };
@@ -4315,6 +4324,7 @@ import * as THREE from 'three';
 			if (!d.p.length) return;
 			const geo = new T.BufferGeometry();
 			geo.setAttribute('position', new T.Float32BufferAttribute(d.p, 3));
+			if (d.r && d.r.length === d.p.length) geo.setAttribute('aRail', new T.Float32BufferAttribute(d.r, 3)); // szyny min. 1 piksel
 			geo.computeVertexNormals();
 			const m = new T.Mesh(geo, material);
 			m.receiveShadow = true;
@@ -6832,7 +6842,7 @@ import * as THREE from 'three';
 		});
 		const tex = new T.CanvasTexture(cv);
 		tex.colorSpace = T.SRGBColorSpace;
-		tex.anisotropy = 4;
+		tex.anisotropy = 16;
 		const m = patch(new T.MeshStandardMaterial({ map: tex, alphaTest: 0.5, roughness: 0.5, side: T.FrontSide }), 'lit');
 		m.userData.shared = true;
 		World.signAtlas = { mat: m, uv };
@@ -6956,7 +6966,7 @@ import * as THREE from 'three';
 			g.drawImage(drainTex().image, 128, 0, 128, 128);
 			const tex = new T.CanvasTexture(cv);
 			tex.colorSpace = T.SRGBColorSpace;
-			tex.anisotropy = 4;
+			tex.anisotropy = 16;
 			const m = patch(new T.MeshStandardMaterial({ map: tex, alphaTest: 0.5, roughness: 0.55, metalness: 0.5, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -30 }), 'lit');
 			m.userData.shared = true;
 			World.wearAtlas = m;
@@ -6975,83 +6985,310 @@ import * as THREE from 'three';
 	};
 
 	// wody: cieki (pasy) i zbiorniki z rastra (prostokąty 10 m), lustro wody nieco poniżej terenu brzegu
+	/* ---------- woda: poziomy, koryta cieków, kontur zbiorników ----------
+	   Cieki (env.w, łamane z szerokością): poziom wody wzdłuż biegu z pomiaru terenu (najniższy z osi i brzegów, filtr
+	   medianowy – szum pomiaru nad wodą), bez wznoszenia się z biegiem rzeki (kierunek – ten z mniejszym przycięciem);
+	   tafla płaska w poprzek, koryto wycięte w terenie (dno, skarpy brzegów) – dawniej wstęga położona na terenie
+	   (na zboczu przechylona). Zbiorniki (raster „woda”): poziom wspólny dla połączonego zbiornika – mediana wiersza
+	   wygładzona wzdłuż biegu (bez schodków między wierszami); brzeg z konturu (marching squares na rozmytym polu, 5 m). */
+	const W_STEP = 4; // krok próbek poziomu cieku (m)
+	const wDepth = (w) => Math.max(0.35, Math.min(1.4, 0.35 + 0.035 * w)); // głębokość koryta
+	const wBank = (w) => 1.5 + 0.12 * w; // szerokość skarpy brzegu (od lustra do poziomu terenu nad nim)
+	World.prototype.envStreamProfile = function (row) {
+		const e = this.env;
+		if (!e.wProf) e.wProf = new Map();
+		let P = e.wProf.get(row);
+		if (P) return P;
+		const w = row[0], n = (row.length - 1) / 2, pts = [], cumP = [0];
+		for (let k = 0; k < n; k++) pts.push([row[1 + k * 2], row[2 + k * 2]]);
+		for (let k = 1; k < n; k++) cumP.push(cumP[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+		const L = cumP[n - 1], m = Math.max(2, Math.ceil(L / W_STEP) + 1);
+		const at = (u) => {
+			let k = 0;
+			while (k < n - 2 && cumP[k + 1] < u) k++;
+			const f = cumP[k + 1] > cumP[k] ? (u - cumP[k]) / (cumP[k + 1] - cumP[k]) : 0, a = pts[k], b = pts[k + 1];
+			const ls = cumP[k + 1] - cumP[k] || 1;
+			return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, -(b[1] - a[1]) / ls, (b[0] - a[0]) / ls];
+		};
+		const g = [], cum = [];
+		for (let i = 0; i < m; i++) {
+			const u = (L * i) / (m - 1), [s, d, ns, nd] = at(u), h = w / 2 + 0.5;
+			cum.push(u);
+			g.push(Math.min(this.demGround(s, d), this.demGround(s + ns * h, d + nd * h), this.demGround(s - ns * h, d - nd * h)));
+		}
+		// filtr medianowy (5 próbek)
+		const gm = g.map((_, i) => { const win = g.slice(Math.max(0, i - 2), i + 3).sort((a, b) => a - b); return win[win.length >> 1]; });
+		// bez wznoszenia z biegiem (przeciek 3 mm na próbkę – szum) w obu kierunkach; kierunek z mniejszym przycięciem
+		const run = (order) => {
+			const out = new Array(m);
+			let prev = Infinity, cut = 0;
+			for (const i of order) {
+				const v = Math.min(gm[i] - 0.2, prev + 0.003);
+				out[i] = v;
+				cut += gm[i] - 0.2 - v;
+				prev = v;
+			}
+			return { out, cut };
+		};
+		const idx = [...Array(m).keys()], A = run(idx), B = run(idx.slice().reverse());
+		const lv = (A.cut <= B.cut ? A : B).out, dir = A.cut <= B.cut ? 1 : -1; // dir – bieg rzeki wzdłuż łamanej (+1) albo pod prąd
+		const lvl = lv.map((_, i) => (lv[Math.max(0, i - 1)] + lv[i] + lv[Math.min(m - 1, i + 1)]) / 3);
+		P = { w, pts, cumP, cum, lvl, L, dir };
+		e.wProf.set(row, P);
+		return P;
+	};
+	// poziom cieku w odległości u od początku łamanej
+	const profLvl = (P, u) => {
+		const f = Math.max(0, Math.min(P.lvl.length - 1.001, (u / (P.L || 1)) * (P.lvl.length - 1))), i = Math.floor(f);
+		return P.lvl[i] + (P.lvl[i + 1] - P.lvl[i]) * (f - i);
+	};
+	/* odcinki cieków po kawałkach (do koryta w terenie i kolumn siatki terenu): [sa, da, sb, db, w, la, lb], przypisane
+	   do każdego kawałka, w którego pas (z zasięgiem skarpy) wchodzą */
+	World.prototype.envStreamSegs = function () {
+		const e = this.env;
+		if (e.wSegs) return e.wSegs;
+		e.wSegs = new Map();
+		if (!e.dem) return e.wSegs;
+		if (!e.waterLinks) e.waterLinks = this.envUnderLinks(this.route.env.w, 1);
+		const rows = (this.route.env.w || []).concat(e.waterLinks);
+		for (const row of rows) {
+			const P = this.envStreamProfile(row), reach = row[0] / 2 + wBank(row[0]) + 16;
+			for (let k = 0; k + 1 < P.pts.length; k++) {
+				const [sa, da] = P.pts[k], [sb, db] = P.pts[k + 1], seg = [sa, da, sb, db, row[0], profLvl(P, P.cumP[k]), profLvl(P, P.cumP[k + 1])];
+				for (let c = Math.floor((Math.min(sa, sb) - reach) / C); c <= Math.floor((Math.max(sa, sb) + reach) / C); c++) {
+					if (!e.wSegs.has(c)) e.wSegs.set(c, []);
+					e.wSegs.get(c).push(seg);
+				}
+			}
+		}
+		return e.wSegs;
+	};
+	/* teren przy cieku nie wyżej niż koryto: dno (w lustrze – głębokość, płytsze przy brzegu), skarpa do 0,35 m nad
+	   lustrem, dalej wznosi się 0,6 m na metr (wyżej – teren bez zmian); Infinity – poza zasięgiem */
+	World.prototype.envStreamBed = function (s, d) {
+		const list = this.envStreamSegs().get(Math.floor(s / C));
+		if (!list) return Infinity;
+		let y = Infinity;
+		for (const [sa, da, sb, db, w, la, lb] of list) {
+			const half = w / 2, bank = wBank(w), reach = half + bank + 16;
+			if (s < Math.min(sa, sb) - reach || s > Math.max(sa, sb) + reach || d < Math.min(da, db) - reach || d > Math.max(da, db) + reach) continue;
+			const ds = sb - sa, dd = db - da, L2 = ds * ds + dd * dd || 1;
+			const t = Math.max(0, Math.min(1, ((s - sa) * ds + (d - da) * dd) / L2));
+			const off = Math.hypot(s - sa - ds * t, d - da - dd * t);
+			if (off > reach) continue;
+			const lvl = la + (lb - la) * t, dep = wDepth(w);
+			let v;
+			if (off <= half) v = lvl - dep * (1 - 0.6 * (off / half) * (off / half));
+			else if (off <= half + bank) v = lvl - 0.4 * dep + (0.4 * dep + 0.35) * smoothstep(half, half + bank, off);
+			else v = lvl + 0.35 + (off - half - bank) * 0.6;
+			if (v < y) y = v;
+		}
+		return y;
+	};
+
+	/* zbiorniki: składowe połączone komórek „woda” (4-sąsiedztwo) i poziom wiersza składowej (mediana pomiaru,
+	   wygładzona wzdłuż: mediana ±15 wierszy, potem średnia ±10 – 150 / 100 m; przy węższym oknie sąsiednie pasy rzeki
+	   płynącej w poprzek toru różniły się o ponad metr – część tafli poza lustrem odbicia, bez odbić) */
+	World.prototype.envWaterComps = function () {
+		const e = this.env;
+		if (e.wComp) return e.wComp;
+		const g = e.g, cols = g.cols, rows = e.rows, grid = e.grid, comp = new Int32Array(rows * cols).fill(-1);
+		let nc = 0;
+		const stack = [];
+		for (let i = 0; i < rows * cols; i++) {
+			if (grid[i] !== 9 || comp[i] >= 0) continue;
+			comp[i] = nc;
+			stack.push(i);
+			while (stack.length) {
+				const x = stack.pop(), r = (x / cols) | 0, c2 = x - r * cols;
+				for (const [rr, cc] of [[r - 1, c2], [r + 1, c2], [r, c2 - 1], [r, c2 + 1]]) {
+					if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) continue;
+					const y = rr * cols + cc;
+					if (grid[y] === 9 && comp[y] < 0) { comp[y] = nc; stack.push(y); }
+				}
+			}
+			nc++;
+		}
+		const lidar = !!(e.dem && e.dem.lidar);
+		// surowe poziomy (składowa, wiersz) – mediana pomiaru (lidar) albo terenu + 1,1 m (bez lidaru: teren obniżony pod wodą)
+		const raw = new Map();
+		for (let r = 0; r < rows; r++) {
+			const byC = new Map(), s0 = g.s0 + r * g.step;
+			for (let c2 = 0; c2 < cols; c2++) {
+				const k = comp[r * cols + c2];
+				if (k < 0) continue;
+				if (!byC.has(k)) byC.set(k, []);
+				const d = g.d0 + c2 * g.step;
+				byC.get(k).push(lidar ? this.demGround(s0, d) : this.terrainY(s0, d) + 1.1);
+			}
+			for (const [k, hs] of byC) { hs.sort((a, b) => a - b); raw.set(k * rows + r, hs[hs.length >> 1]); }
+		}
+		const lvl = new Map();
+		const med = new Map();
+		for (const [key, v] of raw) {
+			const k = Math.floor(key / rows), r = key - k * rows, win = [];
+			for (let q = r - 15; q <= r + 15; q++) { const x = raw.get(k * rows + q); if (x !== undefined) win.push(x); }
+			win.sort((a, b) => a - b);
+			med.set(key, win.length ? win[win.length >> 1] : v);
+		}
+		for (const [key, v] of med) {
+			const k = Math.floor(key / rows), r = key - k * rows;
+			let sum = 0, n = 0;
+			for (let q = r - 10; q <= r + 10; q++) { const x = med.get(k * rows + q); if (x !== undefined) { sum += x; n++; } }
+			lvl.set(key, n ? sum / n : v);
+		}
+		e.wComp = { comp, lvl, rows, cols };
+		return e.wComp;
+	};
+	// poziom zbiornika (pomiar terenu przy lustrze) w komórce (ri, ci) – undefined poza wodą
+	World.prototype.envCompLevel = function (ri, ci) {
+		const W = this.envWaterComps();
+		if (ri < 0 || ri >= W.rows || ci < 0 || ci >= W.cols) return undefined;
+		const k = W.comp[ri * W.cols + ci];
+		return k < 0 ? undefined : W.lvl.get(k * W.rows + ri);
+	};
+
 	World.prototype.buildEnvWater = function (group, c, segs) {
 		const e = this.env, r = this.route;
-		const dst = { p: [], c: [] };
+		const dst = { p: [], c: [], sh: [], fl: [] };
 		const white = { r: 1, g: 1, b: 1 };
 		const skip = (s, d) => (Math.abs(d) < 8 && !this.underBridge(s, d)) || this.envStationZone(s, d);
 		if (!e.waterLinks) e.waterLinks = this.envUnderLinks(this.route.env.w, 1);
 		for (const row of e.waterLinks) if (Math.floor((row[1] + row[3]) / 2 / C) === c) segs = segs.concat([{ k: 0, row }]);
+		/* wierzchołek: [x, y, z, płytkość 0 (głęboko) … 1 (brzeg), nurt x, nurt z (m/s w świecie)] – kolor głębi, linia
+		   brzegu i zmarszczki płynące z nurtem (water.js) */
+		const push = (v) => { dst.p.push(v[0], v[1], v[2]); dst.sh.push(v[3] || 0); dst.fl.push(v[4] || 0, v[5] || 0); };
+		const T3 = (x, y2, z) => {
+			const up = ((z[2] - x[2]) * (y2[0] - x[0]) - (z[0] - x[0]) * (y2[2] - x[2])) < 0;
+			push(x);
+			if (up) { push(y2); push(z); } else { push(z); push(y2); }
+		};
+		const W3 = (s, d, y, sh = 0, fx = 0, fz = 0) => { R.sidePoint(r, s, d, tp); return [tp.x, y, tp.z, sh, fx, fz]; };
+		const shal = (dep) => 1 - Math.max(0, Math.min(1, dep / 0.5)); // od 0,5 m głębokości – głęboko (dno pod wodą co najmniej 0,45 m niżej)
+		/* cieki: tafla na poziomie z profilu (płaska w poprzek), do 0,7 skarpy w głąb brzegu (brzeg wycięty w terenie –
+		   envStreamBed – przykrywa jej krawędź); oś nie niżej niż nawierzchnia (tam, gdzie siatka terenu jest za rzadka na
+		   koryto) */
 		for (const { k, row } of segs) {
-			const pts = [[row[1 + k * 2], row[2 + k * 2]], [row[3 + k * 2], row[4 + k * 2]]];
-			this.envStrip(dst, pts, row[0], 0.12, white, skip);
-		}
-		/* zbiorniki: serie komórek „woda” w wierszach rastra należących do kawałka. Brzeg wygładzony: granica serii na
-		   styku wierszy – średnia z sąsiednią serią (trapezy zamiast prostokątów – bez schodków co 10 m na ukośnych
-		   brzegach); bez sąsiada – koniec zbiornika lekko zwężony (zaokrąglony) */
-		const g = e.g, st = g.step;
-		const runsOf = (ri) => {
-			if (ri < 0 || ri >= e.rows) return [];
-			const out = [];
-			let ci = 0;
-			while (ci < g.cols) {
-				if (e.grid[ri * g.cols + ci] !== 9) { ci++; continue; }
-				let cj = ci;
-				while (cj + 1 < g.cols && e.grid[ri * g.cols + cj + 1] === 9) cj++;
-				out.push({ ci, cj, dA: g.d0 + (ci - 0.5) * st, dB: g.d0 + (cj + 0.5) * st });
-				ci = cj + 1;
+			if (!e.dem) {
+				this.envStrip(dst, [[row[1 + k * 2], row[2 + k * 2]], [row[3 + k * 2], row[4 + k * 2]]], row[0], 0.12, white, skip);
+				while (dst.sh.length < dst.p.length / 3) { dst.sh.push(0); dst.fl.push(0, 0); }
+				continue;
 			}
-			return out;
+			const P = this.envStreamProfile(row), w = row[0], hw = w / 2 + wBank(w) * 0.7;
+			const [sa, da] = P.pts[k], [sb, db] = P.pts[k + 1], L = Math.hypot(sb - sa, db - da);
+			if (L < 0.05) continue;
+			const ns = -(db - da) / L, nd = (sb - sa) / L, pieces = Math.max(1, Math.ceil(L / W_STEP));
+			const ex = Math.min(0.6, w / 2) / L;
+			// nurt: w kierunku biegu, szybszy na szerszych (0,3–1 m/s), w świecie
+			R.sidePoint(r, sa, da, tp);
+			const ax = tp.x, az = tp.z;
+			R.sidePoint(r, sb, db, tp);
+			const fv = Math.min(1, 0.3 + w * 0.025) * P.dir / (Math.hypot(tp.x - ax, tp.z - az) || 1), fx = (tp.x - ax) * fv, fz = (tp.z - az) * fv;
+			for (let q = 0; q < pieces; q++) {
+				const t0 = q / pieces - (q === 0 ? ex : 0), t1 = (q + 1) / pieces + (q === pieces - 1 ? ex : 0);
+				const s0 = sa + (sb - sa) * t0, d0 = da + (db - da) * t0, s1 = sa + (sb - sa) * t1, d1 = da + (db - da) * t1;
+				if (skip((s0 + s1) / 2, (d0 + d1) / 2)) continue;
+				// w obrębie zbiornika (raster „woda” – np. Wisła: linia biegu rzeki w jej korycie) – tylko tafla zbiornika
+				if (this.areaAt((s0 + s1) / 2, (d0 + d1) / 2) === 9) continue;
+				const ends = [[s0, d0, P.cumP[k] + L * t0], [s1, d1, P.cumP[k] + L * t1]].map(([s, d, u]) => {
+					const y = profLvl(P, u), yc = Math.max(y, this.surfY(s, d) + 0.03);
+					return [W3(s - ns * hw, d - nd * hw, y, 1, fx, fz), W3(s, d, yc, shal(yc - this.terrainY(s, d)), fx, fz), W3(s + ns * hw, d + nd * hw, y, 1, fx, fz)];
+				});
+				const [A, B] = ends;
+				T3(A[0], A[1], B[1]); T3(A[0], B[1], B[0]);
+				T3(A[1], A[2], B[2]); T3(A[1], B[2], B[1]);
+			}
+		}
+		/* zbiorniki: kontur pola „woda” rozmytego filtrem 1-2-1 (próbki co 5 m – połowa kroku rastra), izolinia 0,5;
+		   poziom wierzchołka – zbiornika (envCompLevel) w najbliższych komórkach wody, liniowo między wierszami */
+		const g = e.g, st = g.step, hs = st / 2, cols = g.cols, rows = e.rows;
+		if (!e.wBlur) {
+			const B = new Float32Array(rows * cols);
+			const isW = (ri, ci) => (ri >= 0 && ri < rows && ci >= 0 && ci < cols && e.grid[ri * cols + ci] === 9 ? 1 : 0);
+			for (let ri = 0; ri < rows; ri++) for (let ci = 0; ci < cols; ci++) {
+				let v = 0;
+				for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) v += (a ? 1 : 2) * (b ? 1 : 2) * isW(ri + a, ci + b);
+				B[ri * cols + ci] = v / 16;
+			}
+			e.wBlur = B;
+		}
+		const Bf = e.wBlur;
+		const fAt = (q, p) => { // pole w punkcie siatki próbek (q – wiersz co 5 m, p – kolumna co 5 m)
+			const fr = q / 2, fc = p / 2, r0 = Math.floor(fr), c0 = Math.floor(fc), tr = fr - r0, tc = fc - c0;
+			const v = (ri, ci) => (ri >= 0 && ri < rows && ci >= 0 && ci < cols ? Bf[ri * cols + ci] : 0);
+			const a = v(r0, c0) + (v(r0, c0 + 1) - v(r0, c0)) * tc, b = v(r0 + 1, c0) + (v(r0 + 1, c0 + 1) - v(r0 + 1, c0)) * tc;
+			return a + (b - a) * tr;
 		};
-		// sąsiednia seria o największym wspólnym zakresie komórek
-		const best = (list, R0) => {
-			let bst = null, ov = 0;
-			for (const q of list) { const o = Math.min(q.cj, R0.cj) - Math.max(q.ci, R0.ci) + 1; if (o > ov) { ov = o; bst = q; } }
-			return bst;
+		const lvlAt = (s, d) => {
+			const fr = (s - g.s0) / st, fc = (d - g.d0) / st, r0 = Math.floor(fr), c0 = Math.round(fc);
+			let a = this.envCompLevel(r0, c0), b = this.envCompLevel(r0 + 1, c0);
+			for (let rad = 1; (a === undefined || b === undefined) && rad <= 2; rad++) for (let dc = -rad; dc <= rad; dc++) {
+				if (a === undefined) a = this.envCompLevel(r0, c0 + dc);
+				if (b === undefined) b = this.envCompLevel(r0 + 1, c0 + dc);
+			}
+			if (a === undefined && b === undefined) {
+				for (let dr = -1; dr <= 2 && a === undefined; dr++) for (let dc = -2; dc <= 2 && a === undefined; dc++) a = this.envCompLevel(r0 + dr, c0 + dc);
+				b = a;
+			}
+			if (a === undefined) a = b;
+			if (b === undefined) b = a;
+			if (a === undefined) return this.terrainY(s, d) + 0.6;
+			const t = Math.max(0, Math.min(1, fr - r0));
+			return a + (b - a) * t - 0.45;
 		};
-		const T3 = (x, y2, z) => { dst.p.push(...x, ...y2, ...z); for (let i = 0; i < 3; i++) dst.c.push(1, 1, 1); };
-		for (let s = c * C; s < (c + 1) * C; s += st) {
-			const ri = Math.round((s - g.s0) / st);
-			if (ri < 0 || ri >= e.rows) continue;
-			const prev = runsOf(ri - 1), next = runsOf(ri + 1);
-			for (const R0 of runsOf(ri)) {
-				const { ci, dA, dB } = R0;
-				/* poziom lustra: mediana terenu w serii (+0,65 m) – dawniej z terenu w środku każdego płata 10 × 20 m; pomiar
-				   nad wodą jest zaszumiony, płaty stały schodkami (ciemne pasy na rzece) */
-				const wl = this.envWaterLevel(s, g.d0 + ci * st);
-				let yRun;
-				if (wl !== undefined) yRun = wl - 0.45;
-				else {
-					const hs = [];
-					for (let d = dA + st / 2; d < dB; d += st) hs.push(this.terrainY(s, d));
-					hs.sort((a2, b2) => a2 - b2);
-					yRun = hs[hs.length >> 1] + 0.65;
+		const ptS = (q) => g.s0 + q * hs, ptD = (p) => g.d0 + p * hs;
+		const qa = Math.floor((c * C - g.s0) / hs) - 1, qb = Math.ceil(((c + 1) * C - g.s0) / hs) + 1;
+		for (let q = qa; q < qb; q++) {
+			const sc = ptS(q + 0.5);
+			if (Math.floor(sc / C) !== c || q < 0 || q / 2 >= rows - 1) continue;
+			for (let p = 0; p < (cols - 1) * 2; p++) {
+				const v0 = fAt(q, p), v1 = fAt(q, p + 1), v2 = fAt(q + 1, p + 1), v3 = fAt(q + 1, p);
+				const idx = (v0 >= 0.5 ? 1 : 0) | (v1 >= 0.5 ? 2 : 0) | (v2 >= 0.5 ? 4 : 0) | (v3 >= 0.5 ? 8 : 0);
+				if (!idx) continue;
+				const dc = ptD(p + 0.5);
+				if ((Math.abs(dc) < 10 && !this.underBridge(sc, dc)) || this.envStationZone(sc, dc)) continue;
+				// narożniki (s, d) i punkty na krawędziach (izolinia 0,5)
+				const cor = [[ptS(q), ptD(p), v0], [ptS(q), ptD(p + 1), v1], [ptS(q + 1), ptD(p + 1), v2], [ptS(q + 1), ptD(p), v3]];
+				const mid = (i, j) => { const A = cor[i], Bq = cor[j], t = (0.5 - A[2]) / (Bq[2] - A[2] || 1e-6); return [A[0] + (Bq[0] - A[0]) * t, A[1] + (Bq[1] - A[1]) * t]; };
+				// wielokąt(y) wody w kwadracie – obchodzimy narożniki i krawędzie po kolei
+				const polys = [];
+				if (idx === 5 || idx === 10) {
+					// siodło: środek decyduje, czy wody się łączą
+					const joined = (v0 + v1 + v2 + v3) / 4 >= 0.5;
+					const order = [];
+					for (let i = 0; i < 4; i++) {
+						const j = (i + 1) % 4, ii = cor[i][2] >= 0.5, jj = cor[j][2] >= 0.5;
+						if (ii) order.push([cor[i][0], cor[i][1]]);
+						if (ii !== jj) order.push(mid(i, j));
+					}
+					if (joined) polys.push(order);
+					else {
+						// dwa osobne trójkąty przy narożnikach z wodą
+						for (let i = 0; i < 4; i++) if (cor[i][2] >= 0.5) polys.push([[cor[i][0], cor[i][1]], mid(i, (i + 1) % 4), mid((i + 3) % 4, i)]);
+					}
+				} else {
+					const poly = [];
+					for (let i = 0; i < 4; i++) {
+						const j = (i + 1) % 4, ii = cor[i][2] >= 0.5, jj = cor[j][2] >= 0.5;
+						if (ii) poly.push([cor[i][0], cor[i][1]]);
+						if (ii !== jj) poly.push(mid(i, j));
+					}
+					polys.push(poly);
 				}
-				// granice na styku z poprzednim (s0) i następnym (s1) wierszem
-				const pr = best(prev, R0), nx = best(next, R0), w = dB - dA;
-				const a0 = pr ? (dA + pr.dA) / 2 : dA + w * 0.18, b0 = pr ? (dB + pr.dB) / 2 : dB - w * 0.18;
-				const a1 = nx ? (dA + nx.dA) / 2 : dA + w * 0.18, b1 = nx ? (dB + nx.dB) / 2 : dB - w * 0.18;
-				const N = Math.max(1, Math.ceil(Math.max(b0 - a0, b1 - a1, w) / 20));
-				for (let j = 0; j < N; j++) {
-					const l0 = a0 + ((b0 - a0) * j) / N, r0 = a0 + ((b0 - a0) * (j + 1)) / N;
-					const l1 = a1 + ((b1 - a1) * j) / N, r1 = a1 + ((b1 - a1) * (j + 1)) / N;
-					const dm = (l0 + r0 + l1 + r1) / 4;
-					// przy osi – tylko pod przęsłem mostu (Wisła w Toruniu: pas bez wody wzdłuż mostu)
-					if ((Math.abs(dm) < 10 && !this.underBridge(s, dm)) || this.envStationZone(s, dm)) continue;
-					const P = [[s - st / 2, l0], [s - st / 2, r0], [s + st / 2, r1], [s + st / 2, l1]].map(([ss, dd]) => {
-						R.sidePoint(r, ss, dd, tp);
-						return [tp.x, 0, tp.z];
-					});
-					const y = wl !== undefined ? yRun : Math.max(yRun, this.terrainY(s, dm) - 0.6);
-					for (const q of P) q[1] = y;
-					const up = ((P[2][2] - P[0][2]) * (P[1][0] - P[0][0]) - (P[2][0] - P[0][0]) * (P[1][2] - P[0][2])) < 0;
-					if (up) { T3(P[0], P[1], P[2]); T3(P[0], P[2], P[3]); } else { T3(P[0], P[2], P[1]); T3(P[0], P[3], P[2]); }
+				for (const poly of polys) {
+					if (poly.length < 3) continue;
+					const V = poly.map(([s, d]) => { const y = lvlAt(s, d); return W3(s, d, y, shal(y - this.terrainY(s, d))); });
+					for (let i = 1; i + 1 < V.length; i++) T3(V[0], V[i], V[i + 1]);
 				}
 			}
 		}
 		if (!dst.p.length) return;
 		const geo = new T.BufferGeometry();
 		geo.setAttribute('position', new T.Float32BufferAttribute(dst.p, 3));
+		// trasa bez pomiaru (envStrip – bez płytkości i nurtu): zera
+		while (dst.sh.length < dst.p.length / 3) { dst.sh.push(0); dst.fl.push(0, 0); }
+		geo.setAttribute('aShal', new T.Float32BufferAttribute(dst.sh, 1));
+		geo.setAttribute('aFlow', new T.Float32BufferAttribute(dst.fl, 2));
 		geo.computeVertexNormals();
 		const m = new T.Mesh(geo, World.materials().water);
 		m.receiveShadow = true;

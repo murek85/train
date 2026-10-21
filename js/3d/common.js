@@ -5,6 +5,8 @@ import * as THREE from 'three';
 	'use strict';
 	const T = THREE;
 	const NS = (window.Train3D = window.Train3D || {});
+	// filtrowanie anizotropowe wszystkich tekstur (ostrzejsze pod ostrym kątem – tablice, fasady, liście); Three ogranicza do możliwości karty
+	T.Texture.DEFAULT_ANISOTROPY = 16;
 
 	/* Renderer: WebGPU (domyślny – materiały węzłowe TSL z js/3d/nodes.js) albo WebGL (zgodność – łatki GLSL).
 	   Ustawienia (localStorage maszynista.renderer): 'auto' (domyślnie: WebGPU, gdy przeglądarka je ma), 'webgpu', 'webgl';
@@ -54,7 +56,7 @@ import * as THREE from 'three';
 		draw(c.getContext('2d'), w, h);
 		const tex = new T.CanvasTexture(c);
 		tex.colorSpace = T.SRGBColorSpace;
-		tex.anisotropy = 4;
+		tex.anisotropy = 16;
 		texCache.set(key, tex);
 		return tex;
 	}

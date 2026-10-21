@@ -291,7 +291,7 @@ import { BundleGroup } from 'three/webgpu';
 			World.M = {
 				terrain: patch(new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }), 'ground'),
 				ballast: patch(new T.MeshStandardMaterial({ color: '#8f8c85', roughness: 0.95 }), 'gravel'),
-				rail: matS('#c3c9cf', { metalness: 0.85, roughness: 0.28 }),
+				rail: World.railPxMat(matS('#c3c9cf', { metalness: 0.85, roughness: 0.28 })),
 				sleeper: matS('#9b988f', { roughness: 0.9, surf: 'concrete' }),
 				clip: matS('#2b2d30', { roughness: 0.6, metalness: 0.5 }),
 				railSide: matS('#54402f', { roughness: 0.82, metalness: 0.3 }), // boki szyn: ciemna rdza (jaskrawo pomarańczowe w słońcu wyglądały jak pomalowane)
@@ -836,6 +836,45 @@ import { BundleGroup } from 'three/webgpu';
 		   i kierunek w poprzek) z przekrojem prof ([odsunięcie w m, wysokość 0…1]) i wysokością H w punkcie. Atrybut aDrift
 		   (wysokość nad podstawą): shader obniża bryłę pod ziemię, gdy pokrywy śnieżnej mało (uSnow) – zaspy rosną i topnieją
 		   razem z pokrywą. */
+		/* Główki szyn nie węższe niż ok. 1 piksel: w oddali (ułamek piksela) szyna rwała się w przerywaną, migoczącą linię.
+		   Wierzchołki przesuwane na boki (atrybut aRail – kierunek w poprzek szyny × strona, World.railAttr) o tyle, by
+		   połowa szerokości była co najmniej pół piksela z odległości od kamery gracza (uRailCam – nie kamery mapy cieni
+		   ani odbicia); uRailPxK – rozmiar piksela na metr odległości (scene.js co klatkę). Z bliska bez zmian. */
+		static railPxMat(m) {
+			// własny materiał przy scalaniu kawałka (mergeStatic) – nie wspólny z kolorem w wierzchołkach (bez poszerzania)
+			m.userData.plain = false;
+			if (NS.gpu) { const g = NS.nodes.extend(m, NS.nodes.railHooks(World.RAIL_U)); g.userData.plain = false; return g; }
+			const prev = m.onBeforeCompile;
+			m.onBeforeCompile = (sh, r) => {
+				prev(sh, r);
+				sh.uniforms.uRailPxK = World.RAIL_U.uRailPxK;
+				sh.uniforms.uRailCam = World.RAIL_U.uRailCam;
+				sh.vertexShader = sh.vertexShader
+					.replace('#include <common>', '#include <common>\nattribute vec3 aRail;\nuniform float uRailPxK;\nuniform vec3 uRailCam;')
+					.replace('#include <begin_vertex>', `#include <begin_vertex>
+					{ vec3 wpR = (modelMatrix * vec4(transformed, 1.0)).xyz; transformed += aRail * max(0.0, 0.5 * uRailPxK * distance(uRailCam, wpR) - 0.036); }`);
+			};
+			const key = m.customProgramCacheKey();
+			m.customProgramCacheKey = () => key + '-railpx';
+			return m;
+		}
+		/* atrybut aRail dla wstęgi szyny (ribbon: wiersze po n kolumn w poprzek, od lewej): kierunek od pierwszej do
+		   ostatniej kolumny (w poziomie) × strona kolumny (lewa połowa −1, prawa +1) */
+		static railAttr(geo, n) {
+			const p = geo.attributes.position.array, rows = p.length / 3 / n, a = new Float32Array(p.length);
+			for (let i = 0; i < rows; i++) {
+				const l = i * n * 3, r = (i * n + n - 1) * 3;
+				let dx = p[r] - p[l], dz = p[r + 2] - p[l + 2];
+				const len = Math.hypot(dx, dz) || 1;
+				dx /= len; dz /= len;
+				for (let j = 0; j < n; j++) {
+					const sd = j < n / 2 ? -1 : 1, k = (i * n + j) * 3;
+					a[k] = dx * sd; a[k + 2] = dz * sd;
+				}
+			}
+			geo.setAttribute('aRail', new T.Float32BufferAttribute(a, 3));
+			return geo;
+		}
 		static driftMat() {
 			if (World.driftM) return World.driftM;
 			const m = NS.util.patch(new T.MeshStandardMaterial({ color: '#eef2f8', roughness: 0.78 }), 'lit');
@@ -1003,6 +1042,8 @@ import { BundleGroup } from 'three/webgpu';
 				M.terrain,
 			);
 			terrain.receiveShadow = true;
+			// cienie terenu (wzgórza, wykopy) – wysoka jakość cieni; w zasięgu cieni kawałków (updateLod – lod.casters)
+			terrain.castShadow = !!this.terrainShadows;
 			group.add(terrain);
 			yield;
 
@@ -1028,7 +1069,7 @@ import { BundleGroup } from 'three/webgpu';
 				const body = new T.Mesh(this.ribbon(s0, s1, 4, prof.map(([d]) => rd + d), (s, d, h, rel) => h + (ys.get(rel) || 0)), M.railSide);
 				body.receiveShadow = true;
 				group.add(body);
-				group.add(new T.Mesh(this.ribbon(s0, s1, 4, [rd - 0.036, rd + 0.036], (s, d, h) => h), M.rail));
+				group.add(new T.Mesh(World.railAttr(this.ribbon(s0, s1, 4, [rd - 0.036, rd + 0.036], (s, d, h) => h), 2), M.rail));
 			}
 			// podkłady betonowe z przytwierdzeniami szyn
 			const sleeperStep = 0.6;
@@ -1355,7 +1396,8 @@ import { BundleGroup } from 'three/webgpu';
 		updateLod(s) {
 			if (World.opt.lod === false) return;
 			const R = Math.max(0.6, (this.detail || 1) * (this.detailDyn || 1));
-			const far = 230 * Math.max(1, this.density) * R, near = 170 * R, shadowFar = 450 * R;
+			// shadowFarK – jakość cieni (scene.js SHADOWQ: niska – tylko najbliższe kawałki)
+			const far = 230 * Math.max(1, this.density) * R, near = 170 * R, shadowFar = 450 * R * (this.shadowFarK ?? 1);
 			for (const [c, ch] of this.chunks) {
 				const L = ch.group.userData.lod;
 				if (!L) continue;
@@ -2206,7 +2248,7 @@ import { BundleGroup } from 'three/webgpu';
 			const yb = (s, d, h, rel) => h + (Math.abs(rel) > 1.6 ? -0.95 : -0.33);
 			group.add(new T.Mesh(this.ribbon(s0, s1, 3, [-2.2, -1.6, 1.6, 2.2], yb, null, null, dAt), M.ballast));
 			for (const rd of [-0.75, 0.75]) {
-				group.add(new T.Mesh(this.ribbon(s0, s1, 3, [rd - 0.06, rd - 0.036, rd + 0.036, rd + 0.06], (s, d, h, rel) => h + (Math.abs(rel - rd) > 0.04 ? -0.22 : 0), null, null, dAt), M.rail));
+				group.add(new T.Mesh(World.railAttr(this.ribbon(s0, s1, 3, [rd - 0.06, rd - 0.036, rd + 0.036, rd + 0.06], (s, d, h, rel) => h + (Math.abs(rel - rd) > 0.04 ? -0.22 : 0), null, null, dAt), 4), M.rail));
 			}
 			const n = Math.floor((s1 - s0) / 0.65);
 			const sleepers = new T.InstancedMesh(GEO.sleeper, M.sleeper, n);
@@ -2529,7 +2571,7 @@ import { BundleGroup } from 'three/webgpu';
 			cv.height = 224;
 			const tex = new T.CanvasTexture(cv);
 			tex.colorSpace = T.SRGBColorSpace;
-			tex.anisotropy = 4;
+			tex.anisotropy = 16;
 			const m = NS.util.patch(new T.MeshStandardMaterial({ map: tex, roughness: 0.35, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.55 }), 'lit');
 			if (!World.boardGeo) { World.boardGeo = new T.PlaneGeometry(1, 1); World.boardGeo.userData.shared = true; }
 			const frame = matS('#2b3036', { roughness: 0.45, metalness: 0.5 });
@@ -4638,6 +4680,7 @@ import { BundleGroup } from 'three/webgpu';
 	if (typeof location !== 'undefined' && /[?&]nobundle/.test(location.search)) World.opt.bundle = false;
 	NS.World = World;
 	World.TERRAIN_D = TERRAIN_D;
+	World.RAIL_U = { uRailPxK: { value: 0 }, uRailCam: { value: new T.Vector3() } }; // szyny min. 1 piksel (railPxMat)
 	World.PEOPLE = PEOPLE; // kolory ubrań i skóry ludzi (tłum na peronach z mapy – real-env.js)
 	World.SKIN = SKIN; // kolumny siatki terenu (odsunięcia od osi), wiersze co 4 m
 })();

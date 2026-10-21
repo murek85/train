@@ -26,16 +26,16 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 		const LEVELS = 5;
 		let width = 1, height = 1, aa = 0, built = false;
 		const half = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false };
-		let sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget;
+		let sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget;
 		const mips = [];
 		// węzły tekstur (wartości podmieniane po zmianie rozmiaru buforów)
 		const blank = new THREE.DataTexture(new Uint8Array(4), 1, 1);
 		blank.needsUpdate = true;
-		const T = { color: texture(blank), depth: texture(blank), ao: texture(blank), aoBlur: texture(blank), raysA: texture(blank), raysB: texture(blank), bloom: texture(blank), finish: texture(blank) };
+		const T = { color: texture(blank), depth: texture(blank), ao: texture(blank), aoBlur: texture(blank), raysA: texture(blank), raysB: texture(blank), bloom: texture(blank), finish: texture(blank), aa: texture(blank) };
 		const mipTex = Array.from({ length: LEVELS }, () => texture(blank));
 
 		function build() {
-			for (const t of [sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, ...mips]) t?.dispose();
+			for (const t of [sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget, ...mips]) t?.dispose();
 			sceneTarget?.depthTexture?.dispose();
 			sceneTarget = new RenderTarget(width, height, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
 			sceneTarget.depthTexture = new THREE.DepthTexture(width, height);
@@ -48,6 +48,7 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			raysA = new RenderTarget(hw, hh, half);
 			raysB = new RenderTarget(hw, hh, half);
 			finishTarget = new RenderTarget(width, height, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+			aaTarget = new RenderTarget(width, height, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
 			T.color.value = sceneTarget.texture;
 			T.depth.value = sceneTarget.depthTexture;
 			T.ao.value = aoTarget.texture;
@@ -56,6 +57,7 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			T.raysB.value = raysB.texture;
 			T.bloom.value = mips[0].texture;
 			T.finish.value = finishTarget.texture;
+			T.aa.value = aaTarget.texture;
 			mips.forEach((m, i) => { mipTex[i].value = m.texture; });
 			built = true;
 		}
@@ -222,6 +224,21 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			return vec4(c, 1);
 		})());
 		const fxaaMat = material(fxaa(T.finish));
+		/* wyostrzanie (adaptacyjne – jak CAS): krzyż sąsiadów, siła wg lokalnego kontrastu (krawędzie już ostre i jasne
+		   plamy bez obwódek), U.sharp 0…1; przywraca ostrość cienkich linii (szyny, sieć) rozmytych przez FXAA */
+		U.sharp = uniform(0.35);
+		U.sharpTexel = uniform(new THREE.Vector2());
+		const sharpen = (src) => material(Fn(() => {
+			const st = uv(), t = U.sharpTexel;
+			const c = src.sample(st).rgb.toVar();
+			const n = src.sample(st.add(vec2(0, t.y.negate()))).rgb, s = src.sample(st.add(vec2(0, t.y))).rgb;
+			const e = src.sample(st.add(vec2(t.x, 0))).rgb, w = src.sample(st.add(vec2(t.x.negate(), 0))).rgb;
+			const mn = min(c, min(min(n, s), min(e, w))), mx = max(c, max(max(n, s), max(e, w)));
+			const amp = sqrt(clamp(min(mn, vec3(1).sub(mx)).div(max(mx, vec3(1e-4))), 0, 1));
+			const wt = amp.mul(mix(-0.1, -0.2, U.sharp)).mul(min(U.sharp.mul(3), 1));
+			return vec4(clamp(c.add(n.add(s).add(e).add(w).mul(wt)).div(wt.mul(4).add(1)), 0, 1), 1);
+		})());
+		const sharpAaMat = sharpen(T.aa), sharpFinishMat = sharpen(T.finish);
 
 		const v3 = new THREE.Vector3(), fw = new THREE.Vector3();
 		return {
@@ -308,15 +325,24 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 				U.vignette.value = s.vignette ?? 0.28;
 				U.grade.value = s.grade ?? 1;
 				U.aspect.value = width / height;
+				const sh = (s.sharpen ?? 0) > 0.01;
+				U.sharp.value = s.sharpen ?? 0;
+				U.sharpTexel.value.set(1 / width, 1 / height);
 				if (aa > 0) {
 					pass(finishMat, finishTarget);
-					pass(fxaaMat, null);
+					if (sh) {
+						pass(fxaaMat, aaTarget);
+						pass(sharpAaMat, null);
+					} else pass(fxaaMat, null);
+				} else if (sh) {
+					pass(finishMat, finishTarget);
+					pass(sharpFinishMat, null);
 				} else pass(finishMat, null);
 			},
 			dispose() {
 				sceneTarget?.depthTexture?.dispose();
-				for (const t of [sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, ...mips]) t?.dispose();
-				for (const m of [aoMat, aoBlurMat, brightMat, raysMaskMat, raysBlurMat, finishMat, fxaaMat, ...downMats, ...upMats]) m.dispose();
+				for (const t of [sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget, ...mips]) t?.dispose();
+				for (const m of [aoMat, aoBlurMat, brightMat, raysMaskMat, raysBlurMat, finishMat, fxaaMat, sharpAaMat, sharpFinishMat, ...downMats, ...upMats]) m.dispose();
 			},
 		};
 	}

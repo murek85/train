@@ -45,6 +45,7 @@ function createPost3D(THREE, renderer) {
 		raysA = null,
 		raysB = null,
 		dofTarget = null,
+		finishTarget = null,
 		samples = 4;
 	const mips = [];
 	const LEVELS = 5;
@@ -71,7 +72,27 @@ function createPost3D(THREE, renderer) {
 		raysB = raysA.clone();
 		dofTarget?.dispose();
 		dofTarget = new THREE.WebGLRenderTarget(width, height, half);
+		finishTarget?.dispose();
+		finishTarget = new THREE.WebGLRenderTarget(width, height, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
 	}
+
+	// ---------- sharpening (adaptive, like CAS): cross of neighbours, weight by local contrast ----------
+	// Restores thin lines (rails, catenary) softened by resampling; edges already sharp and bright spots get
+	// little (no halos). strength 0…1.
+	const sharp = shader(
+		`uniform sampler2D tColor; uniform vec2 texel; uniform float strength;
+		varying vec2 vUv;
+		void main() {
+			vec3 c = texture2D(tColor, vUv).rgb;
+			vec3 n = texture2D(tColor, vUv + vec2(0.0, texel.y)).rgb, s = texture2D(tColor, vUv - vec2(0.0, texel.y)).rgb;
+			vec3 e = texture2D(tColor, vUv + vec2(texel.x, 0.0)).rgb, w = texture2D(tColor, vUv - vec2(texel.x, 0.0)).rgb;
+			vec3 mn = min(c, min(min(n, s), min(e, w))), mx = max(c, max(max(n, s), max(e, w)));
+			vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, vec3(1e-4)), 0.0, 1.0));
+			vec3 wt = amp * mix(-0.1, -0.2, strength) * min(strength * 3.0, 1.0);
+			gl_FragColor = vec4(clamp((c + (n + s + e + w) * wt) / (1.0 + 4.0 * wt), 0.0, 1.0), 1.0);
+		}`,
+		{ tColor: { value: null }, texel: { value: new THREE.Vector2() }, strength: { value: 0.35 } },
+	);
 
 	// ---------- depth of field (0.135): tilt-shift ----------
 	// A band round the focus line stays sharp; above and below it the picture blurs more and more (more
@@ -515,14 +536,21 @@ function createPost3D(THREE, renderer) {
 			u.heat.value.forEach((v, i) => (i < hs.length ? v.fromArray(hs[i]) : v.set(0, 0, 0, 0)));
 			u.heatTime.value = s.time || 0;
 			u.aspect.value = width / height;
-			pass(finish, null);
+			// sharpening after the finish pass (s.sharpen 0…1)
+			if ((s.sharpen || 0) > 0.01) {
+				pass(finish, finishTarget);
+				sharp.uniforms.tColor.value = finishTarget.texture;
+				sharp.uniforms.texel.value.set(1 / width, 1 / height);
+				sharp.uniforms.strength.value = s.sharpen;
+				pass(sharp, null);
+			} else pass(finish, null);
 			renderer.autoClear = autoClear;
 		},
 		dispose() {
 			sceneTarget?.depthTexture?.dispose();
-			for (const t of [sceneTarget, aoTarget, aoBlurTarget, envTarget, raysA, raysB, dofTarget, ...mips]) t?.dispose();
+			for (const t of [sceneTarget, aoTarget, aoBlurTarget, envTarget, raysA, raysB, dofTarget, finishTarget, ...mips]) t?.dispose();
 			pmrem.dispose();
-			for (const m of [aoMaterial, aoBlur, bright, down, up, finish, raysMask, raysBlur, dof]) m.dispose();
+			for (const m of [aoMaterial, aoBlur, bright, down, up, finish, raysMask, raysBlur, dof, sharp]) m.dispose();
 			tri.dispose();
 		},
 	};

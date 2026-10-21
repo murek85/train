@@ -136,9 +136,10 @@ import {
 	// (w miejscu użycia, nie jako funkcja shadera – uniformy w funkcjach z setLayout nie trafiają do WGSL)
 	const cloudShadow = (w) => cloudAmount.mul(smoothstep(cloudThr, cloudThr.add(0.22), cloudCover(w.xz.div(1300).add(cloudOffset)))).oneMinus();
 
-	/* Światła słońca (księżyca) – kaskady cieni (scene.js): każde światło liczy się tylko tam, gdzie jego mapa jest
-	   pierwszą obejmującą piksel (margines 3% od brzegu); poza wszystkimi – ostatnie, bez cienia; obiekty bez cieni –
-	   tylko pierwsze. Kolor świateł przyciemniony cieniem chmur w materiałach na zewnątrz (userData.cloudShade). */
+	/* Światła słońca (księżyca) – kaskady cieni (scene.js): każde światło liczy się tam, gdzie jego mapa jest pierwszą
+	   obejmującą piksel – waga 1 w głębi mapy, w pasie 8% przy brzegu maleje do 0 (reszta z następnej kaskady: przejście
+	   bez szwu, jak w GLSL); za ostatnią – bez cienia (wygaszanie w jej pasie brzegowym); obiekty bez cieni – tylko pierwsze.
+	   Kolor świateł przyciemniony cieniem chmur w materiałach na zewnątrz (userData.cloudShade). */
 	function setupCascades(lights) {
 		const n = lights.length;
 		// (węzły tworzone raz na światło – ShadowNode ma własną mapę cieni)
@@ -153,7 +154,8 @@ import {
 			});
 			const p = mat.mul(vec4(positionWorld, 1));
 			const q = p.xyz.div(p.w);
-			return select(q.x.greaterThan(0.03).and(q.x.lessThan(0.97)).and(q.y.greaterThan(0.03)).and(q.y.lessThan(0.97)).and(q.z.lessThan(1)), float(1), float(0));
+			const e = min(min(q.x, q.y), min(q.x.oneMinus(), q.y.oneMinus()));
+			return smoothstep(0.03, 0.11, e).mul(select(q.z.lessThan(0.9999), float(1), float(0)));
 		});
 		lights.forEach((l, i) => {
 			const col = uniform(new THREE.Color()).setGroup(renderGroup);
@@ -167,10 +169,11 @@ import {
 				return base.mul(cl ? cl.groundShadow(positionWorld) : cloudShadow(positionWorld));
 			})();
 			if (n < 2) return;
-			let before = float(0);
-			for (let k = 0; k < i; k++) before = max(before, ins[k]);
-			const use = ins[i].mul(before.oneMinus());
-			const fallback = i === n - 1 ? max(before, ins[i]).oneMinus() : float(0);
+			// reszta wagi po bliższych kaskadach: (1 − w0)(1 − w1)…
+			let rest = float(1);
+			for (let k = 0; k < i; k++) rest = rest.mul(ins[k].oneMinus());
+			const use = ins[i].mul(rest);
+			const fallback = i === n - 1 ? rest.mul(ins[i].oneMinus()) : float(0);
 			l.shadow.shadowNode = use.mul(shadow(l)).add(fallback);
 		});
 	}
@@ -858,6 +861,20 @@ import {
 	}
 	const personHooks = () => ({ tag: 'person', vertex: personVertex, diffuse: paletteDiffuse(true) });
 
+	/* główki szyn nie węższe niż ok. 1 piksel (world.js railPxMat): wierzchołki na boki wg atrybutu aRail o tyle, by
+	   połowa szerokości była co najmniej pół piksela z odległości od kamery gracza (U – World.RAIL_U) */
+	const railHooks = (U) => {
+		const pxk = reference('value', 'float', U.uRailPxK), cam = reference('value', 'vec3', U.uRailCam);
+		const aRail = Fn((builder) => (builder.geometry.hasAttribute('aRail') ? attribute('aRail', 'vec3') : vec3(0)))();
+		return {
+			tag: 'railpx',
+			vertex: () => {
+				const wp = modelWorldMatrix.mul(vec4(positionLocal, 1)).xyz;
+				const ex = max(length(cam.sub(wp)).mul(pxk).mul(0.5).sub(0.036), 0);
+				positionLocal.addAssign(aRail.mul(ex));
+			},
+		};
+	};
 	// zaspy (world.js driftMat): bryła obniżona pod ziemię, gdy pokrywy śnieżnej mało
 	const driftHooks = () => ({ tag: 'drift', vertex: () => { positionLocal.y.subAssign(attribute('aDrift', 'float').add(0.1).mul(nsm(0.12, 0.55, uSnow))); } });
 
@@ -881,9 +898,14 @@ import {
 		}
 		return waterRefl;
 	}
+	// płytkość (0 – głęboko, 1 – brzeg) i nurt (m/s w świecie) z geometrii wody (real-env.js buildEnvWater); bez nich – zera
+	const waterShal = Fn((builder) => (builder.geometry.hasAttribute('aShal') ? attribute('aShal', 'float') : float(0)))();
+	const waterFlow = Fn((builder) => (builder.geometry.hasAttribute('aFlow') ? attribute('aFlow', 'vec2') : vec2(0)))();
+	const waterFoam = property('float', 'tWaterFoam');
 	function waterHooks(WU) {
 		const t = reference('value', 'float', WU.uWTime), wind = reference('value', 'vec2', WU.uWWind);
 		const reflOn = reference('value', 'float', WU.uReflOn), reflY = reference('value', 'float', WU.uReflY);
+		const wq = reference('value', 'float', WU.uWQ);
 		const refl = waterReflector();
 		return {
 			tag: 'water',
@@ -900,6 +922,21 @@ import {
 					const ph = dot(dirs[i], p).mul(k).sub(t.mul(w)).add(i * 1.7);
 					g.addAssign(dirs[i].mul(a.mul(k).mul(cos(ph))));
 				}
+				// zmarszczki (0,55 i 0,3 m) przesuwane z nurtem rzeki – średnia i wysoka jakość
+				const pf = p.sub(waterFlow.mul(t)), q1 = step(0.5, wq);
+				const rds = [normalize(wd.add(perp.mul(1.7))), normalize(wd.negate().add(perp.mul(0.4)))], rls = [0.55, 0.3];
+				for (let i = 0; i < 2; i++) {
+					const L = rls[i], k = (2 * Math.PI) / L;
+					const a = amp.mul(wq.mul(0.1).add(0.25)).mul(L).mul(nsm(L * 0.12, L * 0.35, fw)).mul(q1); // wysoka – mocniejsze
+					const ph = dot(rds[i], pf).mul(k).sub(t.mul(Math.sqrt(9.81 * k) * 0.25)).add(i * 2.3);
+					g.addAssign(rds[i].mul(a.mul(k).mul(cos(ph))));
+				}
+				// kolor wg głębokości (płycizna – dno zielonkawo-piaskowe) i piana falująca wzdłuż brzegu
+				const sh = clamp(waterShal, 0, 1);
+				const n = sin(p.x.mul(0.9).add(t.mul(0.8))).mul(sin(p.y.mul(1.1).sub(t.mul(0.6)))).mul(0.5).add(0.5);
+				waterFoam.assign(smoothstep(0.78, 0.97, sh.add(n.mul(0.08))).mul(n.mul(0.45).add(0.55)).mul(q1));
+				diffuseColor.rgb.assign(mix(diffuseColor.rgb, vec3(0.2, 0.27, 0.2), smoothstep(0.25, 0.95, sh).mul(0.85)));
+				diffuseColor.rgb.assign(mix(diffuseColor.rgb, vec3(0.72, 0.74, 0.7), waterFoam.mul(0.6)));
 				const wg = g.mul(smoothstep(150, 900, length(positionWorld.sub(cameraPosition))).mul(0.7).oneMinus());
 				waterN.assign(normalize(vec3(wg.x.negate(), 1, wg.y.negate())));
 				waterNV.assign(normalize(cameraViewMatrix.mul(vec4(waterN, 0)).xyz));
@@ -908,7 +945,9 @@ import {
 				const Vw = normalize(cameraPosition.sub(positionWorld));
 				const F = pow(max(dot(waterN, Vw), 0.0).oneMinus(), 5.0).mul(0.98).add(0.02);
 				const onPlane = reflOn.mul(nsm(1.2, 4.0, abs(positionWorld.y.sub(reflY))));
-				return mix(out, refl.rgb, clamp(F.mul(1.1).add(0.08), 0, 1).mul(onPlane));
+				// odbicie słabsze na płyciźnie i na pianie
+				const rk = smoothstep(0.4, 1.0, waterShal).mul(0.35).oneMinus().sub(waterFoam.mul(0.5));
+				return mix(out, refl.rgb, clamp(F.mul(1.1).add(0.08), 0, 1).mul(onPlane).mul(rk));
 			},
 		};
 	}
@@ -1056,5 +1095,5 @@ import {
 		return m;
 	}
 
-	NS.nodes = { sync, patch, extend, wetGlass, personHooks, driftHooks, interior, waterMaterial, waterReflector, setupCascades, createEnvironment, horizonMaterial, cloudShadow, gHash, gNoise, gPerlin, gFbm, gStones, uniforms: { uTime, uWind, uWet, uSnow, uRain, uWear, uNightK, uNightBox } };
+	NS.nodes = { sync, patch, extend, wetGlass, personHooks, driftHooks, railHooks, interior, waterMaterial, waterReflector, setupCascades, createEnvironment, horizonMaterial, cloudShadow, gHash, gNoise, gPerlin, gFbm, gStones, uniforms: { uTime, uWind, uWet, uSnow, uRain, uWear, uNightK, uNightBox } };
 })();

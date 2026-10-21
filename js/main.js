@@ -1523,7 +1523,8 @@
 		}
 		audio.setMix(mix);
 		save('opt.mix', mix);
-		const opts = { scale: Number($('set-scale').value), aa: $('set-aa').checked, shadows: $('set-shadows').checked };
+		const opts = { scale: Number($('set-scale').value), aa: $('set-aa').checked, shadows: $('set-shadows').checked, sharpen: Number($('set-sharpen').value) / 100 };
+		$('set-sharpen-val').textContent = $('set-sharpen').value + '%';
 		renderer.setRenderOptions(opts);
 		$('fps').classList.toggle('hidden', !$('set-fps').checked);
 		// pociągi tła: limit rysowanych naraz i szczegóły (nowe modele – od następnego pojawienia się pociągu)
@@ -1865,7 +1866,9 @@
 		$('quality-hint').textContent = QUALITY_HINT[q];
 		save('opt.quality', q);
 		save('opt.weather', w);
-		renderer.setQuality(q);
+		save('opt.shadowQ', $('set-shadowq').value);
+		save('opt.waterQ', $('set-water').value);
+		renderer.setQuality(q, { shadow: $('set-shadowq').value, water: $('set-water').value });
 		if (src === 'pause' || !sim) rideWeather = w;
 		renderer.setWeather(sim && rideWeather ? rideWeather : w);
 		if (sim) sim.setConditions(rideWeatherKey());
@@ -2528,11 +2531,20 @@
 	// pierwsze uruchomienie (bez zapisanej jakości): test wydajności w menu dobierze jakość (frame → autoQuality)
 	let autoQ = load('opt.quality', null) === null ? { t: [] } : null;
 	$('opt-quality').value = load('opt.quality', 'medium');
+	$('set-shadowq').value = load('opt.shadowQ', 'auto');
+	$('set-water').value = load('opt.waterQ', 'auto');
 	$('opt-weather').value = $('pause-weather').value = load('opt.weather', 'auto');
 	/* jakość grafiki: nowe shadery (wszystkie materiały), mapy cieni, efekty po renderowaniu i przebudowa świata (zasięg,
 	   gęstość) – okienko przeładowania jak przy zmianie składu (menu) albo warunków (pauza) */
 	$('opt-quality').addEventListener('change', () => {
 		const title = 'Jakość: ' + $('opt-quality').selectedOptions[0].text;
+		if (mode === 'menu') menuBusy('Zmiana jakości', title, () => applyGraphics(), true, true);
+		else if (mode === 'pause') pauseBusy(title, () => applyGraphics('pause'), true, 'Przebudowa świata i shaderów…', 'Zmiana jakości');
+		else applyGraphics('pause');
+	});
+	// jakość cieni i wody: jak zmiana jakości (mapy cieni, przebudowa świata – zasięg cieni, cienie terenu)
+	for (const [id, nm] of [['set-shadowq', 'Cienie'], ['set-water', 'Woda']]) $(id).addEventListener('change', () => {
+		const title = nm + ': ' + $(id).selectedOptions[0].text;
 		if (mode === 'menu') menuBusy('Zmiana jakości', title, () => applyGraphics(), true, true);
 		else if (mode === 'pause') pauseBusy(title, () => applyGraphics('pause'), true, 'Przebudowa świata i shaderów…', 'Zmiana jakości');
 		else applyGraphics('pause');
@@ -2570,6 +2582,7 @@
 	$('set-scale').value = String(ro.scale);
 	$('set-aa').checked = ro.aa;
 	$('set-shadows').checked = ro.shadows;
+	$('set-sharpen').value = Math.round((ro.sharpen ?? 0.35) * 100);
 	$('set-fps').checked = load('opt.fps', false);
 	$('set-traffic-max').value = String(load('opt.trafficMax', 3));
 	$('set-autodetail').checked = load('opt.autoDetail', true);
@@ -2643,6 +2656,7 @@
 	};
 	for (const id in GFX_OPTS) $(id).addEventListener('change', () => gfxBusy(GFX_OPTS[id]($(id)), applySettings));
 	for (const k of MIX_KEYS) $('set-mix-' + k).addEventListener('input', applySettings);
+	$('set-sharpen').addEventListener('input', applySettings); // wyostrzanie – zmiana od razu (bez przebudowy)
 	applySettings();
 	applyGraphics();
 	// gra jednoosobowa: zakładki, rodzaj składu, liczba zespołów
@@ -2785,7 +2799,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.55.12';
+	$('version').textContent = 'wersja 0.57.1';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');
