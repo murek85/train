@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.54.18',
+			date: '21 października 2026',
+			groups: [
+				['Wydajność', [
+					'WebGPU: zmiana składu w menu ok. 0,8 s zamiast ok. 10 s (pierwsza zmiana na nowy tabor ok. 3,5 s), bez zawieszenia gry po zamknięciu okienka.',
+				]],
+			],
+		},
+		{
 			version: '0.54.17',
 			date: '20 października 2026',
 			groups: [

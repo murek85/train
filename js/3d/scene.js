@@ -2,7 +2,18 @@
    godziny, niebo z chmurami, horyzont, pogoda, efekty po renderowaniu (ACES, bloom, okluzja), ustawienia
    jakości, minimapa. */
 import * as THREE from 'three';
-import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute, InstancedBufferAttribute } from 'three/webgpu';
+import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute, InstancedBufferAttribute, LightsNode } from 'three/webgpu';
+
+/* klucz shaderów WebGPU obejmuje identyfikatory świateł sceny w kolejności przeglądania sceny (LightsNode.customCacheKey):
+   te same światła pociągu gracza (train.js playerLight) w innych wagonach nowego składu – inna kolejność, inny klucz
+   i przebudowa shaderów wszystkich oświetlonych materiałów. Światła zawsze według identyfikatora */
+{
+	const setLights0 = LightsNode.prototype.setLights;
+	LightsNode.prototype.setLights = function (lights) {
+		if (lights && lights.length > 1) lights.sort((a, b) => a.id - b.id);
+		return setLights0.call(this, lights);
+	};
+}
 
 (function () {
 	'use strict';
@@ -237,6 +248,18 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 							return create0.call(this, bindings);
 						};
 					}
+					/* Three usuwa zbudowany shader (stan węzłów) i potok karty, gdy znika ostatni obiekt, który ich używa – np.
+					   kawałki świata za pociągiem demo albo stary model pociągu przy zmianie składu. Nowy obiekt tego samego
+					   materiału budował je potem od zera, synchronicznie w klatce (zmiana składu w menu: ok. 200 shaderów,
+					   zawieszenie ok. 10 s). Shadery i potoki zostają w pamięci podręcznej (ich liczba – rodzaje materiałów) */
+					const Nm = this.gl._nodes, nodesDelete = Nm.delete.bind(Nm);
+					Nm.delete = (o) => {
+						if (o && o.isRenderObject) { const st = Nm.get(o).nodeBuilderState; if (st && !st.kept) { st.kept = true; st.usedTimes++; } }
+						return nodesDelete(o);
+					};
+					const Pl = this.gl._pipelines;
+					Pl._releasePipeline = () => {};
+					Pl._releaseProgram = () => {};
 					const GL = this.gl, render0 = GL.render;
 					/* odbicie wody rysowane osobnym render() (water.js) – bez zagnieżdżenia jego bufor ma ten sam kontekst
 					   (format, próbki, głębokość wywołania) co obraz, więc obiekty rysowania obu przebiegów byłyby wspólne

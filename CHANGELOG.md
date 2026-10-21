@@ -4,6 +4,31 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.54.18 – 21 października 2026
+
+### Wydajność – zmiana składu w menu (`js/3d/scene.js`, `js/3d/train.js`, `js/3d/cab.js`, `js/main.js`)
+- Zgłoszenie: zmiana składu trwa za długo. Pomiar (`menuops.js`, `MENU_OPS=tabor`): ok. 10,8 s, z czego jedna klatka
+  ok. 10 s – synchroniczna budowa ok. 200 shaderów w rysowaniu (głównie materiały świata w paczkach).
+- Przyczyny (Three, WebGPU):
+  - klucz shaderów obejmuje identyfikatory świateł sceny (LightsNode.customCacheKey) – nowy model pociągu gracza
+    tworzył nowe światła (reflektor, iskrzenie pantografu, światło kabiny), więc przebudowywały się shadery wszystkich
+    oświetlonych materiałów. Poprawka: światła pociągu gracza wspólne dla kolejnych modeli (`train.js playerLight`);
+    klucz zależał też od kolejności świateł w scenie (światło iskrzenia w innym wagonie nowego składu) – światła
+    sortowane według identyfikatora (`LightsNode.setLights`);
+  - zbudowany shader i potok karty usuwane, gdy znika ostatni obiekt, który ich używa (kawałki świata za pociągiem demo,
+    stary model) – potem budowane od zera. Poprawka: zostają w pamięci podręcznej (stan węzłów z jednym użyciem
+    więcej, `_releasePipeline` / `_releaseProgram` bez zwalniania). Po sześciu zmianach trasy: ok. 580 stanów
+    i 600 potoków bez dalszego wzrostu (wersja sprzed zmian – 840 stanów, rośnie).
+- Okienko zmiany składu z kompilacją tego, co w kadrze (jak zmiana trasy): shadery nowego taboru nie budują się już
+  w pierwszej klatce po zamknięciu okienka (było ok. 3 s zawieszenia).
+- Wynik: pierwsza zmiana na nowy tabor 3,6 s (bez zawieszenia po okienku), kolejne 0,7–0,8 s; FPS jazdy bez zmian.
+- Zauważone przy okazji (bez zmian): sterta JS rośnie przy kolejnych zmianach trasy (ok. 1,3 → 2,8 GB po sześciu
+  zmianach) – także w wersji sprzed zmian.
+
+### Narzędzia
+- `menuops.js`: `MENU_OPS=tabor` (same zmiany składu, trzy razy IC ↔ domyślny); pomiar dopiero po zakończeniu
+  wczytywania i kompilacji w tle po starcie (także `MENU_PROF`).
+
 ## 0.54.17 – 20 października 2026
 
 ### Poprawka – migające elementy przesuwające się z kamerą (`js/3d/water.js`, `js/3d/scene.js`)

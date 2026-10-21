@@ -21,7 +21,7 @@ app.whenReady().then(async () => {
 	const prof = process.env.MENU_PROF;
 	if (prof) {
 		// MENU_PROF=1 – profil procesora zmiany trasy (MENU_PROF=tabor / pogoda / jakosc – zmiany składu / pogody / jakości na wysoką): najdroższe funkcje łącznie
-		await w.webContents.executeJavaScript(`(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const m = window.maszynista, r = m.renderer; for (let i = 0; i < 4800 && !(m.sim && r.world && r.world.pending === 0 && r.world.chunks.size && !r.hold); i++) await wait(25); document.querySelector('.scr-boot')?.remove(); await wait(8000); })()`);
+		await w.webContents.executeJavaScript(`(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); const m = window.maszynista, r = m.renderer; for (let i = 0; i < 4800 && !(m.sim && r.world && r.world.pending === 0 && r.world.chunks.size && !r.hold); i++) await wait(25); document.querySelector('.scr-boot')?.remove(); await wait(8000); const box = document.getElementById('route-loading'); for (let i = 0; i < 2400 && (!box.classList.contains('hidden') || (r.pipes && r.pipes.n) || r.world.pending); i++) await wait(25); await wait(2000); })()`);
 		// budowy shaderów w czasie profilowanej zmiany: materiał, obiekt i przodkowie (co budowało)
 		await w.webContents.executeJavaScript(`(() => { const r = window.maszynista.renderer, W = (window.__who = new Map()); const path = (o) => { const p = []; for (let q = o; q && p.length < 4; q = q.parent) p.push(q.name || q.type); return p.join(' < '); }; r.gl.debug.onNodeBuilderCreated = (nb, ro) => { const b = nb.build.bind(nb), ba = nb.buildAsync && nb.buildAsync.bind(nb); const rec = () => { const k = (ro.material.patchVariant || ro.material.type) + (ro.camera.isOrthographicCamera ? ' [cień]' : '') + (ro.bundle ? ' [paczka]' : '') + ' · ' + path(ro.object); W.set(k, (W.get(k) || 0) + 1); }; nb.build = (...a) => { rec(); return b(...a); }; if (ba) nb.buildAsync = (...a) => { rec(); return ba(...a); }; }; })()`);
 		const dbg = w.webContents.debugger;
@@ -50,6 +50,9 @@ app.whenReady().then(async () => {
 			document.querySelector('.scr-boot')?.remove();
 			await wait(8000); // dokompilowanie w tle po starcie
 			const box = document.getElementById('route-loading');
+			// koniec okienka wczytywania i kompilacji w tle (pomiar bez resztek startu)
+			for (let i = 0; i < 2400 && (!box.classList.contains('hidden') || (r.pipes && r.pipes.n) || r.world.pending); i++) await wait(25);
+			await wait(2000);
 			const op = async (name, act) => {
 				const F = [], steps = [], long = [];
 				let last = performance.now(), run = true;
@@ -69,6 +72,13 @@ app.whenReady().then(async () => {
 			const first = routes.findIndex((b) => b.classList.contains('sel'));
 			const other = routes.findIndex((b, i) => i !== first);
 			const out = [];
+			if (${JSON.stringify(process.env.MENU_OPS || '')} === 'tabor') { // MENU_OPS=tabor – tylko zmiany składu (IC ↔ domyślny, trzy razy)
+				for (let i = 0; i < 3; i++) {
+					out.push(await op('tabor ic', () => window.maszynista.setTrain(window.TrainRoutes.defaultConfig({ train: 'ic' }))));
+					out.push(await op('tabor domyślny', () => window.maszynista.setTrain(window.TrainRoutes.defaultConfig({}))));
+				}
+				return out;
+			}
 			out.push(await op('trasa', () => routes[other].click()));
 			out.push(await op('tabor', () => window.maszynista.setTrain(window.TrainRoutes.defaultConfig({ train: 'ic' }))));
 			out.push(await op('pogoda', () => { const s = document.getElementById('opt-weather'); s.value = 'rain'; s.dispatchEvent(new Event('change')); }));

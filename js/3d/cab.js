@@ -535,7 +535,7 @@ import * as THREE from 'three';
 			   przełączenie widoku nie przekompilowuje shaderów */
 			// (pół metra pod sufitem, z zasięgiem 5 m: dawniej 18 cm pod sufitem i do natężenia 15,5 – sufit i ściany w dzień
 			// przepalone na biało)
-			this.fill = new T.PointLight(0xfff2e2, 0, 5, 1.4);
+			this.fill = NS.playerLight ? NS.playerLight('cab', () => new T.PointLight(0xfff2e2, 0, 5, 1.4)) : new T.PointLight(0xfff2e2, 0, 5, 1.4); // (wspólne dla kolejnych modeli – train.js playerLight)
 			this.fill.position.set(0, H - 0.68, deskBack + 0.85).add(g.position);
 			car.group.add(this.fill);
 			// wnętrze przyjmuje cienie – pudło (dach, ściany) zasłania słońce, więc nie oświetla ono kabiny „przez blachę”

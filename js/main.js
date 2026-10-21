@@ -393,7 +393,9 @@
 		save('trainCfg', c);
 		save('trainCfgs', modeCfgs);
 		if (!rebuildDemo || !selected) { buildMenu(); return; }
-		menuBusy('Zmiana składu', routeById(selected).train.name, buildMenu);
+		/* z kompilacją tego, co w kadrze (settle): nowy tabor ma własne shadery – bez niej budowały się synchronicznie
+		   w pierwszej klatce po zamknięciu okienka (ok. 3 s zawieszenia); reszta shaderów już w pamięci (scene.js) */
+		menuBusy('Zmiana składu', routeById(selected).train.name, buildMenu, true, true);
 	}
 	let demoT = 0;
 	// podgląd 3D z okienkiem wczytywania, gdy trzeba zbudować model (pierwsze otwarcie zakładki „Pociąg”)
@@ -2729,7 +2731,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.54.17';
+	$('version').textContent = 'wersja 0.54.18';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');

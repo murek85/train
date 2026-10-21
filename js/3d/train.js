@@ -510,6 +510,18 @@ import * as THREE from 'three';
 	   osobnych materiałów) dostają jeden materiał na rodzaj powierzchni (wariant łatki, zabrudzenie, spoiny, połysk),
 	   kolor przechodzi do atrybutu color – potem scalanie łączy je w jedną siatkę (pociąg tła: 27 siatek jednego
 	   rodzaju w wagonie → 1–3). Bez materiałów animowanych (światła, wnętrza, szyby – inne typy lub przezroczyste). */
+	/* Światła pociągu gracza (reflektor czoła, iskrzenie pantografu, kabina – cab.js) wspólne dla kolejnych modeli:
+	   klucz shaderów WebGPU obejmuje identyfikatory świateł sceny (LightsNode), więc nowe światła przy każdej zmianie
+	   składu przebudowywały shadery wszystkich oświetlonych materiałów w scenie (ok. 200, zawieszenie na kilka sekund) */
+	const PLAYER_LIGHTS = {};
+	function playerLight(key, make) {
+		const l = PLAYER_LIGHTS[key] || (PLAYER_LIGHTS[key] = make());
+		if (l.parent) l.parent.remove(l);
+		if (l.target && l.target.parent) l.target.parent.remove(l.target);
+		l.intensity = 0;
+		return l;
+	}
+	NS.playerLight = playerLight;
 	const vcTrainMats = new Map();
 	function vcConvert(root, keep) {
 		const skip = new Set();
@@ -1274,7 +1286,7 @@ import * as THREE from 'three';
 			this.sparkT = 0;
 			if (!this.player) return;
 			const lead = this.cars[0];
-			this.headlight = new T.SpotLight(0xfff2cc, 0, 190, 0.46, 0.8, 1.0);
+			this.headlight = playerLight('head', () => new T.SpotLight(0xfff2cc, 0, 190, 0.46, 0.8, 1.0));
 			this.headlight.position.set(0, 1.8, -lead.len / 2);
 			this.headlight.target.position.set(0, -2, -lead.len / 2 - 60);
 			lead.group.add(this.headlight, this.headlight.target);
@@ -3158,7 +3170,7 @@ import * as THREE from 'three';
 					pts.userData.ownGeometry = true;
 					group.add(pts);
 					// mały zasięg – błysk oświetla pantograf i dach, a nie wnętrze kabiny
-					const light = new T.PointLight(0x9fc8ff, 0, 10, 2);
+					const light = playerLight('spark', () => new T.PointLight(0x9fc8ff, 0, 10, 2));
 					light.position.set(0, contact.y - 0.2, contact.z);
 					group.add(light);
 					this.spark = { core, halo, pts, light, y: contact.y, z: contact.z, parts: Array.from({ length: N }, () => ({ life: 0, max: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 })), burst: 0 };
