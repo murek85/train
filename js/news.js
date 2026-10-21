@@ -4,6 +4,24 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.57.6',
+			date: '21 października 2026',
+			groups: [
+				['Trasy', [
+					'Tor równoległy tuż obok naszego (Rybnik – Katowice, km 3,2–4,3) ma z powrotem szyny – w 0.57.5 zniknęły razem z podkładami; teraz szyny, podkłady i podsypka.',
+				]],
+			],
+		},
+		{
+			version: '0.57.5',
+			date: '21 października 2026',
+			groups: [
+				['Trasy', [
+					'Tor równoległy leżący w danych mapy bliżej niż zwykle (np. Rybnik – Katowice, km 3,2–4,3 – tor z naprzeciwka) ma podsypkę i podkłady – dotąd same szyny na trawie (brany za rozjazd łączący się z naszym torem).',
+				]],
+			],
+		},
+		{
 			version: '0.57.4',
 			date: '21 października 2026',
 			groups: [

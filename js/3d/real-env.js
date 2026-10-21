@@ -4267,14 +4267,19 @@ import * as THREE from 'three';
 				const sa = sa0 + ((sb0 - sa0) * q) / pieces, da = da0 + ((db0 - da0) * q) / pieces;
 				const sb = sa0 + ((sb0 - sa0) * (q + 1)) / pieces, db = da0 + ((db0 - da0) * (q + 1)) / pieces;
 				const sm = (sa + sb) / 2, dm = (da + db) / 2;
-				// przy torze pociągu (rozjazd): same szyny – podsypka i podkłady są wspólne z torem pociągu
-				const atOurs = Math.abs(dm) < 3.4 && !(crossing && this.dip(sm, dm, true) > 2);
+				/* przy torze pociągu (rozjazd): same szyny – podsypka i podkłady są wspólne z torem pociągu; tor równoległy
+				   (odcinek prawie równoległy, ponad 2,3 m od osi – w danych mapy tor sąsiedni bywa bliżej niż 4 m, np. Rybnik –
+				   Katowice km 3,2–4,3: same szyny na trawie) – z własną podsypką i podkładami */
+				const parallel = Math.abs(db - da) < 0.03 * Math.hypot(sb - sa, db - da) + 0.02 && Math.abs(dm) > 2.3;
+				const atOurs = Math.abs(dm) < 3.4 && !parallel && !(crossing && this.dip(sm, dm, true) > 2);
 				if (atOurs) {
 					if (Math.abs(dm) < 0.3 || this.envOccupied(sm, Math.sign(dm) * 3.6, 0)) continue; // na osi / pod peronem
 					for (const rd of [-0.75, 0.75]) quadStrip(side ? rust : rails, [rd - 0.06, rd - 0.036, rd + 0.036, rd + 0.06], [-0.22, 0, 0, -0.22], sa, da, sb, db);
 					continue;
 				}
-				if (this.envOccupied(sm, dm, 0.6) || (!(row[0] & 18) && (this.envRowFromTunnel(i) || this.envBuriedNearTunnel(sm, dm, R.heightAt(r, sm) - dzOf(sm, dm))))) continue;
+				// tor równoległy tuż obok: z pasa naszego toru (envOccupied – do 3,2 m od osi) nie odrzucany – tylko perony
+				const occ = parallel && Math.abs(dm) < 3.6 ? this.envOccupied(sm, Math.sign(dm) * 3.6, 0) : this.envOccupied(sm, dm, 0.6);
+				if (occ || (!(row[0] & 18) && (this.envRowFromTunnel(i) || this.envBuriedNearTunnel(sm, dm, R.heightAt(r, sm) - dzOf(sm, dm))))) continue;
 				quadStrip(disused ? balWeed : side ? balOld : bal, [-2.2, -1.6, 1.6, 2.2], [-0.95, -0.31, -0.31, -0.95], sa, da, sb, db);
 				// tor wyżej niż teren (rampa do wiaduktu innej linii, tor na nasypie): nasyp ze skarpami 1:1,5; wiadukt – filary
 				if (this.env.dem || zr) {

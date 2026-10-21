@@ -4,6 +4,23 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.57.6 – 21 października 2026
+
+Tor równoległy z szynami, podkładami i podsypką.
+
+### Tory z mapy (`real-env.js`)
+- Tor równoległy bliżej niż 3,6 m: zajętość (`envOccupied`) sprawdzana tylko dla peronów (punkt 3,6 m od osi) – dotąd
+  pas naszego toru (do 3,2 m) odrzucał cały odcinek, także szyny.
+
+## 0.57.5 – 21 października 2026
+
+Tor równoległy blisko naszego z podsypką i podkładami.
+
+### Tory z mapy (`real-env.js`)
+- `atOurs` (same szyny – podsypka i podkłady wspólne z torem pociągu) tylko dla odcinków zbiegających się z naszym torem;
+  odcinek prawie równoległy (zmiana odsunięcia < 3% długości) dalej niż 2,3 m od osi – pełny tor (podsypka, podkłady,
+  nasyp). Rybnik – Katowice: tor 200, km 3,18–4,25, 2,5–3,4 m od osi.
+
 ## 0.57.4 – 21 października 2026
 
 ST44 z dużymi szybami czołowymi.
