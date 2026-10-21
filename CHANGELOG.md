@@ -4,6 +4,98 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.55.6 – 21 października 2026
+
+Zapowiedzi na wyświetlaczu LED dwa razy.
+
+### Komunikaty (`hud.js`)
+- `ledNext()`: animacja `pa-scroll` – dwa przebiegi, następna zapowiedź po obu.
+
+### Narzędzia
+- `tools/render-check/tmpprofile.js`: wspólny profil tymczasowy skryptów Electron (`menuops.js`, `bundles.js`, `fps.js`,
+  `heapleak.js`). Wcześniej profile `maszynista-*` zostawały w `%TEMP%` (198 katalogów, 5,7 GB): `app.exit` pomija
+  „quit”, a przy „quit” Chromium jeszcze trzyma katalog (EPERM). Teraz wyjście przez `app.quit` (zapasowo `app.exit`
+  po 5 s), katalog usuwa odłączony proces pomocniczy po końcu procesu skryptu, a przy starcie skrypt usuwa swoje profile
+  starsze niż 10 min (z przerwanych uruchomień).
+
+## 0.55.5 – 21 października 2026
+
+Stany pojazdu znów w pasku u góry.
+
+### Komunikaty (`hud.js`, `index.html`, `style.css`)
+- `msgPlace`: zapowiedź – `led`; informacja bez klucza (i `detail`) – `osd`; reszta (także komunikaty o stanie) – pasek
+  u góry. Usunięte `#hud-bubble`, `Hud.bubble()` / `bubbleHide()` i style `.hud-bubble` / `.hb`.
+
+## 0.55.4 – 21 października 2026
+
+Potwierdzenia akcji u góry pod paskiem zdarzeń.
+
+### Komunikaty (`hud.js`, `style.css`)
+- `.osd` u góry; `Hud.update()` ustawia `top` – 6 px pod ostatnim widocznym komunikatem paska `#toasts`, inaczej na jego
+  miejscu (`#toasts` przesuwa się pod radiotelefon). Wyrównanie do lewej.
+
+## 0.55.3 – 21 października 2026
+
+### Wyciek pamięci przy zmianie trasy – WebGPU (`js/3d/scene.js`, `js/3d/common.js`, `js/3d/cab.js`)
+- Zgłoszenie (przy 0.54.18): sterta JS rośnie o ok. 250 MB na każdą zmianę trasy w menu – po sześciu zmianach
+  (na przemian inna trasa i Gliwice – Zabrze, po gc) 1,1 → 3,4 GB; w WebGL płasko (ok. 400 / 640 MB). Stare kawałki
+  świata (siatki, geometrie, paczki, obiekty rysowania – ok. 5,7 tys. Mesh i 13 tys. RenderObject na sześć zmian)
+  zostawały w pamięci.
+- Przyczyny (Three, WebGPURenderer – ścieżki trzymania z migawki sterty):
+  - obiekt rysowania (RenderObject) zostaje w `RenderObjects._renderObjects` i w nasłuchiwaczach geometrii / materiału,
+    dopóki obiekt, geometria albo materiał nie wyśle „dispose” – kawałki świata i modele pociągów ze wspólnymi
+    geometriami i materiałami usuwane były bez tego. Poprawka: `disposeTree` (i kabina) wysyła „dispose” każdego obiektu;
+  - `RenderObject.setGeometry` (obiekt z nową geometrią) zostawia nasłuchiwacz „dispose” na starej geometrii, a `dispose()`
+    zdejmuje go z nowej – na wspólnej geometrii drzew (`World.G.trees`) trzymał na zawsze obiekt rysowania, jego paczkę
+    i cały stary kawałek. Poprawka: nasłuchiwacz przenoszony na nową geometrię;
+  - `Geometries.initGeometry` trzyma geometrię w zwykłej mapie (silnie), a w domknięciu nasłuchiwacza – pierwszy obiekt
+    rysowania tej geometrii (z przodkami). Poprawka: inicjalizacja z zastępczym obiektem (słaby odnośnik), bez wpisu w mapie;
+  - zachowane od 0.54.18 stany shaderów (`nodeBuilderCache`) z węzłami przypiętymi do obiektu (Sprite) trzymały ten obiekt –
+    takie stany nie zostają (służą tylko jednemu obiektowi; ok. 3 z 280 – tylko `ReferenceNode.object` podany przy
+    tworzeniu, nie `ModelNode.object3d`, który co klatkę wskazuje bieżący obiekt).
+- Wynik (`heapleak.js`, sześć zmian, po gc): inna trasa 836 → 861 → 861 MB, Gliwice – Zabrze 1087 → 1092 → 1092 MB
+  (było 1,3 → 3,4 GB). Czasy zmian w menu (`menuops.js`) bez zmian względem `?noleakfix` (bez poprawek, do porównań).
+
+### Narzędzia
+- `heapleak.js`: sterta po gc po każdej zmianie trasy i spis obiektów sterty według konstruktora (przybyło najwięcej);
+  `HEAP_PATH=1` – które obiekty sceny sprzed zmian żyją i ścieżka przez właściwości; `HEAP_SNAP=<plik>` – migawka sterty
+  z oznaczonymi starymi obiektami. `heappath.js` – ścieżki trzymania z migawki (strumieniowo, z semantyką WeakMap)
+  i krawędzie do wskazanych węzłów. Skrypt usuwa swój profil tymczasowy (`app.quit`; `app.exit` w innych skryptach
+  pomija „quit” – ich profile `maszynista-*` zostają w katalogu tymczasowym).
+
+## 0.55.2 – 21 października 2026
+
+Potwierdzenia akcji na środku nad wskazówką.
+
+### Komunikaty (`hud.js`, `style.css`)
+- `.osd` wyśrodkowany u dołu; `Hud.update()` ustawia `bottom` – nad pulpitem, nad podpowiedzią (12 px) i nad zadaniem
+  samouczka, gdy widoczne.
+
+## 0.55.1 – 21 października 2026
+
+OSD z kategorią nad treścią.
+
+### Komunikaty (`style.css`)
+- `.osd` – kolumna (kategoria nad treścią).
+
+## 0.55.0 – 21 października 2026
+
+Komunikaty rozdzielone: OSD, dymek przy pulpicie, wyświetlacz LED zapowiedzi, dziennik w pauzie.
+
+### Komunikaty (`hud.js`, `index.html`, `main.js`, `style.css`)
+- `Hud.toast()` – `msgPlace(kind, key)`: `led` (zapowiedzi), `bubble` (klucze stanów `BUBBLE`), `top` (bad, warn, good,
+  `TOP_KEYS`), `osd` (reszta); każdy wpis do `hud.log` (godzina z `update`, bez powtórzeń tego samego tekstu w 20 s).
+- Nowe: `#osd`, `#hud-bubble` (w `.hud-drive`, na prawo od panelu), `#pa-led` (w `.hud-trip`, animacja `pa-scroll`),
+  zakładka `data-rep="log"` w karcie postoju (`.rep-log`). `dismiss(key)` chowa też dymek.
+
+## 0.54.19 – 21 października 2026
+
+Panel sygnalizacji nad przyciskami sterowania.
+
+### Pulpit jazdy (`hud.js`, `style.css`)
+- `ResizeObserver` na `.hud-signals` i `.hud-controls` (zmienne `--sig-h`, `--ctrl-h`); `#hud .hud-signals` – środek na
+  pół ekranu, ale dół co najmniej 14 px nad sterowaniem i góra nie wyżej niż 16 px (poniżej 700 px szerokości – bez zmian).
+
 ## 0.54.18 – 21 października 2026
 
 ### Wydajność – zmiana składu w menu (`js/3d/scene.js`, `js/3d/train.js`, `js/3d/cab.js`, `js/main.js`)

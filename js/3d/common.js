@@ -938,8 +938,14 @@ import * as THREE from 'three';
 		return removed;
 	}
 
+	/* zdarzenie „dispose” obiektu: WebGPURenderer trzyma obiekt rysowania (RenderObject – z nim obiekt, przodkowie, paczka)
+	   w RenderObjects._renderObjects i w nasłuchiwaczach geometrii / materiału, dopóki obiekt, jego geometria albo materiał
+	   nie wyśle „dispose” – przy wspólnych geometriach i materiałach nigdy (usunięte kawałki świata i modele pociągów
+	   zostawały w pamięci: ok. 250 MB sterty na zmianę trasy). WebGL – bez znaczenia (nasłuchuje tylko InstancedMesh) */
+	const LEAKFIX = typeof location === 'undefined' || !/[?&]noleakfix/.test(location.search); // (?noleakfix – do porównań)
 	function disposeTree(obj) {
 		obj.traverse((o) => {
+			if (LEAKFIX) o.dispatchEvent({ type: 'dispose' });
 			if (o.geometry && !o.isSprite && !o.geometry.userData.shared) o.geometry.dispose();
 			if (o.material && !Array.isArray(o.material) && !o.material.userData.shared && (o.userData.ownMaterial || o.isSprite)) o.material.dispose();
 		});

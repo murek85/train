@@ -718,6 +718,13 @@
 			if (cur) cur.scrollIntoView({ block: 'nearest' });
 			return;
 		}
+		if (repTab === 'log') {
+			// dziennik jazdy: wszystkie komunikaty (najnowsze u góry) – godzina, kategoria, treść
+			const list = (hud.log || []).slice().reverse();
+			box.innerHTML = list.length ? `<ol class="rep-log">${list.map((x) => `<li class="${x.kind}"><time>${esc(x.at || '')}</time><em>${esc(x.cat)}</em><span>${esc(x.text)}</span></li>`).join('')}</ol>`
+				: '<p class="rep-empty">Dziennik jest pusty – trafią tu wszystkie komunikaty tej jazdy: zdarzenia, stany pojazdu, zapowiedzi i potwierdzenia.</p>';
+			return;
+		}
 		if (repTab === 'orders') {
 			const list = sim.orders || [];
 			box.innerHTML = list.length ? list.map((o) => `<div class="rep-order${o.acked ? '' : ' new'}"><b>${o.type ? `Rozkaz „${esc(o.type)}”` : 'Rozkaz pisemny'} nr ${o.no}</b><span>${esc(o.station || '')} · godz. ${hm(o.at)}${o.via === 'radio' ? ' · radiotelefon' : ''}${o.acked ? '' : ' · niepotwierdzony'}</span><p>${esc(o.text || '')}</p></div>`).join('')
@@ -2731,7 +2738,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.54.18';
+	$('version').textContent = 'wersja 0.55.6';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');

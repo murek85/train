@@ -4,6 +4,82 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.55.6',
+			date: '21 października 2026',
+			groups: [
+				['Komunikaty w czasie jazdy', [
+					'Zapowiedź na wyświetlaczu LED przewija się dwa razy, zanim pojawi się następna.',
+				]],
+			],
+		},
+		{
+			version: '0.55.5',
+			date: '21 października 2026',
+			groups: [
+				['Komunikaty w czasie jazdy', [
+					'Stany pojazdu (czuwak, SHP, przekroczenie prędkości, drzwi, poślizg, piasecznica, pantograf, hamulec, napęd) znów w pasku u góry – dymek obok pulpitu usunięty; jeden wpis na stan, odświeżany i znikający, gdy stan minie.',
+				]],
+			],
+		},
+		{
+			version: '0.55.4',
+			date: '21 października 2026',
+			groups: [
+				['Komunikaty w czasie jazdy', [
+					'Potwierdzenia akcji u góry na środku – pod paskiem zdarzeń (albo w jego miejscu, gdy pusty; pod radiotelefonem, gdy nadaje), kategoria i treść wyrównane do lewej.',
+				]],
+			],
+		},
+		{
+			version: '0.55.3',
+			date: '21 października 2026',
+			groups: [
+				['Wydajność', [
+					'Grafika WebGPU: zmiana trasy w menu nie zostawia już w pamięci starego świata – zużycie pamięci nie rośnie przy kolejnych zmianach (było ok. 250 MB więcej za każdym razem).',
+				]],
+			],
+		},
+		{
+			version: '0.55.2',
+			date: '21 października 2026',
+			groups: [
+				['Komunikaty w czasie jazdy', [
+					'Potwierdzenia akcji (kamera, czas, wycieraczki, „Drzwi zamknięte”…) na środku, tuż nad wskazówką – zamiast w prawym górnym rogu; w samouczku nad okienkiem instruktora.',
+				]],
+			],
+		},
+		{
+			version: '0.55.1',
+			date: '21 października 2026',
+			groups: [
+				['Komunikaty w czasie jazdy', [
+					'Potwierdzenia akcji w prawym górnym rogu z kategorią nad treścią – tak samo jak pasek u góry i dymek przy pulpicie (dziennik w pauzie bez zmian – kategoria w kolumnie z lewej).',
+				]],
+			],
+		},
+		{
+			version: '0.55.0',
+			date: '21 października 2026',
+			groups: [
+				['Komunikaty w czasie jazdy', [
+					'Komunikaty rozdzielone według rodzaju zamiast jednego paska u góry: potwierdzenia akcji (kamera, czas, wycieraczki…) – mała linijka w prawym górnym rogu, nowa zastępuje poprzednią i znika po ok. 2 s.',
+					'Stany pojazdu (czuwak, SHP, przekroczenie prędkości, drzwi, poślizg, piasecznica, pantograf, hamulec, napęd) – dymek obok pulpitu, przy lampkach; najwyżej dwa naraz, znika, gdy stan minie.',
+					'Zapowiedzi – wyświetlacz pasażerski LED pod rozkładem: pomarańczowe diody, tekst przewijany jak w pociągu, kolejne po kolei.',
+					'U góry zostają tylko zdarzenia i kary, ostrzeżenia, „w porządku” (odjazd, wynik zatrzymania) i warunki na linii (zanik napięcia, oblodzenie, liście).',
+					'Pauza: nowa zakładka „Dziennik” – wszystkie komunikaty jazdy z godziną i kategorią, najnowsze u góry.',
+				]],
+			],
+		},
+		{
+			version: '0.54.19',
+			date: '21 października 2026',
+			groups: [
+				['Pulpit w czasie jazdy', [
+					'Panel sygnalizacji (semafor, ograniczenie, profil) nie dotyka panelu przycisków: na niższym ekranie podnosi się tak, by zostało co najmniej 14 px odstępu.',
+				]],
+			],
+		},
+		{
 			version: '0.54.18',
 			date: '21 października 2026',
 			groups: [

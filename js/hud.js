@@ -12,6 +12,16 @@
 		panto: 'PANTOGRAF', ice: 'SIEĆ TRAKCYJNA', outage: 'ZASILANIE', leaves: 'SZYNY', slip: 'POŚLIZG', flat: 'KOŁA', airblock: 'HAMULEC', drive: 'NAPĘD',
 		info: 'KOMUNIKAT', warn: 'UWAGA', bad: 'ZDARZENIE', good: 'W PORZĄDKU', announce: 'ZAPOWIEDŹ' };
 
+	/* Gdzie trafia komunikat: zapowiedź – wyświetlacz LED pod rozkładem; zdarzenie, ostrzeżenie, „w porządku”
+	   i komunikat o stanie (klucz – czuwak, SHP, prędkość, drzwi, pantograf, warunki na linii…) – pasek u góry; reszta
+	   (potwierdzenia akcji) – OSD pod paskiem. Każdy komunikat trafia też do dziennika jazdy (pauza). Dawny dymek przy
+	   pulpicie (0.55.0) – stany wróciły do paska u góry. */
+	function msgPlace(kind, key) {
+		if (kind === 'announce') return 'led';
+		if (kind !== 'info' || (key && key !== 'detail')) return 'top';
+		return 'osd';
+	}
+
 	function fmtDist(d) {
 		if (d < 1000) return `${Math.max(0, Math.round(d / 10) * 10)} m`;
 		return `${(d / 1000).toFixed(1)} km`;
@@ -37,6 +47,12 @@
 				new ResizeObserver(() => {
 					if (drive.offsetWidth) document.documentElement.style.setProperty('--drive-w', drive.offsetWidth + 'px');
 				}).observe(drive);
+			}
+			// panel sygnalizacji (prawy środek) nad panelem sterowania (prawy dół): wysokości obu (--sig-h, --ctrl-h) – CSS
+			// podnosi sygnalizację, gdy na niskim ekranie sięgałaby przycisków
+			for (const [sel, v] of [['.hud-signals', '--sig-h'], ['.hud-controls', '--ctrl-h']]) {
+				const el = this.root.querySelector(sel);
+				if (el && window.ResizeObserver) new ResizeObserver(() => { if (el.offsetHeight) document.documentElement.style.setProperty(v, el.offsetHeight + 'px'); }).observe(el);
 			}
 			this.leverEls = [];
 			const lever = $('lever');
@@ -64,6 +80,12 @@
 			this.vmaxDial = Math.ceil(Math.round(sim.train.vmax * 3.6) / 20) * 20 + 20;
 			this.cache = {};
 			this.toasts.innerHTML = '';
+			// dziennik jazdy (pauza), dymek, OSD i wyświetlacz – od nowa
+			this.log = [];
+			this.now = '';
+			$('osd').classList.add('hidden');
+			this.ledQ = [];
+			this.ledHide();
 			// hamulec zespolony: nastawnik tylko jazda, obok zawór maszynisty
 			$('lever').classList.toggle('air', !!sim.air);
 			$('lever').classList.toggle('series', !!sim.drive);
@@ -187,6 +209,17 @@
 		   Kliknięcie zamyka komunikat. Ten sam tekst bez klucza też się nie powtarza. */
 		toast(text, kind, key) {
 			kind = kind || 'info';
+			const cat = TOAST_CAT[key] || TOAST_CAT[kind] || 'KOMUNIKAT';
+			// dziennik: bez powtórzeń tego samego komunikatu o stanie co chwilę (ten sam klucz i tekst – raz na 20 s)
+			const last = this.log && this.log[this.log.length - 1];
+			const t = performance.now();
+			if (this.log && !(last && last.text === text && t - last.t < 20000)) {
+				this.log.push({ at: this.now, cat, kind, text, t });
+				if (this.log.length > 300) this.log.shift();
+			}
+			const place = msgPlace(kind, key);
+			if (place === 'led') return this.led(text);
+			if (place === 'osd') return this.osd(text, cat);
 			let el = [...this.toasts.children].find((x) => (key && x.dataset.key === key) || (!key && !x.dataset.key && x.dataset.text === text && !x.classList.contains('fade')));
 			if (!el) {
 				el = document.createElement('div');
@@ -273,6 +306,48 @@
 			for (const el of [...this.toasts.children]) if (el.dataset.key === key) this.hideToast(el, true);
 		}
 
+		/* OSD: potwierdzenie akcji – jedna linijka, nowa zastępuje poprzednią, znika po 2,2 s (dłuższy tekst – dłużej) */
+		osd(text, cat) {
+			const el = $('osd');
+			el.children[0].textContent = cat;
+			el.children[1].textContent = text;
+			el.classList.remove('hidden', 'fade');
+			el.classList.remove('pop');
+			void el.offsetWidth;
+			el.classList.add('pop');
+			clearTimeout(this.osdT);
+			this.osdT = setTimeout(() => { el.classList.add('fade'); this.osdT = setTimeout(() => el.classList.add('hidden'), 300); }, Math.min(6000, 2200 + text.length * 25));
+		}
+
+		/* wyświetlacz pasażerski: zapowiedź przewijana od prawej do lewej (ok. 70 px/s) dwa razy, kolejne – po kolei */
+		led(text) {
+			if (!this.ledQ) this.ledQ = [];
+			this.ledQ.push(text);
+			if (!this.ledBusy) this.ledNext();
+		}
+		ledNext() {
+			const box = $('pa-led'), span = $('pa-text'), text = this.ledQ.shift();
+			if (!text) { this.ledHide(); return; }
+			this.ledBusy = true;
+			box.classList.remove('hidden');
+			span.textContent = text;
+			span.style.animation = 'none';
+			const win = span.parentElement.clientWidth || 200, w = span.scrollWidth;
+			const dur = Math.max(4, (win + w) / 70);
+			span.style.setProperty('--from', win + 'px');
+			span.style.setProperty('--to', -w + 'px');
+			void span.offsetWidth;
+			span.style.animation = `pa-scroll ${dur}s linear 2`;
+			clearTimeout(this.ledT);
+			this.ledT = setTimeout(() => this.ledNext(), dur * 2000 + 300);
+		}
+		ledHide() {
+			clearTimeout(this.ledT);
+			this.ledBusy = false;
+			$('pa-led').classList.add('hidden');
+			$('pa-text').style.animation = 'none';
+		}
+
 		update(sim, timeScale) {
 			const route = sim.route, st = sim.st, front = st.pos;
 			const kmh = st.v * 3.6;
@@ -302,6 +377,7 @@
 
 			// zegar i opóźnienie
 			this.set('i-clock', fmtClock(sim.clock()));
+			this.now = fmtClock(sim.clock()).slice(0, 5); // godzina wpisów w dzienniku
 			let delay = null;
 			const atStation = sim.service !== null && !sim.ss[sim.service].cleared;
 			let ni = atStation ? sim.service : sim.next;
@@ -421,6 +497,13 @@
 			} else this.prompt.classList.add('hidden');
 			// zadanie samouczka nad podpowiedzią
 			$('task').style.bottom = this.height() + 60 + 'px';
+			// potwierdzenia akcji (OSD) u góry na środku: pod paskiem zdarzeń (albo w jego miejscu, gdy pusty – pod radiotelefonem)
+			const osd = $('osd');
+			if (!osd.classList.contains('hidden')) {
+				const live = [...this.toasts.children].filter((x) => !x.classList.contains('fade'));
+				const r = this.toasts.getBoundingClientRect();
+				osd.style.top = (live.length ? live[live.length - 1].getBoundingClientRect().bottom + 6 : r.top) + 'px';
+			}
 		}
 
 		/* prędkościomierz jak w kabinie: tarcza z pierścieniem, strefa dozwolona (zielona) i ponad ograniczeniem

@@ -5,11 +5,8 @@
    obiekty z inną kamerą niż paczka (obce – z zagnieżdżonego renderu albo wspólne z innym przebiegiem).
      node_modules/electron/dist/electron.exe tools/render-check/bundles.js <port> <zapytanie | ->   (ROUTE=… SEASON=…) */
 const { app, BrowserWindow } = require('electron');
-const os = require('os'), fsx = require('fs'), pathx = require('path');
 const [port, query] = process.argv.slice(-2);
-const tmpProfile = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'maszynista-bundles-'));
-app.setPath('userData', tmpProfile);
-app.on('quit', () => { try { fsx.rmSync(tmpProfile, { recursive: true, force: true }); } catch {} });
+const quit = require('./tmpprofile.js')(app, 'bundles');   // profil przeglądarki tymczasowy, usuwany po wyjściu
 app.commandLine.appendSwitch('enable-unsafe-webgpu');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
@@ -83,5 +80,5 @@ app.whenReady().then(async () => {
 		})()`);
 	} catch (e) { res = { error: String(e) }; }
 	console.log(JSON.stringify({ res, errs: [...errs].map(([k, n]) => n + '× ' + k) }, null, 1));
-	app.exit(0);
+	quit();
 });

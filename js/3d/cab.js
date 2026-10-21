@@ -815,6 +815,7 @@ import * as THREE from 'three';
 		dispose() {
 			this.car.group.remove(this.group);
 			this.car.group.remove(this.fill);
+			this.group.traverse((o) => o.dispatchEvent({ type: 'dispose' })); // (common.js disposeTree)
 			for (const o of this.own) o.dispose();
 		}
 	}

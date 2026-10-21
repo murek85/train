@@ -252,11 +252,33 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 					   kawałki świata za pociągiem demo albo stary model pociągu przy zmianie składu. Nowy obiekt tego samego
 					   materiału budował je potem od zera, synchronicznie w klatce (zmiana składu w menu: ok. 200 shaderów,
 					   zawieszenie ok. 10 s). Shadery i potoki zostają w pamięci podręcznej (ich liczba – rodzaje materiałów) */
+					/* nie zostaje stan z węzłami przypiętymi do rysowanego obiektu (np. Sprite – węzły odwołań do obiektu): i tak
+					   służy tylko jemu, a trzymałby go w pamięci razem z przodkami (stary kawałek świata, paczka, geometrie).
+					   Tylko odwołanie podane przy tworzeniu węzła (ReferenceNode.object) – ModelNode.object3d i .reference to
+					   bieżący obiekt klatki (wspólne węzły), światła w węzłach cieni są stałe */
+					const LEAKFIX = !/[?&]noleakfix/.test(location.search); // (?noleakfix – bez poprawek pamięci 0.54.19, do porównań)
+					const bound = (st) => {
+						for (const L of [st.updateNodes, st.updateBeforeNodes, st.updateAfterNodes]) for (const n of L || []) { const v = n.object; if (v && (v.isMesh || v.isSprite || v.isLine || v.isPoints)) return true; }
+						return false;
+					};
 					const Nm = this.gl._nodes, nodesDelete = Nm.delete.bind(Nm);
 					Nm.delete = (o) => {
-						if (o && o.isRenderObject) { const st = Nm.get(o).nodeBuilderState; if (st && !st.kept) { st.kept = true; st.usedTimes++; } }
+						if (o && o.isRenderObject) { const st = Nm.get(o).nodeBuilderState; if (st && !st.kept && !(LEAKFIX && bound(st))) { st.kept = true; st.usedTimes++; } }
 						return nodesDelete(o);
 					};
+					/* Three (Geometries.initGeometry) dopisuje nasłuchiwacz „dispose” geometrii do zwykłej mapy (silnie) i w jego
+					   domknięciu trzyma pierwszy obiekt rysowania tej geometrii (z nim obiekt, przodków, paczkę, materiał). Geometria
+					   wspólna (GEO, modele) albo nigdy niezwolniona trzymała tak stare kawałki świata i modele pociągów – sterta rosła
+					   o ok. 250 MB na zmianę trasy. Inicjalizacja z zastępczym obiektem rysowania (słaby odnośnik do prawdziwego,
+					   tylko geometria i atrybuty – to, czego używa nasłuchiwacz) i bez wpisu w mapie (służy tylko dispose() renderera) */
+					const G = this.gl._geometries, initGeometry0 = G.initGeometry;
+					if (LEAKFIX && initGeometry0 && G._geometryDisposeListeners) {
+						G.initGeometry = function (ro) {
+							const ref = new WeakRef(ro), geometry = ro.geometry;
+							initGeometry0.call(this, { geometry, getAttributes: () => { const r = ref.deref(); return r ? r.getAttributes() : []; } });
+							this._geometryDisposeListeners.delete(geometry);
+						};
+					}
 					const Pl = this.gl._pipelines;
 					Pl._releasePipeline = () => {};
 					Pl._releaseProgram = () => {};
@@ -302,9 +324,22 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 					/* zwolniony obiekt rysowania (materiał, geometria albo obiekt usunięty, zmiana shadera) niszczy swoje bufory
 					   uniformów – nagrana paczka z nim odwoływała się do zniszczonego bufora (błąd wysłania, utracona klatka):
 					   paczka do ponownego nagrania */
+					/* RenderObject.setGeometry (Three – obiekt z nową geometrią, np. drzewo z inną wersją) zmienia geometrię bez
+					   przeniesienia nasłuchiwacza „dispose”: zostaje na starej, a dispose() zdejmuje go już z nowej. Na wspólnej
+					   geometrii (World.G – drzewa) trzymał tak na zawsze obiekt rysowania, jego paczkę i cały stary kawałek świata */
+					const fixSetGeometry = (RO) => {
+						if (RO.geometryMoved || !LEAKFIX) return;
+						RO.geometryMoved = true;
+						const set0 = RO.setGeometry;
+						RO.setGeometry = function (g) {
+							if (g !== this.geometry) { this.geometry.removeEventListener('dispose', this.onGeometryDispose); g.addEventListener('dispose', this.onGeometryDispose); }
+							return set0.call(this, g);
+						};
+					};
 					const Ob = this.gl._objects, cro0 = Ob.createRenderObject.bind(Ob);
 					Ob.createRenderObject = (...a) => {
 						const ro = cro0(...a), od = ro.onDispose;
+						fixSetGeometry(Object.getPrototypeOf(ro));
 						ro.onDispose = () => { if (ro.bundle) ro.bundle.needsUpdate = true; od(); };
 						return ro;
 					};

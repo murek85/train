@@ -1594,3 +1594,53 @@ body.radio-on #toasts { top: calc(12px + var(--radio-h, 72px) + 14px); }
 .mf-report .rep-board .mb-dl { margin-top: 2px; padding-top: 9px; border-top: 1px solid #1d2530; gap: 5px 14px; }
 .rep-board .flap.bad i, .rep-board .mb-note.bad .flap i { color: var(--m-red); text-shadow: 0 0 6px rgba(255, 106, 85, 0.5); }
 .rep-board .mb-dl dd.warn { color: var(--m-accent-2); }
+/* sygnalizacja (prawy środek) zawsze nad panelem sterowania: środek na pół ekranu, ale dół co najmniej 14 px nad
+   przyciskami (wysokości paneli – hud.js); na niskim ekranie panel idzie do góry, nie wyżej niż 16 px od krawędzi */
+#hud .hud-signals { top: max(calc(16px + var(--sig-h, 0px) / 2), min(50%, calc(100% - 16px - var(--ctrl-h, 0px) - 14px - var(--sig-h, 0px) / 2))); }
+@media (max-width: 700px) { #hud .hud-signals { top: 50%; } } /* wąski ekran: sterowanie u góry pod rozkładem – bez podnoszenia */
+
+/* ================= komunikaty rozdzielone wg rodzaju (hud.js – msgPlace) =================
+   pasek u góry – zdarzenia, ostrzeżenia i stany pojazdu; pod nim OSD (potwierdzenia akcji, położenie – hud.js);
+   wyświetlacz LED z zapowiedziami – pod rozkładem; dziennik – w pauzie. */
+/* OSD: jedna linijka (położenie i wyrównanie – niżej) */
+.osd {
+	position: fixed; top: 14px; right: 64px; z-index: 5; display: flex; align-items: baseline; gap: 8px; max-width: min(420px, calc(100vw - 420px));
+	padding: 6px 12px; border: 1px solid var(--m-line); border-right: 3px solid #7fb6e8; background: rgba(6, 9, 14, 0.82); backdrop-filter: blur(6px);
+	color: var(--m-text); font-size: 12.5px; line-height: 1.35; pointer-events: none; transition: opacity 0.25s;
+}
+.osd.hidden { display: none; }
+.osd.fade { opacity: 0; }
+.osd.pop { animation: osd-pop 0.18s ease-out; }
+.osd em { flex: none; font: 600 9px var(--m-mono); font-style: normal; letter-spacing: 1.6px; color: #7fb6e8; }
+.osd span { min-width: 0; }
+@keyframes osd-pop { from { opacity: 0; transform: translateY(-4px); } }
+
+/* wyświetlacz pasażerski LED pod rozkładem: pomarańczowe diody, przewijany tekst */
+.pa-led { flex: none; display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: #050403; border: 1px solid #2a1f0c; box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.9); }
+.pa-led.hidden { display: none; }
+.pa-led .lamp { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--m-accent); box-shadow: 0 0 6px var(--m-accent); animation: hud-blink 1s steps(2) infinite; }
+.pa-win { position: relative; flex: 1; min-width: 0; height: 18px; overflow: hidden;
+	background-image: radial-gradient(circle, rgba(255, 140, 0, 0.07) 0.8px, transparent 1.1px); background-size: 3px 3px; }
+#pa-text { position: absolute; left: 0; top: 0; white-space: nowrap; font: 700 13px/18px var(--m-mono); letter-spacing: 1px; color: #ffad33; text-shadow: 0 0 6px rgba(255, 150, 20, 0.7); text-transform: uppercase; }
+@keyframes pa-scroll { from { transform: translateX(var(--from, 300px)); } to { transform: translateX(var(--to, -300px)); } }
+
+/* pauza: dziennik jazdy */
+.rep-log { list-style: none; margin: 0; padding: 0; }
+.rep-log li { display: grid; grid-template-columns: 40px auto 1fr; gap: 3px 9px; align-items: baseline; padding: 5px 4px; border-top: 1px solid #161d27; font-size: 12.5px; color: var(--m-text); }
+.rep-log li:first-child { border-top: 0; }
+.rep-log time { font: 600 11px var(--m-mono); color: var(--m-muted); }
+.rep-log em { font: 600 9px var(--m-mono); font-style: normal; letter-spacing: 1.4px; color: #7fb6e8; white-space: nowrap; }
+.rep-log li.warn em { color: var(--m-accent); }
+.rep-log li.bad em { color: var(--m-red); }
+.rep-log li.good em { color: var(--m-sig); }
+.rep-log li.announce em { color: #ffad33; }
+.rep-log li.bad span { color: #ffd9d2; }
+@media (prefers-reduced-motion: reduce) { .osd.pop, .pa-led .lamp { animation: none !important; } }
+/* OSD: tytuł nad treścią (jak pasek u góry) */
+.osd { flex-direction: column; align-items: flex-start; gap: 2px; padding: 5px 12px 6px; }
+/* OSD na środku nad podpowiedzią (wysokość – hud.js), wyśrodkowany tekst, ramka z lewej jak pozostałe */
+.osd { top: auto; right: auto; left: 50%; bottom: 240px; transform: translateX(-50%); align-items: center; text-align: center; max-width: min(520px, calc(100vw - 32px)); border-right: 1px solid var(--m-line); border-left: 3px solid #7fb6e8; }
+@keyframes osd-pop { from { opacity: 0; transform: translate(-50%, 4px); } }
+/* OSD u góry na środku pod paskiem zdarzeń (top – hud.js), tytuł i treść do lewej */
+.osd { top: 14px; bottom: auto; align-items: flex-start; text-align: left; }
+@keyframes osd-pop { from { opacity: 0; transform: translate(-50%, -4px); } }

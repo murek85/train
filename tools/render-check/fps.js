@@ -4,12 +4,10 @@
    z gputime), wywołania, trójkąty. FPS_JS – plik z kodem wykonanym przed pomiarem (np. wyłączenie efektu).
      node_modules/electron/dist/electron.exe tools/render-check/fps.js <port> <zapytanie | ->   (np. webgpu&gputime, webgpu=0) */
 const { app, BrowserWindow } = require('electron');
-const os = require('os'), fsx = require('fs'), pathx = require('path');
+const fsx = require('fs');
 const [port, query] = process.argv.slice(-2);
 const W = Number(process.env.FPS_W) || 1920, H = Number(process.env.FPS_H) || 1080, SEC = Number(process.env.FPS_SEC) || 10;
-const tmpProfile = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'maszynista-fps-'));
-app.setPath('userData', tmpProfile);
-app.on('quit', () => { try { fsx.rmSync(tmpProfile, { recursive: true, force: true }); } catch {} });
+const quit = require('./tmpprofile.js')(app, 'fps');   // profil przeglądarki tymczasowy, usuwany po wyjściu
 app.commandLine.appendSwitch('enable-unsafe-webgpu');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
@@ -91,5 +89,5 @@ app.whenReady().then(async () => {
 	// FPS_SHOT=<plik.png> – zrzut okna po pomiarze
 	if (process.env.FPS_SHOT) fsx.writeFileSync(process.env.FPS_SHOT, (await w.webContents.capturePage()).toPNG());
 	console.log(JSON.stringify({ res, errs: [...errs].map(([k, n]) => n + '× ' + k) }, null, 1));
-	app.exit(0);
+	quit();
 });

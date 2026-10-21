@@ -29,7 +29,10 @@ Skrypty Electron do sprawdzania trybu WebGPU (`?webgpu`) wobec WebGL. Gra musi d
 | `menuops.js` | zmiany w menu (inna trasa, skład, pogoda, powrót): czas okienka, etapy, najdłuższa klatka w okienku i po nim; `MENU_PROF=1` / `tabor` / `pogoda` – profil zmiany i budowy shaderów; `MENU_OPS=tabor` – same zmiany składu (trzy razy). Pomiar po zakończeniu wczytywania i kompilacji w tle po starcie. Profil przeglądarki tymczasowy (usuwany po teście) |
 | `bundles.js` | paczki statycznego świata (WebGPU): ustawienia ze zgłoszenia, pauza → pora roku (`SEASON`), obrót kamery; przy każdym odtworzeniu paczki zasoby nagrane w koderze a bieżące (powiązania, bufory, potok) oraz obce obiekty (inna kamera niż paczka). Profil tymczasowy |
 | `fps.js` | wydajność jazdy w ustawieniach gracza (jakość wysoka, Orzesze – Mikołów): FPS, czas procesora z podziałem, czas karty (`gputime`); `FPS_STILL=1` – pociąg stoi (powtarzalnie), `FPS_TIME`, `FPS_WEATHER`, `ROUTE`, `FPS_W`/`FPS_H`, `FPS_NOVSYNC`, `FPS_PROF=1` – profil procesora, `FPS_JS` – kod przed pomiarem, `FPS_SHOT` – zrzut. Profil tymczasowy |
+| `heapleak.js` | pamięć JS przy zmianach trasy w menu (`HEAP_N`, domyślnie 6, na przemian inna i pierwsza): sterta po gc po każdej zmianie, spis obiektów według konstruktora (czego przybyło); `HEAP_PATH=1` – które stare obiekty sceny żyją i kto je trzyma (właściwości), `HEAP_SNAP=<plik>` – migawka sterty z oznaczonymi starymi obiektami. Profil tymczasowy |
+| `heappath.js` | (node) ścieżki trzymania oznaczonych obiektów z migawki `HEAP_SNAP` – `node --max-old-space-size=16000 heappath.js <migawka> [na grupę] [id,id – krawędzie do węzłów]` |
 | `wgsldump.js` | kod WGSL wszystkich programów – porównanie dwóch uruchomień (powtarzalność) |
+| `tmpprofile.js` | moduł (nie skrypt): profil przeglądarki tymczasowy w `%TEMP%/maszynista-<skrypt>-*` dla `menuops.js`, `bundles.js`, `fps.js`, `heapleak.js` – zwraca `quit()` (wyjście przez `app.quit`), katalog usuwany po końcu procesu, profile z przerwanych uruchomień przy następnym starcie |
 
 Przykład (jakość niska – bez efektów po renderowaniu, więc porównuje same materiały):
 

@@ -3,11 +3,8 @@
    po nim. Profil przeglądarki tymczasowy (świeży, usuwany po teście) – wybory menu nie zostają w profilu skryptów.
      node_modules/electron/dist/electron.exe tools/render-check/menuops.js <port> <zapytanie | -> */
 const { app, BrowserWindow } = require('electron');
-const os = require('os'), fsx = require('fs'), pathx = require('path');
 const [port, query] = process.argv.slice(-2);
-const tmpProfile = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'maszynista-menuops-'));
-app.setPath('userData', tmpProfile);
-app.on('quit', () => { try { fsx.rmSync(tmpProfile, { recursive: true, force: true }); } catch {} });
+const quit = require('./tmpprofile.js')(app, 'menuops');   // profil przeglądarki tymczasowy, usuwany po wyjściu
 app.commandLine.appendSwitch('enable-unsafe-webgpu');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
@@ -39,7 +36,7 @@ app.whenReady().then(async () => {
 		console.log([...incl].sort((a, b) => b[1] - a[1]).slice(0, 45).map(([k, v]) => (v / 1000).toFixed(0).padStart(7) + ' ms ' + k).join('\n'));
 		const who = await w.webContents.executeJavaScript(`(() => { const W = window.__who; let n = 0; for (const v of W.values()) n += v; return [n].concat([...W].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([k, v]) => v + '× ' + k)); })()`);
 		console.log('--- budowy shaderów: ' + who[0] + String.fromCharCode(10) + who.slice(1).join(String.fromCharCode(10)));
-		app.exit(0);
+		quit();
 		return;
 	}
 	try {
@@ -90,5 +87,5 @@ app.whenReady().then(async () => {
 		})()`);
 	} catch (e) { res = { error: String(e) }; }
 	console.log(JSON.stringify({ res, errs: [...new Set(errs)] }, null, 1));
-	app.exit(0);
+	quit();
 });

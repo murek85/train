@@ -34,6 +34,8 @@
 	<!-- zadanie samouczka (instruktor) -->
 	<div id="task" class="task hidden"><div class="task-h"><b>Instruktor</b><span id="task-n"></span></div><p id="task-text"></p></div>
 	<div id="toasts"></div>
+	<!-- potwierdzenia akcji (kamera, czas, wycieraczki…): jedna linijka w prawym górnym rogu, nowa zastępuje poprzednią -->
+	<div id="osd" class="osd hidden" aria-live="polite"><em></em><span></span></div>
 	<div id="prompt" class="hidden"></div>
 	<button id="btn-pause" class="corner hidden" title="Pauza (Esc)">❚❚</button>
 	<div id="fps" class="hidden"></div>
@@ -49,6 +51,8 @@
 			<div class="trip-km" title="Kilometraż – położenie czoła pociągu od początku trasy"><b id="i-km">km 0,0</b><span id="i-km-sub"></span><button id="order-chip" class="order-chip hidden" title="Rozkazy pisemne – pokaż ostatni (O)"></button></div>
 			<div class="trip-now"><label id="i-station-label">Następna stacja</label><b id="i-station">—</b><span id="i-station-sub"></span><span id="i-pax" class="pax"></span></div>
 			<div class="timeline" id="timeline"></div>
+			<!-- wyświetlacz pasażerski: zapowiedzi przewijane jak na tablicy LED -->
+			<div class="pa-led hidden" id="pa-led" aria-live="polite"><i class="lamp"></i><div class="pa-win"><span id="pa-text"></span></div></div>
 		</div>
 
 		<!-- prawy środek: semafor, ograniczenie, profil -->
@@ -498,6 +502,7 @@
 				<button type="button" data-rep="report" class="sel">Raport jazdy</button>
 				<button type="button" data-rep="tt">Rozkład jazdy</button>
 				<button type="button" data-rep="orders">Rozkazy</button>
+				<button type="button" data-rep="log">Dziennik</button>
 			</div>
 			<div id="rep-body"></div>
 		</aside>
