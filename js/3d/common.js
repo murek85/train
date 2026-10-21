@@ -818,6 +818,24 @@ import * as THREE from 'three';
 		prism: shared(new T.CylinderGeometry(0.5, 0.5, 1, 3).rotateX(-Math.PI / 2)),
 	};
 
+	/* Ładunek usypany (węgiel, kruszywo) jednostkowy jak GEO.box: sam wierzch od y = −0,2 przy burtach do 0,5 na grzbiecie,
+	   łagodnie opadający ku czołom, z grudami (fale i stały szum – ta sama bryła w każdym wagonie); ściany płaskie
+	   (bez wspólnych normalnych) – grudy załamują światło jak bryłki węgla. */
+	GEO.heap = shared((() => {
+		const g = new T.PlaneGeometry(1, 1, 32, 96).rotateX(-Math.PI / 2), p = g.attributes.position;
+		const rnd = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+		for (let k = 0; k < p.count; k++) {
+			const x = p.getX(k), z = p.getZ(k);
+			const px = Math.pow(Math.cos(Math.PI * x), 0.7), pz = Math.min(1, (0.5 - Math.abs(z)) / 0.14);
+			const lump = Math.sin(x * 41 + z * 23) * Math.sin(z * 67 - x * 13) * 0.5 + (rnd(x, z) - 0.5) * 1.2;
+			const edge = Math.abs(x) > 0.49 || Math.abs(z) > 0.49 ? 0 : 1;
+			p.setY(k, -0.2 + 0.7 * px * (0.45 + 0.55 * pz) * (0.92 + 0.08 * Math.sin(z * 9)) + 0.045 * lump * edge);
+		}
+		const f = g.toNonIndexed();
+		f.computeVertexNormals();
+		return f;
+	})());
+
 	/* Podkład betonowy (jednostkowy jak GEO.box – skalowany 2,6 × 0,2 × 0,26 m): w środku zwężony (talia),
 	   przekrój trapezowy (wierzch węższy od spodu), podparcia szyn płaskie. */
 	GEO.sleeper = shared((() => {

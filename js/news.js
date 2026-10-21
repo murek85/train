@@ -4,6 +4,126 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.8',
+			date: '21 października 2026',
+			groups: [
+				['Perony', [
+					'Ławki i kosze co najmniej 1 m za żółtym pasem ostrzegawczym; na wąskim peronie wyspowym jedna ławka zamiast pary, na zbyt wąskim – bez ławek.',
+					'Pasażerowie czekają, spacerują i stoją w kolejce do drzwi za żółtym pasem; przechodzą przez niego tylko przy wsiadaniu, a po wysiadaniu najpierw odchodzą od krawędzi.',
+				]],
+			],
+		},
+		{
+			version: '0.58.7',
+			date: '21 października 2026',
+			groups: [
+				['Wiaty', [
+					'Wiaty stacyjne mieszczą się w obrysie peronu: dach kończy się przed krawędzią od strony toru i przed tylną krawędzią, wzdłuż – co najmniej 3 m przed końcami peronu.',
+				]],
+			],
+		},
+		{
+			version: '0.58.6',
+			date: '21 października 2026',
+			groups: [
+				['Wiaty', [
+					'Wiaty przystankowe: matowy pas ostrzegawczy na szybach, blenda dookoła dachu z okapnikiem, słupki na końcach ścian bocznych, kosz przy wiacie.',
+					'Wiaty stacyjne: dach z blachy na rąbek stojący.',
+				]],
+				['Latarnie uliczne', [
+					'Słup gładszy, toczony cokół, drzwiczki rewizyjne, kołnierz pod wysięgnikiem, tulejka na końcu wysięgnika.',
+					'Drogi główne: opływowa oprawa LED z radiatorem; osiedlowe: kopułka z kołnierzem i iglicą.',
+				]],
+				['Niebo', [
+					'Gwiazdy i księżyc całkiem znikają w dzień (zostawały słabe punkty).',
+				]],
+			],
+		},
+		{
+			version: '0.58.5',
+			date: '21 października 2026',
+			groups: [
+				['Przejazdy', [
+					'Półrogatki: napęd przy sygnalizatorze, ramię w biało-czerwone pasy z lampkami i przeciwwagą – opadają kilka sekund po włączeniu świateł, podnoszą się po przejeździe pociągu.',
+				]],
+				['Budynki', [
+					'Bloki mieszkalne z balkonami przy oknach (płyta i balustrada w kolorze wybranym dla bloku).',
+					'Dachy dwuspadowe i kopertowe z okapem i podbitką, domy z kominami.',
+				]],
+				['Perony', [
+					'Ławki z żeliwnymi bokami i wygiętym oparciem, kosze toczone z wywiniętym brzegiem.',
+				]],
+				['Niebo', [
+					'Gwiazdy gasną w dzień (w trybie WebGPU było je widać w południe na błękicie).',
+				]],
+			],
+		},
+		{
+			version: '0.58.4',
+			date: '21 października 2026',
+			groups: [
+				['Ludzie', [
+					'Gładsza sylwetka: tułów, biodra, uda, łydki i ręce z brył obrotowych zamiast walców.',
+					'Głowa w kształcie jajka (bez wystającej żuchwy), oczy z białkami, usta, nowe włosy.',
+				]],
+				['Samochody', [
+					'Koła z oponami o zaokrąglonym barku i felgami z pięcioma ramionami.',
+					'Dostawczy: szyby tylko w kabinie, blaszana część ładunkowa z drzwiami przesuwnymi i tylnymi.',
+					'Szczeliny drzwi, przetłoczenie na boku, listwa pod szybami, kierunkowskazy, światła przeciwmgłowe i cofania, wycieraczki, antena, wydech.',
+				]],
+			],
+		},
+		{
+			version: '0.58.3',
+			date: '21 października 2026',
+			groups: [
+				['EZT', [
+					'ED250: nos zwężony także od dołu (sylwetka Pendolino), pod nim skośna owiewka ze zgarniaczem, sprzęg schowany pod nosem.',
+					'Elf i ED250: obudowy klimatyzatorów na dachu ze skośnymi owiewkami, żaluzjami na bokach i dwoma wentylatorami.',
+					'Elf: miech przegubu prawie na całą szerokość pudła, dopasowany do dachu, z gęstymi fałdami i ramami.',
+					'Gęstsze fałdy miechów także w EN57 i wagonach pasażerskich.',
+				]],
+			],
+		},
+		{
+			version: '0.58.2',
+			date: '21 października 2026',
+			groups: [
+				['Tabor', [
+					'Puste Eaos: wnętrze ze słupkami i podłużnicą, wytarte ściany, podłoga z blach ze spoinami, węgiel w kątach.',
+					'Falns: pełne leje w środku – skośne dna od czół do zsypów i grzbiet rozdzielający leje.',
+					'Habbiins: ściany przesuwne z gęstymi przetłoczeniami, szczelinami między skrzydłami, drążkami zamknięć i szynami rolek.',
+					'Nowoczesne EZT (Elf, ED250) i wagony A9 / B10: hamulce tarczowe – tarcze wentylowane na osiach i zaciski zamiast klocków.',
+				]],
+			],
+		},
+		{
+			version: '0.58.1',
+			date: '21 października 2026',
+			groups: [
+				['Tabor', [
+					'Wagony towarowe na wózkach Y25: prowadnice nad maźnicami z gniazdami sprężyn, łączniki Lenoir, belki hamulcowe.',
+					'Węgiel w Eaos i Falns usypany w pryzmę z bryłkami.',
+					'ET22, EU07 i inne lokomotywy: żaluzje boczne z pochylonymi listwami w kolorze pudła.',
+					'EN57: skrzynie oporników na dachu z ocynkowanej blachy, z kratą i żaluzjami.',
+				]],
+			],
+		},
+		{
+			version: '0.58.0',
+			date: '21 października 2026',
+			groups: [
+				['Nowa trasa', [
+					'Kraków Główny – Zakopane: 135,8 km, 49 stacji i przystanków, przez Skawinę, Kalwarię, Suchą Beskidzką Zamek, Chabówkę i Nowy Targ – górskie pochylenia do 29‰, Tatry na horyzoncie.',
+				]],
+				['Generator tras', [
+					'Stacje do 100 km od siebie w linii prostej (dotąd 70 km).',
+					'Kilka numerów linii po przecinku (np. „91,94,97,98,99”) – przebieg przez węzły, z łącznicami.',
+					'Prędkości PKP PLK na przebiegu przez kilka linii – kilometraż każdej linii na jej odcinku.',
+				]],
+			],
+		},
+		{
 			version: '0.57.7',
 			date: '21 października 2026',
 			groups: [

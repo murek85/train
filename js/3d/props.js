@@ -449,40 +449,42 @@ import * as THREE from 'three';
 		const cyl = (rt, rb, h, seg, x, y, z, sz = 1) => new T.CylinderGeometry(rt, rb, h, seg).scale(1, 1, sz).translate(x, y, z);
 		const sph = (r, x, y, z, sx = 1, sy = 1, sz = 1, ws = 12, hs = 8) => new T.SphereGeometry(r, ws, hs).scale(sx, sy, sz).translate(x, y, z);
 		const bx = (w, h, d, x, y, z) => new T.BoxGeometry(w, h, d).translate(x, y, z);
+		// bryła obrotowa wokół pionu z profilu [promień, wysokość] (od dołu do góry; promień 0 – zamknięcie), spłaszczona w z
+		const lat = (pr, x, z, sz = 1, seg = 14) => new T.LatheGeometry(pr.map(([r, y]) => new T.Vector2(r, y)), seg).scale(1, 1, sz).translate(x, 0, z);
 		const P = [];
 		const part = (geo, color, limb, keep) => P.push({ geo, color, limb, keep });
 		for (const [sx, thigh, shin] of [[-1, 1, 3], [1, 2, 4]]) {
 			const x = sx * 0.095;
-			// udo i biodro
-			part(cyl(0.088, 0.066, 0.44, 10, x, 0.71, 0, 1.05), PANTS, thigh, 1);
-			part(sph(0.066, x, 0.5, 0, 1, 1, 1, 10, 6), PANTS, shin, 1); // kolano
-			// łydka, nogawka rozszerzona przy bucie
-			part(cyl(0.062, 0.058, 0.36, 10, x, 0.31, 0, 1.05), PANTS, shin, 1);
-			part(cyl(0.058, 0.066, 0.06, 10, x, 0.11, 0.005), PANTS, shin, 1);
+			// udo (szersze u góry, zwężone ku kolanu) i kolano
+			part(lat([[0, 0.49], [0.06, 0.5], [0.064, 0.56], [0.074, 0.68], [0.086, 0.82], [0.09, 0.9], [0.07, 0.95], [0, 0.96]], x, 0, 1.05), PANTS, thigh, 1);
+			part(sph(0.064, x, 0.5, 0, 1, 1, 1, 12, 8), PANTS, shin, 1);
+			// łydka z wypukłością, nogawka rozszerzona przy bucie
+			part(lat([[0, 0.08], [0.064, 0.08], [0.058, 0.14], [0.06, 0.24], [0.066, 0.34], [0.062, 0.44], [0.06, 0.52], [0, 0.53]], x, 0.005, 1.05), PANTS, shin, 1);
 			// but: cholewka, przód, podeszwa
 			part(sph(0.058, x, 0.075, 0.01, 1, 0.8, 1.1, 10, 6), SHOE, shin, 2);
 			part(sph(0.054, x, 0.05, -0.08, 0.95, 0.6, 1.25, 10, 6), SHOE, shin, 2);
 			part(bx(0.088, 0.018, 0.235, x, 0.01, -0.035), SOLE, shin, 2);
 		}
-		// biodra, pasek z klamrą
-		part(sph(0.172, 0, 0.9, 0, 1.05, 0.5, 0.74), PANTS, 0, 1);
+		// biodra (miednica łagodnie przechodząca w uda), pasek z klamrą
+		part(lat([[0, 0.8], [0.12, 0.81], [0.165, 0.86], [0.178, 0.92], [0.176, 0.97], [0.17, 1.0], [0, 1.0]], 0, 0, 0.72, 16), PANTS, 0, 1);
 		part(cyl(0.172, 0.17, 0.05, 14, 0, 0.98, 0, 0.68), BELT, 0, 2);
 		part(bx(0.05, 0.035, 0.01, 0, 0.98, -0.118), [0.6, 0.55, 0.4], 0, 2);
 		// kurtka: dół (szerszy), tułów zwężony w pasie, klatka, barki, kołnierz, zapięcie, kieszenie
-		part(cyl(0.19, 0.2, 0.12, 14, 0, 1.03, 0, 0.66), W, 0);
-		part(cyl(0.2, 0.175, 0.24, 14, 0, 1.17, 0, 0.62), W, 0);
-		part(cyl(0.215, 0.2, 0.18, 14, 0, 1.36, 0, 0.62), W, 0);
-		part(sph(0.215, 0, 1.45, 0, 1, 0.4, 0.62), W, 0);
+		// tułów jedną bryłą obrotową: dół kurtki, talia, klatka, zaokrąglone barki (bez schodków między walcami)
+		part(lat([[0, 0.97], [0.196, 0.97], [0.2, 1.02], [0.188, 1.12], [0.183, 1.2], [0.197, 1.29], [0.21, 1.37], [0.214, 1.43], [0.196, 1.49], [0.15, 1.53], [0.085, 1.555], [0, 1.56]], 0, 0, 0.62, 18), W, 0);
+		// łopatki i mięśnie piersiowe – lekko wypukłe plecy i przód
+		part(sph(0.16, 0, 1.36, 0.035, 1.15, 0.9, 0.6, 12, 8), W, 0);
 		part(cyl(0.07, 0.09, 0.07, 12, 0, 1.53, 0.005, 0.95), W, 0);
 		part(bx(0.012, 0.42, 0.01, 0, 1.24, -0.128), [0.55, 0.55, 0.55], 0, 0);
 		for (const k of [-1, 1]) part(bx(0.09, 0.012, 0.01, k * 0.1, 1.12, -0.121), [0.6, 0.6, 0.6], 0, 0);
 		// ręce: ramię (z barkiem), łokieć i przedramię z mankietem
 		for (const [sx, up, low] of [[-1, 5, 7], [1, 6, 8]]) {
 			const x = sx * 0.225;
-			part(sph(0.066, x - sx * 0.005, 1.44, 0, 1, 1, 1, 10, 8), W, up);
-			part(cyl(0.062, 0.052, 0.29, 10, x, 1.3, 0), W, up);
-			part(sph(0.052, x, 1.16, 0, 1, 1, 1, 10, 6), W, low);
-			part(cyl(0.051, 0.044, 0.25, 10, x, 1.03, 0), W, low);
+			part(sph(0.068, x - sx * 0.008, 1.44, 0, 1, 1, 1, 12, 8), W, up);
+			// ramię zwężone ku łokciowi, przedramię szersze przy łokciu, zwężone w nadgarstku
+			part(lat([[0, 1.14], [0.05, 1.15], [0.054, 1.2], [0.06, 1.3], [0.064, 1.4], [0.05, 1.46], [0, 1.47]], x, 0, 1, 12), W, up);
+			part(sph(0.051, x, 1.16, 0, 1, 1, 1, 12, 8), W, low);
+			part(lat([[0, 0.9], [0.042, 0.905], [0.045, 0.96], [0.051, 1.06], [0.052, 1.13], [0.045, 1.18], [0, 1.185]], x, 0, 0.92, 12), W, low);
 			part(cyl(0.047, 0.047, 0.03, 10, x, 0.9, 0), [0.75, 0.75, 0.75], low);
 		}
 		/* dodatki (aKeep 4 – plecak, 5 – torba na ramię z paskiem): w bryle każdej osoby, widoczne tylko u części
@@ -500,16 +502,21 @@ import * as THREE from 'three';
 		const H = [];
 		const hp = (geo, color, limb, keep) => H.push({ geo, color, limb, keep });
 		hp(cyl(0.05, 0.056, 0.11, 10, 0, 1.56, 0.005), W, 0); // szyja
-		hp(sph(0.104, 0, 1.69, 0, 0.9, 1.1, 1, 16, 12), W, 9); // czaszka
-		hp(sph(0.075, 0, 1.625, -0.035, 1, 0.7, 0.95, 12, 8), W, 9); // żuchwa i policzki
-		hp(sph(0.02, 0, 1.675, -0.104, 0.8, 1.3, 1.1, 8, 6), W, 9); // nos
+		/* głowa jedną bryłą obrotową (kształt jajka: wąska broda, szersza czaszka – bez osobnej kuli żuchwy, która
+		   wyglądała jak pysk), lekko spłaszczona po bokach; nos, uszy, oczy z białkami, brwi, usta */
+		const lt = (pr, sx, sz, z, seg = 18) => new T.LatheGeometry(pr.map(([r, y]) => new T.Vector2(r, y)), seg).scale(sx, 1, sz).translate(0, 0, z);
+		hp(lt([[0, 1.578], [0.035, 1.581], [0.058, 1.597], [0.074, 1.625], [0.087, 1.66], [0.097, 1.7], [0.1, 1.735], [0.094, 1.77], [0.078, 1.795], [0.05, 1.81], [0, 1.815]], 0.9, 1.06, 0), W, 9);
+		hp(sph(0.016, 0, 1.668, -0.1, 0.85, 1.5, 1.2, 8, 6), W, 9); // nos
 		for (const sx of [-1, 1]) {
-			hp(sph(0.024, sx * 0.095, 1.675, 0.005, 0.45, 1, 0.8, 8, 6), W, 9); // ucho
-			hp(sph(0.012, sx * 0.034, 1.7, -0.088, 1, 0.8, 0.5, 8, 6), DARK, 9, 2); // oko
-			hp(bx(0.04, 0.008, 0.012, sx * 0.034, 1.725, -0.089), HAIR, 9, 3); // brew
+			hp(sph(0.022, sx * 0.088, 1.68, 0.008, 0.45, 1.05, 0.8, 8, 6), W, 9); // ucho
+			hp(sph(0.013, sx * 0.032, 1.7, -0.091, 1.2, 0.75, 0.45, 8, 6), [0.9, 0.9, 0.88], 9, 2); // białko
+			hp(sph(0.0075, sx * 0.032, 1.7, -0.096, 1, 1, 0.5, 8, 6), DARK, 9, 2); // tęczówka
+			hp(bx(0.036, 0.008, 0.012, sx * 0.034, 1.722, -0.094).rotateZ(-sx * 0.12), HAIR, 9, 3); // brew
 		}
-		hp(new T.SphereGeometry(0.11, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.48).scale(0.95, 1.06, 1.04).translate(0, 1.71, 0.008), HAIR, 9, 3); // włosy
-		hp(new T.SphereGeometry(0.108, 14, 6, Math.PI * 0.12, Math.PI * 0.76, Math.PI * 0.45, Math.PI * 0.3).scale(0.96, 1.1, 1.05).translate(0, 1.7, 0.012), HAIR, 9, 3); // tył i boki
+		hp(bx(0.038, 0.007, 0.01, 0, 1.628, -0.088), [0.5, 0.25, 0.23], 9, 2); // usta
+		// włosy: czapa nad czołem (linia włosów 4 cm nad oczami), niżej z tyłu i po bokach – osobna część
+		hp(new T.SphereGeometry(0.115, 18, 8, 0, Math.PI * 2, 0, Math.PI * 0.42).scale(0.94, 1.0, 1.1).translate(0, 1.71, 0.002), HAIR, 9, 3);
+		hp(new T.SphereGeometry(0.112, 14, 6, Math.PI * 0.12, Math.PI * 0.76, Math.PI * 0.3, Math.PI * 0.42).scale(0.95, 1.05, 1.1).translate(0, 1.708, 0.006), HAIR, 9, 3); // tył i boki
 		// dłonie (z kciukiem) – przy przedramionach
 		for (const [sx, low] of [[-1, 7], [1, 8]]) {
 			hp(sph(0.043, sx * 0.225, 0.845, 0.004, 0.62, 1.25, 0.95, 10, 8), W, low);
@@ -634,12 +641,24 @@ import * as THREE from 'three';
 		const BV = 0.13, ex = BV - 0.07;
 		parts.push({ geo: ext(body, 1.76, BV, 4), color: W1 });
 		// kabina (szyby): przednia szyba od (0,92; 0,9) do (0,15; 1,42), tylna wg typu
+		// dostawczy: szyby tylko w kabinie, część ładunkowa z blachy (dawniej przeszklony do samego tyłu)
 		const gh = van
-			? [[-L + 0.05, 1.1], [L - 0.72, 1.1], [L - 1.25, 1.95], [-L + 0.05, 1.98]]
+			? [[L - 1.95, 1.1], [L - 0.72, 1.1], [L - 1.25, 1.95], [L - 1.95, 1.97]]
 			: kind === 2 ? [[-1.32, 0.95], [0.92, 0.9], [0.15, 1.42], [-0.85, 1.44], [-1.42, 1.0]]
 				: kind === 3 ? [[-L + 0.1, 0.96], [0.92, 0.9], [0.15, 1.42], [-L + 0.22, 1.46], [-L + 0.06, 1.06]]
 					: [[-L + 0.25, 0.95], [0.92, 0.9], [0.15, 1.42], [-1.05, 1.45], [-L + 0.18, 1.02]];
 		parts.push({ geo: ext(gh, 1.54, 0.04), color: GL });
+		if (van) {
+			parts.push({ geo: ext([[-L + 0.02, 1.08], [L - 1.95, 1.08], [L - 1.95, 1.97], [-L + 0.02, 1.97]], 1.74, 0.06, 3), color: W1 });
+			// drzwi przesuwne (szczeliny, szyna u góry, klamka), tylne drzwi dwuskrzydłowe z okienkami
+			for (const x of [-0.875, 0.875]) {
+				for (const z of [L - 2.0, -0.35]) parts.push({ geo: new T.BoxGeometry(0.012, 1.45, 0.012).translate(x * 1.003, 1.15, z), color: DK });
+				parts.push({ geo: new T.BoxGeometry(0.03, 0.035, 2.0).translate(x * 1.01, 1.72, -0.6), color: TRIM });
+				parts.push({ geo: new T.BoxGeometry(0.02, 0.03, 0.14).translate(x * 1.006, 1.05, L - 2.15), color: DK });
+			}
+			parts.push({ geo: new T.BoxGeometry(0.012, 1.5, 0.012).translate(0, 1.18, -L - 0.065), color: DK });
+			for (const x of [-0.42, 0.42]) parts.push({ geo: new T.BoxGeometry(0.6, 0.42, 0.02).translate(x, 1.62, -L - 0.06), color: GL });
+		}
 		// dach (lakier) nad kabiną
 		const rf = van ? [[-L + 0.02, 1.94], [L - 1.24, 1.94], [L - 1.3, 2.02], [-L + 0.02, 2.04]]
 			: [[gh[3][0] - 0.03, gh[3][1] - 0.04], [gh[2][0] + 0.05, gh[2][1] - 0.04], [gh[2][0] - 0.02, gh[2][1] + 0.05], [gh[3][0], gh[3][1] + 0.05]];
@@ -655,14 +674,27 @@ import * as THREE from 'three';
 				parts.push({ geo: new T.BoxGeometry(0.05, 0.48, 0.13).translate(x, 1.17, kind === 0 ? -0.42 : -0.3), color: W1 });
 			}
 		}
-		// zderzaki, osłona chłodnicy, listwy progowe
+		// zderzaki, osłona chłodnicy z listwami, wlot powietrza w zderzaku, rura wydechowa
 		for (const z of [L + 0.02 + ex, -L - 0.02 - ex]) parts.push({ geo: rbox(1.82, 0.22, 0.16, 0.05, 0, 0.45, z), color: TRIM });
-		parts.push({ geo: new T.BoxGeometry(0.72, 0.13, 0.04).translate(0, van ? 0.82 : 0.66, L + 0.04 + ex), color: DK });
+		const gy = van ? 0.82 : 0.66;
+		parts.push({ geo: new T.BoxGeometry(0.72, 0.13, 0.04).translate(0, gy, L + 0.04 + ex), color: DK });
+		for (const dy of [-0.035, 0, 0.035]) parts.push({ geo: new T.BoxGeometry(0.7, 0.012, 0.02).translate(0, gy + dy, L + 0.065 + ex), color: [0.35, 0.36, 0.38] });
+		parts.push({ geo: new T.BoxGeometry(0.9, 0.07, 0.03).translate(0, 0.4, L + 0.11 + ex), color: DK });
+		parts.push({ geo: new T.CylinderGeometry(0.035, 0.035, 0.18, 8).rotateX(Math.PI / 2).translate(0.5, 0.3, -L - 0.02 - ex), color: [0.3, 0.3, 0.32] });
+		if (!van) {
+			// wycieraczki u dołu przedniej szyby, antena na dachu
+			for (const x of [-0.35, 0.3]) parts.push({ geo: new T.BoxGeometry(0.55, 0.02, 0.025).rotateY(0.12).translate(x, gh[1][1] + 0.03, gh[1][0] - 0.06), color: DK });
+			parts.push({ geo: new T.CylinderGeometry(0.006, 0.012, 0.32, 5).rotateX(-0.5).translate(0, gh[3][1] + 0.18, gh[3][0] + 0.2), color: DK });
+		}
 		for (const x of [-0.885, 0.885]) {
 			parts.push({ geo: new T.BoxGeometry(0.02, 0.07, 2 * L - 1.6).translate(x, 0.4, 0), color: TRIM });
-			// linia drzwi, klamki
-			const dz = van ? 0.4 : -0.3;
-			parts.push({ geo: new T.BoxGeometry(0.012, 0.5, 0.012).translate(x * 1.003, 0.68, dz), color: DK });
+			// szczeliny drzwi (przednie, tylne – w kombi, sedanie i hatchbacku 5-drzwiowym), klamki
+			for (const dz of van ? [0.4, L - 0.7] : [0.95, -0.3, kind === 0 ? -1.2 : -1.3]) parts.push({ geo: new T.BoxGeometry(0.012, 0.52, 0.012).translate(x * 1.003, 0.67, dz), color: DK });
+			// przetłoczenie wzdłuż boku i czarna listwa pod szybami bocznymi
+			parts.push({ geo: new T.BoxGeometry(0.012, 0.025, 2 * L - 1.0).translate(x * 1.004, 0.74, 0), color: W1 });
+			if (!van) parts.push({ geo: new T.BoxGeometry(0.03, 0.03, gh[1][0] - gh[0][0] - 0.1).translate(x * 0.98, 0.93, (gh[1][0] + gh[0][0]) / 2), color: TRIM });
+			// kierunkowskaz boczny na błotniku
+			parts.push({ geo: new T.BoxGeometry(0.02, 0.03, 0.07).translate(x * 1.006, 0.72, L - 0.25), color: [1.4, 0.6, 0.05] });
 			for (const z of van ? [0.9] : [0.25, -0.85]) parts.push({ geo: new T.BoxGeometry(0.02, 0.03, 0.12).translate(x * 1.006, 0.86, z), color: DK });
 			// lusterko na wsporniku
 			const mz = van ? L - 0.78 : 0.85, my = van ? 1.2 : 1.0;
@@ -672,16 +704,31 @@ import * as THREE from 'three';
 		// światła
 		for (const x of [-0.6, 0.6]) {
 			parts.push({ geo: rbox(0.4, 0.13, 0.1, 0.03, x, van ? 0.78 : 0.68, L + BV - 0.01), color: [1.7, 1.6, 1.25] });
+			// kierunkowskaz przy reflektorze, światło przeciwmgłowe w zderzaku
+			parts.push({ geo: rbox(0.1, 0.1, 0.08, 0.02, x * 1.4, van ? 0.78 : 0.68, L + BV - 0.03), color: [1.4, 0.6, 0.05] });
+			parts.push({ geo: rbox(0.14, 0.07, 0.06, 0.02, x * 1.1, 0.44, L + 0.1 + ex), color: [1.2, 1.2, 1.1] });
 			parts.push({ geo: rbox(0.32, 0.17, 0.1, 0.03, x * 1.05, van ? 0.85 : 0.76, -L - BV + 0.01), color: [0.95, 0.1, 0.08] });
+			// światło cofania (białe) w kloszu tylnym
+			parts.push({ geo: new T.BoxGeometry(0.1, 0.06, 0.02).translate(x * 0.9, van ? 0.83 : 0.74, -L - BV - 0.045), color: [1.2, 1.2, 1.2] });
 		}
 		// tablice rejestracyjne
 		for (const z of [L + 0.1 + ex, -L - 0.1 - ex]) parts.push({ geo: new T.BoxGeometry(0.52, 0.12, 0.02).translate(0, 0.46, z), color: [1.4, 1.4, 1.4] });
 		// koła w nadkolach: ciemne nadkole (półkole na boku), opona, felga
 		const wz = van ? [1.55, -1.5] : [L - 0.72, -L + 0.68];
+		/* opona z zaokrąglonym barkiem (bryła obrotowa), felga: obręcz, pięć ramion, piasta, za ramionami ciemna tarcza
+		   hamulcowa */
+		const tyre = new T.LatheGeometry([[0.19, -0.11], [0.29, -0.115], [0.318, -0.1], [0.332, -0.06], [0.335, 0], [0.332, 0.06], [0.318, 0.1], [0.29, 0.115], [0.19, 0.11]].map(([r, y]) => new T.Vector2(r, y)), 20);
 		for (const z of wz) for (const x of [-0.8, 0.8]) {
-			parts.push({ geo: new T.CylinderGeometry(0.4, 0.4, 0.04, 16, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).translate(Math.sign(x) * 0.875, 0.34, z), color: DK });
-			parts.push({ geo: new T.CylinderGeometry(0.32, 0.32, 0.22, 16).rotateZ(Math.PI / 2).translate(x, 0.32, z), color: TY });
-			parts.push({ geo: new T.CylinderGeometry(0.2, 0.2, 0.23, 10).rotateZ(Math.PI / 2).translate(x * 1.005, 0.32, z), color: RIM });
+			const sx = Math.sign(x), xf = x + sx * 0.1; // lico felgi
+			parts.push({ geo: new T.CylinderGeometry(0.4, 0.4, 0.04, 16, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).translate(sx * 0.875, 0.34, z), color: DK });
+			parts.push({ geo: tyre.clone().rotateZ(Math.PI / 2).translate(x, 0.335, z), color: TY });
+			parts.push({ geo: new T.CylinderGeometry(0.19, 0.19, 0.2, 14).rotateZ(Math.PI / 2).translate(x, 0.335, z), color: DK });
+			parts.push({ geo: new T.TorusGeometry(0.19, 0.018, 4, 18).rotateY(Math.PI / 2).translate(xf, 0.335, z), color: RIM });
+			for (let k = 0; k < 5; k++) {
+				const a = (k / 5) * Math.PI * 2;
+				parts.push({ geo: new T.BoxGeometry(0.03, 0.17, 0.05).rotateX(a).translate(xf - sx * 0.01, 0.335 + Math.cos(a) * 0.1, z + Math.sin(a) * 0.1), color: RIM });
+			}
+			parts.push({ geo: new T.CylinderGeometry(0.05, 0.055, 0.04, 10).rotateZ(Math.PI / 2).translate(xf - sx * 0.005, 0.335, z), color: RIM });
 		}
 		/* trzy bryły: lakier (kolor wierzchołków biały – kolor auta z materiału albo egzemplarza), szyby (ciemne, błyszczące)
 		   i reszta we własnych kolorach (opony, felgi, nadkola, zderzaki, światła, tablice) – dawniej jedna bryła i wszystko

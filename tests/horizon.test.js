@@ -38,12 +38,12 @@ test('profile: góra w jednym kierunku podnosi horyzont tylko tam, płasko – l
 });
 
 test('trasy wbudowane mają horyzont z danych (routes/horizon), wiarygodne kąty', () => {
-	for (const id of ['gliwice-zabrze', 'gliwice-katowice', 'rybnik-katowice', 'torun-chelmza', 'orzesze-mikolow', 'warszawa-wschodnia-zachodnia', 'gdynia-gdansk', 'zabrze-gliwice']) {
+	for (const id of ['gliwice-zabrze', 'gliwice-katowice', 'rybnik-katowice', 'torun-chelmza', 'orzesze-mikolow', 'warszawa-wschodnia-zachodnia', 'gdynia-gdansk', 'zabrze-gliwice', 'krakow-zakopane']) {
 		const h = require(path.join('..', 'routes', 'horizon', id + '.js'));
 		assert.equal(h.id, id);
 		assert.ok(h.anchors.length >= 3 && h.anchors.every((a) => a.length === 181), id);
 		const all = h.anchors.flatMap((a) => a.slice(1));
-		assert.ok(Math.max(...all) < 600 && Math.min(...all) > -100, id); // −1°…6°
+		assert.ok(Math.max(...all) < (id === 'krakow-zakopane' ? 1200 : 600) && Math.min(...all) > -100, id); // −1°…6° (Tatry nad Zakopanem – do 12°)
 	}
 });
 

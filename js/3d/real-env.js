@@ -1609,19 +1609,40 @@ import * as THREE from 'three';
 		if (World[key]) return World[key];
 		const main = kind === 'main', H = main ? 8.6 : 6.4, L = main ? 1.75 : 1.0, V = (x, y, z) => new T.Vector3(x, y, z);
 		const GAL = [0.56, 0.59, 0.62], DARK = [0.2, 0.22, 0.24], HEAD = [0.3, 0.32, 0.34];
+		const r0 = main ? 0.09 : 0.075, r1 = main ? 0.055 : 0.045;
+		/* (wg zdjęć latarni drogowych): cokół toczony z fazą, słup stożkowy, drzwiczki rewizyjne nad cokołem, kołnierz pod
+		   wysięgnikiem; wysięgnik łukiem z tulejką na końcu */
 		const parts = [
-			{ geo: new T.CylinderGeometry(0.13, 0.15, 0.6, 10).translate(0, 0.3, 0), color: DARK }, // cokół
-			{ geo: new T.CylinderGeometry(main ? 0.055 : 0.045, main ? 0.09 : 0.075, H, 10).translate(0, H / 2, 0), color: GAL },
-			{ geo: new T.TubeGeometry(new T.QuadraticBezierCurve3(V(0, H - 0.4, 0), V(0, H + 0.25, 0.12), V(0, H + 0.2, L)), 10, main ? 0.04 : 0.035, 6), color: GAL },
+			{ geo: new T.LatheGeometry([[0, 0], [0.17, 0], [0.17, 0.05], [0.15, 0.08], [0.14, 0.55], [0.11, 0.62], [r0, 0.64], [0, 0.64]].map(([r, y]) => new T.Vector2(r, y)), 16), color: DARK },
+			{ geo: new T.CylinderGeometry(r1, r0, H, 16).translate(0, H / 2, 0), color: GAL },
+			{ geo: new T.BoxGeometry(0.06, 0.32, 0.03).translate(0, 1.05, -r0 + 0.004), color: HEAD }, // drzwiczki (od strony chodnika)
+			{ geo: new T.CylinderGeometry(r1 + 0.02, r1 + 0.02, 0.08, 16).translate(0, H - 0.45, 0), color: HEAD },
+			{ geo: new T.TubeGeometry(new T.QuadraticBezierCurve3(V(0, H - 0.4, 0), V(0, H + 0.25, 0.12), V(0, H + 0.2, L)), 14, main ? 0.04 : 0.035, 8), color: GAL },
+			{ geo: new T.CylinderGeometry(main ? 0.05 : 0.045, main ? 0.05 : 0.045, 0.16, 10).rotateX(Math.PI / 2).translate(0, H + 0.2, L + 0.04), color: HEAD },
 		];
 		let hy, hz, lw, ll;
 		if (main) {
-			hz = L + 0.28; hy = H + 0.125; lw = 0.28; ll = 0.62;
-			parts.push({ geo: new T.BoxGeometry(0.34, 0.09, 0.72).translate(0, H + 0.17, hz), color: HEAD });
-			parts.push({ geo: new T.BoxGeometry(0.24, 0.05, 0.56).translate(0, H + 0.23, hz - 0.02), color: HEAD });
+			/* oprawa LED: płaski, opływowy korpus (profil boczny – wyższy przy wysięgniku, ścięty ku przodowi, zaokrąglone
+			   krawędzie), od spodu klosz (instancja lens), radiator – żebra na wierzchu */
+			hz = L + 0.4; hy = H + 0.125; lw = 0.28; ll = 0.62;
+			const sh = new T.Shape(), z0 = -0.38, z1 = 0.38;
+			sh.moveTo(z0, 0);
+			sh.lineTo(z1, 0);
+			sh.quadraticCurveTo(z1 + 0.04, 0.03, z1 - 0.02, 0.055);
+			sh.quadraticCurveTo(0.05, 0.1, z0 + 0.06, 0.13);
+			sh.quadraticCurveTo(z0, 0.135, z0, 0.08);
+			sh.lineTo(z0, 0);
+			const body = new T.ExtrudeGeometry(sh, { depth: 0.3, bevelEnabled: true, bevelThickness: 0.025, bevelSize: 0.02, bevelSegments: 2, curveSegments: 6 });
+			body.translate(0, 0, -0.15);
+			body.rotateY(-Math.PI / 2); // profil (z, y) – długość wzdłuż wysięgnika
+			parts.push({ geo: body.translate(0, H + 0.12, hz), color: HEAD });
+			for (let k = -2; k <= 2; k++) parts.push({ geo: new T.BoxGeometry(0.02, 0.025, 0.36).translate(k * 0.05, H + 0.235, hz - 0.12), color: DARK });
 		} else {
+			// oprawa kopułkowa: klosz-czasza, kołnierz, iglica na szczycie
 			hz = L + 0.22; hy = H + 0.1; lw = 0.3; ll = 0.46;
-			parts.push({ geo: new T.SphereGeometry(0.3, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(0.75, 0.55, 1.1).translate(0, H + 0.1, hz), color: HEAD });
+			parts.push({ geo: new T.SphereGeometry(0.3, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2).scale(0.75, 0.55, 1.1).translate(0, H + 0.1, hz), color: HEAD });
+			parts.push({ geo: new T.CylinderGeometry(0.235, 0.235, 0.03, 16).scale(1, 1, 1.47).translate(0, H + 0.105, hz), color: DARK });
+			parts.push({ geo: new T.ConeGeometry(0.03, 0.12, 8).translate(0, H + 0.32, hz), color: DARK });
 		}
 		World[key] = { geo: NS.props.merge(parts), hy, hz, lw, ll };
 		return World[key];
@@ -5022,6 +5043,23 @@ import * as THREE from 'three';
 			for (let k = 0; k < 3; k++) dst.c.push(rgb.r, rgb.g, rgb.b);
 		};
 		const Z = [0, 0];
+		/* prostopadłościan do siatki dst: środek (x, z), od y0 do y1, w – wzdłuż kierunku (ax, az), dp – w poprzek;
+		   ściany na zewnątrz (balkony, kominy) */
+		const cub = (dst, x, z, y0, y1, ax, az, w, dp, rgb, noBottom) => {
+			const bx = -az, bz = ax, V = [];
+			for (const y of [y0, y1]) for (const sa of [-1, 1]) for (const sb of [-1, 1]) V.push([x + (ax * sa * w) / 2 + (bx * sb * dp) / 2, y, z + (az * sa * w) / 2 + (bz * sb * dp) / 2]);
+			const yc = (y0 + y1) / 2;
+			for (const f of [[0, 1, 3, 2], [4, 6, 7, 5], [0, 4, 5, 1], [2, 3, 7, 6], [0, 2, 6, 4], [1, 5, 7, 3]]) {
+				if (noBottom && f[0] === 0 && f[1] === 1) continue;
+				const a = V[f[0]], b2 = V[f[1]], c2 = V[f[2]], d2 = V[f[3]];
+				const fc = [(a[0] + c2[0]) / 2 - x, (a[1] + c2[1]) / 2 - yc, (a[2] + c2[2]) / 2 - z];
+				const e1 = [b2[0] - a[0], b2[1] - a[1], b2[2] - a[2]], e2 = [c2[0] - a[0], c2[1] - a[1], c2[2] - a[2]];
+				const nn = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+				if (nn[0] * fc[0] + nn[1] * fc[1] + nn[2] * fc[2] >= 0) { tri(dst, a, b2, c2, Z, Z, Z, rgb); tri(dst, a, c2, d2, Z, Z, Z, rgb); }
+				else { tri(dst, a, c2, b2, Z, Z, Z, rgb); tri(dst, a, d2, c2, Z, Z, Z, rgb); }
+			}
+		};
+		const BALC = ['#d9d4c8', '#8a9aa6', '#c96f4a', '#6f8f6a', '#e3c86b', '#9aa3ab'];
 		const reserved = (this.env && this.env.reserved) || [];
 		/* zaspy (zima) pod ścianami od strony wiatru (z zachodu – ujemne s… w układzie trasy umownie: normalna ściany
 		   w stronę (−1, 0,35)) i losowo pod pozostałymi; przekrój – klin oparty o ścianę */
@@ -5204,6 +5242,31 @@ import * as THREE from 'three';
 				bandW(Oi, top, yA, wall.clone().multiplyScalar(0.85), true);
 				ringH(Oi, O0, yA, light);
 			}
+			/* balkony bloków mieszkalnych (wg zdjęć bloków z wielkiej płyty): płyta i balustrada przed oknem co drugiego
+			   (albo co trzeciego) przęsła elewacji, od pierwszego piętra – na ścianach dłuższych niż 9 m; przęsła i kondygnacje
+			   jak w teksturze elewacji (okno w środku przęsła 3 m, kondygnacje co 3 m od cokołu) */
+			if (kind === 1 && (!use || use === 2) && h >= 8.5 && hash(seed + 7.7) < 0.8) {
+				const every = hash(seed + 8.1) < 0.6 ? 2 : 3, ph = Math.floor(hash(seed + 8.4) * every);
+				const rail = col.set(BALC[Math.floor(hash(seed + 8.8) * BALC.length)]).clone(), slab = col.set('#b9b6ae').clone();
+				let accB = Math.floor(hash(seed + 0.9) * 4) * 3;
+				for (let k = 0; k < n; k++) {
+					const p = P[k], q = P[(k + 1) % n], len = Math.hypot(q[0] - p[0], q[2] - p[2]);
+					const ux = (q[0] - p[0]) / (len || 1), uz = (q[2] - p[2]) / (len || 1), [nx, nz] = NE[k];
+					if (len >= 9) {
+						for (let t = 1.5 - (accB % 3); t < len - 1.6; t += 3) {
+							if (t < 1.6 || Math.round((accB + t - 1.5) / 3) % every !== ph) continue;
+							for (let y = base + 3.3; y + 1.3 < top - 0.45; y += 3) {
+								const x0 = p[0] + ux * t, z0 = p[2] + uz * t;
+								// płyta (wysunięta 1,1 m), balustrada od frontu i po bokach
+								cub(pl, x0 + nx * 0.55, z0 + nz * 0.55, y - 0.16, y, ux, uz, 2.5, 1.1, slab);
+								cub(pl, x0 + nx * 1.07, z0 + nz * 1.07, y, y + 1.0, ux, uz, 2.5, 0.05, rail, true);
+								for (const e of [-1, 1]) cub(pl, x0 + ux * e * 1.225 + nx * 0.55, z0 + uz * e * 1.225 + nz * 0.55, y, y + 1.0, ux, uz, 0.05, 1.0, rail, true);
+							}
+						}
+					}
+					accB += len;
+				}
+			}
 			if (use) this.envBuildingDecor(group, pl, tri, b, use, P, NE, ccw, base, top, h, seed, flatRoof, cx, cz);
 			// dworzec z mapy: tablica z nazwą stacji na ścianie najbliższej torów
 			if (kind === 6) this.envStationSign(group, b, top);
@@ -5218,10 +5281,27 @@ import * as THREE from 'three';
 				const A = P[o], B = P[(o + 1) % 4], Cc = P[(o + 2) % 4], D = P[(o + 3) % 4];
 				const rh = Math.min(5.5, 0.42 * Math.min(l0, l1) + 0.6);
 				const R0 = [(D[0] + A[0]) / 2, top + rh, (D[2] + A[2]) / 2], R1 = [(B[0] + Cc[0]) / 2, top + rh, (B[2] + Cc[2]) / 2];
-				roofTri(at(A, top), at(B, top), R1, roofC);
-				roofTri(at(A, top), R1, R0, roofC);
-				roofTri(at(Cc, top), at(D, top), R0, roofC);
-				roofTri(at(Cc, top), R0, R1, roofC);
+				/* okap: połacie wysunięte 0,4 m poza ściany (także nad szczytami), od spodu podbitka; dawniej dach kończył się
+				   równo ze ścianą */
+				const EV = 0.4, slope = rh / Math.max(1, Math.min(l0, l1) / 2), Oe = offP(EV);
+				const rl = Math.hypot(R1[0] - R0[0], R1[2] - R0[2]) || 1, rx = (R1[0] - R0[0]) / rl, rz = (R1[2] - R0[2]) / rl;
+				const R0e = [R0[0] - rx * EV, R0[1], R0[2] - rz * EV], R1e = [R1[0] + rx * EV, R1[1], R1[2] + rz * EV];
+				const ye = top - EV * slope, E = (j) => [Oe[(o + j) % 4][0], ye, Oe[(o + j) % 4][1]];
+				const soffit = roofC.clone().multiplyScalar(0.45);
+				for (const [a, b2, c2] of [[E(0), E(1), R1e], [E(0), R1e, R0e], [E(2), E(3), R0e], [E(2), R0e, R1e]]) {
+					roofTri(a, b2, c2, roofC);
+					const dn = (v) => [v[0], v[1] - 0.1, v[2]];
+					if (up(dn(a), dn(b2), dn(c2))) tri(rf, dn(a), dn(c2), dn(b2), Z, Z, Z, soffit); else tri(rf, dn(a), dn(b2), dn(c2), Z, Z, Z, soffit);
+				}
+				// komin (dom): murowany, przy kalenicy, z czapą
+				if (kind === 0 && hash(seed + 5.5) < 0.85) {
+					const f = 0.25 + hash(seed + 5.9) * 0.5, sd = hash(seed + 6.2) < 0.5 ? -1 : 1;
+					const px = R0[0] + (R1[0] - R0[0]) * f + rz * sd * 0.7, pz = R0[2] + (R1[2] - R0[2]) * f - rx * sd * 0.7;
+					const yb = top + rh - 0.7 * slope - 0.3, yt = top + rh + 0.9;
+					const brick = col.set(hash(seed + 6.6) < 0.6 ? '#8a4a3a' : '#bdb6aa').clone();
+					cub(pl, px, pz, yb, yt, rx, rz, 0.55, 0.55, brick, true);
+					cub(pl, px, pz, yt, yt + 0.08, rx, rz, 0.72, 0.72, col.set('#55595e').clone());
+				}
 				// szczyty (trójkąty ścian) – zwrócone na zewnątrz
 				for (const [p, q, rr] of [[B, Cc, R1], [D, A, R0]]) {
 					const a = at(p, top), b2 = at(q, top);
@@ -5233,7 +5313,20 @@ import * as THREE from 'three';
 				// kopertowy (namiotowy): wierzchołek nad środkiem
 				const area = Math.abs(ar) / 2;
 				const apex = [cx, top + Math.min(4.5, 0.32 * Math.sqrt(area) + 0.5), cz];
-				for (let k = 0; k < n; k++) roofTri(at(P[k], top), at(P[(k + 1) % n], top), apex, roofC);
+				// okap 0,35 m z podbitką (jak przy dachu dwuspadowym)
+				const Oe = offP(0.35), soffit = roofC.clone().multiplyScalar(0.45), ye = top - 0.2;
+				for (let k = 0; k < n; k++) {
+					const a = [Oe[k][0], ye, Oe[k][1]], b2 = [Oe[(k + 1) % n][0], ye, Oe[(k + 1) % n][1]];
+					roofTri(a, b2, apex, roofC);
+					const dn = (v) => [v[0], v[1] - 0.1, v[2]], ap = dn(apex);
+					if (up(dn(a), dn(b2), ap)) tri(rf, dn(a), ap, dn(b2), Z, Z, Z, soffit); else tri(rf, dn(a), dn(b2), ap, Z, Z, Z, soffit);
+				}
+				if (kind === 0 && hash(seed + 5.5) < 0.85) {
+					const ox = (P[0][0] - cx) * 0.25, oz = (P[0][2] - cz) * 0.25, hy = apex[1] - top;
+					const brick = col.set(hash(seed + 6.6) < 0.6 ? '#8a4a3a' : '#bdb6aa').clone();
+					cub(pl, cx + ox, cz + oz, top + hy * 0.6, apex[1] + 0.7, 1, 0, 0.55, 0.55, brick, true);
+					cub(pl, cx + ox, cz + oz, apex[1] + 0.7, apex[1] + 0.78, 1, 0, 0.72, 0.72, col.set('#55595e').clone());
+				}
 			} else {
 				// płaski: triangulacja obrysu, attyka jako lekko podniesiony brzeg
 				const contour = P.map((p) => new T.Vector2(p[0], p[2]));

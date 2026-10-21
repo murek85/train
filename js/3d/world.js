@@ -26,6 +26,10 @@ import { BundleGroup } from 'three/webgpu';
 	const HOUSE_ROOFS = ['#8e3b2e', '#6d4c3d', '#59626b', '#a0522d'];
 	const tmpColor = new T.Color();
 	const tp = {};
+	/* żółty pas ostrzegawczy peronu: od 0,55 do 0,95 m od krawędzi (PM.tact); wyposażenie (ławki z nogami siedzących,
+	   kosze) – co najmniej 1 m za nim, ludzie stoją i chodzą co najmniej 0,3 m za nim (do pociągu przechodzą przez pas
+	   tylko przy wsiadaniu i wysiadaniu) */
+	const LINE = 0.95, FURN = LINE + 1.0, PAX = LINE + 0.3;
 	const M4 = new T.Matrix4(), M4B = new T.Matrix4(), V3 = new T.Vector3(), V3B = new T.Vector3(), S3 = new T.Vector3(), Q0 = new T.Quaternion(), Q1 = new T.Quaternion();
 	const SECOND = -4.6; // oś drugiego toru
 	const NO_BRIDGES = [];
@@ -1932,7 +1936,7 @@ import { BundleGroup } from 'three/webgpu';
 				// latarnie: stożkowy słup, wygięty wysięgnik nad peron, oprawa; na co drugiej – numer peronu,
 				// na środkowej – zegar, na niektórych – głośnik
 				// odcinek pod wiatą: bez latarń (oświetla go wiata), zegar i tablice podwieszone pod jej dachem
-				const shL = big && P.sgn > 0 ? 30 : 14, shZ = big && P.sgn > 0 ? 0 : -len * 0.15;
+				const { sl: shL, sz: shZ } = this.shelterSpan(big, P, len);
 				// pod dachem z mapy albo pod wiatą z gry (gdy peron nie ma zadaszenia z mapy)
 				const hasReal = this.env && this.envRoofOver ? this.envRoofOver(st) : false;
 				const underRoof = (z) => (hasReal ? this.envRoofAt(mid - z, P.island ? P.c : P.back) : Math.abs(z - shZ) < shL / 2 + 1);
@@ -1992,8 +1996,7 @@ import { BundleGroup } from 'three/webgpu';
 				}
 				// wiata: słupy przy tylnej krawędzi peronu z wysięgnikami i zastrzałami, dach nachylony ku tyłowi
 				// (rynna z tyłu, blenda z przodu, jasny spód), świetlówki pod dachem, tylna i boczne ściany szklane
-				const sl = big && P.sgn > 0 ? 30 : big ? 14 : 7;
-				const sz = big && P.sgn > 0 ? 0 : -len * 0.15;
+				const { sl, sz } = this.shelterSpan(big, P, len, true);
 				// prawdziwe zadaszenie z mapy (trasa rzeczywista) zastępuje wiatę z gry (dach rysuje buildEnvRoofs)
 				const realRoof = hasReal;
 				if (under) {
@@ -2040,8 +2043,8 @@ import { BundleGroup } from 'three/webgpu';
 					// peron wyspowy: dwie połowy wiaty plecami do siebie (słupy i szklana ściana w osi peronu, dach nad oboma
 					// krawędziami – pochylony ku osi, z rynną pośrodku)
 					const xc = xm(sz);
-					lamps.push(...this.shelter(g, { sgn: P.sgn, edge: P.edge, back: xc }, sl, sz));
-					lamps.push(...this.shelter(g, { sgn: -P.sgn, edge: 2 * xc - P.edge, back: xc }, sl, sz));
+					lamps.push(...this.shelter(g, { sgn: P.sgn, edge: P.edge, back: xc, mid: true }, sl, sz));
+					lamps.push(...this.shelter(g, { sgn: -P.sgn, edge: 2 * xc - P.edge, back: xc, mid: true }, sl, sz));
 				} else if (!realRoof && big) lamps.push(...this.shelter(g, P, sl, sz));
 				else if (!realRoof) lamps.push(...this.haltShelter(g, P, sz, st.name));
 				// ławki (pod wiatą dwie; na przystanku rzadziej), kosze przy ławkach
@@ -2050,15 +2053,35 @@ import { BundleGroup } from 'three/webgpu';
 				for (let z = -len / 2 + 18; z < len / 2 - 10; z += big ? 26 : 40) if (Math.abs(z - sz) > sl / 2 + 2) bz.push(z);
 				if (big) bz.push(sz - sl * 0.18, sz + sl * 0.18);
 				const clear = (z) => !onStairs(z) && nz.every((q) => Math.abs(q - z) > 3.2) && tz.every((q) => Math.abs(q - z) > 2.2);
-				for (const z of bz) {
-					if (!clear(z) || !clear(z + 1.5)) continue;
-					const x0 = xm(z), bs = P.island ? [[x0 - P.sgn * 0.6, P.sgn], [x0 + P.sgn * 0.6, -P.sgn]] : [[x0, P.sgn]];
-					for (const [x, sgn] of bs) {
+				/* miejsce ławek i kosza w poprzek peronu: krawędź od strony toru eA, druga krawędź (tył albo druga krawędź
+				   peronu wyspowego) – symetrycznie do osi; ławka (przód z nogami siedzących 0,7 m, tył 0,4 m) i kosz (0,25 m)
+				   co najmniej FURN od krawędzi, przy której jest tor. Za wąski peron – bez ławek (kosza) */
+				const seatsAt = (z, k) => {
+					const x0 = xm(z), eA = P.edge, sg = P.sgn, far = 2 * x0 - eA, w = (far - eA) * sg;
+					if (P.island) {
+						if (w >= 2 * (FURN + 0.7 + 0.6)) return [[x0 - sg * 0.6, sg], [x0 + sg * 0.6, -sg]];
+						if (w < FURN + 0.7 + 0.4 + FURN) return [];
+						// jedna ławka, na zmianę przodem do jednego i drugiego toru
+						return k % 2 ? [[eA + sg * (FURN + 0.7), sg]] : [[far - sg * (FURN + 0.7), -sg]];
+					}
+					const c = eA + sg * Math.max(FURN + 0.7, (x0 - eA) * sg);
+					return (far - c) * sg >= 0.45 ? [[c, sg]] : [];
+				};
+				const binAt = (z) => {
+					const x0 = xm(z), eA = P.edge, sg = P.sgn, far = 2 * x0 - eA, w = (far - eA) * sg;
+					if (P.island) return w >= 2 * (FURN + 0.25) ? x0 : null;
+					const c = eA + sg * Math.max(FURN + 0.25, (x0 - eA) * sg);
+					return (far - c) * sg >= 0.3 ? c : null;
+				};
+				bz.forEach((z, k) => {
+					if (!clear(z) || !clear(z + 1.5)) return;
+					for (const [x, sgn] of seatsAt(z, k)) {
 						this.bench(g, x, z, sgn);
 						(g.userData.seats = g.userData.seats || []).push({ x, z, sgn });
 					}
-					this.bin(g, xm(z + 1.5), z + 1.5);
-				}
+					const xb = binAt(z + 1.5);
+					if (xb !== null) this.bin(g, xb, z + 1.5);
+				});
 				if (!big && !P.island) this.haltPlatformExtras(g, P, len, mid, st);
 				// gabloty z rozkładem jazdy (na peronie wyspowym – dwustronne)
 				for (const z of tz) {
@@ -2180,14 +2203,14 @@ import { BundleGroup } from 'three/webgpu';
 				const half = P0.width / 2, nM = 2 + Math.floor(hash(st.pos * 2.1) * (Sp.cap - 1));
 				for (let k = 0; k < Sp.cap; k++) {
 					const seed = st.pos + k * 17.3;
-					const x = P0.edge + P0.sgn * (1.3 + hash(seed) * Math.max(0.15, half - 2.1));
+					const x = P0.edge + P0.sgn * (PAX + 0.1 + hash(seed) * Math.max(0.15, half - 2.1));
 					Sp.list.push({ x, z: (hash(seed + 0.5) - 0.5) * (len - 30), tx: x, tz: (hash(seed + 0.9) - 0.5) * (len - 30), state: k < nM ? 'stroll' : 'off', spd: 0.9 + hash(seed + 0.7) * 0.5, wait: 0, seed, zr: (len - 30) / 2 });
 				}
 			}
 			for (let k = 0; k < W.cap; k++) {
 				const seed = st.pos + k * 13.1;
 				const effW = P0.width / 2; // do wyposażenia w osi peronu
-				W.list.push({ x: P0.edge + P0.sgn * (0.85 + hash(seed) * Math.max(0.3, effW - 1.5)), z: (hash(seed + 0.5) - 0.5) * (len - 20), state: 'off', spd: 1.2 + hash(seed + 0.7) * 0.6, seed });
+				W.list.push({ x: P0.edge + P0.sgn * (PAX + 0.05 + hash(seed) * Math.max(0.3, effW - PAX - 0.6)), z: (hash(seed + 0.5) - 0.5) * (len - 20), state: 'off', spd: 1.2 + hash(seed + 0.7) * 0.6, seed });
 			}
 			for (let k = 0; k < A.cap; k++) A.list.push({ x: 0, z: 0, state: 'off', spd: 1.1 + hash(st.pos + k) * 0.5, seed: st.pos + k * 5.3 });
 			// czekający na drugim peronie – stoją
@@ -2744,19 +2767,34 @@ import { BundleGroup } from 'three/webgpu';
 			roof.castShadow = this.shadows;
 			g.add(roof);
 			g.add(box(0.05, 0.28, L + 0.6, frame, xf - sg * 0.42, y0 + H + 0.05, sz));
-			// ściany szklane: tylna (dwa pola) i boczne (do połowy głębokości – wejście od frontu)
+			// blenda także z boków i z tyłu dachu, okapnik pod przednią krawędzią
+			for (const e of [-1, 1]) g.add(box(D + 0.62, 0.2, 0.05, frame, xc - sg * 0.15, y0 + H + 0.06, sz + e * (L / 2 + 0.3)));
+			g.add(box(0.05, 0.2, L + 0.6, frame, xb + sg * 0.17, y0 + H + 0.12, sz));
+			g.add(box(0.08, 0.03, L + 0.6, frame, xf - sg * 0.4, y0 + H - 0.1, sz));
+			/* ściany szklane: tylna (dwa pola) i boczne (do połowy głębokości – wejście od frontu); na szybach matowy pas
+			   ostrzegawczy (ok. 1,4 m) – jak na wiatach PKP PLK, szyba widoczna dla idących */
+			const band = mat('#e8ecef', { roughness: 0.6, transparent: true, opacity: 0.75 });
 			for (const [z0, z1] of [[sz - L / 2, sz], [sz, sz + L / 2]]) {
 				g.add(box(0.03, H - 0.25, z1 - z0 - 0.12, M.glass, xb, y0 + (H - 0.25) / 2 + 0.12, (z0 + z1) / 2));
 				for (const y of [y0 + 0.12, y0 + H - 0.12]) g.add(box(0.06, 0.06, z1 - z0, frame, xb, y, (z0 + z1) / 2));
+				g.add(box(0.036, 0.1, z1 - z0 - 0.14, band, xb, y0 + 1.4, (z0 + z1) / 2));
 			}
 			for (const z of [sz - L / 2, sz + L / 2]) {
 				const w = D * 0.55, x = xb - sg * w / 2;
 				g.add(box(w, H - 0.25, 0.03, M.glass, x, y0 + (H - 0.25) / 2 + 0.12, z));
 				g.add(box(w, 0.06, 0.06, frame, x, y0 + H - 0.12, z));
+				g.add(box(w, 0.06, 0.06, frame, x, y0 + 0.12, z));
+				g.add(box(w - 0.04, 0.1, 0.036, band, x, y0 + 1.4, z));
+				g.add(box(0.08, H, 0.08, frame, xb - sg * w, y0 + H / 2, z)); // słupek na końcu ściany bocznej
 			}
+			// kosz przy tylnym narożniku (z dala od pasa ostrzegawczego)
+			if (Math.abs(xb - sg * 0.35 - P.edge) >= FURN + 0.25) this.bin(g, xb - sg * 0.35, sz + L / 2 + 0.6);
 			// ławka w środku, tabliczka z nazwą nad wejściem
-			this.bench(g, xb - sg * 0.55, sz - 1.4, sg);
-			this.bench(g, xb - sg * 0.55, sz + 1.4, sg);
+			// (na wąskim peronie ławki z nogami siedzących weszłyby na pas ostrzegawczy – bez ławek)
+			if (Math.abs(xb - sg * 0.55 - P.edge) >= FURN + 0.7) {
+				this.bench(g, xb - sg * 0.55, sz - 1.4, sg);
+				this.bench(g, xb - sg * 0.55, sz + 1.4, sg);
+			}
 			this.nameBoard(g, name, 3.4, 0.5, xf - sg * 0.46, y0 + H - 0.05, sz, false);
 			// listwa LED pod dachem i punkt światła
 			g.add(box(0.12, 0.03, L - 1.2, M.lampLens, xc, y0 + H - 0.04, sz));
@@ -2924,6 +2962,15 @@ import { BundleGroup } from 'three/webgpu';
 		}
 
 		// wiata peronowa; zwraca świetlówki (do oświetlenia nocą)
+		/* długość i środek wiaty na peronie długości len: wiata (z dachem i blendą 0,2 m dłuższymi z obu stron) kończy się
+		   co najmniej 3 m przed końcami peronu (pochylnie); model – rozmiar wiaty z gry (stacja 30 / 14 m, przystanek 7 m) */
+		shelterSpan(big, P, len, model) {
+			const base = big && P.sgn > 0 ? 30 : big || !model ? 14 : 7;
+			const sl = Math.max(4, Math.min(base, len - 6.4));
+			const lim = Math.max(0, len / 2 - 3.2 - sl / 2);
+			return { sl, sz: Math.max(-lim, Math.min(lim, big && P.sgn > 0 ? 0 : -len * 0.15)) };
+		}
+
 		shelter(g, P, sl, sz) {
 			const M = World.materials();
 			const steel = matS('#5d6670', { roughness: 0.45, metalness: 0.6 });
@@ -2931,9 +2978,11 @@ import { BundleGroup } from 'three/webgpu';
 			const roofM = matS('#4d555e', { roughness: 0.55, metalness: 0.45 });
 			const fascia = matS('#1c3d6e', { roughness: 0.4, metalness: 0.3 });
 			const sg = P.sgn;
-			const xb = P.back - sg * 0.25;          // linia słupów (tył peronu)
-			// przednia krawędź dachu tuż za krawędzią peronu (nie nad torem – skrajnia: dach i blenda nie wchodzą nad pociąg)
-			const xf = P.edge + sg * 0.1;
+			/* wiata w obrysie peronu: dach (wysunięty 0,3 m za linię słupów i 0,1 m przed przednią płatew) kończy się 0,15 m
+			   przed tylną krawędzią peronu i 0,5 m przed krawędzią od strony toru (dawniej równo z nią, a z tyłu 5 cm poza
+			   peronem); połowa wiaty peronu wyspowego (mid) – dachy obu połówek stykają się w osi peronu */
+			const xb = P.back - sg * (P.mid ? 0.25 : 0.45); // linia słupów (tył peronu albo oś peronu wyspowego)
+			const xf = P.edge + sg * 0.6;
 			const yb = 3.78, yf = 4.02;             // dach wyżej z przodu, spływa do rynny z tyłu
 			const span = Math.abs(xf - xb) + 0.4;
 			const slope = Math.atan2(yf - yb, Math.abs(xf - xb));
@@ -2977,6 +3026,12 @@ import { BundleGroup } from 'three/webgpu';
 			const ceil = box(span, 0.03, sl, under, xm, ym - 0.05, sz);
 			ceil.rotation.z = roof.rotation.z;
 			g.add(ceil);
+			// pokrycie z blachy na rąbek stojący: żeberka w dół spadku co 0,6 m
+			for (let z = sz - sl / 2; z <= sz + sl / 2 + 1e-6; z += 0.6) {
+				const rib = box(span, 0.035, 0.03, roofM, xm + sg * 0.1, ym + 0.075, z);
+				rib.rotation.z = roof.rotation.z;
+				g.add(rib);
+			}
 			// blenda z przodu, rynna z tyłu
 			g.add(box(0.06, 0.34, sl + 0.4, fascia, xf - sg * 0.08, yf - 0.05, sz));
 			const gut = new T.Mesh(GEO.cyl, steel);
@@ -3021,41 +3076,56 @@ import { BundleGroup } from 'three/webgpu';
 			return lights;
 		}
 
-		// ławka: żeliwne boki z nogami i podłokietnikami, drewniane listwy siedziska i oparcia (oparcie od strony tyłu peronu)
+		/* ławka peronowa (wg zdjęć ławek PKP): boki z żeliwa – jedna płaska bryła (noga przednia i tylna, wspornik siedziska,
+		   wygięte oparcie), drewniane listwy siedziska i oparcia, podłokietniki; sg – strona oparcia */
 		bench(g, x, z, sg) {
 			const iron = matS('#2f3438', { roughness: 0.5, metalness: 0.6 });
 			const wood = mat('#9a6a3c', { roughness: 0.8 });
 			const L = 1.9, y0 = 0.77;
-			for (const e of [-1, 1]) {
-				const zz = z + e * (L / 2 - 0.08);
-				g.add(box(0.06, 0.45, 0.06, iron, x - sg * 0.2, y0 + 0.22, zz));
-				g.add(box(0.06, 0.45, 0.06, iron, x + sg * 0.2, y0 + 0.22, zz));
-				g.add(box(0.5, 0.05, 0.06, iron, x, y0 + 0.44, zz));
-				const back = box(0.06, 0.55, 0.06, iron, x + sg * 0.24, y0 + 0.72, zz);
-				back.rotation.z = -sg * 0.18;
-				g.add(back);
-				g.add(box(0.42, 0.04, 0.07, iron, x - sg * 0.02, y0 + 0.68, zz)); // podłokietnik
+			if (!World.benchSide) {
+				const P = [[-0.24, 0], [-0.17, 0], [-0.15, 0.36], [0.12, 0.38], [0.16, 0], [0.23, 0], [0.21, 0.43], [0.27, 0.6], [0.37, 0.98], [0.31, 1.0], [0.21, 0.63], [0.15, 0.47], [-0.2, 0.47], [-0.24, 0.43]];
+				const sh = new T.Shape();
+				P.forEach(([u, v], k) => (k ? sh.lineTo(u, v) : sh.moveTo(u, v)));
+				const geo = new T.ExtrudeGeometry(sh, { depth: 0.045, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.008, bevelSegments: 1 });
+				geo.translate(0, 0, -0.0225);
+				geo.userData.shared = true;
+				World.benchSide = geo;
 			}
-			for (let k = 0; k < 4; k++) g.add(box(0.1, 0.04, L, wood, x - sg * (0.18 - k * 0.12), y0 + 0.48, z));
+			for (const e of [-1, 1]) {
+				const zz = z + e * (L / 2 - 0.1);
+				const side = new T.Mesh(World.benchSide, iron);
+				side.scale.x = sg;
+				side.position.set(x, y0, zz);
+				g.add(side);
+				g.add(box(0.42, 0.04, 0.07, iron, x - sg * 0.02, y0 + 0.68, zz)); // podłokietnik
+				g.add(box(0.04, 0.2, 0.04, iron, x - sg * 0.2, y0 + 0.57, zz)); // wspornik podłokietnika
+			}
+			// siedzisko: 5 listew ze szczelinami, oparcie: 3 listwy wzdłuż wygięcia boków
+			for (let k = 0; k < 5; k++) g.add(box(0.07, 0.035, L, wood, x - sg * (0.19 - k * 0.085), y0 + 0.49, z));
 			for (let k = 0; k < 3; k++) {
-				const sl = box(0.035, 0.1, L, wood, x + sg * (0.26 + k * 0.025), y0 + 0.62 + k * 0.14, z);
-				sl.rotation.z = -sg * 0.18;
+				const v = 0.64 + k * 0.13;
+				const sl = box(0.03, 0.1, L, wood, x + sg * (0.235 + (v - 0.6) * 0.3), y0 + v, z);
+				sl.rotation.z = -sg * 0.29;
 				g.add(sl);
 			}
 		}
 
-		// kosz na śmieci na słupku
+		// kosz na śmieci na słupku: wiadro toczone (szersze u góry, z wywiniętym brzegiem), ciemne wnętrze widoczne z góry
 		bin(g, x, z) {
 			const post = matS('#3e4650', { roughness: 0.5, metalness: 0.55 });
 			g.add(box(0.06, 1.0, 0.06, post, x, 1.27, z));
-			const can = new T.Mesh(GEO.cyl, matS('#2f5e3a', { roughness: 0.45, metalness: 0.4 }));
-			can.scale.set(0.42, 0.6, 0.42);
-			can.position.set(x, 1.45, z);
+			if (!World.binGeo) {
+				World.binGeo = new T.LatheGeometry([[0, 0], [0.17, 0], [0.19, 0.02], [0.2, 0.3], [0.215, 0.58], [0.235, 0.6], [0.235, 0.63], [0.2, 0.63], [0.19, 0.6], [0.185, 0.5]].map(([r, y]) => new T.Vector2(r, y)), 20);
+				World.binGeo.userData.shared = true;
+			}
+			const can = new T.Mesh(World.binGeo, matS('#2f5e3a', { roughness: 0.45, metalness: 0.4 }));
+			can.position.set(x, 1.15, z);
 			g.add(can);
-			const rim = new T.Mesh(GEO.cyl, post);
-			rim.scale.set(0.46, 0.05, 0.46);
-			rim.position.set(x, 1.76, z);
-			g.add(rim);
+			// ciemne dno wnętrza widoczne przez otwór
+			const inner = new T.Mesh(GEO.cyl, mat('#141516'));
+			inner.scale.set(0.38, 0.02, 0.38);
+			inner.position.set(x, 1.65, z);
+			g.add(inner);
 		}
 
 		/* Budynek dworca (elewacja od strony torów w x = 12, wejście na osi z = bz + 2.5 – tam idą wysiadający):
@@ -3639,7 +3709,7 @@ import { BundleGroup } from 'three/webgpu';
 			road.receiveShadow = true;
 			group.add(road);
 
-			const lights = [], glows = [];
+			const lights = [], glows = [], arms = [];
 			/* Pas torów przejazdu: wszystkie tory, które przecina droga – tor pociągu, drugi tor z gry i tory z mapy
 			   (wcześniej tylko tor pociągu: przy kilku torach sygnalizatory stały między torami albo tuż przy szynach,
 			   a auta zatrzymywały się na sąsiednich torach). zLo / zHi – granice pasu (oś skrajnego toru ± 3,2 m). */
@@ -3714,6 +3784,33 @@ import { BundleGroup } from 'three/webgpu';
 				}
 				// znak i lampy przodem do nadjeżdżających aut (droga biegnie w poprzek toru; przy ulicy z mapy – wg jej kierunku)
 				g.rotateY(pa ? -pa.a : side < 0 ? -Math.PI / 2 : Math.PI / 2);
+				/* półrogatka: napęd przy słupie, ramię w pasy biało-czerwone z trzema lampkami do osi jezdni, przeciwwaga;
+				   opuszczana kilka sekund po włączeniu sygnalizacji (updateDyn). Strona jezdni i długość ramienia – z położenia
+				   osi drogi w układzie sygnalizatora */
+				g.updateMatrix();
+				if (path && pa) { const [rs, rd] = path.at(pa.u); R.sidePoint(this.route, rs, rd, tp); }
+				else R.sidePoint(this.route, cr.pos, pd, tp);
+				const loc = new T.Vector3(tp.x, g.position.y, tp.z).applyMatrix4(new T.Matrix4().copy(g.matrix).invert());
+				const sx = loc.x >= 0 ? 1 : -1, armL = Math.max(2.5, Math.min(7, Math.abs(loc.x) - 0.6));
+				const drive = mat('#8d939a', { roughness: 0.6 }), dk = mat('#2b2e31');
+				g.add(box(0.42, 1.0, 0.34, drive, sx * 0.45, 0.5, 0.32));
+				g.add(box(0.46, 0.05, 0.38, dk, sx * 0.45, 1.02, 0.32));
+				const pivot = new T.Group();
+				pivot.position.set(sx * 0.45, 0.92, 0.55);
+				const red = mat('#c62828', { roughness: 0.5 }), white = mat('#f2f2f2', { roughness: 0.5 });
+				const nSeg = Math.max(4, Math.round(armL / 0.5));
+				for (let k = 0; k < nSeg; k++) pivot.add(box(armL / nSeg, 0.1, 0.07, k % 2 ? white : red, sx * (0.15 + (k + 0.5) * (armL / nSeg)), 0, 0));
+				pivot.add(box(0.4, 0.24, 0.14, dk, -sx * 0.32, 0, 0)); // przeciwwaga
+				for (const f of [0.35, 0.68, 0.98]) {
+					const lm = new T.Mesh(GEO.sphere, mat('#7a1a12', { roughness: 0.3 }));
+					lm.scale.set(0.09, 0.09, 0.06);
+					lm.position.set(sx * (0.15 + armL * f), 0.08, 0.03);
+					pivot.add(lm);
+				}
+				pivot.userData.sgn = sx;
+				pivot.rotation.z = sx * Math.PI * 0.48;
+				g.add(pivot);
+				arms.push(pivot);
 				group.add(g);
 			}
 			const cars = [];
@@ -3730,7 +3827,7 @@ import { BundleGroup } from 'three/webgpu';
 					Object.assign(cars[k], { w: Math.max(0, Math.min(z0, sigW) - 25 - k * 30), stopW: sigW - 2.6, entryW: Math.max(sigW - 2.6 + 0.5, z0 - 2.2), exitW: z1 + 3 });
 				}
 			}
-			dyn.push({ type: 'crossing', cr, lights, glows, cars, path });
+			dyn.push({ type: 'crossing', cr, lights, glows, cars, path, arms, armT: 0, actT: 0 });
 		}
 
 		/* Wiadukt nad ulicą (trasy rzeczywiste): betonowe przęsło z gzymsami i balustradami, przyczółki ze
@@ -4177,7 +4274,8 @@ import { BundleGroup } from 'three/webgpu';
 		   kierunek do celu, a gdy zajęty – odchylenia na przemian, najpierw w stronę ostatniego wyboru (bez wahania);
 		   ostatnie 1,2 m do celu bez omijania (miejsce w kolejce, drzwi – tuż przy innych); zablokowany ponad 1,5 s
 		   przeciska się. Zwraca true po dojściu. */
-		stepWalker(p, tx, tz, step, dts, G, others) {
+		// keep – { E, sg, min }: kroki bliżej krawędzi peronu (E, zwrot sg) niż min odrzucane, chyba że oddalają od niej
+		stepWalker(p, tx, tz, step, dts, G, others, keep) {
 			const dx = tx - p.x, dz = tz - p.z, L = Math.hypot(dx, dz);
 			if (L <= Math.max(step, 0.12)) { p.x = tx; p.z = tz; p.stuck = 0; return true; }
 			if (step <= 0) return false;
@@ -4186,6 +4284,7 @@ import { BundleGroup } from 'three/webgpu';
 				const c = Math.cos(a), sn = Math.sin(a), vx = ux * c - uz * sn, vz = ux * sn + uz * c;
 				const nx = p.x + vx * step, nz = p.z + vz * step, lx = p.x + vx * 0.4, lz = p.z + vz * 0.4;
 				if (!near && G && (!G.free(nx, nz) || !G.free(lx, lz))) continue;
+				if (keep && (nx - keep.E) * keep.sg < keep.min && (nx - p.x) * keep.sg < 0) continue;
 				let hit = false;
 				if (!near) for (const o of others) {
 					if (o === p) continue;
@@ -4228,7 +4327,7 @@ import { BundleGroup } from 'three/webgpu';
 					if (!ok(p.x, p.z)) {
 						search: for (let r = 0.3; r <= 3; r += 0.3) for (let k = 0; k < 12; k++) {
 							const a = (k / 12) * Math.PI * 2, x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r;
-							if ((x - d.edgeX) * d.sgn > 0.6 && (x - d.edgeX) * d.sgn < d.width - 0.4 && ok(x, z)) { p.x = x; p.z = z; break search; }
+							if ((x - d.edgeX) * d.sgn > PAX && (x - d.edgeX) * d.sgn < d.width - 0.4 && ok(x, z)) { p.x = x; p.z = z; break search; }
 						}
 					}
 					if (p.tx !== undefined && Sp.list.includes(p)) p.tx = p.x; // tor spaceru – nowe położenie w poprzek
@@ -4282,7 +4381,7 @@ import { BundleGroup } from 'three/webgpu';
 					// miejsce w kolejce: na przemian po obu stronach drzwi, kolejni dalej od nich
 					const q = best.n++, side = q % 2 ? 1 : -1, row = Math.floor(q / 2);
 					p.door = best;
-					p.tx = E + sg * (0.5 + 0.3 * row);
+					p.tx = E + sg * (PAX + 0.05 + 0.3 * row); // kolejka za pasem – do krawędzi dopiero przy wsiadaniu
 					p.tz = best.z + side * (0.75 + 0.35 * row) + (hash(p.seed) - 0.5) * 0.15;
 					p.next = 'queue';
 					p.state = 'walk';
@@ -4303,8 +4402,10 @@ import { BundleGroup } from 'three/webgpu';
 					dirty = true;
 					if (st0 === 'walk' || st0 === 'board') {
 						const step = p.spd * dts * (st0 === 'board' ? 0.8 : 1);
-						if (this.stepWalker(p, p.tx, p.tz, step, dts, d.grid, others)) {
+						// idący po peronie omijają przeszkody za pasem ostrzegawczym; na pas – tylko wsiadający
+						if (this.stepWalker(p, p.tx, p.tz, step, dts, d.grid, others, st0 === 'board' || p.next === 'exit' ? null : { E, sg, min: PAX })) {
 							if (st0 === 'board') { p.state = 'step'; p.st = 0; }
+							else if (p.next === 'exit') { p.next = null; p.tx = p.ex; p.tz = p.ez; }
 							else p.state = p.next === 'queue' ? 'queue' : 'off';
 						}
 					} else if (st0 === 'queue') {
@@ -4328,7 +4429,8 @@ import { BundleGroup } from 'three/webgpu';
 						p.st += dts / 1.0;
 						p.x = E - sg * 0.9 + sg * 1.45 * p.st;
 						p.y = STEP * (1 - sm(0.4, 0.8, p.st));
-						if (p.st >= 1) { p.y = 0; p.state = 'walk'; p.next = null; }
+						// po zejściu: najpierw za pas ostrzegawczy (prostopadle do krawędzi), potem do wyjścia
+						if (p.st >= 1) { p.y = 0; p.state = 'walk'; p.next = 'exit'; p.ex = p.tx; p.ez = p.tz; p.tx = E + sg * (PAX + 0.2); p.tz = p.z; }
 					}
 				}
 			}
@@ -4343,7 +4445,7 @@ import { BundleGroup } from 'three/webgpu';
 				}
 				// tor spaceru – p.tx (w poprzek peronu); przeszkody i ludzi omija, potem wraca na swój tor
 				const step = p.spd * dts;
-				if (Math.abs(p.tz - p.z) <= 0.25 || this.stepWalker(p, p.tx, p.tz, step, dts, d.grid, others)) {
+				if (Math.abs(p.tz - p.z) <= 0.25 || this.stepWalker(p, p.tx, p.tz, step, dts, d.grid, others, { E, sg, min: PAX })) {
 					if (Math.random() < 0.5) { p.state = 'pause'; p.wait = 3 + Math.random() * 8; }
 					else p.tz = (Math.random() - 0.5) * 2 * p.zr;
 				}
@@ -4589,6 +4691,11 @@ import { BundleGroup } from 'three/webgpu';
 					if (on) l.material.color.multiplyScalar(4);
 					d.glows[k].material.opacity = on ? 0.9 : 0;
 				});
+				// półrogatki: opadają po 4 s świecenia (ok. 6 s), podnoszą się po przejeździe pociągu (ok. 5 s)
+				d.actT = active ? d.actT + dt : 0;
+				d.armT = Math.max(0, Math.min(1, d.armT + (d.actT > 4 ? dt / 6 : -dt / 5)));
+				const e = d.armT * d.armT * (3 - 2 * d.armT);
+				for (const a of d.arms || []) a.rotation.z = a.userData.sgn * Math.PI * 0.48 * (1 - e);
 				// trasa rzeczywista: auta po ulicy z mapy (w – droga przebyta w kierunku jazdy), prawym pasem
 				// ruch uliczny (street-life.js) jeździ też przez ten przejazd – własne auta przejazdu ukryte
 				if (d.path && this.slife && this.env.snet && this.env.snet.xcr.has(cr)) {

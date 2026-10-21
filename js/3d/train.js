@@ -128,7 +128,8 @@ import * as THREE from 'three';
 	// ED250 (Pendolino): długie, smukłe czoło, drzwi jednoskrzydłowe przy końcach wagonów, zwykłe wózki pod każdym wagonem
 	STYLES.ed250 = Object.assign({}, STYLES.ezt, MODERN, {
 		prefix: 'ED250', paint: '#3b4046', stripe: '#2a2e33', band: '#eceeef', trim: '#3b4046', roof: '#c9cdd1', door: '#eceeef', seat: '#33415e',
-		nose: 4.0, yb: 1.95, round: 0.8, glassT: 0.42, wR: 0.45, wb: 2.7, bogieOff: 3.4, pantoZ: 0.25, headX: 0.72, headY: 1.75, tailY: 1.5,
+		nose: 4.0, yb: 1.95, round: 0.8, glassT: 0.42, wR: 0.45, wb: 2.7, bogieOff: 3.4, pantoZ: 0.25, headX: 0.72, headY: 1.78, tailY: 1.62,
+		chin: 0.5, taper: 0.22,
 		zones: [[0, 1.75, 0], [1.75, 1.83, 7], [1.83, 2.2, 2], [2.2, 3.38, 1], [3.38, 9, 2]],
 		doorW: 0.95, doorLeaves: 1, winW: 1.3, pitch: 1.6,
 		doors: (len, noseF, noseR) => [noseF ? null : -(len / 2 - 1.6), noseR ? null : len / 2 - 1.6].filter((z) => z !== null),
@@ -156,6 +157,10 @@ import * as THREE from 'three';
 	function freightParts(ti, len, seed, color, bogies) {
 		const P = [], hl = len / 2, c = color, h = (k) => hash(seed * 7.13 + k * 3.7);
 		const add = (...a) => P.push(a);
+		// pochylona blacha od (z0, y0) do (z1, y1), szerokość w (w poprzek wagonu)
+		const slope = (z0, y0, z1, y1, w, col) => add('box', 'body', 0, (y0 + y1) / 2, (z0 + z1) / 2, w, 0.06, Math.hypot(z1 - z0, y1 - y0), col, -Math.atan((y1 - y0) / (z1 - z0)));
+		// wnętrze: blachy wytarte ładunkiem – rdza z resztkami koloru, ślady węgla
+		const worn = darker('#' + new T.Color(color).lerp(new T.Color('#5a4434'), 0.6).getHexString(), 0.85);
 		// ostojnica, czołownice, zderzaki
 		add('box', 'dark', 0, 1.12, 0, 2.6, 0.28, len - 0.7);
 		for (const e of [-1, 1]) {
@@ -184,6 +189,27 @@ import * as THREE from 'three';
 			for (const x of [-1.42, 1.42]) add('box', 'body', x, 2.33, 0, 0.06, 2.06, len - 0.5, c);
 			for (const e of [-1, 1]) add('box', 'body', 0, 2.33, e * (hl - 0.28), 2.9, 2.06, 0.06, c);
 			const doors = [-len * 0.24, len * 0.24];
+			/* wnętrze (pusty wagon widać z kładki, z kabiny, z wiaduktu): wytarte ściany od środka, słupki z ceowników
+			   i podłużnica na burtach i czołach, podłoga z blach ze spoinami, węgiel zbity w kątach */
+			const post = darker(worn, 0.75);
+			for (const x of [-1, 1]) {
+				add('box', 'body', x * 1.385, 2.36, 0, 0.012, 1.95, len - 0.62, worn);
+				for (let k = 0; k <= 8; k++) {
+					const z = -(hl - 0.6) + (k * (len - 1.2)) / 8;
+					if (!doors.some((d) => Math.abs(z - d) < 1.0)) add('box', 'body', x * 1.34, 2.36, z, 0.09, 1.95, 0.12, post);
+				}
+				for (const d of doors) for (const o of [-0.9, 0.9]) add('box', 'body', x * 1.35, 2.33, d + o, 0.07, 1.98, 0.1, post); // ościeżnice drzwi
+				add('box', 'body', x * 1.35, 2.75, 0, 0.06, 0.09, len - 0.7, post);
+			}
+			for (const e of [-1, 1]) {
+				add('box', 'body', 0, 2.36, e * (hl - 0.315), 2.76, 1.95, 0.012, worn);
+				for (const x of [-0.7, 0, 0.7]) add('box', 'body', x, 2.36, e * (hl - 0.36), 0.12, 1.95, 0.08, post);
+			}
+			add('box', 'body', 0, 1.36, 0, 2.76, 0.02, len - 0.62, darker(worn, 0.8));
+			if (h(1) >= 0.7) {
+				for (let z = -(hl - 1.0); z < hl - 0.5; z += 1.5) add('box', 'dark', 0, 1.373, z, 2.76, 0.008, 0.035);
+				for (const x of [-1, 1]) add('box', 'coal', x * 1.3, 1.38, 0, 0.14, 0.03, len - 0.8); // węgiel zbity w kątach przy burtach
+			}
 			for (const x of [-1, 1]) {
 				// słupki (poza drzwiami), pas górny i dolny
 				for (let k = 0; k <= 8; k++) {
@@ -205,7 +231,7 @@ import * as THREE from 'three';
 				add('box', 'body', x * 1.5, 1.72, -x * (hl - 1.5), 0.02, 0.42, 0.95, '#d9d9d3');
 				add('box', 'body', x * 1.5, 2.95, x * (hl - 1.25), 0.02, 0.32, 0.6, '#d9d9d3');
 			}
-			if (h(1) < 0.7) { add('box', 'coal', 0, 3.0, 0, 2.75, 0.5, len - 0.8); add('box', 'coal', 0, 3.3, 0, 2.1, 0.3, len - 2.4); }
+			if (h(1) < 0.7) add('heap', 'coal', 0, 3.2, 0, 2.8, 0.7, len - 0.6); // węgiel usypany w pryzmę ponad burty
 		} else if (id === 'Falns') {
 			const cd = darker(c, 0.82);
 			/* burty (wg zdjęć Falns): nad wózkami od ramy do górnej krawędzi (1,55–3,85 m), pośrodku wyżej – pod nią skośne
@@ -220,11 +246,18 @@ import * as THREE from 'three';
 				add('box', 'body', x * 1.53, 1.9, -x * (hl - 1.4), 0.02, 0.42, 0.95, '#d9d9d3');
 			}
 			// zsypy pośrodku: lej (spód ścian skośnych) i klapy
-			for (const e of [-1, 1]) { add('box', 'dark', 0, 1.5, e * mid * 0.22, 1.4, 0.5, mid * 0.36); add('box', 'steel', 0, 1.22, e * mid * 0.22, 1.1, 0.06, mid * 0.3); }
+			for (const e of [-1, 1]) { add('box', 'dark', 0, 1.3, e * mid * 0.22, 1.4, 0.5, mid * 0.36); add('box', 'steel', 0, 1.02, e * mid * 0.22, 1.1, 0.06, mid * 0.3); }
+			/* wnętrze lejów (wg zdjęć Falns z góry): dna skośne od ścian czołowych do otworów zsypowych, pośrodku grzbiet
+			   rozdzielający leje, otwory zsypowe ciemne; blachy wytarte węglem */
+			for (const e of [-1, 1]) {
+				slope(e * 3.3, 1.9, e * (hl - 0.35), 3.3, 2.84, worn);
+				slope(e * 2.4, 1.55, e * 3.3, 1.9, 2.2, worn);
+				slope(0, 2.1, e * 0.6, 1.55, 2.2, worn);
+				add('box', 'coal', 0, 1.52, e * 1.5, 2.0, 0.02, 1.8);
+				for (let k = 1; k < 4; k++) { const t = k / 4; add('box', 'dark', 0, 1.9 + t * 1.4 + 0.035, e * (3.3 + t * (hl - 3.65)), 2.8, 0.01, 0.04, null, -e * Math.atan(1.4 / (hl - 3.65))); } // spoiny blach
+			}
 			for (const e of [-1, 1]) {
 				add('box', 'body', 0, 2.7, e * (hl - 0.32), 2.95, 2.3, 0.06, c);
-				// skośne dna lejów – wewnątrz pudła (węższe od niego)
-				add('box', 'body', 0, 2.2, e * len * 0.24, 2.7, 0.06, 2.6, cd, e * 0.6);
 				// zsypy z klapami pod lejami
 				add('box', 'dark', 0, 1.2, e * 1.5, 2.3, 0.32, 1.0);
 				for (const x of [-0.6, 0.6]) add('box', 'steel', x, 1.02, e * 1.5, 0.5, 0.05, 0.9);
@@ -241,7 +274,7 @@ import * as THREE from 'three';
 				for (const e of [-1, 1]) add('box', 'body', x * 1.49, 1.57, e * (mid / 2 + Le / 2), 0.1, 0.08, Le, cd);
 				add('box', 'body', x * 1.49, 2.3, 0, 0.1, 0.08, mid, cd);
 			}
-			if (h(2) < 0.75) { add('box', 'coal', 0, 3.75, 0, 2.8, 0.25, len - 0.9); add('box', 'coal', 0, 4.0, 0, 2.2, 0.3, len - 2.6); }
+			if (h(2) < 0.75) add('heap', 'coal', 0, 3.7, 0, 2.85, 0.6, len - 0.7);
 		} else if (id === 'Zacns') {
 			add('cylHi', 'body', 0, 2.7, 0, 2.9, len - 2.0, 2.9, c, 'x');
 			for (const e of [-1, 1]) add('sphereHi', 'body', 0, 2.7, e * (hl - 1.0), 2.9, 2.9, 1.1, c);
@@ -292,12 +325,28 @@ import * as THREE from 'three';
 		} else {
 			const fr = FREIGHT_TYPES[ti].frame, cd = darker(c, 0.85);
 			add('box', 'body', 0, 2.65, 0, 2.9, 2.7, len - 0.6, c);
+			/* ściany przesuwne (wg zdjęć Habbiins): cztery skrzydła z blachy z gęstymi pionowymi przetłoczeniami (co 0,3 m,
+			   jasne grzbiety i ciemniejsze doliny), szczeliny między skrzydłami, u góry szyna jezdna z wózkami rolek, u dołu
+			   prowadnica; na każdym skrzydle pionowy drążek zamknięcia z dźwignią */
+			const lite = darker(c, 1.06), wing = (len - 0.6) / 4;
 			for (const x of [-1, 1]) {
-				for (let z = -(hl - 0.6); z <= hl - 0.6; z += 0.7) add('box', 'body', x * 1.47, 2.65, z, 0.05, 2.6, 0.08, cd);
+				for (let z = -(hl - 0.45); z <= hl - 0.45; z += 0.3) {
+					add('box', 'body', x * 1.468, 2.65, z, 0.05, 2.5, 0.11, lite);
+					add('box', 'body', x * 1.458, 2.65, z + 0.15, 0.03, 2.5, 0.12, cd);
+				}
 				for (const y of [1.33, 3.98]) add('box', 'body', x * 1.47, y, 0, 0.08, 0.12, len - 0.6, fr);
-				for (const z of [-hl / 2, 0, hl / 2]) add('box', 'dark', x * 1.48, 2.65, z, 0.04, 2.6, 0.06);
-				// uchwyty i zamki ścian przesuwnych, tablica danych
-				for (const z of [-hl * 0.75, -hl * 0.25, hl * 0.25, hl * 0.75]) { add('box', 'steel', x * 1.5, 1.75, z, 0.05, 0.5, 0.06); add('box', 'steel', x * 1.5, 1.5, z, 0.06, 0.06, 0.25); }
+				add('box', 'dark', x * 1.5, 3.88, 0, 0.06, 0.08, len - 0.4); // szyna jezdna
+				add('box', 'dark', x * 1.5, 1.43, 0, 0.05, 0.05, len - 0.4); // prowadnica
+				for (let k = 0; k < 4; k++) {
+					const z0 = -(hl - 0.3) + k * wing;
+					if (k) add('box', 'dark', x * 1.49, 2.65, z0, 0.04, 2.6, 0.05);
+					for (const dz of [0.5, wing - 0.5]) add('box', 'dark', x * 1.51, 3.88, z0 + dz, 0.06, 0.16, 0.3); // wózki rolek
+					// drążek zamknięcia, prowadnice drążka i dźwignia
+					const zr = z0 + (k % 2 ? 0.35 : wing - 0.35);
+					add('box', 'steel', x * 1.52, 2.6, zr, 0.04, 2.3, 0.04);
+					for (const y of [1.8, 2.6, 3.4]) add('box', 'steel', x * 1.51, y, zr, 0.05, 0.06, 0.12);
+					add('box', 'steel', x * 1.54, 1.75, zr + (k % 2 ? 0.15 : -0.15), 0.04, 0.05, 0.35);
+				}
 				add('box', 'body', x * 1.5, 1.85, -x * (hl - 1.3), 0.02, 0.42, 0.95, '#d9d9d3');
 			}
 			add('cyl', 'roof', 0, 3.95, 0, 2.9, len - 0.6, 0.5, null, 'x');
@@ -355,6 +404,17 @@ import * as THREE from 'three';
 		const key = `${wb}|${R}|${kind}`;
 		if (frameGeos.has(key)) return frameGeos.get(key);
 		const h = wb / 2, sh = new T.Shape();
+		if (kind === 'y25') {
+			/* Y25 (wagony towarowe, wg zdjęć Eaos, Zacns, Sgns): prosty górny pas, nad każdą maźnicą prowadnica w kształcie
+			   odwróconego U (w oknie maźnica z gniazdami sprężyn), pośrodku głębsza belka pod belką bujakową */
+			const yT = R + 0.45, ext = h + 0.5, yL = R - 0.1, yS = yT - 0.12;
+			const right = [[ext, yT - 0.26], [h + 0.3, yT - 0.26], [h + 0.3, yL], [h + 0.19, yL], [h + 0.19, yS], [h - 0.19, yS], [h - 0.19, yL], [h - 0.3, yL], [h - 0.65, R - 0.16]];
+			const pts = [[-ext, yT - 0.1], [-ext + 0.15, yT], [ext - 0.15, yT], [ext, yT - 0.1]].concat(right, right.slice().reverse().map(([z, y]) => [-z, y]));
+			sh.moveTo(pts[0][0], pts[0][1]);
+			for (const [z, y] of pts.slice(1)) sh.lineTo(z, y);
+			sh.closePath();
+			return frameGeo(key, sh);
+		}
 		const yTop = R + 0.32, yMid = R + 0.12, yBot = R - 0.05, ext = h + 0.55;
 		// górny pas: końce, wzniesienie nad maźnicami, obniżenie pośrodku (belka „rybi brzuch” w wagonach)
 		sh.moveTo(-ext, yTop - 0.1);
@@ -379,6 +439,9 @@ import * as THREE from 'three';
 		sh.lineTo(-h - 0.35, yTop - 0.3);
 		sh.lineTo(-ext, yTop - 0.3);
 		sh.closePath();
+		return frameGeo(key, sh);
+	}
+	function frameGeo(key, sh) {
 		const g = new T.ExtrudeGeometry(sh, { depth: 0.14, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 1 });
 		g.translate(0, 0, -0.07);
 		g.rotateY(Math.PI / 2); // sylwetka w (z, y): oś x kształtu → z wagonu
@@ -647,8 +710,7 @@ import * as THREE from 'three';
 			const t = sc.t;
 			const top = 1 - kTop * Math.pow(t, 1.25);
 			for (const [x, y] of prof) {
-				const xs = x * (1 - 0.1 * t * t);
-				const ys = y <= st.yb ? y : st.yb + (y - st.yb) * top;
+				const { x: xs, y: ys } = nosePoint(st, H, t, x, y);
 				const recede = sc.dir * Math.pow(Math.abs(x) / HALF, 2.4) * (st.round ?? 0.85) * Math.pow(t, 1.4);
 				pos.push(xs, ys, sc.z + recede);
 				orig.push(x, y, t, sc.z);
@@ -726,10 +788,15 @@ import * as THREE from 'three';
 	}
 
 	// przekrój zdeformowany tak samo jak w loftBody – do ustawiania detali na czole
+	/* chin – nos zwężony także od dołu (ED250): część pod yb ściśnięta ku yb na końcu czoła (0 – pionowa ściana czoła,
+	   0,5 – dół czoła w połowie drogi do yb); taper – zwężenie przekroju na końcu czoła (domyślnie 10%) */
 	function nosePoint(st, H, t, x, y) {
 		const kTop = 1 - 0.28 / Math.max(0.5, H - st.yb);
 		const top = 1 - kTop * Math.pow(t, 1.25);
-		return { x: x * (1 - 0.1 * t * t), y: y <= st.yb ? y : st.yb + (y - st.yb) * top };
+		return {
+			x: x * (1 - (st.taper ?? 0.1) * t * t),
+			y: y <= st.yb ? st.yb - (st.yb - y) * (1 - (st.chin || 0) * Math.pow(t, 1.6)) : st.yb + (y - st.yb) * top,
+		};
 	}
 
 	/* Mokra i ośnieżona szyba (szyby kabin pociągu gracza – z zewnątrz i od środka kabiny). Krople i śnieg
@@ -1463,7 +1530,9 @@ import * as THREE from 'three';
 		/* Wózek: ramy boczne z sylwetką (nad maźnicami wyżej), belka poprzeczna, maźnice z pokrywami, sprężyny
 		   śrubowe (osiowe i – w wagonach – kołyskowe), tłumiki, cylindry i klocki hamulcowe, dwa zestawy kołowe z kołami
 		   o profilu (obręcz z obrzeżem) – obracają się. R – promień koła (EU07 0,55 m, EN57 0,47 m, 111A 0,45 m – w skali pudeł gry). */
-		bogie(group, add, bz, wheelBase, R = WHEEL_R, kind = 'coach', axles = 2) {
+		/* opts.disc – hamulec tarczowy (nowoczesne EZT, wagony A9 / B10): dwie tarcze na osi między kołami i zaciski na
+		   poprzecznicach zamiast klocków na kołach */
+		bogie(group, add, bz, wheelBase, R = WHEEL_R, kind = 'coach', axles = 2, opts = {}) {
 			const frame = matS('#3a3d41', { roughness: 0.55, metalness: 0.35 }), dark = matS('#45484c', { roughness: 0.5, metalness: 0.45 });
 			const springM = matS('#4c5056', { metalness: 0.6, roughness: 0.45 }), rust = matS('#5b4434', { roughness: 0.85 });
 			const wheelMat = matS('#3b3a38', { metalness: 0.65, roughness: 0.5, train: 0.55 }), tread = matS('#b7bbbf', { metalness: 0.9, roughness: 0.28, train: 0 });
@@ -1484,16 +1553,32 @@ import * as THREE from 'three';
 					cap.rotation.z = Math.PI / 2;
 					cap.position.set(sx * (FX + 0.17), R, bz + dz);
 					add(cap);
-					for (const ddz of kind === 'loco' ? [-0.2, 0.2] : [0]) {
+					const sd = dz === 0 ? 1 : Math.sign(dz);
+					if (kind === 'y25') {
+						/* Y25: w oknie prowadnicy na maźnicy dwa gniazda sprężyn (zewnętrzna i wewnętrzna), łącznik Lenoir
+						   (tłumienie cierne) skośnie od wewnętrznej nogi prowadnicy do maźnicy */
+						for (const ddz of [-0.09, 0.09]) {
+							const sp = new T.Mesh(SPRING_GEO, springM);
+							sp.scale.set(0.15, 0.18, 0.15);
+							sp.position.set(sx * (FX + 0.02), R + 0.24, bz + dz + ddz);
+							add(sp);
+							const si = new T.Mesh(SPRING_GEO, springM);
+							si.scale.set(0.08, 0.18, 0.08);
+							si.position.copy(sp.position);
+							add(fine(si));
+						}
+						add(fine(beam(R + 0.34, bz + dz - sd * 0.25, R + 0.06, bz + dz - sd * 0.13, sx * (FX + 0.1), 0.05, springM)));
+					} else for (const ddz of kind === 'loco' ? [-0.2, 0.2] : [0]) {
 						const sp = new T.Mesh(SPRING_GEO, springM);
 						sp.scale.set(0.22, 0.24, 0.22);
 						sp.position.set(sx * (FX + 0.02), R + 0.3, bz + dz + ddz);
 						add(sp);
 					}
 					// klocek hamulcowy przy kole i wieszak
-					const sd = dz === 0 ? 1 : Math.sign(dz);
-					add(box(0.12, 0.34, 0.1, rust, sx * 0.78, R, bz + dz - sd * (R + 0.06)));
-					add(beam(R + 0.15, bz + dz - sd * (R + 0.06), R + 0.42, bz + dz - sd * (R - 0.05), sx * 0.78, 0.04, dark));
+					if (!opts.disc) {
+						add(box(0.12, 0.34, 0.1, rust, sx * 0.78, R, bz + dz - sd * (R + 0.06)));
+						add(beam(R + 0.15, bz + dz - sd * (R + 0.06), R + 0.42, bz + dz - sd * (R - 0.05), sx * 0.78, 0.04, dark));
+					}
 				}
 				if (kind === 'loco') {
 					for (const e of [-1, 1]) {
@@ -1512,7 +1597,7 @@ import * as THREE from 'three';
 						rod.position.set(sx * (FX + 0.17), R + 0.38, zd);
 						add(fine(rod));
 					}
-				} else {
+				} else if (kind !== 'y25') {
 					// tłumiki pionowe obok sprężyn kołyskowych
 					for (const e of [-1, 1]) {
 						const dmp = new T.Mesh(CYL, dark);
@@ -1522,7 +1607,7 @@ import * as THREE from 'three';
 					}
 				}
 				// cięgło hamulcowe łączące klocki wzdłuż wózka
-				add(fine(box(0.04, 0.04, wheelBase + 2 * R, springM, sx * 0.78, R - 0.12, bz)));
+				if (!opts.disc) add(fine(box(0.04, 0.04, wheelBase + 2 * R, springM, sx * 0.78, R - 0.12, bz)));
 				// sprężyny kołyskowe (wagony, EZT) albo tłumik i cylinder hamulcowy (lokomotywa)
 				if (kind === 'loco') {
 					const cyl = new T.Mesh(CYL, dark);
@@ -1530,16 +1615,30 @@ import * as THREE from 'three';
 					cyl.rotation.x = Math.PI / 2;
 					cyl.position.set(sx * (FX - 0.25), R + 0.2, bz);
 					add(cyl);
-				} else for (const dz of [-0.28, 0.28]) {
+				} else if (kind !== 'y25') for (const dz of [-0.28, 0.28]) {
 					const sp = new T.Mesh(SPRING_GEO, springM);
 					sp.scale.set(0.3, 0.32, 0.3);
 					sp.position.set(sx * (FX - 0.08), R + 0.28, bz + dz);
 					add(sp);
 				}
-				add(beam(R + 0.05, bz - 0.55, R + 0.38, bz + 0.25, sx * (FX + 0.13), 0.06, springM));
+				if (kind !== 'y25') add(beam(R + 0.05, bz - 0.55, R + 0.38, bz + 0.25, sx * (FX + 0.13), 0.06, springM));
 			}
 			// belka poprzeczna (z czopem skrętu) i poprzecznice przy osiach
 			add(box(2.1, 0.26, 0.5, frame, 0, R + 0.24, bz));
+			const discM = matS('#8a8480', { metalness: 0.75, roughness: 0.4, train: 0.3 });
+			if (opts.disc) for (const dz of AX) for (const x of [-0.3, 0.3]) {
+				// zacisk na tarczy (od strony środka wózka, nad osią) z cylindrem hamulcowym i wspornikiem do poprzecznicy
+				const sd = Math.sign(dz) || 1, zc = bz + dz - sd * R * 0.5;
+				add(box(0.16, 0.2, 0.18, dark, x, R + R * 0.45, zc));
+				add(fine(turned(CYL, frame, x + 0.13, R + R * 0.45, zc, 0.14, 0.18, 1)));
+				add(fine(box(0.06, 0.06, 0.3, frame, x, R + R * 0.6, zc - sd * 0.18)));
+			}
+			if (kind === 'y25') {
+				// ślizgi boczne na belce bujakowej, belki hamulcowe z klockami od strony środka wózka, dźwignia hamulca
+				for (const sx of [-0.85, 0.85]) add(box(0.22, 0.1, 0.3, dark, sx, R + 0.42, bz));
+				for (const dz of AX) add(fine(box(1.6, 0.07, 0.09, dark, 0, R - 0.02, bz + dz - Math.sign(dz) * (R + 0.12))));
+				add(fine(box(0.06, 0.5, 0.08, springM, 0.25, R + 0.05, bz)));
+			}
 			for (const dz of [-half + R + 0.25, half - R - 0.25]) add(box(2.0, 0.1, 0.12, frame, 0, R + 0.14, bz + dz));
 			if (kind === 'loco') for (const dz of axles === 3 ? [-half + 0.55, 0.55, half - 0.55] : [-half + 0.55, half - 0.55]) add(box(1.1, 0.5, 0.55, dark, 0, R + 0.02, bz + dz)); // silniki trakcyjne
 			for (const dz of AX) {
@@ -1550,6 +1649,13 @@ import * as THREE from 'three';
 				axle.scale.set(0.17, 1.9, 0.17);
 				axle.rotation.z = Math.PI / 2;
 				ws.add(axle);
+				if (opts.disc) for (const x of [-0.3, 0.3]) {
+					// tarcza wentylowana: dwie płyty z ciemną szczeliną (żebra) i piasta na osi
+					const disc = (d, l, m, xx) => { const o = new T.Mesh(CYL, m); o.scale.set(d, l, d); o.rotation.z = Math.PI / 2; o.position.x = xx; ws.add(o); };
+					for (const o of [-0.035, 0.035]) disc(R * 1.45, 0.035, discM, x + o);
+					disc(R * 1.38, 0.04, dark, x);
+					disc(0.3, 0.16, dark, x);
+				}
 				for (const x of [-0.75, 0.75]) {
 					const w = new T.Mesh(WHEEL_GEO, wheelMat);
 					// obrzeże (+y bryły) po wewnętrznej stronie toru
@@ -1854,7 +1960,9 @@ import * as THREE from 'three';
 		   z żaluzjami pionowymi, niżej równy rząd siedmiu ciemnych żaluzji filtrów powietrza, pod dachem pas żaluzji
 		   wzdłuż przedziału maszynowego. Układ na drugiej burcie – odwrócony (jak obrót lokomotywy). */
 		sideET22(add, za, zb, st, glass, frameA) {
-			const span = zb - za, grille = mat('#20262b'), slat = mat('#11161a'), roofM = matS(st.roof, { roughness: 0.55, metalness: 0.3 });
+			const span = zb - za, grille = mat('#151a1e'), slat = mat('#11161a'), roofM = matS(st.roof, { roughness: 0.55, metalness: 0.3 });
+			// listwy żaluzji w kolorze pudła (wg zdjęć ET22), pochylone ku dołowi – jasne pasy z ciemnymi szczelinami
+			const blade = matS(darker(st.paint, 0.9), { roughness: 0.6, metalness: 0.15 });
 			for (const sx of [-1, 1]) {
 				const x = sx * (HALF + 0.012), u = (f) => sx * (za + span * f);
 				// rząd żaluzji filtrów
@@ -1862,7 +1970,11 @@ import * as THREE from 'three';
 				for (let k = 0; k < n; k++) {
 					const z = sx * (za + 0.5 + ((span - 1.0) * (k + 0.5)) / n);
 					add(box(0.03, h, w, grille, x, y0, z));
-					for (let y = y0 - h / 2 + 0.06; y < y0 + h / 2 - 0.03; y += 0.075) add(fine(box(0.045, 0.03, w - 0.06, slat, x + sx * 0.008, y, z)));
+					for (let y = y0 - h / 2 + 0.06; y < y0 + h / 2 - 0.03; y += 0.075) {
+						const b = fine(box(0.07, 0.016, w - 0.06, blade, x + sx * 0.012, y, z));
+						b.rotation.z = -sx * 0.75;
+						add(b);
+					}
 					for (const dy of [-h / 2, h / 2]) add(box(0.05, 0.035, w + 0.05, frameA, x + sx * 0.01, y0 + dy, z));
 					for (const dz of [-w / 2, w / 2]) add(box(0.05, h + 0.035, 0.035, frameA, x + sx * 0.01, y0, z + dz));
 				}
@@ -1871,7 +1983,11 @@ import * as THREE from 'three';
 				add(box(0.04, 0.5, 0.62, glass, x + sx * 0.01, 2.92, zw));
 				add(box(0.035, 0.6, 0.72, mat('#1a1a1a'), x, 2.92, zw));
 				add(box(0.03, 0.78, 1.0, grille, x, 2.88, zg));
-				for (let z = zg - 0.44; z < zg + 0.45; z += 0.09) add(fine(box(0.045, 0.72, 0.03, slat, x + sx * 0.008, 2.88, z)));
+				for (let z = zg - 0.44; z < zg + 0.45; z += 0.09) {
+					const b = fine(box(0.07, 0.72, 0.016, blade, x + sx * 0.012, 2.88, z));
+					b.rotation.y = sx * 0.75;
+					add(b);
+				}
 				for (const dy of [-0.39, 0.39]) add(box(0.05, 0.035, 1.05, frameA, x + sx * 0.01, 2.88 + dy, zg));
 				for (const dz of [-0.5, 0.5]) add(box(0.05, 0.81, 0.035, frameA, x + sx * 0.01, 2.88, zg + dz));
 				// pas żaluzji pod dachem (na łuku dachu, prawie pionowo)
@@ -1930,7 +2046,9 @@ import * as THREE from 'three';
 			const part = (w, h, d, m, x, y, z) => { room.add(box(w, h, d, m, x, y, z)); };
 			// ściany ciemniejsze (jasnoszare wyglądały przez okno z zewnątrz jak płaska plama bez faktury)
 			const wallM = this.cabWallM || (this.cabWallM = (() => { const m = new T.MeshLambertMaterial({ color: '#3f454b', emissive: '#ffffff', emissiveIntensity: 0.03 }); this.ownMats.push(m); return m; })());
-			part(2.6, 0.05, depth - 0.3, M.floor, 0, FL, sgn * (hl - (depth + 0.3) / 2));
+			// podłoga do czoła – przy nosie zwężonym od dołu (chin) krótsza, żeby nie przebijała podbródka
+			const fo = st.chin ? st.nose * 0.35 : 0.3;
+			part(2.6, 0.05, depth - fo, M.floor, 0, FL, sgn * (hl - (depth + fo) / 2));
 			part(2.6, 0.05, d2, wallM, 0, TOP, zc);
 			/* ściany boczne z otworem w pasie okien bocznych kabiny (2,3–3,3 m, długość okna od czoła – jak w malowaniu
 			   bryły): wcześniej ściana stała tuż za szybą i zasłaniała wnętrze */
@@ -2201,7 +2319,20 @@ import * as THREE from 'three';
 				const px = st.panes === 3 ? 0.8 : 0.6;
 				for (const x of [-px, px]) this.addWiper(group, sgn, hl, x, (yLow + yHigh) / 2, !!st.wiperTop);
 			}
-			if (st.modern) {
+			if (st.modern && st.chin) {
+				/* nos zwężony od dołu (ED250): sprzęg schowany pod pokrywą nosa; pod nosem skośna owiewka (spojler) od spodu
+				   czoła do dołu przed wózkiem, z listwą zgarniacza i bocznymi policzkami */
+				const ap = mat(st.apron || '#24292e');
+				const yTip = nosePoint(st, H, 1, 0, BOTTOM).y;
+				const plate = (y1, z1, y2, z2, w, m, x = 0) => {
+					const b = box(w, Math.hypot(z2 - z1, y2 - y1), 0.07, m, x, (y1 + y2) / 2, (z1 + z2) / 2);
+					b.rotation.x = Math.atan2(z2 - z1, y2 - y1);
+					return add(b);
+				};
+				plate(0.42, zt - sgn * 1.05, yTip + 0.02, zt - sgn * 0.3, 1.8, ap);
+				for (const sx of [-1, 1]) plate(0.5, zt - sgn * 1.6, yTip - 0.05, zt - sgn * 0.85, 0.06, ap, sx * 0.92);
+				add(box(1.85, 0.05, 0.12, matS('#26282b', { roughness: 0.6, metalness: 0.4 }), 0, 0.4, zt - sgn * 1.05));
+			} else if (st.modern) {
 				/* nowoczesne EZT: sprzęg Scharfenberga wysunięty z wnęki w czole, pod nim owiewka (zgarniacz) w kolorze
 				   fartucha – zwęża się ku narożnikom jak czoło */
 				const ap = mat(st.apron || '#24292e');
@@ -2745,12 +2876,16 @@ import * as THREE from 'three';
 			const wb = st.wb ?? (kind === 'loco' ? 2.9 : kind === 'cargo' ? 2.8 : 2.5);
 			// rama podwozia między wózkami (nad wózkami zostaje miejsce – widać ramy wózków) i ostojnica pod pudłem
 			add(box(2.5, 0.35, Math.max(1, len - 2 * bogieOff - wb - 1.4), under, 0, 0.88, 0));
-			add(box(2.7, 0.12, len - 0.6, under, 0, BOTTOM - 0.02, 0));
+			{
+				// nos zwężony od dołu (chin): ostojnica kończy się przed nim (pod nosem owiewka – cabEnd)
+				const cf = noseF && st.chin ? st.nose * 0.6 : 0.3, cr = noseR && st.chin ? st.nose * 0.6 : 0.3;
+				add(box(2.7, 0.12, len - cf - cr, under, 0, BOTTOM - 0.02, (cf - cr) / 2));
+			}
 			const wR = st.wR ?? (kind === 'loco' ? 0.55 : kind === 'ezt' ? 0.47 : kind === 'cargo' ? 0.53 : 0.45);
 			/* wózki Jakobsa (człony przegubowe, spec.art): wózek pod czołem z kabiną i wspólny pod przegubem – na tylnym
 			   końcu członu, w połowie odstępu do następnego (przedni koniec członu opiera się na wózku poprzedniego) */
 			const bzs = spec && spec.art ? [noseF ? -hl + bogieOff : null, noseR ? hl - bogieOff : hl + t.gap / 2].filter((z) => z !== null) : [-hl + bogieOff, hl - bogieOff];
-			for (const bz of bzs) this.bogie(group, add, bz, wb, wR, kind === 'loco' || kind === 'cargo' ? 'loco' : kind === 'ezt' ? 'ezt' : 'coach', st.axles || 2);
+			for (const bz of bzs) this.bogie(group, add, bz, wb, wR, kind === 'loco' || kind === 'cargo' ? 'loco' : kind === 'ezt' ? 'ezt' : 'coach', st.axles || 2, { disc: !!st.modern || (kind === 'coach' && !!st.fixedWin) });
 			const span = len - 2 * bogieOff - 4.5;
 			if (span > 2 && kind === 'coach') this.coachUnderframe(add, span, i);
 			else if (span > 2 && kind === 'ezt') this.emuUnderframe(add, span, st);
@@ -2851,7 +2986,8 @@ import * as THREE from 'three';
 					const za = -hl + st.nose + cabWin + 1.5, zb = hl - st.nose - cabWin - 1.5;
 					const nP = st.panels || 7, pw = (zb - za) / nP;
 					const sideKind = st.side || 'eu07';
-					const grille = mat('#2c3a2e'), slat = mat('#1a221c');
+					// kratki: ciemne tło, listwy w kolorze pudła (pochylone – jasne pasy i ciemne szczeliny)
+					const grille = mat('#141a16'), slat = matS(darker(st.paint, 0.9), { roughness: 0.6, metalness: 0.15 });
 					// przetłoczenia (poziome żebra) na dolnej, ciemnozielonej części burt
 					if (st.ribs) for (const sx of [-1, 1]) for (const y of [1.42, 1.64, 1.86]) {
 						const xr = y < 1.55 ? 1.38 + (0.06 * (y - 1.3)) / 0.25 : y < 1.75 ? 1.44 + (0.01 * (y - 1.55)) / 0.2 : HALF;
@@ -2880,8 +3016,19 @@ import * as THREE from 'three';
 							add(box(WIDTH + 0.04, 0.72, 0.85, mat('#1a1a1a'), 0, 2.85, zc));
 						} else {
 							add(box(WIDTH + 0.04, fh, pw - 0.35, grille, 0, 2.85, zc));
-							if (sideKind === 'grilles') for (let z = zc - pw / 2 + 0.3; z < zc + pw / 2 - 0.25; z += 0.12) add(box(WIDTH + 0.06, fh - 0.08, 0.035, slat, 0, 2.85, z)); // żaluzje pionowe
-							else for (let y = 2.56; y < 3.16; y += 0.1) add(box(WIDTH + 0.06, 0.035, pw - 0.4, slat, 0, y, zc));
+							// listwy osobno na każdej burcie (pochylenie na zewnątrz)
+							for (const sx of [-1, 1]) {
+								if (sideKind === 'grilles') for (let z = zc - pw / 2 + 0.3; z < zc + pw / 2 - 0.25; z += 0.12) { // żaluzje pionowe
+									const b = box(0.08, fh - 0.08, 0.018, slat, sx * (HALF + 0.02), 2.85, z);
+									b.rotation.y = sx * 0.75;
+									add(b);
+								}
+								else for (let y = 2.56; y < 3.16; y += 0.1) {
+									const b = box(0.08, 0.018, pw - 0.4, slat, sx * (HALF + 0.02), y, zc);
+									b.rotation.z = -sx * 0.75;
+									add(b);
+								}
+							}
 						}
 						// ramka (kątownik) wokół okna i kratki
 						for (const dy of [-fh / 2, fh / 2]) add(box(WIDTH + 0.08, 0.035, fw + 0.06, frameA, 0, 2.85 + dy, zc));
@@ -3079,20 +3226,52 @@ import * as THREE from 'three';
 				if (kind === 'ezt' && st.modern) {
 					// nowoczesne EZT: klimatyzator (płaska obudowa z kratką i wentylatorem) na członach bez pantografu – na
 					// członach z pantografem osłona aparatury dachowej
-					const zc = panto ? 0 : noseF ? -hl + st.nose + 3.2 : noseR ? hl - st.nose - 3.2 : 0;
-					add(box(1.9, 0.34, panto ? 2.2 : 3.2, roofMat, 0, H - 0.02, zc));
-					add(box(1.7, 0.04, panto ? 2.0 : 3.0, grille, 0, H + 0.16, zc));
-					for (let z = zc - (panto ? 0.95 : 1.45); z <= zc + (panto ? 0.95 : 1.45) + 1e-6; z += 0.12) add(fine(box(1.62, 0.02, 0.025, roofMat, 0, H + 0.185, z)));
-					const fan = new T.Mesh(CYL, mat('#202326'));
-					fan.scale.set(0.8, 0.06, 0.8);
-					fan.position.set(0, H + 0.18, zc + 0.6);
-					add(fan);
+					const zc = panto ? 0 : noseF ? -hl + st.nose + 3.2 : noseR ? hl - st.nose - 3.2 : 0, L = panto ? 2.2 : 3.2;
+					add(box(1.9, 0.34, L, roofMat, 0, H - 0.02, zc));
+					// (wg zdjęć Elfa i ED250) skośne owiewki na końcach obudowy, żaluzje na bokach
+					for (const e of [-1, 1]) {
+						const f = box(1.9, 0.05, 0.6, roofMat, 0, H + 0.03, zc + e * (L / 2 + 0.25));
+						f.rotation.x = e * 0.45;
+						add(f);
+					}
+					for (const sx of [-1, 1]) {
+						add(box(0.02, 0.2, L - 0.5, grille, sx * 0.955, H - 0.02, zc));
+						for (const y of [-0.09, -0.02, 0.05]) {
+							const b = fine(box(0.05, 0.015, L - 0.55, roofMat, sx * 0.97, H + y, zc));
+							b.rotation.z = -sx * 0.7;
+							add(b);
+						}
+					}
+					add(box(1.7, 0.04, L - 0.2, grille, 0, H + 0.16, zc));
+					for (let z = zc - (L / 2 - 0.15); z <= zc + L / 2 - 0.15 + 1e-6; z += 0.12) add(fine(box(1.62, 0.02, 0.025, roofMat, 0, H + 0.185, z)));
+					// wentylatory skraplaczy: wirnik pod kratką i obręcz
+					for (const dz of panto ? [0] : [-L * 0.22, L * 0.22]) {
+						const fan = new T.Mesh(CYL, mat('#202326'));
+						fan.scale.set(0.75, 0.06, 0.75);
+						fan.position.set(0, H + 0.17, zc + dz);
+						add(fan);
+						const ring = new T.Mesh(RING_GEO, roofMat);
+						ring.scale.setScalar(0.4);
+						ring.position.set(0, H + 0.2, zc + dz);
+						add(fine(ring));
+					}
 				} else if (panto) {
 					// EN57: skrzynie oporników i przewody między pantografami
+					// (wg zdjęć EN57): skrzynie z blachy ocynkowanej, na wierzchu krata nad ciemnym wnętrzem, boki z żaluzjami
+					const boxM = matS('#7d8287', { roughness: 0.55, metalness: 0.35 }), dark = mat('#181a1c');
 					for (const s of [-1, 1]) {
-						add(box(0.9, 0.32, 2.4, mat('#3b3f44'), s * 0.6, H + 0.1, 0));
-						add(box(0.85, 0.04, 2.3, grille, s * 0.6, H + 0.28, 0));
-						for (let z = -1.1; z <= 1.1 + 1e-6; z += 0.14) add(fine(box(0.8, 0.02, 0.025, mat('#3b3f44'), s * 0.6, H + 0.305, z)));
+						add(box(0.9, 0.32, 2.4, boxM, s * 0.6, H + 0.1, 0));
+						add(box(0.8, 0.04, 2.25, dark, s * 0.6, H + 0.27, 0));
+						for (let z = -1.1; z <= 1.1 + 1e-6; z += 0.12) add(fine(box(0.82, 0.02, 0.025, boxM, s * 0.6, H + 0.3, z)));
+						for (const x of [-0.12, 0.12]) add(fine(box(0.025, 0.025, 2.3, boxM, s * 0.6 + x * 3, H + 0.31, 0)));
+						for (const sx of [-1, 1]) {
+							add(box(0.02, 0.18, 2.2, dark, s * 0.6 + sx * 0.45, H + 0.12, 0));
+							for (const y of [0.06, 0.12, 0.18]) {
+								const b = fine(box(0.05, 0.015, 2.2, boxM, s * 0.6 + sx * 0.47, H + y, 0));
+								b.rotation.z = -sx * 0.7;
+								add(b);
+							}
+						}
 					}
 					// szyna WN na izolatorach między pantografami
 					add(turned(CYL, mat('#b87333'), 0, H + 0.31, 0, 0.06, len * 0.62, 1));
@@ -3121,9 +3300,17 @@ import * as THREE from 'three';
 			if (i < n - 1 && kind !== 'loco' && kind !== 'cargo' && !noseR) {
 				const bel = mat('#161616'), fold = mat('#262626');
 				// 111A: wąskie przejście UIC (jak rama przejścia na ścianie czołowej); EN57 – szeroki miech
-				const bw = kind === 'coach' ? 1.05 : 2.1, bh = kind === 'coach' ? 2.3 : 2.5, by = kind === 'coach' ? 2.5 : 2.4;
-				add(box(bw, bh, t.gap + 0.5, bel, 0, by, hl + t.gap / 2));
-				for (let k = 0; k < 5; k++) add(box(bw + 0.14, bh + 0.12, 0.06, fold, 0, by, hl - 0.2 + (k + 0.5) * ((t.gap + 0.4) / 5)));
+				// nowoczesne EZT – miech prawie na całą szerokość i wysokość pudła (jak przegub Elfa), z ramami przy pudłach
+				// miech z części [szerokość, dół, góra]: nowoczesne EZT – szeroki dół i węższa góra pod zaokrąglonym dachem
+				const secs = kind === 'coach' ? [[1.05, 1.35, 3.65]] : st.modern ? [[2.55, 1.17, H - 0.62], [1.95, H - 0.62, H - 0.14]] : [[2.1, 1.15, 3.65]];
+				// fałdy co ok. 9 cm (zewnętrzne jaśniejsze grzbiety), u nowoczesnych EZT ramy przy pudłach
+				const nF = Math.max(5, Math.round((t.gap + 0.4) / 0.09));
+				for (const [bw, y0, y1] of secs) {
+					const bh = y1 - y0, by = (y0 + y1) / 2;
+					add(box(bw, bh, t.gap + 0.5, bel, 0, by, hl + t.gap / 2));
+					for (let k = 0; k < nF; k++) add(box(bw + 0.1, bh + 0.08, 0.035, fold, 0, by, hl - 0.2 + (k + 0.5) * ((t.gap + 0.4) / nF)));
+					if (st.modern) for (const e of [0, 1]) add(box(bw + 0.16, bh + 0.14, 0.05, mat('#0f1012'), 0, by, hl - 0.18 + e * (t.gap + 0.36)));
+				}
 			}
 			if (kind === 'coach') {
 				/* 111A: na obu ścianach czołowych przejście – czarna gumowa rama UIC (słupki, nadproże, próg) wystająca ze ściany,
@@ -3404,7 +3591,7 @@ import * as THREE from 'three';
 			const shadows = this.shadows;
 			const add = (o) => { o.castShadow = shadows; o.receiveShadow = true; group.add(o); return o; };
 			const hl = len / 2;
-			for (const bz of [-hl + 2.6, hl - 2.6]) this.bogie(group, add, bz, 1.8, 0.46, 'coach');
+			for (const bz of [-hl + 2.6, hl - 2.6]) this.bogie(group, add, bz, 1.8, 0.46, 'y25');
 			const sp = this.train.specs && this.train.specs[i];
 			let ti = sp && sp.ft !== undefined ? sp.ft : this.train.types ? this.train.types[i] : -1;
 			if (!(ti >= 0)) ti = Math.max(0, FREIGHT_TYPES.findIndex((q) => Math.abs(q.len - len) < 0.3));

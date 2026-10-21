@@ -4,6 +4,193 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.8 – 21 października 2026
+
+Żółty pas peronu: wyposażenie i pasażerowie za nim.
+
+### Wyposażenie peronu (`world.js`)
+- Stałe `LINE` (koniec żółtego pasa – 0,95 m od krawędzi), `FURN` (wyposażenie – 1 m za pasem), `PAX` (ludzie –
+  0,3 m za pasem).
+- Ławki: przód ławki z nogami siedzących (0,7 m przed środkiem) co najmniej `FURN` od krawędzi, przy której jest tor;
+  peron przy jednym torze – ławka odsuwana od toru, gdy oś peronu jest za blisko (dawniej zawsze w osi – na wąskich
+  peronach z mapy ok. 0,4 m od pasa); peron wyspowy – para plecami do siebie od 6,5 m szerokości, węższy – jedna ławka
+  na zmianę przodem do jednego i drugiego toru, poniżej ok. 5 m – bez ławek.
+- Kosze: co najmniej `FURN` + promień od krawędzi (przy jednym torze – odsuwane ku tyłowi peronu), inaczej bez kosza.
+- Wiata przystankowa: ławki tylko gdy mieszczą się za pasem; kosz przy tylnym narożniku zamiast przy przednim słupie
+  (stał na pasie).
+
+### Pasażerowie (`world.js` updatePassengers, stepWalker)
+- Czekający stają co najmniej `PAX` od krawędzi (dawniej od 0,85 m – na żółtym pasie), spacerujący i rozstawiani
+  na starcie – też.
+- Kolejka do drzwi za pasem (dawniej 0,5 m od krawędzi); do krawędzi i stopnia wagonu podchodzi tylko wsiadający.
+- Wysiadający po zejściu ze stopnia najpierw odchodzą prostopadle za pas, dopiero potem idą do wyjścia.
+- `stepWalker(…, keep)`: omijając przeszkody, idący po peronie nie wchodzą na pas (kroki ku krawędzi bliżej niż `PAX`
+  odrzucane; oddalanie się zawsze wolno).
+
+## 0.58.7 – 21 października 2026
+
+Wiaty stacyjne w obrysie peronu.
+
+### Wiaty (`world.js`)
+- Dach wiaty stacyjnej (z blendą i rynną) kończy się 0,4 m przed krawędzią peronu od strony toru i 0,15 m przed tylną
+  krawędzią (dawniej równo z krawędzią od strony toru i 5 cm poza tylną krawędzią); połówki wiaty peronu wyspowego
+  stykają się w osi peronu jak dotąd.
+- Długość i położenie wiaty (`shelterSpan` – wspólne dla wiaty i dla zegara, tablic i świateł pod nią) ograniczone
+  długością peronu: wiata kończy się co najmniej 3 m przed końcami peronu (pochylnie); dawniej stała długość 30 / 14 m.
+- Usunięta tablica odjazdów dodana do wiaty w 0.58.6 – stacje mają już elektroniczną tablicę odjazdów
+  (`departureBoard`) i zegar w osi wiaty; nowa wisiała w miejscu zegara.
+
+## 0.58.6 – 21 października 2026
+
+Wiaty i latarnie uliczne.
+
+### Wiaty (`world.js`)
+- Przystankowa (`haltShelter`): matowy pas ostrzegawczy na szybach ok. 1,4 m nad peronem (tylna i boczne ściany),
+  blenda także z boków i z tyłu dachu, okapnik pod przednią krawędzią, dolne ramy i słupki na końcach ścian bocznych,
+  kosz przy przednim słupie.
+- Stacyjna (`shelter`): pokrycie z blachy na rąbek stojący (żeberka co 0,6 m w dół spadku); tablica odjazdów pod
+  wiatą – wycofana w 0.58.7 (dublowała istniejącą).
+
+### Latarnie uliczne (`real-env.js` lampGeo)
+- Cokół toczony z fazą, słup stożkowy na 16 ścianach, drzwiczki rewizyjne od strony chodnika, kołnierz pod wysięgnikiem,
+  wysięgnik gładszy z tulejką na końcu.
+- Drogi główne: oprawa LED – opływowy korpus (wyższy przy wysięgniku, ścięty ku przodowi, zaokrąglone krawędzie)
+  z żebrami radiatora; drogi osiedlowe: czasza z kołnierzem i iglicą.
+
+### Niebo
+- Gwiazdy, Droga Mleczna i księżyc w dzień całkiem wygaszone (w 0.58.5 zostawało 2% – słabe punkty na błękicie).
+
+## 0.58.5 – 21 października 2026
+
+Infrastruktura kolejowa i otoczenie: rogatki, budynki, ławki i kosze, niebo.
+
+### Przejazdy (`world.js` buildCrossing)
+- Półrogatki przy każdym sygnalizatorze: napęd przy słupie, ramię w biało-czerwone pasy z trzema lampkami do osi jezdni
+  (strona i długość ramienia z położenia osi drogi w układzie sygnalizatora), przeciwwaga. Dotąd przejazdy miały tylko
+  krzyże św. Andrzeja i sygnalizatory. Ramiona opadają po 4 s świecenia (ok. 6 s), podnoszą się po przejeździe pociągu
+  (ok. 5 s) – `updateDyn`.
+
+### Budynki z mapy (`real-env.js` buildEnvBuildings)
+- Balkony bloków mieszkalnych (rodzaj 1, przeznaczenie wielorodzinne albo nieokreślone, od 8,5 m): płyta wysunięta
+  1,1 m i balustrada przed oknem co drugiego albo co trzeciego przęsła elewacji, od pierwszego piętra – w osiach okien
+  z tekstury (przęsła 3 m, kondygnacje co 3 m od cokołu); kolor balustrad wybierany dla bloku.
+- Dachy dwuspadowe: okap 0,4 m poza ściany i szczyty, od spodu podbitka; dachy kopertowe – okap 0,35 m. Dotąd dach
+  kończył się równo ze ścianą.
+- Domy: murowany komin przy kalenicy (ceglany albo tynkowany) z czapą.
+
+### Perony (`world.js`)
+- Ławka: boki z żeliwa jedną płaską bryłą (nogi, wspornik siedziska, wygięte oparcie), pięć listew siedziska, trzy listwy
+  oparcia wzdłuż wygięcia boków, podłokietniki ze wspornikami.
+- Kosz na śmieci: wiadro toczone (szersze u góry, wywinięty brzeg), ciemne wnętrze widoczne z góry.
+
+### Niebo (`sky-gpu.js`)
+- Gwiazdy i Droga Mleczna gasną, gdy słońce wschodzi (dotąd stała jasność – w południe było widać gwiazdy na błękicie).
+
+## 0.58.4 – 21 października 2026
+
+Modele ludzi i samochodów (`props.js`).
+
+### Ludzie (`buildPeople` – na peronach, w wagonach, maszynista)
+- Tułów (dół kurtki, talia, klatka, zaokrąglone barki), biodra, uda, łydki, ramiona i przedramiona z brył obrotowych
+  (`LatheGeometry`) o zmiennym przekroju zamiast walców – bez schodków między częściami; lekko wypukłe plecy.
+  Stawy bez zmian (animacja chodu i pozy siedzące działają jak dotąd).
+- Głowa: jedna bryła w kształcie jajka (wąska broda, szersza czaszka) zamiast kuli z osobną kulą żuchwy (wyglądała
+  jak pysk), oczy z białkami i tęczówkami, brwi ukośne, usta; włosy – czapa nad czołem i osobna część z tyłu i po bokach.
+
+### Samochody (`carGeo`)
+- Koła: opona z zaokrąglonym barkiem (bryła obrotowa), felga z obręczą, pięcioma ramionami i piastą, za nią ciemna
+  tarcza.
+- Dostawczy: szyby tylko w kabinie (dotąd przeszklony do samego tyłu), część ładunkowa z blachy, szczeliny drzwi
+  przesuwnych z szyną i klamką, tylne drzwi dwuskrzydłowe z okienkami.
+- Szczeliny drzwi przednich i tylnych, przetłoczenie wzdłuż boku, czarna listwa pod szybami bocznymi, boczne
+  kierunkowskazy; listwy osłony chłodnicy, wlot w zderzaku, światła przeciwmgłowe, kierunkowskazy przy reflektorach,
+  światła cofania, wycieraczki, antena, rura wydechowa.
+
+## 0.58.3 – 21 października 2026
+
+Przegląd i poprawki modeli EZT.
+
+### ED250
+- Nos zwężony także od dołu: nowe parametry bryły `chin` (część pod `yb` ściśnięta ku górze na końcu czoła) i `taper`
+  (zwężenie przekroju na końcu czoła; dotąd stałe 10%) w `nosePoint` – wspólne dla `loftBody` i detali czoła. Dotąd
+  pod skośną szybą stała pionowa ściana jak w lokomotywie.
+- Pod nosem skośna owiewka (spojler) z listwą zgarniacza i bocznymi policzkami; sprzęg schowany pod nosem (bez
+  wysuniętego Scharfenberga i płaskiej owiewki); ostojnica kończy się przed nosem.
+- Podłoga kabiny przy nosie z `chin` krótsza – nie przebija podbródka.
+
+### Elf i ED250
+- Obudowa klimatyzatora na dachu: skośne owiewki na obu końcach, żaluzje na bokach, dwa wentylatory skraplaczy
+  z obręczami pod kratką (na członie z pantografem – jeden).
+- Miech przegubu (Elf) prawie na całą szerokość pudła: szeroki dół i węższa góra pod zaokrąglonym dachem, ramy
+  przy pudłach.
+
+### Wszystkie składy z miechami
+- Fałdy miechów co ok. 9 cm (dotąd 5 na całej długości) – EN57, EN71, ED72, wagony pasażerskie.
+
+## 0.58.2 – 21 października 2026
+
+Wnętrza wagonów towarowych, ściany Habbiins, hamulce tarczowe.
+
+### Wagony towarowe (`freightParts` – także wagony na bocznicach)
+- **Eaos**: wnętrze – ściany od środka w kolorze wytartym ładunkiem (rdza z resztkami farby), słupki z ceowników na
+  burtach i czołach, ościeżnice drzwi, podłużnica; podłoga z blach; w pustym wagonie spoiny blach podłogi i węgiel zbity
+  w kątach przy burtach.
+- **Falns**: leje wewnątrz – skośne dna od ścian czołowych do otworów zsypowych (dotąd krótkie płyty z przerwami,
+  przez które było widać tor), grzbiet rozdzielający leje pośrodku, resztki węgla w zsypach, spoiny blach.
+- **Habbiins**: ściany przesuwne z przetłoczeniami co 0,3 m (jasne grzbiety, ciemniejsze doliny), cztery skrzydła ze
+  szczelinami, szyna jezdna z wózkami rolek u góry, prowadnica u dołu, na każdym skrzydle drążek zamknięcia
+  z prowadnicami i dźwignią.
+
+### Wózki
+- Hamulec tarczowy (`bogie(…, opts.disc)`) w nowoczesnych EZT (Elf, Elf 2, ED250) i wagonach A9 / B10: dwie tarcze
+  wentylowane na każdej osi (obracają się z zestawem kołowym), zaciski z cylindrami na poprzecznicach; bez klocków
+  na kołach i cięgieł.
+
+## 0.58.1 – 21 października 2026
+
+Modele taboru: wagony towarowe, lokomotywy i EZT.
+
+### Wagony towarowe
+- Wózki **Y25** (`bogie(…, 'y25')`, rama `bogieFrameGeo` – kształt Y25) zamiast wózków wagonów pasażerskich: prosty
+  górny pas ramy, nad każdą maźnicą prowadnica w kształcie odwróconego U z dwoma gniazdami sprężyn (zewnętrzna
+  i wewnętrzna), łączniki Lenoir, ślizgi boczne, belki hamulcowe z klockami od strony środka wózka, dźwignia hamulca.
+- Węgiel w Eaos i Falns: pryzma `GEO.heap` (wierzch opadający ku burtom i czołom, bryłki o płaskich ścianach) zamiast
+  schodkowych prostopadłościanów – także w wagonach na bocznicach.
+
+### Lokomotywy
+- Żaluzje boczne (ET22 – filtry i kratka w górnym rzędzie, EU07 / ST44 / SU46 / EP09 – kratki przedziału maszynowego):
+  listwy w kolorze pudła pochylone ku dołowi na ciemnym tle zamiast czarnych płyt z czarnymi listwami.
+
+### EZT
+- EN57: skrzynie oporników na dachu z jasnej blachy ocynkowanej – krata nad ciemnym wnętrzem, żaluzje na bokach.
+
+## 0.58.0 – 21 października 2026
+
+Nowa trasa Kraków Główny – Zakopane i generator dłuższych tras przez kilka linii.
+
+### Nowa trasa
+- **Kraków Główny – Zakopane** (`routes/krakow-zakopane.js`, horyzont `routes/horizon/krakow-zakopane.js`): linie 91, 629,
+  624, 94, 97, 98 i 99 – 135,8 km, 49 stacji i przystanków; łącznice omijają stacje Sucha Beskidzka i Chabówka
+  (postoje Sucha Beskidzka Zamek, Chabówka Stadion). Pochylenia do 29‰ (Chabówka – Nowy Targ, Poronin – Zakopane;
+  profil linii 99 zgodny z RINF), horyzont do 9,5° (Tatry). Prędkości w 90% z wykazu PKP PLK.
+
+### Generator tras (`osm-route.js`)
+- Limit odległości stacji 100 km w linii prostej (dotąd 70 km); powyżej 70 km – komunikat o dłuższym pobieraniu.
+- Numer linii może być listą (`91,94,97` – przecinek, średnik albo spacja): tory wszystkich linii, preferowane w
+  wyszukiwaniu przebiegu.
+- Korytarz z numerem linii: prostokąt z dużo większym marginesem (linia odbija od prostej – Sucha Beskidzka 25 km na
+  zachód), łącznice (linie 5xx i 6xx) i tory bez numeru do dwóch odcinków od nich; semafory, przejazdy i rozjazdy
+  tylko na pobranych torach (`node(w.t)`), rzeki do 1,5 km od torów – dotąd zapytanie o cały prostokąt przekraczało
+  limit czasu serwera.
+- PKP PLK na przebiegu przez kilka linii: każda linia z co najmniej dwiema stacjami przebiegu w wykazie posterunków ma
+  własny kilometraż tylko między swoimi skrajnymi stacjami; prędkość z linii toru w danym miejscu, poza odcinkami – z
+  OSM. Dotąd kilometraż jednej linii przeciągany był na całą trasę (prędkości z niewłaściwego kilometrażu).
+  RINF (tunele, profil) – linia z najdłuższym odcinkiem; kilometraż poza odcinkiem (NaN) pomijany.
+
+### Testy
+- Pochylenia tras dołączonych do 30‰ na trasach górskich (różnica wysokości ponad 300 m), pozostałe do 15‰; horyzont
+  Kraków – Zakopane do 12°.
+
 ## 0.57.7 – 21 października 2026
 
 Licznik FPS obok przycisku pauzy.

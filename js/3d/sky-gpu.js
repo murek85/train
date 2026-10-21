@@ -500,6 +500,10 @@ import {
 			atmo.setNight({ moonDir: o.moonDir, moonE: 0.06 * Math.pow(ill, 1.5) * 0.2, skyToEq: this.skyToEq, pixelAngle: (2 * Math.tan((cam.fov * Math.PI) / 360)) / Math.max(1, this.renderer.domElement.height) });
 			/* główne światło chmur: słońce, a gdy zajdzie – księżyc (jak w lot: natężenie wg fazy, chłodna barwa) */
 			const night = o.sunDir.y < -0.02, moonKey = Math.min(1, Math.max(0, (-0.02 - o.sunDir.y) / 0.1));
+			/* gwiazdy, Droga Mleczna i księżyc gasną, gdy słońce wschodzi (dotąd stała jasność – jasne gwiazdy widać było
+			   w południe na błękicie) */
+			const dk = Math.min(1, Math.max(0, (0.08 - o.sunDir.y) / 0.16));
+			u.nightK.value = 2.5 * dk * dk * (3 - 2 * dk);
 			const light = this.light || (this.light = { dir: new THREE.Vector3(), e: new THREE.Vector3() });
 			light.dir.copy(night ? o.moonDir : o.sunDir);
 			const le = night ? 0.06 * Math.pow(ill, 1.5) * moonKey : 12;

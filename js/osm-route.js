@@ -347,18 +347,29 @@
 	// bez numeru (albo gdy przebieg się nie domknie) – wszystkie tory w prostokącie
 	async function fetchCorridor(a, b, log, line) {
 		if (![a.lat, a.lon, b.lat, b.lon].every(Number.isFinite)) throw new Error('Brak współrzędnych stacji.');
-		const m = 0.035 + 0.12 * Math.max(Math.abs(a.lat - b.lat), Math.abs(a.lon - b.lon));
+		/* margines prostokąta; z numerem linii znacznie szerszy (pobierane tylko tory tych linii) – linia może odbijać daleko
+		   na bok (Kraków – Zakopane przez Suchą Beskidzką: 25 km na zachód od prostej) */
+		const span = Math.max(Math.abs(a.lat - b.lat), Math.abs(a.lon - b.lon));
+		const m = line ? 0.1 + 0.4 * span : 0.035 + 0.12 * span;
 		const S = Math.min(a.lat, b.lat) - m, N = Math.max(a.lat, b.lat) + m;
 		const W = Math.min(a.lon, b.lon) - m * 1.6, E = Math.max(a.lon, b.lon) + m * 1.6;
 		const bb = [S, W, N, E].map((v) => v.toFixed(4)).join(',');
 		// bez bocznic, torów stacji rozrządowych i bocznic przemysłowych (nie prowadzi po nich przebieg, a jest ich dużo)
-		const L = String(line || '').replace(/[^0-9A-Za-z]/g, '');
+		// kilka linii (przebieg przez węzły): numery po przecinku, np. „91,94,97”
+		const L = lineList(line).join('|');
 		const sel = L
-			? `(way["railway"="rail"]["ref"~"(^|;)${L}(;|$)"];way["railway"="rail"](around:1500,${a.lat},${a.lon});way["railway"="rail"](around:1500,${b.lat},${b.lon});)`
+			? `(way["railway"="rail"]["ref"~"(^|;)(${L})(;|$)"];way["railway"="rail"](around:1500,${a.lat},${a.lon});way["railway"="rail"](around:1500,${b.lat},${b.lon});)`
 			: 'way["railway"="rail"]["service"!~"^(yard|siding|spur)$"]';
 		// semafory, przejazdy i rozjazdy osobno, po dokładnych wartościach tagów (szybkie wyszukiwanie w indeksie
 		// zamiast pobierania wszystkich węzłów torów); węzły spoza przebiegu generator po prostu pomija
-		const q = `[out:json][timeout:150][bbox:${bb}];${sel};out body geom;(node["railway"="signal"];node["railway"="level_crossing"];node["railway"="switch"];);out tags;(node["railway"="station"];node["railway"="halt"];);out body;(way["waterway"="river"];way["waterway"="canal"];);out geom;`;
+		/* z numerem linii: także łącznice (linie 5xx i 6xx – np. 624 i 629 między liniami 91 i 94 w Krakowie) i tory bez
+		   numeru do dwóch odcinków od nich (tory główne stacji węzłowych); semafory, przejazdy i rozjazdy tylko na pobranych torach, rzeki do
+		   1,5 km od nich – długie trasy (prostokąt ok. 60 × 100 km z całym Krakowem) przekraczały dotąd limit czasu serwera */
+		// tory bez bocznic stykające się z poprzednim zbiorem (krótkie tory bez numeru – dwa kroki)
+		const hop = (from, to) => `node(w.${from})->.n${to};way(bn.n${to})["railway"="rail"]["service"!~"^(yard|siding|spur)$"]->.${to};`;
+		const q = L
+			? `[out:json][timeout:180][bbox:${bb}];(${sel};way["railway"="rail"]["ref"~"^[56][0-9][0-9]$"]["service"!~"^(yard|siding|spur)$"];)->.l;${hop('l', 'h1')}${hop('h1', 'h2')}(.l;.h1;.h2;)->.t;.t out body geom;node(w.t)["railway"~"^(signal|level_crossing|switch)$"];out tags;(node["railway"="station"];node["railway"="halt"];);out body;(way["waterway"="river"](around.t:1500);way["waterway"="canal"](around.t:1500););out geom;`
+			: `[out:json][timeout:150][bbox:${bb}];${sel};out body geom;(node["railway"="signal"];node["railway"="level_crossing"];node["railway"="switch"];);out tags;(node["railway"="station"];node["railway"="halt"];);out body;(way["waterway"="river"];way["waterway"="canal"];);out geom;`;
 		if (log) log('Pobieram tory, semafory i stacje z OpenStreetMap (zwykle do minuty)…');
 		return overpass(q, log, 190000);
 	}
@@ -502,6 +513,8 @@
 		return v > 0 ? Math.min(160, v) : null;
 	};
 	const refs = (tags) => String(tags.ref || '').split(/[;,]/).map((s) => s.trim()).filter(Boolean);
+	// numery linii z pola „linia” (jedna albo kilka po przecinku / średniku / spacji)
+	const lineList = (line) => String(line || '').split(/[,; ]+/).map((s) => s.replace(/[^0-9A-Za-z]/g, '')).filter(Boolean);
 
 	// ---------- otoczenie w układzie trasy (kilometraż s, odsunięcie d – w prawo dodatnie) ----------
 	// pas otoczenia: budynki do 500 m od osi, drogi, wody i raster zagospodarowania do 560 m (widoczność ±500 m)
@@ -1937,7 +1950,7 @@
 		const cost = (e) => {
 			const t = e.w.tags;
 			let f = 1;
-			if (opts.line && !refs(t).includes(String(opts.line))) f *= 2.5;
+			if (opts.line && !refs(t).some((r) => lineList(opts.line).includes(r))) f *= 2.5;
 			if (t.service) f *= t.service === 'crossover' ? 1.6 : 4;
 			if (e.leftTrack === undefined) {
 				const a = pos.get(e.from), b = pos.get(e.to);
@@ -2345,43 +2358,68 @@
 				const data = plkData0 || (await opts.plk(log));
 				const cnt = new Map();
 				for (let s2 = 0; s2 < endS; s2 += 100) for (const r of refs(edgeAt(s2).w.tags)) cnt.set(r, (cnt.get(r) || 0) + 1);
-				plkLine = opts.line ? String(opts.line) : ([...cnt.entries()].sort((a, b) => b[1] - a[1])[0] || [null])[0];
-				const posts = data.posts.filter((q) => q.line === plkLine);
-				const anchors = [];
-				for (const st of route) {
-					const q = posts.find((x) => normName(x.name) === normName(st.name));
-					if (q) anchors.push([st.s, q.km]);
-				}
-				anchors.sort((a, b) => a[0] - b[0]);
-				if (anchors.length >= 2) {
-					kmAt = (s2) => {
+				/* Przebieg przez kilka linii (np. Kraków – Zakopane: 91, 94, 97, 98, 99): każda linia z co najmniej dwiema
+				   stacjami przebiegu w wykazie posterunków ma własny kilometraż – tylko między swoimi skrajnymi stacjami
+				   (stacje węzłowe są na obu liniach); poza nimi kmAt linii nie istnieje (NaN), prędkość z innej linii albo
+				   z OSM. plkLine / kmAt (RINF: tunele, profil) – linia z najdłuższym odcinkiem przebiegu. */
+				const want = lineList(opts.line);
+				const lines = [...new Set(want.concat([...cnt.entries()].sort((a, b) => b[1] - a[1]).map((e) => e[0])))];
+				const trackOf = (s2) => {
+					const tr = parseInt(edgeAt(Math.max(0, Math.min(total, s2))).w.tags['railway:track_ref'], 10);
+					return Number.isFinite(tr) ? (tr % 2 ? 'N' : 'P') : null;
+				};
+				const segs = [];
+				for (const ln of lines) {
+					const posts = data.posts.filter((q) => q.line === ln);
+					const anchors = [];
+					for (const st of route) {
+						const q = posts.find((x) => normName(x.name) === normName(st.name));
+						if (q) anchors.push([st.s, q.km]);
+					}
+					anchors.sort((a, b) => a[0] - b[0]);
+					if (anchors.length < 2) continue;
+					const s0 = anchors[0][0], s1 = anchors[anchors.length - 1][0];
+					const g = { ln, anchors, s0, s1, posts, sp: data.speeds.filter((r) => r.line === ln), strict: false };
+					g.km = (s2) => {
+						if (g.strict && (s2 < s0 - 1 || s2 > s1 + 1)) return NaN;
 						let k = 0;
 						while (k < anchors.length - 2 && s2 > anchors[k + 1][0]) k++;
 						const [sa, ka] = anchors[k], [sb, kb] = anchors[k + 1];
 						return ka + ((kb - ka) * (s2 - sa)) / (sb - sa || 1);
 					};
+					segs.push(g);
+				}
+				// jedna linia – kilometraż także przed pierwszą / za ostatnią stacją (jak dotąd); kilka – tylko na swoim odcinku
+				for (const g of segs) g.strict = segs.length > 1;
+				if (segs.length) {
 					plk = data;
-					const sp = data.speeds.filter((r) => r.line === plkLine);
-					const trackOf = (s2) => {
-						const tr = parseInt(edgeAt(Math.max(0, Math.min(total, s2))).w.tags['railway:track_ref'], 10);
-						return Number.isFinite(tr) ? (tr % 2 ? 'N' : 'P') : null;
-					};
+					const main = segs.slice().sort((a, b) => b.s1 - b.s0 - (a.s1 - a.s0))[0];
+					plkLine = main.ln;
+					kmAt = main.km;
 					plkV = (s2) => {
-						const km = kmAt(s2);
-						const rows = sp.filter((r) => km >= Math.min(r.km0, r.km1) - 0.001 && km <= Math.max(r.km0, r.km1) + 0.001 && (r.v[0] || r.v[1]) > 0);
+						// linia odcinka: pierwsza z zakresem obejmującym s2, najlepiej z numerem toru przebiegu w tym miejscu
+						const here = refs(edgeAt(Math.max(0, Math.min(total, s2))).w.tags);
+						const inR = segs.filter((g) => Number.isFinite(g.km(s2)));
+						// tor z numerem innej linii niż odcinki obejmujące s2 – prędkość z OSM (nie z cudzego kilometrażu)
+						const g = inR.find((x) => here.includes(x.ln)) || (here.length && segs.length > 1 ? null : inR[0]);
+						if (!g) return null;
+						const km = g.km(s2);
+						const rows = g.sp.filter((r) => km >= Math.min(r.km0, r.km1) - 0.001 && km <= Math.max(r.km0, r.km1) + 0.001 && (r.v[0] || r.v[1]) > 0);
 						if (!rows.length) return null;
 						const tr = trackOf(s2), mine = tr ? rows.filter((r) => r.track === tr) : [];
 						return Math.min(...(mine.length ? mine : rows).map((r) => r.v[0] || r.v[1]));
 					};
-					log(`PKP PLK: linia ${plkLine}, kilometraż ze stacji ${anchors.map(([s2, km]) => `${route.find((x) => x.s === s2).name} km ${km}`).join(', ')}.`);
-					// posterunki z peronem między krańcami przebiegu, których nie ma w danych OSM
-					const kA = kmAt(route[0].s), kB = kmAt(route[route.length - 1].s), lo = Math.min(kA, kB), hi = Math.max(kA, kB);
-					const sOfKm = (km) => route[0].s + ((km - kA) / (kB - kA || 1)) * (route[route.length - 1].s - route[0].s);
-					for (const q of posts) {
-						if (!q.platform || q.km <= lo + 0.3 || q.km >= hi - 0.3 || route.some((st) => normName(st.name) === normName(q.name)) || otherSt.some((o) => normName(o.name) === normName(q.name))) continue;
-						plkPending.push(() => issue('plk-stop', sOfKm(q.km), 'warn', `PKP PLK: ${q.kind === 'PO' ? 'przystanek' : 'stacja'} „${q.name}” (km ${q.km} linii ${plkLine}) z peronem – brak w danych OSM.`, `Dodaj: "stations": { "add": [{ "name": "${q.name}", "pos": ${S(sOfKm(q.km))}${q.kind === 'PO' ? ', "type": "halt"' : ''} }] }.`));
+					for (const g of segs) {
+						log(`PKP PLK: linia ${g.ln}, kilometraż ze stacji ${g.anchors.map(([s2, km]) => `${route.find((x) => x.s === s2).name} km ${km}`).join(', ')}.`);
+						// posterunki z peronem między skrajnymi stacjami odcinka linii, których nie ma w danych OSM
+						const [sA, kA] = g.anchors[0], [sB, kB] = g.anchors[g.anchors.length - 1], lo = Math.min(kA, kB), hi = Math.max(kA, kB);
+						const sOfKm = (km) => sA + ((km - kA) / (kB - kA || 1)) * (sB - sA);
+						for (const q of g.posts) {
+							if (!q.platform || q.km <= lo + 0.3 || q.km >= hi - 0.3 || route.some((st) => normName(st.name) === normName(q.name)) || otherSt.some((o) => normName(o.name) === normName(q.name))) continue;
+							plkPending.push(() => issue('plk-stop', sOfKm(q.km), 'warn', `PKP PLK: ${q.kind === 'PO' ? 'przystanek' : 'stacja'} „${q.name}” (km ${q.km} linii ${g.ln}) z peronem – brak w danych OSM.`, `Dodaj: "stations": { "add": [{ "name": "${q.name}", "pos": ${S(sOfKm(q.km))}${q.kind === 'PO' ? ', "type": "halt"' : ''} }] }.`));
+						}
 					}
-				} else log(`PKP PLK: za mało stacji przebiegu w wykazie posterunków linii ${plkLine || '?'} – bez danych PLK.`);
+				} else log(`PKP PLK: za mało stacji przebiegu w wykazie posterunków linii ${lines.slice(0, 3).join(', ') || '?'} – bez danych PLK.`);
 			} catch (e) {
 				log(`PKP PLK niedostępne (${e.message}) – prędkości z OSM.`);
 			}
@@ -2438,7 +2476,7 @@
 		const sOfKmR = (km) => {
 			// odwrotność kmAt (kilometraż odcinkami liniowy między stacjami): najbliższy punkt przebiegu co 5 m
 			let best = null;
-			for (let s2 = 0; s2 <= endS; s2 += 5) { const dk = Math.abs(kmAt(s2) - km); if (!best || dk < best[1]) best = [s2, dk]; }
+			for (let s2 = 0; s2 <= endS; s2 += 5) { const dk = Math.abs(kmAt(s2) - km); if (Number.isFinite(dk) && (!best || dk < best[1])) best = [s2, dk]; }
 			return best && best[1] < 0.05 ? best[0] : null;
 		};
 		if (rinfD && rinfD.tunnels) {
@@ -2928,7 +2966,7 @@
 				const RG = rinfD && rinfD.lines && rinfD.lines[plkLine];
 				if (RG && RG.length >= 2 && kmAt) {
 					const gradeAt = (km) => {
-						if (km < RG[0][0] - 0.05 || km > RG[RG.length - 1][0] + 3) return null;
+						if (!Number.isFinite(km) || km < RG[0][0] - 0.05 || km > RG[RG.length - 1][0] + 3) return null;
 						let lo = 0, hi = RG.length - 1;
 						while (lo < hi) { const m = (lo + hi + 1) >> 1; if (RG[m][0] <= km) lo = m; else hi = m - 1; }
 						return RG[lo][1];
@@ -4556,7 +4594,8 @@
 		if (!b) throw new Error(`Nie znaleziono stacji „${opts.to}” – wpisz nazwę dokładnie jak na rozkładzie (z polskimi znakami).`);
 		const P = projector(a.lat, a.lon);
 		const d = dist2(P.xy(a.lat, a.lon), P.xy(b.lat, b.lon));
-		if (d > 70000) throw new Error(`Stacje są za daleko od siebie (${Math.round(d / 1000)} km w linii prostej, maksymalnie 70 km).`);
+		if (d > 100000) throw new Error(`Stacje są za daleko od siebie (${Math.round(d / 1000)} km w linii prostej, maksymalnie 100 km).`);
+		if (d > 70000) log(`Długa trasa (${Math.round(d / 1000)} km w linii prostej) – pobieranie danych potrwa dłużej.`);
 		if (d < 2000) throw new Error('Stacje są zbyt blisko siebie.');
 		// otoczenie domyślnie włączone (opts.environment === false – sama trasa)
 		const environment = opts.environment === false ? null : opts.envFetch || ((poly, l) => fetchEnvironment(poly, l));
