@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.57.3',
+			date: '21 października 2026',
+			groups: [
+				['Ostrość obrazu', [
+					'Szyny bez szerokich niebieskich pasów: poszerzanie szyn w oddali liczy odległość od kamery, która faktycznie rysuje obraz, nie działa w mapach cieni i jest ograniczone do kilkunastu centymetrów.',
+				]],
+			],
+		},
+		{
 			version: '0.57.2',
 			date: '21 października 2026',
 			groups: [

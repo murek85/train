@@ -13,7 +13,7 @@ import {
 	Fn, If, Loop, Discard, float, vec2, vec3, vec4, uniform, reference, uniformArray, property, attribute, instancedBufferAttribute,
 	texture, varying, vertexColor, modelWorldMatrix, atan, asin, exp, int, instanceIndex, materialColor, normalLocal, reflector, select, mix, smoothstep, step, fract, floor, dFdx, dFdy, fwidth, length, normalize, dot, cross, reflect, pow, abs, max, min,
 	clamp, sin, cos, sign, positionWorld, positionLocal, positionGeometry, positionView, normalGeometry, normalViewGeometry,
-	faceDirection, cameraPosition, cameraViewMatrix, diffuseColor, materialRoughness, materialMetalness, materialEmissive,
+	faceDirection, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, diffuseColor, materialRoughness, materialMetalness, materialEmissive,
 	materialClearcoat, shadow, OnObjectUpdate, renderGroup,
 } from 'three/tsl';
 
@@ -862,15 +862,18 @@ import {
 	const personHooks = () => ({ tag: 'person', vertex: personVertex, diffuse: paletteDiffuse(true) });
 
 	/* główki szyn nie węższe niż ok. 1 piksel (world.js railPxMat): wierzchołki na boki wg atrybutu aRail o tyle, by
-	   połowa szerokości była co najmniej pół piksela z odległości od kamery gracza (U – World.RAIL_U) */
+	   połowa szerokości była co najmniej pół piksela z odległości od kamery rysującej przebieg (cameraPosition – dawniej
+	   kamera gracza z uniformu: w części widoków nie ta, szyny jako szerokie pasy); kamera ortograficzna (mapy cieni) –
+	   bez poszerzania; najwyżej 0,12 m (U – World.RAIL_U) */
 	const railHooks = (U) => {
-		const pxk = reference('value', 'float', U.uRailPxK), cam = reference('value', 'vec3', U.uRailCam);
+		const pxk = reference('value', 'float', U.uRailPxK);
 		const aRail = Fn((builder) => (builder.geometry.hasAttribute('aRail') ? attribute('aRail', 'vec3') : vec3(0)))();
 		return {
 			tag: 'railpx',
 			vertex: () => {
 				const wp = modelWorldMatrix.mul(vec4(positionLocal, 1)).xyz;
-				const ex = max(length(cam.sub(wp)).mul(pxk).mul(0.5).sub(0.036), 0);
+				const persp = cameraProjectionMatrix.element(2).w.negate(); // 1 – perspektywa, 0 – ortograficzna
+				const ex = clamp(length(cameraPosition.sub(wp)).mul(pxk).mul(0.5).sub(0.036), 0, 0.12).mul(persp);
 				positionLocal.addAssign(aRail.mul(ex));
 			},
 		};

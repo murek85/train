@@ -838,8 +838,8 @@ import { BundleGroup } from 'three/webgpu';
 		   razem z pokrywą. */
 		/* Główki szyn nie węższe niż ok. 1 piksel: w oddali (ułamek piksela) szyna rwała się w przerywaną, migoczącą linię.
 		   Wierzchołki przesuwane na boki (atrybut aRail – kierunek w poprzek szyny × strona, World.railAttr) o tyle, by
-		   połowa szerokości była co najmniej pół piksela z odległości od kamery gracza (uRailCam – nie kamery mapy cieni
-		   ani odbicia); uRailPxK – rozmiar piksela na metr odległości (scene.js co klatkę). Z bliska bez zmian. */
+		   połowa szerokości była co najmniej pół piksela z odległości od kamery rysującej przebieg (mapy cieni – kamera
+		   ortograficzna – bez poszerzania), najwyżej 0,12 m; uRailPxK – rozmiar piksela na metr odległości (scene.js). */
 		static railPxMat(m) {
 			// własny materiał przy scalaniu kawałka (mergeStatic) – nie wspólny z kolorem w wierzchołkach (bez poszerzania)
 			m.userData.plain = false;
@@ -848,11 +848,10 @@ import { BundleGroup } from 'three/webgpu';
 			m.onBeforeCompile = (sh, r) => {
 				prev(sh, r);
 				sh.uniforms.uRailPxK = World.RAIL_U.uRailPxK;
-				sh.uniforms.uRailCam = World.RAIL_U.uRailCam;
 				sh.vertexShader = sh.vertexShader
-					.replace('#include <common>', '#include <common>\nattribute vec3 aRail;\nuniform float uRailPxK;\nuniform vec3 uRailCam;')
+					.replace('#include <common>', '#include <common>\nattribute vec3 aRail;\nuniform float uRailPxK;')
 					.replace('#include <begin_vertex>', `#include <begin_vertex>
-					{ vec3 wpR = (modelMatrix * vec4(transformed, 1.0)).xyz; transformed += aRail * max(0.0, 0.5 * uRailPxK * distance(uRailCam, wpR) - 0.036); }`);
+					{ vec3 wpR = (modelMatrix * vec4(transformed, 1.0)).xyz; transformed += aRail * (isOrthographic ? 0.0 : clamp(0.5 * uRailPxK * distance(cameraPosition, wpR) - 0.036, 0.0, 0.12)); }`);
 			};
 			const key = m.customProgramCacheKey();
 			m.customProgramCacheKey = () => key + '-railpx';
@@ -4685,7 +4684,7 @@ import { BundleGroup } from 'three/webgpu';
 	NS.World = World;
 	World.TERRAIN_D = TERRAIN_D;
 	World.SHADOW_LAYER = 3; // bryły zastępcze cieni (shadowMerge) – tylko kamery map cieni
-	World.RAIL_U = { uRailPxK: { value: 0 }, uRailCam: { value: new T.Vector3() } }; // szyny min. 1 piksel (railPxMat)
+	World.RAIL_U = { uRailPxK: { value: 0 } }; // szyny min. 1 piksel (railPxMat)
 	World.PEOPLE = PEOPLE; // kolory ubrań i skóry ludzi (tłum na peronach z mapy – real-env.js)
 	World.SKIN = SKIN; // kolumny siatki terenu (odsunięcia od osi), wiersze co 4 m
 })();

@@ -4,6 +4,15 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.57.3 – 21 października 2026
+
+Szyny bez szerokich pasów.
+
+### Szyny (`nodes.js`, `world.js`, `scene.js`)
+- Poszerzanie główek szyn: odległość od `cameraPosition` kamery przebiegu (dawniej uniform z pozycją kamery gracza –
+  w części widoków nie ta kamera, szyny jako szerokie pasy), kamera ortograficzna – 0 (TSL: `cameraProjectionMatrix`
+  kolumna 2 w; GLSL: `isOrthographic`), najwyżej 0,12 m. `uRailPxK` – wysokość bufora nie mniejsza niż pół wysokości okna.
+
 ## 0.57.2 – 21 października 2026
 
 Cienie terenu z powrotem, woda z odbiciami.

@@ -1705,11 +1705,11 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			}
 			const q = this.quality;
 			const exposure = 1 + 0.7 * (1 - this.dayK);
-			// szyny min. 1 piksel (world.js railPxMat): rozmiar piksela na metr odległości i kamera gracza
+			// szyny min. 1 piksel (world.js railPxMat): rozmiar piksela na metr odległości
 			const RU = NS.World && NS.World.RAIL_U;
 			if (RU) {
-				RU.uRailPxK.value = (2 * Math.tan((this.camera.fov * Math.PI) / 360)) / Math.max(1, this.gl.domElement.height); // wysokość bufora rysowania w pikselach
-				RU.uRailCam.value.copy(this.camera.position);
+				// wysokość bufora rysowania (px), nie mniej niż pół wysokości okna (płótno zgłaszające za mały rozmiar – szerokie pasy)
+				RU.uRailPxK.value = (2 * Math.tan((this.camera.fov * Math.PI) / 360)) / Math.max(this.gl.domElement.height, (window.innerHeight * (window.devicePixelRatio || 1)) / 2, 1);
 			}
 			// odbicie wody (przed klatką): bez opadów, flary i wnętrza kabiny; rozdzielczość wg jakości
 			if (this.waterRefl && !this.hold) {
