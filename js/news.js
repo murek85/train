@@ -4,6 +4,33 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.17',
+			date: '21 października 2026',
+			groups: [
+				['Mosty', [
+					'Estakady naszej linii: pomost pod wszystkimi torami biegnącymi obok na tym samym poziomie (np. linia średnicowa w Warszawie za Wisłą) i podpory w poprzek całej szerokości – słupy z oczepami, omijające ulice.',
+				]],
+			],
+		},
+		{
+			version: '0.58.16',
+			date: '21 października 2026',
+			groups: [
+				['Mosty', [
+					'Most nad ulicą: przęsło nad całą jezdnią z chodnikami, przyczółki tuż za chodnikiem i widoczne z ulicy, nasyp toru nie zsypuje się na chodnik.',
+				]],
+			],
+		},
+		{
+			version: '0.58.15',
+			date: '21 października 2026',
+			groups: [
+				['Mosty', [
+					'Przyczółki mostów nad ulicami nie stoją na jezdni ani chodniku – odsunięte za ulicę, przęsło dłuższe.',
+				]],
+			],
+		},
+		{
 			version: '0.58.14',
 			date: '21 października 2026',
 			groups: [

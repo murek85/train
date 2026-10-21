@@ -2169,12 +2169,15 @@ import * as THREE from 'three';
 				const st2 = kE === 0 ? 1 : -1;
 				let kA = kE;
 				while (kA !== kE + st2 * 12 && kA >= 0 && kA < P.length && Math.abs(P[kA][1]) > 7 && gapAt(kA) < 0.4) kA += st2;
+				// nie na ulicy pod pomostem: przyczółek dalej (za ulicą – pomost nad nią)
+				for (let q = 0; q < 12 && kA >= 0 && kA < P.length && this.roadBelowDeck(P[kA][0], P[kA][1], Y[kA], 0.5); q++) kA += st2;
 				if (kA < 0 || kA >= P.length || gapAt(kA) < 0.4 || Math.abs(P[kA][1]) <= 7 || this.envTrackGap(P[kA][0], P[kA][1]) < 3) continue;
 				const yb = (k) => Math.min(G[k], Y[k] - 0.9) - 0.4, L = edge(kA, -1), Rr = edge(kA, 1);
 				quad([L[0], yb(kA), L[1]], [Rr[0], yb(kA), Rr[1]], [Rr[0], Y[kA] - 0.9, Rr[1]], [L[0], Y[kA] - 0.9, L[1]], wallC);
 				const L2 = edge(kA, -1, w / 2 + 0.3), R2 = edge(kA, 1, w / 2 + 0.3);
 				quad([L2[0], Y[kA] - 1.15, L2[1]], [R2[0], Y[kA] - 1.15, R2[1]], [R2[0], Y[kA] - 0.9, R2[1]], [L2[0], Y[kA] - 0.9, L2[1]], wallC);
 				for (let k = kE; k !== kA; k += st2) {
+					if (this.roadBelowDeck(P[k][0], P[k][1], Y[k], 0.5) || this.roadBelowDeck(P[k + st2][0], P[k + st2][1], Y[k + st2], 0.5)) continue; // nad ulicą – bez ścian
 					for (const sg of [-1, 1]) {
 						const A = edge(k, sg), B = edge(k + st2, sg);
 						quad([A[0], yb(k), A[1]], [B[0], yb(k + st2), B[1]], [B[0], Y[k + st2] - 0.9, B[1]], [A[0], Y[k] - 0.9, A[1]], wallC);
@@ -2865,8 +2868,10 @@ import * as THREE from 'three';
 			let ang = h0.ang;
 			if (Math.cos(ang) < 0) ang += Math.PI;
 			const sn = Math.max(0.35, Math.abs(Math.sin(ang)));
-			// dno: od skrajnego do skrajnego obiektu (tory obok siebie) + pół szerokości, nie szerzej niż otwór
-			const hw = Math.min(((s1 - s0) * sn) / 2 + h0.w, Math.max(3, ((b.to - b.from) * sn) / 2 - 0.5));
+			/* dno: od skrajnego do skrajnego obiektu (tory obok siebie) + pół szerokości (jezdnia z chodnikami); dawniej nie
+			   szerzej niż otwór z danych – przy krótszym przęśle skarpa nasypu schodziła na chodnik; teraz przęsło liczone
+			   z dna wykopu (bridgeSpan) */
+			const hw = ((s1 - s0) * sn) / 2 + h0.w;
 			c = { s: (s0 + s1) / 2, ca: Math.cos(ang), sa: Math.sin(ang), hw };
 		} else c = { s: (b.from + b.to) / 2, ca: 0, sa: 1, hw: Math.max(3, (b.to - b.from) / 2 - 0.5) };
 		// wzdłuż wykopu: odcinek pod mostami (nasz tor na przęśle, tory obok na swoich mostach) – tam pełna głębokość

@@ -546,7 +546,15 @@ import { BundleGroup } from 'three/webgpu';
 			if (!sp) {
 				sp = [b.from, b.to];
 				const c = this.env && b.kind === 'viaduct' && this.bridgeCorridor ? this.bridgeCorridor(b) : null;
-				if (c) { sp[0] = Math.min(sp[0], c.s - 8); sp[1] = Math.max(sp[1], c.s + 8); }
+				if (c) {
+					/* przęsło nad całym dnem wykopu (jezdnia z chodnikami): przyczółek (w poprzek toru do skraju korony nasypu)
+					   0,4 m za skrajem dna przy ulicy ukośnej do toru – wzdłuż toru dalej o skos; najwyżej 30 m od środka.
+					   Dawniej zawsze ±8 m (albo przęsło z danych) – nasyp toru za krótkim przęsłem zachodził na ulicę */
+					const D = Math.max(this.bridgeShoulder(b, -1), this.bridgeShoulder(b, 1)) + 0.6;
+					const need = c.ca === 0 && c.sa === 1 ? 8 : Math.min(30, Math.max(8, (c.hw + 0.4 + D * Math.abs(c.ca)) / Math.max(0.35, Math.abs(c.sa))));
+					sp[0] = Math.min(sp[0], c.s - need);
+					sp[1] = Math.max(sp[1], c.s + need);
+				}
 				this.spans.set(b, sp);
 			}
 			return sp;
@@ -3928,24 +3936,67 @@ import { BundleGroup } from 'three/webgpu';
 			const dbl = this.route.double && !this.env; // trasa rzeczywista: drugi tor (z mapy) ma własny pomost
 			const cx = dbl ? SECOND / 2 : 0, wide = dbl ? 10.6 : 6;
 			const h0 = R.heightAt(this.route, mid);
-			// przęsło i gzymsy
-			g.add(box(wide, 1.1, len + 1, conc, cx, -0.95, 0));
-			for (const sx of [-1, 1]) {
-				g.add(box(0.45, 0.35, len + 1, dark, cx + sx * (wide / 2 + 0.05), -0.25, 0));
-				// balustrada: słupki i poręcze
-				for (let z = -len / 2; z <= len / 2 + 1e-6; z += 2) g.add(box(0.07, 1.0, 0.07, rail, cx + sx * (wide / 2 - 0.05), 0.4, z));
-				for (const y of [0.85, 0.45]) g.add(box(0.06, 0.06, len + 0.5, rail, cx + sx * (wide / 2 - 0.05), y, 0));
+			/* trasa rzeczywista: przyczółki nie na ulicy ani chodniku pod mostem – przęsło z danych bywa krótsze niż prześwit
+			   nad ulicą (przyczółek stał na chodniku i części jezdni): przyczółek odsuwany wzdłuż toru na zewnątrz (co 0,75 m,
+			   do 15 m), aż jego obrys (3,2 m wzdłuż, szerokość korony nasypu) nie zachodzi na drogę z mapy niżej niż most;
+			   przęsło i balustrady – do przyczółków */
+			const shL = this.env ? this.bridgeShoulder(b, -1) : 0, shR = this.env ? this.bridgeShoulder(b, 1) : 0;
+			const abW = shL + shR + 1.5, ax = (shR - shL) / 2;
+			const abutOnRoad = (z) => {
+				if (!this.env || !this.onRoad) return false;
+				// (maska onRoad obejmuje też tory z mapy – ulica pod mostem z odcinków dróg: roadBelowDeck)
+				for (const dz of [-1.6, -0.8, 0, 0.8, 1.6]) for (let x = ax - abW / 2 - 0.6; x <= ax + abW / 2 + 0.61; x += 1) {
+					const s = mid - z - dz;
+					if (this.roadBelowDeck ? this.roadBelowDeck(s, x, h0, 0.6) : this.onRoad(s, x)) return true;
+				}
+				return false;
+			};
+			const zAb = {};
+			for (const e of [-1, 1]) {
+				let z = e * (len / 2 + 1.6);
+				for (let k = 0; k < 20 && abutOnRoad(z); k++) z += e * 0.75;
+				zAb[e] = z;
+			}
+			// przęsło (od przyczółka do przyczółka, po 0,5 m na ich ławy) i gzymsy
+			const dL = zAb[1] - zAb[-1] - 3.2 + 1, dz0 = (zAb[1] + zAb[-1]) / 2;
+			/* trasa rzeczywista: pomost pod wszystkimi torami z mapy na poziomie naszej linii (w grupie torów – np. linia
+			   średnicowa w Warszawie: 4 tory na estakadzie za Wisłą); dawniej 6 m pod naszym torem, a tory obok wisiały
+			   w powietrzu bez pomostu i podpór. Szerokość [l, r] od osi co 10 m (oś skrajnego toru + 2,4 m, zaokrąglone
+			   w górę do 1 m – mniej uskoków krawędzi), co najmniej 3 m */
+			const extAt = (z) => {
+				if (!this.env || !this.envTracksAt) return [wide / 2 - cx, wide / 2 + cx];
+				const s = mid - z, hs = R.heightAt(this.route, s);
+				let l = 3, r = 3;
+				for (const t of this.envTracksAt(s)) {
+					if (t.sk || Math.abs(t.d) > 25 || Math.abs(t.d) < 0.5) continue;
+					if (Math.abs(this.envRowY(t.i, t.k, s, t.d) - hs) > 1) continue;
+					if (t.d < 0) l = Math.max(l, Math.ceil(-t.d + 2.4)); else r = Math.max(r, Math.ceil(t.d + 2.4));
+				}
+				return [l, r];
+			};
+			const nD = this.env ? Math.max(1, Math.ceil(dL / 10)) : 1;
+			for (let q = 0; q < nD; q++) {
+				const z0 = dz0 - dL / 2 + (q * dL) / nD, z1 = z0 + dL / nD, zc = (z0 + z1) / 2, Lz = z1 - z0 + 0.02;
+				const [l0, r0] = extAt(z0), [l1, r1] = extAt(z1), l = Math.max(l0, l1), r = Math.max(r0, r1);
+				g.add(box(l + r, 1.1, Lz, conc, (r - l) / 2, -0.95, zc));
+				for (const [sx, xe] of [[-1, -l], [1, r]]) {
+					g.add(box(0.45, 0.35, Lz, dark, xe + sx * 0.05, -0.25, zc));
+					// balustrada: słupki i poręcze
+					for (let z = Math.max(z0, dz0 - dL / 2 + 0.5); z < z1 - 0.01 && z <= dz0 + dL / 2 - 0.5 + 1e-6; z += 2) g.add(box(0.07, 1.0, 0.07, rail, xe - sx * 0.05, 0.4, z));
+					for (const y of [0.85, 0.45]) g.add(box(0.06, 0.06, Lz, rail, xe - sx * 0.05, y, zc));
+				}
 			}
 			// przyczółki ze skrzydłami
 			for (const e of [-1, 1]) {
-				const z = e * (len / 2 + 1.6);
+				const z = zAb[e];
 				if (this.env) {
 					// przyczółek zamyka nasyp: szerokość korony nasypu, wysokość do dna obniżenia pod przęsłem
-					const shL = this.bridgeShoulder(b, -1), shR = this.bridgeShoulder(b, 1);
 					const yIn = Math.min(this.terrainY(e > 0 ? b.from + 1 : b.to - 1, 0), this.terrainY((b.from + b.to) / 2, 0)) - h0;
-					const hh = Math.max(2, -0.4 - yIn + 0.8), abW = shL + shR + 1.5, ax = (shR - shL) / 2;
-					g.add(box(abW, hh, 3.2, conc, ax, -0.4 - hh / 2, z));
-					for (const sx of [-1, 1]) g.add(box(0.6, hh, 9, conc, ax + sx * (abW / 2 + 0.3), -0.4 - hh / 2, z + e * 4));
+					const hh = Math.max(2, -0.4 - yIn + 0.8);
+					// (nie węższy niż pomost przy nim – extAt)
+					const [la, ra] = extAt(z), lA = Math.max(abW / 2 - ax, la + 0.75), rA = Math.max(abW / 2 + ax, ra + 0.75);
+					g.add(box(lA + rA, hh, 3.2, conc, (rA - lA) / 2, -0.4 - hh / 2, z));
+					for (const [sx, xe] of [[-1, -lA], [1, rA]]) g.add(box(0.6, hh, 9, conc, xe + sx * 0.3, -0.4 - hh / 2, z + e * 4));
 					continue;
 				}
 				const yb = this.terrainY(mid - z, 0) - h0;
@@ -3964,15 +4015,15 @@ import { BundleGroup } from 'three/webgpu';
 				for (const sx of [-1, 1]) {
 					const d = cx + sx * (wide / 2 - 1.6);
 					for (let o = -1.5; o <= 1.5; o += 0.75) {
-						const rl = this.roadLevel ? this.roadLevel(s + o, d) : undefined;
-						if (this.onRoad && this.onRoad(s + o, d) && (rl === undefined || rl < h0 - 2)) return true;
+						if (this.roadBelowDeck && this.roadBelowDeck(s + o, d, h0, 0.5)) return true;
 						if (this.envTracksAt && this.envTracksAt(s + o).some((t) => Math.abs(t.d - d) < 2.4 && this.envRowY(t.i, t.k, s + o, t.d) < h0 - 3)) return true;
 					}
 				}
 				return false;
 			};
 			if (len > 26) {
-				for (let z0 = -len / 2 + 9; z0 < len / 2 - 8; z0 += 10) {
+				// przęsła co 10 m, na długich estakadach (ponad 120 m) co 20 m
+				for (let z0 = -len / 2 + 9; z0 < len / 2 - 8; z0 += len > 120 ? 20 : 10) {
 					let z = z0;
 					if (Math.abs(z) < 7) continue;
 					if (pierBlocked(z)) {
@@ -3981,14 +4032,29 @@ import { BundleGroup } from 'three/webgpu';
 						if (nz === null) continue;
 						z = nz;
 					}
-					const yb = this.terrainY(mid - z, 0) - h0;
-					const hh = Math.max(1, -1.5 - yb);
-					for (const sx of [-1, 1]) {
+					/* podpora w poprzek całego pomostu: słupy co najwyżej 6 m (skrajne 1,4 m od krawędzi) – każdy nie na ulicy
+					   ani torze niżej (pominięty), oczep pod pomostem nad słupami */
+					const [l, r] = extAt(z), s = mid - z;
+					const nC = Math.max(2, Math.ceil((l + r - 2.8) / 6) + 1), xs = [];
+					for (let c = 0; c < nC; c++) xs.push(-l + 1.4 + ((l + r - 2.8) * c) / (nC - 1));
+					const colFree = (x) => {
+						if (!this.env) return true;
+						for (let o = -0.75; o <= 0.75; o += 0.75) for (const dx of [-0.6, 0, 0.6]) {
+							if (this.roadBelowDeck && this.roadBelowDeck(s + o, x + dx, h0, 0.5)) return false;
+							if (this.envTracksAt && this.envTracksAt(s + o).some((t) => Math.abs(t.d - (x + dx)) < 2.4 && this.envRowY(t.i, t.k, s + o, t.d) < h0 - 3)) return false;
+						}
+						return true;
+					};
+					const cols = xs.filter(colFree);
+					if (!cols.length) continue;
+					for (const x of cols) {
+						const hh = Math.max(1, -2.3 - (this.terrainY(s, x) - h0));
 						const p = new T.Mesh(GEO.cyl, conc);
 						p.scale.set(1.1, hh, 1.1);
-						p.position.set(cx + sx * (wide / 2 - 1.6), -1.5 - hh / 2, z);
+						p.position.set(x, -2.3 - hh / 2, z);
 						g.add(p);
 					}
+					g.add(box(Math.max(2, cols[cols.length - 1] - cols[0] + 1.6), 0.8, 1.5, conc, (cols[0] + cols[cols.length - 1]) / 2, -1.9, z));
 				}
 			}
 			g.traverse((o) => { if (o.isMesh) { o.castShadow = this.shadows; o.receiveShadow = true; } });
@@ -4039,7 +4105,8 @@ import { BundleGroup } from 'three/webgpu';
 					const blocked = (zz) => {
 						const s = mid - zz;
 						for (let o = -pw / 2 - 1.5; o <= pw / 2 + 1.5; o += 1) for (const dd of [-wide / 2, 0, wide / 2]) {
-							if ((this.onRoad && this.onRoad(s + o, cx + dd)) || (this.roadLevel && this.roadLevel(s + o, cx + dd) !== undefined)) return true;
+							// (maska onRoad obejmuje też tory z mapy – ulica pod mostem z odcinków dróg: roadBelowDeck)
+							if (this.roadBelowDeck ? this.roadBelowDeck(s + o, cx + dd, R.heightAt(this.route, s), 0.5) : this.onRoad && this.onRoad(s + o, cx + dd)) return true;
 							// tor innej linii pod mostem (ponad 3 m niżej)
 							if (this.envTracksAt && this.envTracksAt(s + o).some((t) => Math.abs(t.d - (cx + dd)) < 2.4 && this.envRowY(t.i, t.k, s + o, t.d) < R.heightAt(this.route, s) - 3)) return true;
 						}

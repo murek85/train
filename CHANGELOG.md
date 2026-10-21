@@ -4,6 +4,43 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.17 – 21 października 2026
+
+Estakady z kilkoma torami.
+
+- `world.js` buildViaduct (trasy z mapy): szerokość pomostu co 10 m z torów z mapy na poziomie naszej linii (oś
+  skrajnego toru + 2,4 m, zaokrąglone do 1 m, co najmniej 3 m od osi; `extAt`) – pomost odcinkami tej szerokości
+  z gzymsami i balustradą po obu krawędziach. Dotąd 6 m pod naszym torem, a tory obok (np. linia średnicowa
+  Warszawa: 4 tory na estakadzie za Wisłą, km 2,7–3,1) wisiały 14 m nad terenem bez pomostu i podpór.
+- Podpory w poprzek całego pomostu: słupy co najwyżej 6 m z oczepem; słup na ulicy albo torze niżej – pominięty.
+  Na estakadach dłuższych niż 120 m podpory co 20 m (dotąd co 10 m). Przyczółki nie węższe niż pomost przy nich.
+- Ulica pod mostem (przyczółki z 0.58.15, filary wiaduktów i mostów nad wodą): `roadBelowDeck` zamiast maski
+  `onRoad` – maska obejmuje też tory z mapy, więc słupy pod torami na pomoście i przyczółki przy torach były brane za
+  stojące na ulicy (odrzucane albo przesuwane).
+
+## 0.58.16 – 21 października 2026
+
+Most nad ulicą: przęsło z szerokości ulicy.
+
+- `real-env.js` bridgeCorridor: dno wykopu pod mostem na pełną szerokość jezdni z chodnikami (dotąd przycięte do
+  przęsła z danych).
+- `world.js` bridgeSpan: przęsło nad całym dnem wykopu – przyczółek (w poprzek toru do skraju korony nasypu) 0,4 m za
+  skrajem dna, przy ulicy ukośnej do toru dalej o skos; najwyżej 30 m od środka (dawniej zawsze ±8 m albo przęsło
+  z danych). Teren pod przęsłem (dip), korona nasypu poza nim i przyczółki – z tej samej długości, więc nasyp toru nie
+  zachodzi na chodnik, a przyczółek stoi tuż za nim, wychodząc z terenu (w 0.58.15 przesunięty przyczółek chował się
+  w nasypie liczonym od przęsła z danych).
+
+## 0.58.15 – 21 października 2026
+
+Przyczółki mostów poza ulicami.
+
+- Most naszej linii nad ulicą (`world.js` buildViaduct, trasy z mapy): przyczółek odsuwany wzdłuż toru na zewnątrz
+  (co 0,75 m, do 15 m), aż jego obrys (3,2 m wzdłuż toru, szerokość korony nasypu, z zapasem 0,6 m) nie zachodzi na
+  drogę z mapy (jezdnia z chodnikami) niżej niż most; przęsło, gzymsy i balustrady – od przyczółka do przyczółka.
+  Dotąd przyczółki na końcach przęsła z danych – przy krótszym przęśle stały na chodniku i części jezdni.
+- Wiadukty drogowe (`real-env.js` – przyczółki z 0.58.9): przyczółek za ulicą pod pomostem (`roadBelowDeck`), ściany
+  skrzydłowe nie nad ulicą.
+
 ## 0.58.14 – 21 października 2026
 
 Poprawki przycinania peronów z 0.58.13.
