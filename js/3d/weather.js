@@ -10,7 +10,12 @@ import * as THREE from 'three';
 
 	const PRESETS = {
 		clear: { name: 'słonecznie', cover: 0.25, shadow: 0.35, haze: 0, rain: 0, snow: 0, fogNear: 650, fogFar: 2100, wind: 0.35, wet: 0, snowGround: 0, sun: 1 },
+		// stopnie zachmurzenia (bez opadu): pojedyncze chmury, umiarkowane, pochmurno, duże – coraz mniej słońca i cieni,
+		// więcej mgiełki; chmury nieba (sky-gpu) wg cover
+		few: { name: 'pojedyncze chmury', cover: 0.42, shadow: 0.42, haze: 0.03, rain: 0, snow: 0, fogNear: 620, fogFar: 2050, wind: 0.45, wet: 0, snowGround: 0, sun: 0.95 },
+		partly: { name: 'umiarkowane zachmurzenie', cover: 0.6, shadow: 0.5, haze: 0.08, rain: 0, snow: 0, fogNear: 540, fogFar: 1900, wind: 0.6, wet: 0, snowGround: 0, sun: 0.84 },
 		cloudy: { name: 'pochmurno', cover: 0.78, shadow: 0.55, haze: 0.15, rain: 0, snow: 0, fogNear: 450, fogFar: 1700, wind: 0.75, wet: 0, snowGround: 0, sun: 0.7 },
+		overcast: { name: 'duże zachmurzenie', cover: 0.9, shadow: 0.25, haze: 0.25, rain: 0, snow: 0, fogNear: 360, fogFar: 1500, wind: 0.85, wet: 0, snowGround: 0, sun: 0.5 },
 		rain: { name: 'deszcz', cover: 0.97, shadow: 0.15, haze: 0.45, rain: 1, snow: 0, fogNear: 140, fogFar: 950, wind: 1.15, wet: 1, snowGround: 0, sun: 0.32 },
 		fog: { name: 'mgła', cover: 0.6, shadow: 0.05, haze: 0.85, rain: 0, snow: 0, fogNear: 15, fogFar: 300, wind: 0.12, wet: 0.35, snowGround: 0, sun: 0.4 },
 		snow: { name: 'śnieg', cover: 0.92, shadow: 0.12, haze: 0.5, rain: 0, snow: 1, fogNear: 90, fogFar: 720, wind: 0.55, wet: 0, snowGround: 1, sun: 0.5 },

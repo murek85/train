@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.37',
+			date: '22 października 2026',
+			groups: [
+				['Pogoda', [
+					'Nowe stopnie zachmurzenia: pojedyncze chmury, umiarkowane zachmurzenie i duże zachmurzenie (obok słonecznie i pochmurno).',
+				]],
+			],
+		},
+		{
 			version: '0.58.36',
 			date: '22 października 2026',
 			groups: [

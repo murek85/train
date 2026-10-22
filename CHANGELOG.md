@@ -4,6 +4,19 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.37 – 22 października 2026
+
+Stopnie zachmurzenia.
+
+- `weather.js`: nowe presety bez opadu. Zachmurzenie (cover): słonecznie 0,25, few 0,42, partly 0,6, pochmurno 0,78,
+  overcast 0,9. Słońce (sun): 0,95 / 0,84 / 0,5. Cienie, mgiełka, zasięg mgły i wiatr – stopniowo między sąsiednimi.
+  - `few` – pojedyncze chmury;
+  - `partly` – umiarkowane zachmurzenie;
+  - `overcast` – duże zachmurzenie.
+- `index.html`: opcje w wyborze pogody w menu („Warunki”) i w pauzie. `main.js`: kolory kafelków.
+- `scenario.js`: zmiana pogody w trakcie jazdy możliwa też przy nowych stopniach. Losowanie pogody w scenariuszu dnia
+  i opis obejmują nowe stopnie (zmienia to pogodę scenariusza dnia dla danej daty).
+
 ## 0.58.36 – 22 października 2026
 
 Filary w poprzek pomostu.
