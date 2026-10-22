@@ -1,6 +1,6 @@
 {
 	"name": "maszynista",
-	"version": "0.58.40",
+	"version": "0.58.41",
 	"private": true,
 	"description": "Prosty symulator pociągu w przeglądarce",
 	"author": "Marcin Murawski",

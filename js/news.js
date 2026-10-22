@@ -4,7 +4,7 @@
 	'use strict';
 	window.TrainNews = [
 		{
-			version: '0.58.40',
+			version: '0.58.41',
 			date: '22 października 2026',
 			groups: [
 				['Pogoda', [

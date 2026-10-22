@@ -27,7 +27,7 @@ Nowa trasa Czechowice-Dziedzice – Wisła Głębce.
 - `real-route.test.js`: pochylenia do 30‰ na trasach z różnicą wysokości ponad 200 m (dotąd 300 m; nowa trasa – 279 m,
   pozostałe trasy nizinne do 87 m).
 
-## 0.58.40 – 22 października 2026
+## 0.58.41 – 22 października 2026
 
 Zmienna pogoda, schnące szyny, ruch na stacjach.
 
