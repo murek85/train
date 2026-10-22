@@ -985,6 +985,11 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			if (fl > 0.001) { zen.lerp(tmpC.setRGB(0.75, 0.8, 0.95), fl * 0.65); hor.lerp(tmpC.setRGB(0.8, 0.84, 0.95), fl * 0.6); }
 			const dayK = smoothstep(-0.04, 0.22, e);
 			const gray = this.hazeColor.copy(hor).lerp(tmpC.setRGB(0.5, 0.53, 0.57), 0.65).multiplyScalar(0.3 + 0.7 * smoothstep(-0.15, 0.3, e));
+			/* pod grubą warstwą chmur (duże zachmurzenie, opad) mgła i barwa horyzontu ciemniejsze – jak niebo z chmur
+			   wolumetrycznych; dawniej jasnoszara mgła dawała w oddali biały pas pod ciemnym, deszczowym niebem. Mgła
+			   (pogoda „mgła” – zachmurzenie 0,6) bez zmian */
+			const overK = smoothstep(0.55, 1.0, W.cover), dimK = 1 - 0.4 * overK - 0.22 * Math.min(1, W.rain);
+			gray.multiplyScalar(dimK);
 			/* łuna miasta nocą: wg liczby latarni w okolicy (World.updateNightMap – urban), mocniej przy zachmurzeniu, mgle
 			   i opadzie (światło odbite od chmur i rozproszone w powietrzu); pomarańczowa od lamp sodowych */
 			const urban = this.world.urban || 0, nightK = 1 - smoothstep(-0.12, 0.02, e);
@@ -995,7 +1000,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			this.sky.clouds(this.time, W.shadow * clamp01((e + 0.02) / 0.15));
 			if (this.skyGpu && this.gl.hasInitialized()) {
 				const cover = this.coverC || (this.coverC = new T.Color());
-				cover.copy(hor).lerp(gray, 0.5).multiplyScalar(1.1); // (chmury biorą barwę horyzontu – o zachodzie ciepłe)
+				cover.copy(hor).lerp(gray, 0.5).multiplyScalar(1.1 * dimK); // (chmury biorą barwę horyzontu – o zachodzie ciepłe)
 				// tło mgły nocą (jak mgła WebGL: horyzont i zenit z palety), tylko w pełnej nocy – o zmierzchu barwi atmosfera
 				const fogNight = this.fogNightC || (this.fogNightC = new T.Color());
 				fogNight.copy(hor).lerp(zen, 0.45).multiplyScalar(1 - smoothstep(-0.12, -0.02, e));

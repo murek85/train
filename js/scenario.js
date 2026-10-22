@@ -298,7 +298,7 @@
 		const sigs = route.signals.map((x, i) => ({ x, i })).filter(({ x }) => x.pos > st[0].pos + 1500 && x.pos < st[last].pos - 1500 && !(x.type === 'starter' && x.station === 0));
 		if (sigs.length && r() < 0.3) events.push({ when: { start: true }, type: 'fault', signal: pick(sigs).i });
 		if (['clear', 'few', 'partly', 'cloudy', 'overcast', 'auto'].includes(weather) && r() < 0.3) {
-			const key = pick(['rain', 'fog', 'rain']);
+			const key = pick(['drizzle', 'rain', 'fog', 'rain', 'downpour']);
 			events.push({ when: { at: Math.round(st[0].pos + (st[last].pos - st[0].pos) * (0.3 + r() * 0.3)) }, type: 'weather', key });
 		}
 		// zima: zamarznięta zwrotnica przed stacją (semafor wjazdowy na dalszej części trasy) – postój 2–5 min
@@ -338,13 +338,13 @@
 		const min = 300 + Math.floor(r() * 96) * 10;
 		const month = new Date(date).getMonth() + 1;
 		const season = month >= 9 && month <= 11 ? 'autumn' : month === 12 || month <= 2 ? 'winter' : month <= 5 ? 'spring' : 'summer';
-		const weather = pick(season === 'winter' ? ['clear', 'partly', 'overcast', 'snow', 'fog'] : ['clear', 'few', 'partly', 'cloudy', 'overcast', 'rain', 'fog']);
+		const weather = pick(season === 'winter' ? ['clear', 'partly', 'overcast', 'snow', 'fog'] : ['clear', 'few', 'partly', 'cloudy', 'overcast', 'drizzle', 'rain', 'downpour', 'fog']);
 		const goals = [];
 		while (goals.length < 2) { const g = pick(DAILY_GOALS); if (!goals.includes(g)) goals.push(g); }
 		const dd = key.split('-').reverse().join('.');
 		return {
 			id: 'daily-' + key, daily: true, seed, title: `Zadanie dnia ${dd}`, level: 'zadanie dnia',
-			desc: `${def.title}: ${weather === 'clear' ? 'pogodnie' : { few: 'pojedyncze chmury', partly: 'umiarkowane zachmurzenie', cloudy: 'pochmurno', overcast: 'duże zachmurzenie', rain: 'deszcz', fog: 'mgła', snow: 'śnieg' }[weather]}, ${{ spring: 'wiosna', summer: 'lato', autumn: 'jesień', winter: 'zima' }[season]}. Zdarzenia na trasie losowane z daty – u wszystkich takie same.`,
+			desc: `${def.title}: ${weather === 'clear' ? 'pogodnie' : { few: 'pojedyncze chmury', partly: 'umiarkowane zachmurzenie', cloudy: 'pochmurno', overcast: 'duże zachmurzenie', drizzle: 'lekki deszcz', rain: 'deszcz', downpour: 'ulewa', fog: 'mgła', snow: 'śnieg' }[weather]}, ${{ spring: 'wiosna', summer: 'lato', autumn: 'jesień', winter: 'zima' }[season]}. Zdarzenia na trasie losowane z daty – u wszystkich takie same.`,
 			route: def.id, train, clock: `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`, weather, season,
 			events: null, goals,
 		};

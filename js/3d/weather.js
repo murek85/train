@@ -16,7 +16,10 @@ import * as THREE from 'three';
 		partly: { name: 'umiarkowane zachmurzenie', cover: 0.6, shadow: 0.5, haze: 0.08, rain: 0, snow: 0, fogNear: 540, fogFar: 1900, wind: 0.6, wet: 0, snowGround: 0, sun: 0.84 },
 		cloudy: { name: 'pochmurno', cover: 0.78, shadow: 0.55, haze: 0.15, rain: 0, snow: 0, fogNear: 450, fogFar: 1700, wind: 0.75, wet: 0, snowGround: 0, sun: 0.7 },
 		overcast: { name: 'duże zachmurzenie', cover: 0.9, shadow: 0.25, haze: 0.25, rain: 0, snow: 0, fogNear: 360, fogFar: 1500, wind: 0.85, wet: 0, snowGround: 0, sun: 0.5 },
+		// lekki deszcz (rzadkie krople, mokro, jaśniej niż w deszczu) i ulewa (gęsty opad, słaba widoczność, bez burzy)
+		drizzle: { name: 'lekki deszcz', cover: 0.92, shadow: 0.22, haze: 0.3, rain: 0.35, snow: 0, fogNear: 260, fogFar: 1300, wind: 0.8, wet: 0.7, snowGround: 0, sun: 0.45 },
 		rain: { name: 'deszcz', cover: 0.97, shadow: 0.15, haze: 0.45, rain: 1, snow: 0, fogNear: 140, fogFar: 950, wind: 1.15, wet: 1, snowGround: 0, sun: 0.32 },
+		downpour: { name: 'ulewa', cover: 1, shadow: 0.08, haze: 0.65, rain: 1.75, snow: 0, fogNear: 70, fogFar: 560, wind: 1.3, wet: 1, snowGround: 0, sun: 0.22 },
 		fog: { name: 'mgła', cover: 0.6, shadow: 0.05, haze: 0.85, rain: 0, snow: 0, fogNear: 15, fogFar: 300, wind: 0.12, wet: 0.35, snowGround: 0, sun: 0.4 },
 		snow: { name: 'śnieg', cover: 0.92, shadow: 0.12, haze: 0.5, rain: 0, snow: 1, fogNear: 90, fogFar: 720, wind: 0.55, wet: 0, snowGround: 1, sun: 0.5 },
 		// burza: ulewa, porywisty wiatr, ciemno, błyskawice (lightning) z grzmotem

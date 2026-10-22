@@ -4,6 +4,27 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.39 – 22 października 2026
+
+Mgła pod chmurami bez białego pasa.
+
+- `scene.js` updateEnvironment: barwa zamglenia (hazeColor) i zachmurzenia horyzontu (coverColor – mgła i odbicia
+  w trybie WebGPU) przyciemniane współczynnikiem 1 − 0,4·smoothstep(0,55…1, zachmurzenie) − 0,22·opad. Daje to
+  ok. 0,4 przy deszczu i 0,86 przy „pochmurno”. Dawniej jasnoszara mgła pod ciemnym niebem z chmur wolumetrycznych
+  dawała w oddali biały pas. Słonecznie, pojedyncze chmury i mgła (zachmurzenie 0,6) bez zmian.
+
+## 0.58.38 – 22 października 2026
+
+Lekki deszcz i ulewa.
+
+- `weather.js`: presety `drizzle` (lekki deszcz) i `downpour` (ulewa).
+  - lekki deszcz: opad 0,35, mokro 0,7, mgła 260–1300 m, słońce 0,45;
+  - ulewa: opad 1,75 (gęściej niż burza, bez błyskawic), mgła 70–560 m, wiatr 1,3.
+- `physics.js` adhesion: lekki deszcz 0,18 (wilgoć z brudem na szynach – najgorsza przyczepność), ulewa 0,2 (jak
+  deszcz). Liście na torach przy obu – 0,05.
+- `index.html` (menu i pauza), `main.js` (kolory kafelków), `scenario.js`: zmiana pogody w trakcie jazdy, losowanie
+  w scenariuszu dnia i opisy obejmują nowe opady.
+
 ## 0.58.37 – 22 października 2026
 
 Stopnie zachmurzenia.

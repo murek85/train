@@ -4,6 +4,24 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.39',
+			date: '22 października 2026',
+			groups: [
+				['Pogoda', [
+					'Przy dużym zachmurzeniu i opadach dal przechodzi w ciemniejszą, szarą mgłę pasującą do nieba – bez białego pasa nad horyzontem.',
+				]],
+			],
+		},
+		{
+			version: '0.58.38',
+			date: '22 października 2026',
+			groups: [
+				['Pogoda', [
+					'Nowe opady: lekki deszcz (rzadkie krople, szyny najbardziej śliskie) i ulewa (gęsty opad, słaba widoczność).',
+				]],
+			],
+		},
+		{
 			version: '0.58.37',
 			date: '22 października 2026',
 			groups: [

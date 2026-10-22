@@ -593,7 +593,7 @@
 	}
 
 	// ---------- zakładka „Warunki”: kafelki pogody i pory dnia (wybór w ukrytych listach – te same co w pauzie) ----------
-	const WEATHER_SKY = { auto: ['#8fb3d9', '#c9d6e3'], clear: ['#3f8fe0', '#bfe0ff'], few: ['#4d93d9', '#d6e6f4'], partly: ['#6f97c2', '#d0d9e2'], cloudy: ['#8a96a3', '#c3cad2'], overcast: ['#707a85', '#a9b1ba'], rain: ['#56606b', '#8c96a0'], storm: ['#2c3138', '#6c7480'], fog: ['#b9bec3', '#e1e4e6'], snow: ['#c9d3dd', '#f2f5f8'] };
+	const WEATHER_SKY = { auto: ['#8fb3d9', '#c9d6e3'], clear: ['#3f8fe0', '#bfe0ff'], few: ['#4d93d9', '#d6e6f4'], partly: ['#6f97c2', '#d0d9e2'], cloudy: ['#8a96a3', '#c3cad2'], overcast: ['#707a85', '#a9b1ba'], drizzle: ['#6d7782', '#a3acb5'], rain: ['#56606b', '#8c96a0'], downpour: ['#3d454e', '#717a84'], storm: ['#2c3138', '#6c7480'], fog: ['#b9bec3', '#e1e4e6'], snow: ['#c9d3dd', '#f2f5f8'] };
 	const SEASON_SKY = { spring: ['#8ccf7e', '#e6f2c8'], summer: ['#3f8fe0', '#7fbf5a'], autumn: ['#c9772f', '#e8c070'], winter: ['#c9d3dd', '#ffffff'] };
 	const TIME_SKY = { auto: ['#8fb3d9', '#c9d6e3'], '05:20': ['#2b3a63', '#f0a77a'], '08:00': ['#6fa7df', '#e9d3a8'], '12:00': ['#3f8fe0', '#bfe0ff'], '16:00': ['#5d98d6', '#f1d9a6'], '19:50': ['#3a3f73', '#f08a4b'], '23:00': ['#070b18', '#1b2440'], custom: ['#444b5a', '#6d7385'] };
 	function tiles(boxId, selId, sky) {
@@ -2799,7 +2799,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.58.37';
+	$('version').textContent = 'wersja 0.58.39';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');
