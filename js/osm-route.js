@@ -4040,7 +4040,12 @@
 				}
 				bridges.splice(q, 1);
 				for (const x of own) issues.splice(issues.indexOf(x), 1);
-				issue('bridge-nmt', a0, 'info', `Pomiar NMT: pod torem brak obniżenia (najwyżej ${best.toFixed(1)} m w pasie ±25 m) – usunięto wiadukt dodany przez generator (${o.over === 'rail' ? 'tor' : 'droga'} bez przejazdu w danych).`, `Jeśli to jednak przejście pod torem: "bridges": [{ "from": ${o.from}, "to": ${o.to}, "kind": "viaduct" }].`, b0);
+				/* droga w poziomie toru bez znacznika przejazdu w danych (np. Radzionków km 6,2) – przejazd kolejowy; dawniej
+				   po usunięciu wiaduktu nie było ani wiaduktu, ani przejazdu (jezdnia urwana po obu stronach torów) */
+				const cx = Math.round((o.from + o.to) / 2);
+				const addX = o.over === 'road' && !crossings.some((c) => Math.abs(c - cx) < 30);
+				if (addX) { crossings.push(cx); crossings.sort((x, y) => x - y); }
+				issue('bridge-nmt', a0, 'info', `Pomiar NMT: pod torem brak obniżenia (najwyżej ${best.toFixed(1)} m w pasie ±25 m) – usunięto wiadukt dodany przez generator (${o.over === 'rail' ? 'tor' : 'droga'} bez przejazdu w danych)${addX ? '; dodano przejazd w poziomie' : ''}.`, addX ? `Jeśli to jednak przejście pod torem: "bridges": [{ "from": ${o.from}, "to": ${o.to}, "kind": "viaduct" }], "crossings": { "remove": [${cx}] }.` : `Jeśli to jednak przejście pod torem: "bridges": [{ "from": ${o.from}, "to": ${o.to}, "kind": "viaduct" }].`, b0);
 			}
 			bridges.sort((x, y) => x.from - y.from);
 			// tory z mapy: wysokość główki szyny w każdym punkcie (dm ponad base); odcinki na mostach – prosto między

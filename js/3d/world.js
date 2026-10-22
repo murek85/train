@@ -4067,9 +4067,28 @@ import { BundleGroup } from 'three/webgpu';
 				const nC = Math.max(2, Math.ceil((l + r - 2.8) / 6) + 1), xs = [];
 				for (let c = 0; c < nC; c++) xs.push(-l + 1.4 + ((l + r - 2.8) * c) / (nC - 1));
 				if (!this.env) return xs;
+				const low = (ss, dd) => { if (!this.onRoad || !this.onRoad(ss, dd)) return false; const rl = this.roadLevel(ss, dd); return rl !== undefined && rl < h0 - 3; };
+				/* przy osi (korona torowiska – bez maski dróg) łącznik ulicy pod pomostem: jezdnia 3,5 m od osi po obu stronach
+				   (do 10 m wzdłuż toru – ulica ukośna), odcinek między nimi przechodzi przez miejsce słupa (do 1,5 m) */
+				const linkAt = (ss, dd) => {
+					if (!this.env || Math.abs(dd) > 3) return false;
+					for (let a = -10; a <= 10; a += 2) {
+						if (!low(ss + a, -3.5)) continue;
+						for (let b = -10; b <= 10; b += 2) {
+							if (!low(ss + b, 3.5)) continue;
+							const t = (dd + 3.5) / 7, sx = ss + a + (b - a) * t;
+							if (Math.abs(sx - ss) < 1.5) return true;
+						}
+					}
+					return false;
+				};
 				const colFree = (x) => {
+					if (linkAt(s, x)) return false;
 					for (let o = -0.75; o <= 0.75; o += 0.75) for (const dx of [-0.6, 0, 0.6]) {
 						if (this.roadBelowDeck && this.roadBelowDeck(s + o, x + dx, h0, 0.5)) return false;
+						/* rysowana jezdnia (maska dróg) ponad 3 m pod pomostem – także łączniki ulic przerwanych przy torze, których
+						   końce w danych są poprzesuwane (ulica ukośna do toru, dwujezdniowa: Bytom Stroszek) */
+						if (low(s + o, x + dx)) return false;
 						if (this.envTracksAt && this.envTracksAt(s + o).some((t) => Math.abs(t.d - (x + dx)) < 2.4 && this.envRowY(t.i, t.k, s + o, t.d) < h0 - 3)) return false;
 					}
 					return true;

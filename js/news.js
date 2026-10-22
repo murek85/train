@@ -4,6 +4,78 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.36',
+			date: '22 października 2026',
+			groups: [
+				['Mosty', [
+					'Filary wiaduktów drogowych ustawione jak najbardziej w poprzek pomostu – obracane w stronę torów tylko tyle, ile trzeba, by ominąć tory i drogi.',
+				]],
+			],
+		},
+		{
+			version: '0.58.35',
+			date: '22 października 2026',
+			groups: [
+				['Mosty', [
+					'Filary jednego wiaduktu drogowego stoją w jednym kierunku; długie podpory pod ukośnym pomostem to rzędy słupów z oczepem zamiast pełnych ścian.',
+				]],
+			],
+		},
+		{
+			version: '0.58.34',
+			date: '22 października 2026',
+			groups: [
+				['Mosty', [
+					'Wiadukty drogowe biegnące ukośnie nad torami mają zwykłe filary w poprzek jezdni zamiast długich ścian, rozstawione co najmniej 15 m (Tarnowskie Góry km 0,5).',
+				]],
+			],
+		},
+		{
+			version: '0.58.33',
+			date: '22 października 2026',
+			groups: [
+				['Przejazdy', [
+					'Radzionków (Tarnowskie Góry – Katowice, km 6,2): brakujący przejazd kolejowy.',
+					'Generator tras dodaje przejazd w poziomie, gdy droga przecina tor bez oznaczenia, a pomiar terenu nie pokazuje przejścia pod torami.',
+				]],
+			],
+		},
+		{
+			version: '0.58.32',
+			date: '22 października 2026',
+			groups: [
+				['Mosty', [
+					'Słupy wiaduktów nie stają na ulicach przechodzących ukośnie pod torami, także na łącznikach pod samym torem (Bytom Stroszek).',
+				]],
+			],
+		},
+		{
+			version: '0.58.31',
+			date: '22 października 2026',
+			groups: [
+				['Tarnowskie Góry – Katowice', [
+					'Chorzów Batory: tor zjeżdżający do linii zwrotnicą biegnie po terenie (dawniej nagle wspinał się na 7–8 m i kończył mostem, km 28,2).',
+					'Most kolejowy nad linią (km 27,3): oba tory na tej samej wysokości, zjazd z mostu bez skoku.',
+					'Estakada w Chorzowie (km 24,8): obie jezdnie biegną estakadą obok siebie, budynki pod nią nie przebijają jezdni.',
+				]],
+			],
+		},
+		{
+			version: '0.58.30',
+			date: '22 października 2026',
+			groups: [
+				['Tarnowskie Góry – Katowice', [
+					'Chorzów Uniwersytet: prawdziwy peron wyspowy między torami (dawniej peron z gry stał na drugim torze).',
+					'Filary wiaduktu nie stają na ulicy przerwanej w danych przy torze (km 20,2).',
+					'Chorzów Batory: tor biegnący obok linii jest zwykłym torem, a nie „wiaduktem” leżącym przy ziemi (km 28,4).',
+					'Druga jezdnia wiaduktu schodzi rampą do ulicy zamiast urywać się 7 m nad nią (km 24,7).',
+				]],
+				['Mosty', [
+					'Nasyp toru z mapy nie zsypuje się na tory i ulice pod wiaduktem – skarpa kończy się ścianą oporową (km 32,7).',
+				]],
+			],
+		},
+		{
 			version: '0.58.29',
 			date: '22 października 2026',
 			groups: [

@@ -12,7 +12,7 @@ import * as THREE from 'three';
 	const { hash, vnoise, patch, canvasTexture, mat, box, GEO, smoothstep } = NS.util;
 	const World = NS.World;
 	const C = 200;
-	const tp = {};
+	const tp = {}, tp2 = {};
 	const col = new T.Color();
 
 	// rodzaje budynków: 0 dom, 1 blok, 2 hala/przemysł, 3 usługi/urząd, 4 kościół, 5 garaż/szopa
@@ -343,6 +343,70 @@ import * as THREE from 'three';
 		}
 	};
 
+	/* „wiadukt kolejowy” z mapy (env.ro), który nie przecina naszego toru (wszystkie punkty po jednej stronie, ponad 3 m
+	   od osi) albo przecina go i dalej biegnie obok – w danych bywa nim cały tor (Chorzów Batory: 1,5 km toru 5–26 m
+	   od osi za przejściem nad linią).
+	   Rysowany jako pomost nad torami leżał przy ziemi szarą płytą i skakał na 7 m tam, gdzie zbliżał się do torów
+	   (skrajnia). Przeniesiony do torów z mapy (bit 2 – most, 8; wysokości z pomiaru pomostu env.roh jak env.th);
+	   jednorazowo */
+	const envRailBesideToTracks = (route) => {
+		const env = route.env;
+		if (!env.ro || !env.ro.length || !env.t || env._roMoved) return;
+		Object.defineProperty(env, '_roMoved', { value: true, configurable: true });
+		const keep = [], keepZ = [], keepH = [], hasZ = Array.isArray(env.roz), hasH = Array.isArray(env.roh);
+		if (!env._roTracks) Object.defineProperty(env, '_roTracks', { value: new Set(), configurable: true });
+		const toTrack = (row, h, k0, k1, fl) => {
+			if (k1 - k0 < 1) return;
+			env._roTracks.add(env.t.length);
+			env.t.push([fl].concat(row.slice(1 + k0 * 2, 3 + k1 * 2)));
+			if (env.th) env.th.push(h ? h.slice(k0, k1 + 1) : null);
+		};
+		env.ro.forEach((row, i) => {
+			const n = (row.length - 1) / 2, h = hasH && env.roh[i] && env.roh[i].length === n ? env.roh[i] : null;
+			/* przejście nad osią: zmiana strony z ponad 3 m po jednej na ponad 3 m po drugiej (tor kończący się na osi –
+			   zjazd zwrotnicą do naszej linii – nie przecina jej) */
+			let kc = -1, last = 0, lastK = -1;
+			for (let k = 0; k < n && kc < 0; k++) {
+				const d = row[2 + k * 2];
+				if (Math.abs(d) <= 3) continue;
+				const sg = Math.sign(d);
+				if (last && sg !== last) {
+					// punkt przecięcia: najbliższy osi między ostatnim punktem po jednej stronie a pierwszym po drugiej
+					let bd = Infinity;
+					for (let j = lastK; j <= k; j++) if (Math.abs(row[2 + j * 2]) < bd) { bd = Math.abs(row[2 + j * 2]); kc = j; }
+				}
+				last = sg;
+				lastK = k;
+			}
+			if (kc < 0 && n >= 2) { toTrack(row, h, 0, n - 1, 2 | 8); return; }
+			/* przecina tor, ale dalej biegnie obok niego (odcinek równoległy od 60 m, ponad 3 m od osi): wiadukt tylko do
+			   początku tego odcinka (z zapasem 2 punktów), reszta – tor z mapy (bez bitu mostu) */
+			const par = (k, dir) => {
+				let L = 0;
+				for (let j = k; j + dir >= 0 && j + dir < n; j += dir) {
+					const ds = Math.abs(row[1 + (j + dir) * 2] - row[1 + j * 2]), dd = Math.abs(row[2 + (j + dir) * 2] - row[2 + j * 2]);
+					if (dd > 0.15 * ds + 0.05 || Math.abs(row[2 + j * 2]) < 3) break;
+					L += Math.hypot(ds, dd);
+					if (L >= 60) return true;
+				}
+				return false;
+			};
+			let a = 0, b = n - 1;
+			for (let k = kc; k < n - 1; k++) if (par(k, 1)) { b = Math.min(n - 1, k + 2); break; }
+			for (let k = kc; k > 0; k--) if (par(k, -1)) { a = Math.max(0, k - 2); break; }
+			if (a === 0 && b === n - 1) { keep.push(row); if (hasZ) keepZ.push(env.roz[i]); if (hasH) keepH.push(env.roh[i]); return; }
+			const mid = [row[0]].concat(row.slice(1 + a * 2, 3 + b * 2));
+			keep.push(mid);
+			if (hasZ) keepZ.push(env.roz[i]);
+			if (hasH) keepH.push(h ? h.slice(a, b + 1) : env.roh[i]);
+			toTrack(row, h, 0, a, 8);
+			toTrack(row, h, b, n - 1, 8);
+		});
+		env.ro = keep;
+		if (hasZ) env.roz = keepZ;
+		if (hasH) env.roh = keepH;
+	};
+
 	// ---------- indeks otoczenia trasy ----------
 	World.prototype.envIndex = function (route) {
 		const env = route.env;
@@ -405,6 +469,7 @@ import * as THREE from 'three';
 			rfAll.push(o);
 		}
 		const tByChunk = new Map(), pByChunk = new Map();
+		envRailBesideToTracks(route);
 		envJoinPortalGaps(route);
 		lines(env.t || [], tByChunk);
 		(env.p || []).forEach((row, i) => {
@@ -1786,21 +1851,39 @@ import * as THREE from 'three';
 		   szerokości jezdni i 2 m) – raz na trasę; dawniej każde zapytanie przeglądało wszystkie odcinki trzech kawałków */
 		if (!e.rSegGrid) {
 			const grid = (e.rSegGrid = new Map());
+			const add = (s1, d1, s2, d2, hr) => {
+				const hw = hr + 2;
+				for (let a = Math.floor((Math.min(s1, s2) - hw) / G8); a <= Math.floor((Math.max(s1, s2) + hw) / G8); a++)
+					for (let b = Math.floor((Math.min(d1, d2) - hw) / G8); b <= Math.floor((Math.max(d1, d2) + hw) / G8); b++) {
+						const key = a * 100003 + b;
+						if (!grid.has(key)) grid.set(key, []);
+						grid.get(key).push([s1, d1, s2, d2, hr]);
+					}
+			};
+			const ends = []; // końce ulic przy torze (3–16 m od osi, dalszy punkt dalej od osi)
 			(this.route.env.r || []).forEach((row, i) => {
 				/* pół szerokości jak rysowana jezdnia (szerokość z BDOT, chodniki 2,6 m – jak maska dróg); dawniej tylko wg klasy
 				   drogi – na szerokich ulicach (np. 4 pasy z BDOT) filar wiaduktu stawał na pasie ruchu */
 				const q = e.rInfo[i] || {}, hr = Math.max(q.w || 0, ROAD_W[row[0]] || 6) / 2 + (q.sw ? 2.6 : 0.4);
-				const hw = hr + 2, n = (row.length - 1) / 2;
-				for (let k = 0; k < n - 1; k++) {
-					const s1 = row[1 + k * 2], d1 = row[2 + k * 2], s2 = row[3 + k * 2], d2 = row[4 + k * 2];
-					for (let a = Math.floor((Math.min(s1, s2) - hw) / G8); a <= Math.floor((Math.max(s1, s2) + hw) / G8); a++)
-						for (let b = Math.floor((Math.min(d1, d2) - hw) / G8); b <= Math.floor((Math.max(d1, d2) + hw) / G8); b++) {
-							const key = a * 100003 + b;
-							if (!grid.has(key)) grid.set(key, []);
-							grid.get(key).push([s1, d1, s2, d2, hr]);
-						}
+				const n = (row.length - 1) / 2;
+				for (let k = 0; k < n - 1; k++) add(row[1 + k * 2], row[2 + k * 2], row[3 + k * 2], row[4 + k * 2], hr);
+				if (n > 1) for (const [k, k2] of [[0, 1], [n - 1, n - 2]]) {
+					const sE = row[1 + k * 2], dE = row[2 + k * 2];
+					if (Math.abs(dE) > 3 && Math.abs(dE) < 16 && Math.abs(row[2 + k2 * 2]) > Math.abs(dE)) ends.push({ s: sE, d: dE, hr, ti: row[0] });
 				}
 			});
+			/* ulica przerwana w danych przy torze (końce po obu stronach osi, przecięcie osi do 12 m od siebie): łącznik pod
+			   wiaduktem też jest jezdnią – dawniej filar wiaduktu stawał na nim (Tarnowskie Góry – Katowice km 20,2) */
+			for (const a of ends) {
+				if (a.d >= 0) continue;
+				let best = null, bc = Infinity;
+				for (const b of ends) {
+					if (b.d <= 0 || Math.abs(b.s - a.s) > 12) continue;
+					const c = Math.abs(b.s - a.s) + (a.ti !== b.ti ? 6 : 0);
+					if (c < bc) { bc = c; best = b; }
+				}
+				if (best) add(a.s, a.d, best.s, best.d, Math.max(a.hr, best.hr));
+			}
 		}
 		let near = false;
 		for (const [s1, d1, s2, d2, hr] of e.rSegGrid.get(Math.floor(s / G8) * 100003 + Math.floor(d / G8)) || []) {
@@ -1852,6 +1935,19 @@ import * as THREE from 'three';
 			if (Math.abs(d) < 6 || this.envTrackGap(s, d) < 3) y = Math.max(y, R.heightAt(r, s) + (this.ownWire(s) ? 6.6 : 5.5) + (rail ? 0.4 : 0));
 			return y;
 		}) : P.map((_, k) => yOf(k));
+		/* wiadukt kolejowy: profil jak tor – nad torami skrajnia (główka szyny 7 m nad naszą, z siecią), dalej co najwyżej
+		   2,5% w dół do terenu z pomiaru; pomiar powierzchni (NMPT) łapie sieć trakcyjną i obiekty nad torem – dwa tory na
+		   jednym moście wychodziły 2,6 m od siebie, a tor schodził z mostu skokiem (Chorzów Batory km 27,3) */
+		if (rail && P.length > 1) {
+			const cumR = [0];
+			for (let k = 1; k < P.length; k++) cumR.push(cumR[k - 1] + Math.hypot(P[k][0] - P[k - 1][0], P[k][1] - P[k - 1][1]));
+			const req = P.map(([s, d]) => (Math.abs(d) < 6 || this.envTrackGap(s, d) < 3 ? R.heightAt(r, s) + (this.ownWire(s) ? 6.6 : 5.5) + 0.4 : -Infinity));
+			for (let k = 0; k < P.length; k++) {
+				let y = this.terrainY(P[k][0], P[k][1]) + 0.1;
+				for (let j = 0; j < P.length; j++) if (req[j] > -Infinity) y = Math.max(y, req[j] - 0.025 * Math.abs(cumR[k] - cumR[j]));
+				Y[k] = y;
+			}
+		}
 		/* koniec pomostu nisko nad terenem (zjazd): wierzch w poziomie dochodzącej jezdni (nawierzchnia + 0,1 m), zjazd
 		   wyrównany na ostatnich 20 m – z pomiaru (NMPT: balustrady, auta) koniec wypadał ok. 0,5 m wyżej niż ulica
 		   dalej i jezdnia urywała się progiem z bokami pomostu */
@@ -1917,12 +2013,94 @@ import * as THREE from 'three';
 				return out;
 			};
 			const n0 = P.length, yA = Y[0], yB = Y[n0 - 1];
-			const head = ext(P[0], P[1], yA).reverse(), tail = ext(P[n0 - 1], P[n0 - 2], yB);
+			/* koniec pomostu wysoko (ponad 1,5 m) nad dalszą ulicą z mapy (koniec jej łamanej do 2,5 m od końca obiektu) –
+			   pomost przedłużony rampą wzdłuż tej ulicy, 8% w dół, do jej poziomu (do 120 m; pod rampą nasyp – embk, ulica
+			   pod nią nie jest rysowana – inDeckExt). Dawniej ulica spadała tuż za końcem o kilka metrów (km 24,7 Tarnowskie
+			   Góry – Katowice: 4,7 m na 4 m – poszarpany klin jezdni i terenu pod pomostem). Wynik: [[s, d], y][] od końca */
+			const ramp = (E, Pv, y) => {
+				const e = this.env, out = [];
+				// ulica z wierzchołkiem do maxD m od E, dalej w kierunku E − Pv (|cos| ≥ 0,7 – nie ulica w poprzek)
+				const find = (E2, Pv2, maxD, skip) => {
+					for (let cc = Math.floor(E2[0] / C) - 1; cc <= Math.floor(E2[0] / C) + 1; cc++) for (const { row: rr } of e.rByChunk.get(cc) || []) {
+						if (rr === skip) continue;
+						const n = (rr.length - 1) / 2;
+						if (n < 2) continue;
+						let kN = -1, dN = maxD;
+						for (let k = 0; k < n; k++) { const dd = Math.hypot(rr[1 + k * 2] - E2[0], rr[2 + k * 2] - E2[1]); if (dd < dN) { dN = dd; kN = k; } }
+						if (kN < 0) continue;
+						for (const st2 of [1, -1]) {
+							if (kN + st2 < 0 || kN + st2 >= n) continue;
+							const q = [rr[1 + (kN + st2) * 2], rr[2 + (kN + st2) * 2]];
+							const L1 = Math.hypot(q[0] - E2[0], q[1] - E2[1]) || 1, L2 = Math.hypot(E2[0] - Pv2[0], E2[1] - Pv2[1]) || 1;
+							if (((q[0] - E2[0]) * (E2[0] - Pv2[0]) + (q[1] - E2[1]) * (E2[1] - Pv2[1])) / (L1 * L2) >= 0.7) return { rr, k: kN, st2, n };
+						}
+					}
+					return null;
+				};
+				let cur = find(E, Pv, 4, null);
+				if (!cur) return out;
+				const lvl = (q) => { const rl = this.onRoad(q[0], q[1]) ? this.roadLevel(q[0], q[1]) : undefined; return (rl !== undefined && rl < y - 0.5 ? rl : this.terrainY(q[0], q[1])) + 0.1; };
+				// (ulica dalej na wysokości pomostu – estakada dłuższa niż obiekt w danych: bez rampy)
+				{
+					const { rr, k, st2 } = cur, q1 = [rr[1 + (k + st2) * 2], rr[2 + (k + st2) * 2]], rl1 = this.onRoad(q1[0], q1[1]) ? this.roadLevel(q1[0], q1[1]) : undefined;
+					if ((rl1 !== undefined && rl1 > y - 1.5) || y - lvl(q1) < 1.5) return out;
+				}
+				/* drugi pomost obok (inny obiekt drogowy z mapy, wierzchołek do 14 m, z profilem z pomiaru): ulica biegnie dalej
+				   estakadą razem z nim – przedłużenie na jego wysokości, w dół dopiero za nim (km 24,8 Tarnowskie Góry – Katowice:
+				   estakada w Chorzowie – w danych obiektem jest tylko jedna jezdnia na całej długości) */
+				const D = e.dem;
+				const twinY = (pt) => {
+					let best = null, bd = 14;
+					for (let cc = Math.floor(pt[0] / C) - 1; cc <= Math.floor(pt[0] / C) + 1; cc++) for (const o of e.oByChunk.get(cc) || []) {
+						if (o === row) continue;
+						const hs = e.deckP && e.deckP.get(o);
+						if (!hs || !D || hs.length !== (o.length - 1) / 2) continue;
+						for (let j = 0; j < hs.length; j++) {
+							const dd = Math.hypot(o[1 + j * 2] - pt[0], o[2 + j * 2] - pt[1]);
+							if (dd < bd && hs[j] >= 0) { bd = dd; best = D.base + hs[j] / 10 - D.off; }
+						}
+					}
+					return best;
+				};
+				let u = 0, prev = [E[0], E[1]], before = Pv, y0 = y;
+				for (let hop = 0; hop < 8 && cur; hop++) {
+					const { rr, k, st2, n } = cur;
+					for (let j = k + st2; j >= 0 && j < n; j += st2) {
+						const nx = [rr[1 + j * 2], rr[2 + j * 2]], L = Math.hypot(nx[0] - prev[0], nx[1] - prev[1]), m = Math.max(1, Math.ceil(L / 4));
+						for (let q = 1; q <= m; q++) {
+							const pt = [prev[0] + ((nx[0] - prev[0]) * q) / m, prev[1] + ((nx[1] - prev[1]) * q) / m];
+							u += L / m;
+							const tw = twinY(pt);
+							let yy;
+							if (tw !== null && tw > lvl(pt) + 1) { yy = tw; y0 = tw; u = 0; } // przy drugim pomoście – jego wysokość
+							else yy = y0 - 0.08 * u;
+							if (yy <= lvl(pt) || out.length > 120) return out;
+							out.push([pt, yy]);
+						}
+						before = prev;
+						prev = nx;
+					}
+					// koniec odcinka ulicy w danych – dalszy odcinek od tego węzła w tym samym kierunku
+					cur = find(prev, before, 1.5, rr);
+				}
+				return out;
+			};
+			let head = ext(P[0], P[1], yA).reverse(), tail = ext(P[n0 - 1], P[n0 - 2], yB);
+			let headY = head.map(() => yA), tailY = tail.map(() => yB);
+			// rampa za przedłużeniem nad wykopem (albo od samego końca obiektu)
+			{
+				const hE = head.length ? head[0] : P[0], hP = head.length > 1 ? head[1] : head.length ? P[0] : P[1];
+				const rp = ramp(hE, hP, yA).reverse();
+				head = rp.map((x) => x[0]).concat(head); headY = rp.map((x) => x[1]).concat(headY);
+				const tE = tail.length ? tail[tail.length - 1] : P[n0 - 1], tP = tail.length > 1 ? tail[tail.length - 2] : tail.length ? P[n0 - 1] : P[n0 - 2];
+				const rq = ramp(tE, tP, yB);
+				tail = tail.concat(rq.map((x) => x[0])); tailY = tailY.concat(rq.map((x) => x[1]));
+			}
 			if (head.length || tail.length) {
 				P.unshift(...head);
-				Y.unshift(...head.map(() => yA));
+				Y.unshift(...headY);
 				P.push(...tail);
-				Y.push(...tail.map(() => yB));
+				Y.push(...tailY);
 				xa = head.length;
 				xb = tail.length;
 				ci += xa;
@@ -1957,11 +2135,20 @@ import * as THREE from 'three';
 			if (em.length) ems.push({ side, ord, em });
 		}
 		const piers = [];
-		// filar k: wzdłuż torów (len) albo w poprzek jezdni (ang, cross) – cały obrys poza torami i drogami
-		const pierAt = (k, cross) => {
-			const n2 = dirN(k), a2 = P[Math.max(0, k - 1)], b2 = P[Math.min(P.length - 1, k + 1)];
-			const pr = cross ? { k, s: P[k][0], d: P[k][1], top: Y[k] - 0.9, ang: Math.atan2(b2[1] - a2[1], b2[0] - a2[0]), cross: w + 1 } : { k, s: P[k][0], d: P[k][1], top: Y[k] - 0.9, len: Math.min(40, (w + 1) / Math.max(0.25, Math.abs(n2[0]))) };
-			return this.pierFree(pr) ? pr : null;
+		/* filar k: jak najbliżej poprzecznego do pomostu (ang = kierunek pomostu, obrys w poprzek), obracany w stronę
+		   kierunku torów (5 kroków) tylko tyle, ile trzeba, żeby obrys ominął tory i drogi; długość – szerokość pomostu
+		   w kierunku filara (do 40 m). Dawniej filary wzdłuż torów (pod ukośnym pomostem długie i „agresywne”), a w 0.58.34
+		   kierunek wybierany na przemian */
+		const pierAt = (k) => {
+			const a2 = P[Math.max(0, k - 1)], b2 = P[Math.min(P.length - 1, k + 1)], al = Math.atan2(b2[1] - a2[1], b2[0] - a2[0]);
+			// kierunek wzdłuż torów (dirs = [±1, 0]) najbliższy al
+			const at = Math.abs(al + Math.PI / 2) < Math.abs(al - Math.PI / 2) ? -Math.PI / 2 : Math.PI / 2;
+			for (let q = 0; q <= 4; q++) {
+				const ang = al + (at - al) * (q / 4), L = Math.min(40, (w + 1) / Math.max(0.25, Math.abs(Math.cos(ang - al))));
+				const pr = { k, s: P[k][0], d: P[k][1], top: Y[k] - 0.9, ang, cross: L };
+				if (this.pierFree(pr)) return pr;
+			}
+			return null;
 		};
 		// filary: po obu stronach torowiska – pierwszy punkt łamanej (od osi na zewnątrz), w którym nie ma toru z mapy
 		for (const sg of [1, -1]) {
@@ -1971,7 +2158,7 @@ import * as THREE from 'three';
 				if (Y[k] < this.terrainY(P[k][0], P[k][1]) + 3) break;
 				// (onRoad – także sam pomost: obiekt to odcinek ulicy z mapy; filar wyklucza tylko ulica pod pomostem)
 				if (this.envTrackGap(P[k][0], P[k][1]) > 3.2 && !this.roadBelowDeck(P[k][0], P[k][1], Y[k])) {
-					const pr = pierAt(k, false);
+					const pr = pierAt(k);
 					if (pr) { best = k; piers.push(pr); break; }
 				}
 			}
@@ -1986,13 +2173,14 @@ import * as THREE from 'three';
 				for (const k of order.slice(0, q0)) {
 					if (Math.abs(P[k][1]) <= Math.abs(P[best][1]) || Y[k] - 0.9 - this.terrainY(P[k][0], P[k][1]) < 3) continue;
 					if (this.envTrackGap(P[k][0], P[k][1]) <= 3.2 || this.roadBelowDeck(P[k][0], P[k][1], Y[k])) continue;
-					const pr = this.envTrackGap(P[k][0], P[k][1]) > (w + 1) / 2 + 1.5 ? pierAt(k, true) || pierAt(k, false) : pierAt(k, false);
+					const pr = pierAt(k);
 					if (pr) cand.push({ u: u(k), pr });
 				}
 				let last = 0;
 				while (uEnd - last > 35) {
-					const near = cand.filter((c) => c.u > last + 8 && c.u <= last + 35);
-					const c = near.length ? near.reduce((a, b) => (b.u > a.u ? b : a)) : cand.filter((c2) => c2.u > last + 8).reduce((a, b) => (!a || b.u < a.u ? b : a), null);
+					// (następny filar co najmniej 15 m dalej – dawniej 8 m: dwa filary tuż obok siebie)
+					const near = cand.filter((c) => c.u > last + 15 && c.u <= last + 35);
+					const c = near.length ? near.reduce((a, b) => (b.u > a.u ? b : a)) : cand.filter((c2) => c2.u > last + 15).reduce((a, b) => (!a || b.u < a.u ? b : a), null);
 					if (!c) break;
 					piers.push(c.pr);
 					last = c.u;
@@ -2330,7 +2518,24 @@ import * as THREE from 'three';
 			}
 			pm.position.set(tp.x, y0 + h / 2, tp.z);
 			pm.castShadow = this.shadows;
-			group.add(pm);
+			/* długa podpora (pomost ukośny do torów, ponad 12 m): rząd słupów co ok. 6 m pod wspólnym oczepem zamiast pełnej
+			   ściany */
+			const Lp = pr.ang !== undefined ? pr.cross : pr.len || 6, dv = pr.ang !== undefined ? [-Math.sin(pr.ang), Math.cos(pr.ang)] : [1, 0];
+			if (Lp > 12) {
+				const nCol = Math.ceil((Lp - 1.6) / 6) + 1;
+				for (let c = 0; c < nCol; c++) {
+					const off = -Lp / 2 + 0.8 + ((Lp - 1.6) * c) / (nCol - 1), cs = pr.s + dv[0] * off, cd = pr.d + dv[1] * off;
+					R.sidePoint(r, cs, cd, tp2);
+					const yc = this.terrainY(cs, cd) - 0.2, hc = pr.top - yc;
+					if (hc < 1) continue;
+					const col = new T.Mesh(NS.util.GEO.box, pm.material);
+					col.scale.set(1.2, hc, 1.2);
+					col.rotation.y = pm.rotation.y;
+					col.position.set(tp2.x, yc + hc / 2, tp2.z);
+					col.castShadow = this.shadows;
+					group.add(col);
+				}
+			} else group.add(pm);
 			// oczep: szerszy i dłuższy od filaru pas pod spodem pomostu
 			const cap = new T.Mesh(NS.util.GEO.box, pm.material);
 			if (pr.ang !== undefined) cap.scale.set(pr.cross + 0.6, 0.7, 1.9);
@@ -3734,6 +3939,10 @@ import * as THREE from 'three';
 		/* tor na moście ponad 1,5 m pod terenem z pomiaru – wysokość z prostej między końcami długiego „mostu” na nasypie
 		   (pliki z generatora do 0.37): bez pomiaru, na poziomie naszej linii (envTrackY – most) */
 		if (row[0] & 2 && y < this.demGround(s, d) - 1.5) return undefined;
+		/* tor odzyskany z „wiaduktu” z mapy (envRailBesideToTracks): wysokości z pomiaru powierzchni (NMPT – także
+		   obiekty nad torem); ponad 1,5 m nad terenem z pomiaru – na terenie (0,3 m nad pomiarem) –
+		   dawniej tor przy Chorzowie Batorym wspinał się nagle na 7–8 m */
+		if (this.route.env._roTracks && this.route.env._roTracks.has(i) && y > this.demGround(s, d) + 1.5) return this.demGround(s, d) + 0.3;
 		return y;
 	};
 	// głębokość pod mostem z pomiaru (NMT: dno doliny, drogi, wykopu pod przęsłem) – bez pomiaru stała D
@@ -4562,16 +4771,34 @@ import * as THREE from 'three';
 					} else if (hh > 0.5 && !onBridge && !this.onBridgeSpan(sm, dm) && this.dip(sm, dm) <= 1) {
 						// (nad wykopem pod mostem tor stoi na pomoście – bez nasypu)
 						const wd = 2.2 + 1.5 * hh;
-						/* obrys nasypu (z podstawą skarp) na ulicy ponad 1 m niżej – zamiast nasypu pomost: tory dochodzące do mostu
-						   z mapy (na wysokości pomostu – envRowMeasured) zsypywały skarpy na jezdnię pod wiaduktem (Toruń Główny) */
+						/* skarpy nasypu nie na ulicy ponad 1 m niżej ani na torze niżej (naszym z poboczem – koroną torowiska – albo
+						   z mapy): po każdej stronie skarpa do przeszkody (0,5 m przed nią) i dalej pionowa ściana oporowa; przeszkoda
+						   tuż przy torze (do 2,6 m od osi) – zamiast nasypu pomost. Dawniej skarpy 1:1,5 zsypywały się na jezdnię pod
+						   wiaduktem (Toruń Główny – tory dochodzące do mostu, envRowMeasured) i na tory pod wiaduktem kolejowym
+						   (Tarnowskie Góry – Katowice km 32,7) */
 						const Ls = Math.hypot(sb - sa, db - da) || 1, ns = -(db - da) / Ls, nd = (sb - sa) / Ls;
-						for (let o = -wd; o <= wd + 1e-6 && !slab; o += 1) for (const f of [0, 0.5, 1]) {
-							const ps = sa + (sb - sa) * f + ns * o, pd = da + (db - da) * f + nd * o;
-							if (!this.onRoad(ps, pd)) continue;
-							const rl = this.roadLevel(ps, pd);
-							if (rl !== undefined && rl < yTop - 1) { slab = true; break; }
+						const blocked = (o) => {
+							for (const f of [0, 0.5, 1]) {
+								const ps = sa + (sb - sa) * f + ns * o, pd = da + (db - da) * f + nd * o;
+								const shq = this.envShoulder(ps);
+								if (pd < shq.r && pd > -shq.l && R.heightAt(r, ps) < yTop - 0.05) return true;
+								if (this.envTracksAt(ps).some((t) => t.i !== i && Math.abs(t.d - pd) < 2.6 && this.envRowY(t.i, t.k, ps, t.d) < yTop - 0.05)) return true;
+								if (this.onRoad(ps, pd)) { const rl = this.roadLevel(ps, pd); if (rl !== undefined && rl < yTop - 1) return true; }
+							}
+							return false;
+						};
+						const lim = [wd, wd];
+						for (const [j, sg] of [[0, -1], [1, 1]]) for (let o = 2.2; o <= wd + 1e-6; o += 0.5) if (blocked(sg * o)) { lim[j] = o - 0.5; break; }
+						if (lim[0] < 2.6 || lim[1] < 2.6) slab = true;
+						else {
+							// skarpa do lim, dalej ściana do podstawy (przy pełnej szerokości – bez ściany)
+							const yAt = (o) => -0.95 - hh * Math.min(1, (o - 2.2) / (wd - 2.2));
+							const cols = [], ys = [];
+							if (lim[0] < wd) { cols.push(-lim[0]); ys.push(-0.95 - hh); }
+							cols.push(-lim[0], -2.2, 2.2, lim[1]); ys.push(yAt(lim[0]), -0.95, -0.95, yAt(lim[1]));
+							if (lim[1] < wd) { cols.push(lim[1]); ys.push(-0.95 - hh); }
+							quadStrip(earth, cols, ys, sa, da, sb, db);
 						}
-						if (!slab) quadStrip(earth, [-wd, -2.2, 2.2, wd], [-0.95 - hh, -0.95, -0.95, -0.95 - hh], sa, da, sb, db);
 					}
 				}
 				// tor na moście: pomost (płyta z gzymsami) pod podsypką
@@ -5454,7 +5681,18 @@ import * as THREE from 'three';
 			// obrysem – inaczej górna strona chowała się w terenie („zapadnięty” budynek przy wykopie lub nasypie)
 			let topG = -Infinity;
 			for (let k = 0; k < n; k++) topG = Math.max(topG, this.terrainY(row[3 + k * 2], row[4 + k * 2]));
-			const top = Math.max(base + 0.3 + h, topG + Math.min(h, 2.5));
+			let top = Math.max(base + 0.3 + h, topG + Math.min(h, 2.5));
+			/* budynek pod pomostem wiaduktu drogowego (sklepy pod estakadą): dach 0,2 m pod spodem pomostu (gdy zostaje
+			   ponad 2,5 m) – dawniej bryła z wysokością z mapy przebijała jezdnię estakady (Chorzów, km 24,8) */
+			if (this.env.dem) {
+				const ovh = this.envOverheads(Math.floor(b.cs / C));
+				if (ovh.length) {
+					// (wierzchołki obrysu i środek – pomost węższy niż budynek)
+					let db = this.deckBottom(b.cs, (b.d0 + b.d1) / 2, ovh);
+					for (let k = 0; k < n; k++) db = Math.min(db, this.deckBottom(row[3 + k * 2], row[4 + k * 2], ovh));
+					if (db < Infinity && db - base > 2.5 && top > db - 0.2) top = db - 0.2;
+				}
+			}
 			if (kind === 7) { this.envStadium(pl, tri, b, P, base, top, seed, group); continue; }
 			/* nad torami (hala peronowa, zadaszenie, pomost – w danych jako budynek): sam dach na zmierzonej wysokości,
 			   widoczny też od spodu, bez ścian */

@@ -4,6 +4,99 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.36 – 22 października 2026
+
+Filary w poprzek pomostu.
+
+- `real-env.js` overpassPlan, pierAt: filar ustawiany w poprzek pomostu (kierunek jezdni w tym miejscu). Gdy obrys
+  trafia na tor albo drogę (pierFree), jest obracany w stronę kierunku torów w 5 krokach, aż znajdzie się wolne
+  ustawienie. Długość to szerokość pomostu w kierunku filara, do 40 m. Zastępuje jeden kierunek dla całego obiektu
+  z 0.58.35: przy ukośnym pomoście filary wzdłuż torów były długie i ustawione „agresywnie” względem mostu.
+- buildEnvOverpasses: rząd słupów zamiast ściany (ponad 12 m) także dla filarów obróconych.
+- Tarnowskie Góry km 0,5: wszystkie filary mają teraz 10–11 m (wcześniej do 27,5 m).
+
+## 0.58.35 – 22 października 2026
+
+Filary wiaduktu w jednym kierunku.
+
+- `real-env.js` overpassPlan: kierunek filarów ustalany raz dla całego obiektu według kąta pomostu nad osią toru.
+  Domyślnie wzdłuż torów; gdy pomost jest prawie równoległy do torów (ściana ponad 1,8 szerokości jezdni) – w poprzek
+  jezdni. Filar, który w danym miejscu się nie mieści, nie jest obracany, tylko szukane jest inne miejsce. Zastępuje
+  wybór kierunku dla każdego filara osobno z 0.58.34, który mieszał ściany i filary pod jednym wiaduktem.
+- buildEnvOverpasses: podpora wzdłuż torów dłuższa niż 12 m to rząd słupów 1,2 × 1,2 m co ok. 6 m (każdy do terenu
+  pod sobą) pod wspólnym oczepem, a nie pełna ściana.
+
+## 0.58.34 – 22 października 2026
+
+Filary ukośnych wiaduktów drogowych.
+
+- `real-env.js` overpassPlan, pierAt: ściana filara wzdłuż torów pod pomostem prawie równoległym do nich (dłuższa niż
+  1,8 szerokości jezdni) jest zastępowana filarem w poprzek jezdni, jeśli jego obrys jest wolny (pierFree). Dawniej
+  przy km 0,5 trasy Tarnowskie Góry – Katowice stały dwie ściany po ok. 20 m.
+- Kolejne filary estakady co najmniej 15 m od siebie wzdłuż pomostu (dawniej 8 m).
+
+## 0.58.33 – 22 października 2026
+
+Brakujący przejazd kolejowy.
+
+- `osm-route.js` (generator): po usunięciu wiaduktu drogowego dodanego przez generator (droga przecinająca tor bez
+  znacznika przejazdu w danych, a NMT nie pokazuje obniżenia pod torem) dodawany jest przejazd w poziomie w środku
+  dawnego wiaduktu, jeśli w promieniu 30 m nie ma innego. Uwaga `bridge-nmt` podaje to i poprawkę odwrotną. Dawniej
+  nie było ani wiaduktu, ani przejazdu, a jezdnia urywała się po obu stronach torów.
+- `routes/tarnowskie-gory-katowice.js` (fixes): `"crossings": { "add": [6234] }` – Radzionków km 6,2 (bez ponownego
+  generowania trasy).
+
+## 0.58.32 – 22 października 2026
+
+Słupy wiaduktów poza ukośnymi ulicami.
+
+- `world.js` buildViaduct, colLayout: słup sprawdza też rysowaną maskę dróg, czyli komórkę jezdni ponad 3 m pod
+  pomostem (`low`), a nie tylko odcinki ulic z mapy (roadBelowDeck).
+- Przy osi, gdzie leży korona torowiska bez maski dróg, łącznik ulicy pod pomostem (`linkAt`): jezdnia 3,5 m od osi po
+  obu stronach (do 10 m wzdłuż toru, bo ulica bywa ukośna), a odcinek między nimi przechodzi do 1,5 m od słupa.
+- Bytom Stroszek (ok. 10,4 km): dwujezdniowa ulica pod kątem ok. 45°. Jej końce w danych są poprzesuwane i łączniki
+  z 0.58.30 (różnica kilometrażu do 12 m) ich nie obejmowały, więc słupy stawały na jezdni. Teraz podpora bez
+  miejsca na komplet słupów jest pomijana (przęsło nad ulicą ok. 41 m).
+
+## 0.58.31 – 22 października 2026
+
+Chorzów: tory obok linii, most kolejowy, estakada.
+
+- `real-env.js` envRailBesideToTracks: przejście nad osią to zmiana strony z ponad 3 m po jednej na ponad 3 m po drugiej.
+  Tor kończący się na osi (zjazd zwrotnicą do linii) nie przecina jej. Dawniej punktem przejścia był punkt najbliższy
+  osi, czyli koniec toru przy zwrotnicy, i „wiaduktem” zostawał odcinek przy zjeździe (Chorzów Batory km 28,2–28,6).
+  Tory odzyskane z wiaduktów (`env._roTracks`) z wysokością z pomiaru powierzchni ponad 1,5 m nad terenem leżą na
+  terenie (NMPT łapie obiekty nad torem – tor wspinał się na 7–8 m).
+- overpassPlan, wiadukt kolejowy: profil jak tor zamiast pomiaru powierzchni. Nad torami skrajnia (7 m nad główką
+  szyny, z siecią), dalej co najwyżej 2,5% w dół do terenu. Dwa tory na jednym moście (km 27,3) wychodziły 2,6 m od
+  siebie, a tor schodził z mostu skokiem.
+- overpassPlan, rampa: przy drugim pomoście drogowym obok (wierzchołek do 14 m, profil z pomiaru) przedłużenie biegnie
+  na jego wysokości i schodzi dopiero za nim; do 8 odcinków ulicy. Estakada w Chorzowie (km 24,8): w danych obiektem
+  jest jedna jezdnia na całej długości, druga schodziła rampą do ulicy.
+- buildEnvBuildings: budynek pod pomostem wiaduktu drogowego (wierzchołki i środek obrysu) ma dach 0,2 m pod spodem
+  pomostu, gdy zostaje ponad 2,5 m (sklepy pod estakadą przebijały jezdnię).
+
+## 0.58.30 – 22 października 2026
+
+Poprawki trasy Tarnowskie Góry – Katowice i rysowania obiektów z mapy.
+
+- `routes/tarnowskie-gory-katowice.js` (fixes): przystanek Chorzów Uniwersytet z peronem wyspowym z mapy (obrys 16,
+  25790–25941 m, z lewej, między torami), zatrzymanie 25935 m. Dawniej bez peronu – domyślny peron z gry z prawej
+  stał na drugim torze, a pasażerowie na torowisku.
+- `real-env.js` roadBelowDeck: łączniki ulic przerwanych w danych przy torze (końce po obu stronach osi, 3–16 m od
+  niej, przecięcie osi do 12 m od siebie) też są jezdnią – filar wiaduktu stawał na nim (km 20,2).
+- envRailBesideToTracks (envIndex, jednorazowo): „wiadukt kolejowy” z mapy (env.ro), który nie przecina naszego toru,
+  jest przenoszony do torów z mapy (bit 2 i 8, wysokości z env.roh). Gdy przecina tor, a dalej biegnie obok (odcinek
+  równoległy od 60 m, ponad 3 m od osi), wiaduktem zostaje tylko przejście nad linią, a reszta staje się torem.
+  Chorzów Batory: 1,2 km toru obok linii był szarą płytą przy ziemi, skaczącą na 7 m przy torach.
+- buildEnvTracks, nasyp toru z mapy: skarpa po każdej stronie kończy się 0,5 m przed przeszkodą i dalej jest pionowa
+  ściana oporowa. Przeszkody: korona naszego torowiska niżej, tor z mapy niżej, ulica ponad 1 m niżej. Przeszkoda do
+  2,6 m od osi – zamiast nasypu pomost. Dawniej skarpy 1:1,5 zsypywały się na tory pod wiaduktem kolejowym (km 32,7).
+- overpassPlan, rampa: koniec pomostu ponad 1,5 m nad dalszą ulicą z mapy (wierzchołek do 4 m od końca, kierunek
+  zgodny, |cos| ≥ 0,7) – pomost przedłużony wzdłuż tej ulicy i kolejnych jej odcinków (do 4) ze spadkiem 8%, do jej
+  poziomu (do 120 m). Także za przedłużeniem nad wykopem. Bez rampy, gdy ulica dalej biegnie na wysokości pomostu.
+  Km 24,7: druga jezdnia urywała się 7 m nad ulicą (spadek 4,7 m na 4 m, poszarpany klin jezdni i terenu).
+
 ## 0.58.29 – 22 października 2026
 
 Nowa trasa Tarnowskie Góry – Katowice.

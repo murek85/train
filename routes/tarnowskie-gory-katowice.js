@@ -587,6 +587,8 @@
 "m":"„Katowice”: brak wskaźnika W4 w danych – miejsce zatrzymania oszacowane (środek peronu).",
 "fix":"Inne miejsce: \"stations\": { \"Katowice\": { \"pos\": 33887 } } (czoło pociągu)."}],
 "fixes":{"stations":{"add":[{"name":"Chorzów Uniwersytet",
-"pos":26008,
-"type":"halt"}]},
+"pos":25935,
+"type":"halt",
+"platform":{"side":-1,"edge":1.72,"width":8,"island":true,"s0":25790,"s1":25941,"pi":16}}]},
+"crossings":{"add":[6234]},
 "ignore":["plk-stop@26008"]}});
