@@ -4,6 +4,140 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.28 – 22 października 2026
+
+Ulica pod mostem kolejowym bez klinów ziemi.
+
+- `real-env.js` envRoadMaskBuild: odcisk toru z mapy w masce (podtorze, promień 3 m) nie nadpisuje komórki jezdni
+  leżącej ponad 1 m niżej. Przy końcach przęseł mostów z mapy tor leży mniej niż 2,5 m nad pomiarem i był odciskany.
+  Teren i jezdnia ulicy pod mostem wspinały się wtedy klinami pod przęsło: Toruń Główny, wiadukt nad ulicą
+  (530–563 m), ciemne skarpy między betonowymi blokami.
+- buildEnvTracks: gdy obrys nasypu toru z mapy wypada na ulicę ponad 1 m niżej, zamiast nasypu jest pomost (tory
+  dochodzące do mostów z mapy, podniesione w 0.58.26).
+
+## 0.58.27 – 22 października 2026
+
+Wiadukty drogowe przy ulicach, oznakowanie przejazdów.
+
+- `real-env.js` inDeckExt: punkt liczy się do przedłużenia pomostu tylko w pasie odcinka (rzut na odcinek), bez
+  półkola za jego końcem. Dawniej koło o promieniu pół szerokości jezdni za końcem przedłużenia wycinało 3–5 m
+  dochodzącej ulicy, a w tym miejscu zostawał pas trawy (Toruń – Chełmża, km 2,25 i 2,34).
+- overpassPlan, przedłużenie nad wykopem: po odcinku z terenem ponad 3 m niżej pomost dochodzi (do 6 m dalej) do
+  górnej krawędzi wykopu, czyli terenu do 0,8 m pod pomostem; pod końcem jest nasyp. Ostatnie metry skarpy zostawały
+  wcześniej pod ulicą bez pomostu. Odległość ostatniego punktu przedłużenia jest liczona wprost (`tEnd`), a nie
+  z liczby punktów.
+- `world.js` buildCrossing: oznakowanie poziome jezdni przejazdu (siatka z materiałem roadMark, jak na pomostach):
+  - dwukierunkowa: oś ciągła; od 4 pasów podwójna ciągła i przerywane między pasami;
+  - jednokierunkowa: przerywane między pasami;
+  - bez chodnika: linie krawędziowe;
+  - przerwa w pasie torów (strefa ±1,5 m).
+  Liczba pasów, jednokierunkowość, nawierzchnia i klasa pochodzą z ulicy z mapy (envCrossingPath: lanes, one, surf, ti).
+  Bez linii: drogi gruntowe i serwisowe, jezdnia węższa niż 4,5 m.
+
+## 0.58.26 – 22 października 2026
+
+Tory przy mostach z mapy na wysokości pomostu.
+
+- `real-env.js` envOnRailBridge (nowe): punkt do 1,5 m od odcinka toru z mapy oznaczonego jako most (bit 2),
+  biegnącego w tym samym kierunku (|cos| ≥ 0,9; tor przechodzący pod mostem w poprzek się nie liczy). Odcinki
+  w siatce 8 m, budowanej raz na trasę.
+- envRowMeasured: punkt toru bez mostu leżący na moście z mapy, ponad 1,5 m poniżej naszej linii, dostaje wysokość
+  naszej linii (pomostu). Pomiar NMT w tym miejscu to ulica pod przęsłem.
+- envRowY: odcinek zaczynający się albo kończący na moście z mapy nie jest obniżany jako „tor ukośny pod naszym
+  mostem”.
+- Toruń Główny, wiadukt nad ulicą (530–563 m): tory dochodzące do pomostów innych torów zjeżdżały w ostatnim punkcie
+  ok. 4 m w dół, do jezdni pod mostem (pomost urwany w powietrzu, tor falował). Teraz leżą na wysokości pomostu
+  (odchyłka do 0,6 m), z nasypem do terenu.
+
+## 0.58.25 – 22 października 2026
+
+Pełne podpory estakad.
+
+- `world.js` buildViaduct, `colLayout`: dawniej słup na ulicy lub torze pod pomostem był pomijany pojedynczo i
+  zostawał jeden słup z oczepem na całą szerokość (estakada linii średnicowej nad ulicami). Teraz podpora ma zawsze
+  komplet słupów i nie stoi na ulicy:
+  - najpierw zwykły układ: słupy co najwyżej 6 m, skrajne 1,4 m od krawędzi pomostu;
+  - gdy któryś słup wypada na ulicę lub tor niżej – układ przesunięty w poprzek: skrajne słupy w wolnym miejscu do
+    2,5 m od krawędziowych, pośrednie zachłannie co najwyżej 7 m;
+  - gdy i to się nie da – cała podpora przesuwana wzdłuż mostu do 8 m (dawniej 6 m, z kontrolą tylko dwóch miejsc);
+  - bez miejsca na komplet słupów – podpora pominięta.
+  Oczep sięga tylko między skrajne słupy.
+
+## 0.58.24 – 22 października 2026
+
+Wyposażenie stacji podziemnych pod stropem.
+
+- `world.js` stacja podziemna (z gry):
+  - Schody: górny stopień i ściany biegu kończą się 0,3 m pod najniższym stropem na długości peronu (envTunnelH).
+    Dawniej miały stałe 7 m nad główką szyny, a strop hali Centralnej ma 6–6,7 m. Ściany wystawały jako dwie belki
+    na jezdnię Al. Jerozolimskich obok pawilonu.
+  - Kolumny w osi peronu sięgają do stropu (dawniej stałe 6,3 m nad peronem). Ich wierzchy wystawały jako jasne
+    klocki na jezdni i trawniku nad stacją.
+  - Światła hali wiszą 0,3 m pod stropem (dawniej 6,4 m, nad stropem), więc nie oświetlają już tych klocków.
+  - Pawilon wejściowy stoi na terenie z podniesieniem nad stropem (terrainY), a nie na samym pomiarze.
+- `real-env.js` peron z mapy w tunelu (Śródmieście): wysokość schodów liczona od wierzchu peronu – górny stopień
+  i ściany 0,3 m pod stropem (dawniej ok. 0,4 m ponad nim). Pawilon na terrainY.
+
+## 0.58.23 – 22 października 2026
+
+Ulice nad tunelem i szczeliny w stropie.
+
+- `real-env.js` envRoadMaskBuild: w obrębie tunelu naszej linii (wzdłuż toru między portalami) jezdnia leży nie niżej
+  niż 0,5 m nad stropem. Poza obrysem obudowy obniża się w bok o 8%, aż do poziomu z pomiaru. Dawniej ulice leżały na
+  poziomie z pomiaru: za wschodnim portalem tunelu średnicowego (ok. 3400–3450 m) do 3 m poniżej stropu, więc strop
+  i lampy tunelu przebijały jezdnię. Kontrola wzdłuż całego tunelu (co 4 m, w całej szerokości): z 1924 punktów
+  poniżej stropu zostało 0. Teren pod ulicą idzie za jezdnią (demTerrainY).
+- buildEnvTunnel: pętle pierścieni obudowy, ścian i pochylni kończą się zawsze pierścieniem na końcu kawałka świata.
+  Gdy początek tunelu nie wypadał co 4 m od granicy kawałka, między kawałkami zostawała przerwa do 4 m w stropie (np.
+  3398–3400 m) i prześwitywało przez nią niebo.
+
+## 0.58.22 – 22 października 2026
+
+Filary mostu nad rzeką do dna.
+
+- `world.js` buildBridge (trasy z mapy): wysokość filaru liczona od spodu pomostu do najniższego punktu terenu z pomiaru
+  pod jego obrysem (pod wodą to dno koryta) + 0,6 m, zamiast stałych 11 m. Na moście średnicowym nad Wisłą (szyna
+  ok. 20 m nad wodą) filary kończyły się kilka metrów nad lustrem wody. Trasy bez mapy bez zmian.
+
+## 0.58.21 – 22 października 2026
+
+Filary poza szerokimi ulicami.
+
+- `real-env.js` roadBelowDeck: siatka odcinków ulic przyjmuje pół szerokości rysowanej jezdni (szerokość z BDOT z
+  `rInfo`, nie mniej niż typowa dla klasy) plus chodniki (2,6 m, jak maska dróg; bez chodników 0,4 m). Dawniej była
+  tylko szerokość według klasy drogi. Przy ulicy 12 m pod wiaduktem przy Warszawie Wschodniej (km 1,13) filary
+  stawały 4–6 m od osi jezdni, na pasach ruchu. Dotyczy filarów i przyczółków wiaduktów naszej linii (world.js),
+  wiaduktów i mostów z mapy (pierFree) oraz kontroli envAudit.
+
+## 0.58.20 – 22 października 2026
+
+Budynek nad portalem tunelu.
+
+- `real-env.js` envClipAtPortal (buildEnvBuildings): obrys budynku leżący częściowo nad obudową tunelu, a częściowo
+  ponad 0,5 m przed portalem (w szerokości tunelu ±2 m), jest przycinany do 0,5 m przed ścianą czołową. Pawilon nad
+  wschodnim wylotem tunelu średnicowego (Powiśle) wisiał 5,5 m nad wykopem i torami. Gdy po przycięciu zostaje mniej
+  niż 20 m², budynek jest pomijany.
+
+## 0.58.19 – 22 października 2026
+
+Tory i peron przed portalem tunelu.
+
+- `real-env.js` envJoinPortalGaps (envIndex, jednorazowo): w danych trasy tor z mapy przed portalem kończył się 5–8 m
+  przed początkiem swojego odcinka w tunelu (Powiśle: 3363 → 3371 m) i tor się urywał. Koniec toru do 25 m od portalu
+  łączony z początkiem innego toru 1,5–14 m dalej, gdy oba i łącznik leżą w jednej linii (cos ≥ 0,98), wysokości różnią
+  się najwyżej o 1 m, a przy końcach nie ma rozjazdu. Łącznik jest dopisywany do toru spoza tunelu (z wysokością z env.th).
+- buildEnvPlatforms: peron z mapy kończący się do 12 m przed portalem nie dostaje pochylni. Dwa krótkie boki końca peronu
+  dawały dwie pochylnie schodzące klinami między torami w wylot tunelu.
+
+## 0.58.18 – 22 października 2026
+
+Tunel równej wysokości.
+
+- `real-env.js` envTunnelH: poza halami stacji podziemnych stała wysokość stropu 6 m nad główką szyny (`TUN_H`) –
+  dawniej zależała od przykrycia terenem z pomiaru (6–6,8 m, np. 6,1 m przy km 5,5 linii średnicowej) i strop falował.
+  6 m mieści pociąg z odbierakiem i sieć (przewód jezdny 5,6 m jak na szlaku, lina nośna tuż pod stropem); teren nad
+  płytszym przykryciem podnosi jak dotąd demTerrainY. Hala stacji: od 6 m do 7,6 m według przykrycia (udział hali).
+
 ## 0.58.17 – 21 października 2026
 
 Estakady z kilkoma torami.

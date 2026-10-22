@@ -4,6 +4,111 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.28',
+			date: '22 października 2026',
+			groups: [
+				['Mosty', [
+					'Ulica pod mostem kolejowym z mapy bez klinów ziemi – teren i jezdnia nie wspinają się już pod przęsło (Toruń Główny).',
+				]],
+			],
+		},
+		{
+			version: '0.58.27',
+			date: '22 października 2026',
+			groups: [
+				['Mosty', [
+					'Wiadukty drogowe nad wykopem łączą się z ulicą po obu stronach – bez pasa trawy między końcem pomostu a jezdnią.',
+				]],
+				['Przejazdy', [
+					'Jezdnia na przejeździe kolejowym ma oznakowanie jak ulica: oś (przy przejeździe ciągła), linie między pasami i krawędziowe – z przerwą na torach.',
+				]],
+			],
+		},
+		{
+			version: '0.58.26',
+			date: '22 października 2026',
+			groups: [
+				['Mosty', [
+					'Tory dochodzące do mostów kolejowych z mapy leżą na wysokości pomostu – nie zjeżdżają już do ulicy pod mostem (Toruń Główny).',
+				]],
+			],
+		},
+		{
+			version: '0.58.25',
+			date: '22 października 2026',
+			groups: [
+				['Mosty', [
+					'Podpory estakad zawsze z kompletem słupów: przesuwane w poprzek albo wzdłuż estakady tak, by żaden nie stał na ulicy – bez pojedynczych słupów z oczepem na całą szerokość.',
+				]],
+			],
+		},
+		{
+			version: '0.58.24',
+			date: '22 października 2026',
+			groups: [
+				['Tunele', [
+					'Schody z peronów podziemnych, kolumny i lampy hali mieszczą się pod stropem – nie wystają już na ulicę i trawnik nad stacją (Warszawa Centralna, Śródmieście).',
+					'Pawilony wejściowe stoją na poziomie terenu nad tunelem.',
+				]],
+			],
+		},
+		{
+			version: '0.58.23',
+			date: '22 października 2026',
+			groups: [
+				['Tunele', [
+					'Ulice nad płytkim tunelem leżą ponad jego stropem (z łagodnym podjazdem) – lampy i strop tunelu nie przebijają już jezdni.',
+					'Strop tunelu bez szczelin na granicach kawałków świata (prześwitywało przez nie niebo).',
+				]],
+			],
+		},
+		{
+			version: '0.58.22',
+			date: '22 października 2026',
+			groups: [
+				['Mosty', [
+					'Filary wysokich mostów kolejowych nad rzeką (np. most średnicowy na Wiśle) sięgają dna i brzegu – nie wiszą już nad wodą.',
+				]],
+			],
+		},
+		{
+			version: '0.58.21',
+			date: '22 października 2026',
+			groups: [
+				['Mosty', [
+					'Filary wiaduktów i estakad nie stają na szerokich ulicach – brana jest prawdziwa szerokość jezdni z chodnikami, a nie typowa dla klasy drogi.',
+				]],
+			],
+		},
+		{
+			version: '0.58.20',
+			date: '22 października 2026',
+			groups: [
+				['Tunele', [
+					'Budynek nad portalem tunelu stoi na jego stropie – nie wisi już kilka metrów nad wykopem i torami przed wylotem (Powiśle).',
+				]],
+			],
+		},
+		{
+			version: '0.58.19',
+			date: '22 października 2026',
+			groups: [
+				['Tunele', [
+					'Przed wjazdem do tunelu tory z mapy nie urywają się już kilka metrów przed portalem (np. Powiśle przed tunelem średnicowym).',
+					'Peron kończący się tuż przed tunelem nie ma pochylni wchodzącej klinami w wylot.',
+				]],
+			],
+		},
+		{
+			version: '0.58.18',
+			date: '22 października 2026',
+			groups: [
+				['Tunele', [
+					'Tunel kolejowy (np. linia średnicowa w Warszawie) ma poza stacjami stałą wysokość 6 m nad szyną – strop nie faluje, mieści pociąg i sieć trakcyjną.',
+				]],
+			],
+		},
+		{
 			version: '0.58.17',
 			date: '21 października 2026',
 			groups: [

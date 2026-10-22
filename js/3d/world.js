@@ -2075,12 +2075,15 @@ import { BundleGroup } from 'three/webgpu';
 							const near = (z0, st2) => { const k = (z - z0) / st2; return Math.abs(k - Math.round(k)) * st2 < 2.6; };
 							if (near(-len / 2 + 18, big ? 26 : 40) || near(-len / 2 + 19.5, big ? 26 : 40) || near(-len / 2 + 40, 70)) continue;
 							const x = P.c + (P.island ? 0 : P.sgn * 0.6);
-							g.add(box(0.55, 6.3, 0.55, colM, x, 0.76 + 3.15, z));
+							// do stropu hali (envTunnelH – wg przykrycia, 6–7,6 m); dawniej stałe 6,3 m nad peronem – przy niższym stropie
+							// wierzch kolumny wystawał na ulicę nad stacją (Warszawa Centralna)
+							const hc = (this.env && this.env.dem ? Math.min(7.06, this.envTunnelH(mid - z)) : 7.06) - 0.76;
+							g.add(box(0.55, hc, 0.55, colM, x, 0.76 + hc / 2, z));
 						}
 					}
 					for (let z = -len / 2 + 10; z < len / 2; z += 20) {
 						const o = new T.Object3D();
-						o.position.set(P.c, 6.4, z);
+						o.position.set(P.c, this.env && this.env.dem ? Math.min(6.4, this.envTunnelH(mid - z) - 0.3) : 6.4, z); // pod stropem
 						o.userData.always = true;
 						o.userData.power = 1.1;
 						o.userData.drop = 0.3;
@@ -2166,7 +2169,13 @@ import { BundleGroup } from 'three/webgpu';
 			   schodów */
 			let underExit = null;
 			if (under) {
-				const P = P0, steps = 36, rise = 6.2 / steps, run = 0.3, w = 2.6; // do stropu hali (7 m nad główką szyny)
+				/* do stropu hali: górny stopień i ściany 0,3 m pod stropem (envTunnelH – najniższy na długości schodów); dawniej
+				   stałe 7 m nad główką szyny, a strop hali bywa niższy (6–7,6 m wg przykrycia) – ściany i stopnie wystawały ponad
+				   strop na ulicę nad stacją (Warszawa Centralna) */
+				const P = P0, steps = 36, run = 0.3, w = 2.6;
+				let hTop = 7.0;
+				if (this.env && this.env.dem) for (let o = -len / 2; o <= len / 2; o += 4) hTop = Math.min(hTop, this.envTunnelH(mid - o) - 0.3);
+				const rise = (hTop - 0.76) / steps;
 				const sx = P.island ? P.c : P.sgn * (P.edge + P.width - w / 2 - 0.3);
 				const stepM = matS('#a9a59c', { roughness: 0.85 }), railM = mat('#6d747c');
 				for (const z0 of stairsOn ? [-len * 0.25, len * 0.25] : [-len / 2 + 2, len / 2 - 2]) {
@@ -2178,12 +2187,12 @@ import { BundleGroup } from 'three/webgpu';
 					}
 					const L = steps * run, zc = z0 + (dir * L) / 2;
 					for (const e of stairsOn ? [-1, 1] : []) {
-						g.add(box(0.12, 6.24, L, mat('#cfcac0'), sx + e * (w / 2 + 0.06), 0.76 + 3.12, zc)); // ściany biegu (do stropu)
-						g.add(box(0.06, 0.06, L + 0.4, railM, sx + e * (w / 2 - 0.08), 0.76 + 2.6 + 0.95, zc)); // poręcz (umownie wzdłuż)
+						g.add(box(0.12, hTop - 0.76, L, mat('#cfcac0'), sx + e * (w / 2 + 0.06), (0.76 + hTop) / 2, zc)); // ściany biegu (do stropu)
+						g.add(box(0.06, 0.06, L + 0.4, railM, sx + e * (w / 2 - 0.08), (0.76 + hTop) / 2 + 0.95, zc)); // poręcz (umownie wzdłuż)
 					}
 					if (!underExit && stairsOn) underExit = { x: sx, z: z0 - dir * 0.8 };
 					// pawilon wejściowy na powierzchni nad górnym końcem schodów
-					const sTop = mid - (z0 + dir * L), gy = this.demGround ? this.demGround(sTop, sx) : null;
+					const sTop = mid - (z0 + dir * L), gy = this.demGround ? this.terrainY(sTop, sx) : null; // (z podniesieniem nad stropem)
 					if (gy !== null && Number.isFinite(gy)) {
 						const pg = new T.Group();
 						this.place(pg, sTop, sx);
@@ -3756,7 +3765,48 @@ import { BundleGroup } from 'three/webgpu';
 					const L = Math.hypot(s2 - s1, d2 - d1) || 1, ns = -(d2 - d1) / L, nd = (s2 - s1) / L;
 					const atO = (o, dy) => { const ss = s + ns * o, dd = d + nd * o; R.sidePoint(this.route, ss, dd, tp); return [tp.x, this.roadY(ss, dd) + dy, tp.z]; };
 					const inZone = u >= path.zone[0] - 1 && u <= path.zone[1] + 1, cy = inZone ? 0.01 : CURB;
-					rows.push({ road: [atO(-half, 0), atO(half, 0)], walk: path.sw ? [[atO(-half - SW, cy), atO(-half, cy), atO(-half, 0)], [atO(half, 0), atO(half, cy), atO(half + SW, cy)]] : null });
+					rows.push({ u, atO, road: [atO(-half, 0), atO(half, 0)], walk: path.sw ? [[atO(-half - SW, cy), atO(-half, cy), atO(-half, 0)], [atO(half, 0), atO(half, cy), atO(half + SW, cy)]] : null });
+				}
+				/* oznakowanie poziome jezdni przejazdu (jak na ulicach i pomostach – deckDress): przy przejeździe oś ciągła
+				   (dwukierunkowa; od 4 pasów podwójna ciągła i przerywane między pasami), jednokierunkowa – przerywane między
+				   pasami, linie krawędziowe bez chodnika; przerwa w pasie torów (path.zone ± 1,5 m). Dawniej jezdnia
+				   przejazdu bez linii, a ulica z mapy obok z pasami */
+				const MKM = World.envM && World.envM.roadMark;
+				if (MKM && !path.surf && path.ti <= 6 && 2 * half >= 4.5) {
+					const mp = [], mc = [], WC = new T.Color('#e9e7e0');
+					const cw = 2 * half - 0.6, lanes = Math.max(1, Math.min(path.lanes || 1, Math.floor(cw / 2.6)));
+					const quad = (r1, r2, o0, o1) => {
+						const a = r1.atO(o0, 0.02), b = r1.atO(o1, 0.02), c = r2.atO(o1, 0.02), d = r2.atO(o0, 0.02);
+						// trójkąty przodem do góry (materiał jednostronny, kierunek ulicy dowolny)
+						for (const [p, q, w2] of [[a, b, c], [a, c, d]]) {
+							const up = (q[2] - p[2]) * (w2[0] - p[0]) - (q[0] - p[0]) * (w2[2] - p[2]) > 0;
+							for (const v of up ? [p, q, w2] : [p, w2, q]) { mp.push(...v); mc.push(WC.r, WC.g, WC.b); }
+						}
+					};
+					const offs = []; // [odsunięcie, przerywana]
+					if (!path.one) {
+						if (lanes >= 4) offs.push([-0.12, false], [0.12, false], [-cw / 4, true], [cw / 4, true]);
+						else if (lanes >= 2) offs.push([0, false]);
+					} else for (let l = 1; l < lanes; l++) offs.push([-cw / 2 + (cw * l) / lanes, true]);
+					if (!path.sw) offs.push([-half + 0.55, false], [half - 0.55, false]);
+					rows.forEach((r2, j) => {
+						const r1 = rows[j - 1];
+						if (!r2 || !r1 || (r2.u > path.zone[0] - 1.5 && r1.u < path.zone[1] + 1.5)) return;
+						for (const [o, dashed] of offs) {
+							// przerywana 3 m / 3 m (wiersze co 2 m: co trzeci odcinek przerwy)
+							if (dashed && Math.floor(r1.u / 2) % 3 === 2) continue;
+							quad(r1, r2, o - 0.06, o + 0.06);
+						}
+					});
+					if (mp.length) {
+						const mg = new T.BufferGeometry();
+						mg.setAttribute('position', new T.Float32BufferAttribute(mp, 3));
+						mg.setAttribute('color', new T.Float32BufferAttribute(mc, 3));
+						mg.computeVertexNormals();
+						const mk = new T.Mesh(mg, MKM);
+						mk.receiveShadow = true;
+						group.add(mk);
+					}
 				}
 				rows.forEach((r2, j) => {
 					const r1 = rows[j - 1];
@@ -4007,46 +4057,51 @@ import { BundleGroup } from 'three/webgpu';
 					g.add(wing);
 				}
 			}
-			// filary pośrednie (poza jezdnią pod środkiem); trasa rzeczywista: nie na drodze pod pomostem ani na torze innej linii
-			// pod spodem (ponad 3 m niżej) – przesunięte wzdłuż mostu do 6 m, inaczej pominięte (dawniej stawały na ulicach i torach)
-			const pierBlocked = (zz) => {
-				if (!this.env) return false;
-				const s = mid - zz;
-				for (const sx of [-1, 1]) {
-					const d = cx + sx * (wide / 2 - 1.6);
-					for (let o = -1.5; o <= 1.5; o += 0.75) {
-						if (this.roadBelowDeck && this.roadBelowDeck(s + o, d, h0, 0.5)) return true;
-						if (this.envTracksAt && this.envTracksAt(s + o).some((t) => Math.abs(t.d - d) < 2.4 && this.envRowY(t.i, t.k, s + o, t.d) < h0 - 3)) return true;
+			/* filary pośrednie: podpora w poprzek całego pomostu – słupy co najwyżej 6 m (skrajne 1,4 m od krawędzi), oczep pod
+			   pomostem. Trasa rzeczywista: żaden słup nie na ulicy pod pomostem ani na torze innej linii niżej (ponad 3 m) –
+			   słupy przesuwane w poprzek (skrajne do 2,5 m od miejsca, odstępy do 7 m), a gdy się nie da – cała podpora wzdłuż
+			   mostu do 8 m; bez miejsca na komplet słupów podpora pominięta. Dawniej pomijane były pojedyncze słupy i zostawał
+			   jeden słup z oczepem na całą szerokość (estakada linii średnicowej nad ulicami) */
+			const colLayout = (z) => {
+				const [l, r] = extAt(z), s = mid - z;
+				const nC = Math.max(2, Math.ceil((l + r - 2.8) / 6) + 1), xs = [];
+				for (let c = 0; c < nC; c++) xs.push(-l + 1.4 + ((l + r - 2.8) * c) / (nC - 1));
+				if (!this.env) return xs;
+				const colFree = (x) => {
+					for (let o = -0.75; o <= 0.75; o += 0.75) for (const dx of [-0.6, 0, 0.6]) {
+						if (this.roadBelowDeck && this.roadBelowDeck(s + o, x + dx, h0, 0.5)) return false;
+						if (this.envTracksAt && this.envTracksAt(s + o).some((t) => Math.abs(t.d - (x + dx)) < 2.4 && this.envRowY(t.i, t.k, s + o, t.d) < h0 - 3)) return false;
 					}
+					return true;
+				};
+				if (xs.every(colFree)) return xs;
+				// układ przesunięty: skrajne słupy w wolnym miejscu do 2,5 m od krawędziowych, pośrednie zachłannie co ≤ 7 m
+				const x0 = -l + 1.4, x1 = r - 1.4, free = [];
+				for (let x = x0 - 2.5; x <= x1 + 2.5 + 1e-6; x += 0.5) if (x >= -l + 0.6 && x <= r - 0.6 && colFree(x)) free.push(x);
+				const first = free.find((x) => x <= x0 + 2.5), last = [...free].reverse().find((x) => x >= x1 - 2.5);
+				if (first === undefined || last === undefined || last - first < 1) return null;
+				const out = [first];
+				while (last - out[out.length - 1] > 7) {
+					const cur = out[out.length - 1], nx = [...free].reverse().find((x) => x > cur + 1.5 && x <= cur + 7);
+					if (nx === undefined) return null;
+					out.push(nx);
 				}
-				return false;
+				out.push(last);
+				return out;
 			};
 			if (len > 26) {
 				// przęsła co 10 m, na długich estakadach (ponad 120 m) co 20 m
 				for (let z0 = -len / 2 + 9; z0 < len / 2 - 8; z0 += len > 120 ? 20 : 10) {
-					let z = z0;
-					if (Math.abs(z) < 7) continue;
-					if (pierBlocked(z)) {
-						let nz = null;
-						for (let o = 1; o <= 6 && nz === null; o++) for (const sg of [1, -1]) if (nz === null && Math.abs(z + sg * o) >= 7 && Math.abs(z + sg * o) <= len / 2 - 3 && !pierBlocked(z + sg * o)) nz = z + sg * o;
-						if (nz === null) continue;
-						z = nz;
+					if (Math.abs(z0) < 7) continue;
+					let z = null, cols = null;
+					for (let o = 0; o <= 8 && z === null; o++) for (const sg of o ? [1, -1] : [1]) {
+						const zz = z0 + sg * o;
+						if (z !== null || Math.abs(zz) < 7 || Math.abs(zz) > len / 2 - 3) continue;
+						const c = colLayout(zz);
+						if (c) { z = zz; cols = c; }
 					}
-					/* podpora w poprzek całego pomostu: słupy co najwyżej 6 m (skrajne 1,4 m od krawędzi) – każdy nie na ulicy
-					   ani torze niżej (pominięty), oczep pod pomostem nad słupami */
-					const [l, r] = extAt(z), s = mid - z;
-					const nC = Math.max(2, Math.ceil((l + r - 2.8) / 6) + 1), xs = [];
-					for (let c = 0; c < nC; c++) xs.push(-l + 1.4 + ((l + r - 2.8) * c) / (nC - 1));
-					const colFree = (x) => {
-						if (!this.env) return true;
-						for (let o = -0.75; o <= 0.75; o += 0.75) for (const dx of [-0.6, 0, 0.6]) {
-							if (this.roadBelowDeck && this.roadBelowDeck(s + o, x + dx, h0, 0.5)) return false;
-							if (this.envTracksAt && this.envTracksAt(s + o).some((t) => Math.abs(t.d - (x + dx)) < 2.4 && this.envRowY(t.i, t.k, s + o, t.d) < h0 - 3)) return false;
-						}
-						return true;
-					};
-					const cols = xs.filter(colFree);
-					if (!cols.length) continue;
+					if (z === null) continue;
+					const s = mid - z;
 					for (const x of cols) {
 						const hh = Math.max(1, -2.3 - (this.terrainY(s, x) - h0));
 						const p = new T.Mesh(GEO.cyl, conc);
@@ -4119,7 +4174,16 @@ import { BundleGroup } from 'three/webgpu';
 						z = nz;
 					}
 				}
-				g.add(box(pw, 11, wide - 0.4, stone, cx, -6.4, z).rotateY(0));
+				/* trasa rzeczywista: filar do dna (teren z pomiaru pod obrysem, pod wodą – dno koryta) – dawniej stała wysokość
+				   11 m i na wysokim moście (Wisła, linia średnicowa) filary wisiały nad wodą */
+				let hp = 11;
+				if (this.env && this.terrainY) {
+					const s = mid - z, h = R.heightAt(this.route, s);
+					let bot = Infinity;
+					for (const o of [-pw / 2, 0, pw / 2]) for (const dd of [-wide / 2 + 0.2, 0, wide / 2 - 0.2]) bot = Math.min(bot, this.terrainY(s + o, cx + dd));
+					if (Number.isFinite(bot)) hp = Math.max(2, h - 0.9 - bot + 0.6);
+				}
+				g.add(box(pw, hp, wide - 0.4, stone, cx, -0.9 - hp / 2, z));
 			}
 			g.add(box(wide, 0.6, len, mat('#4c5257'), cx, -0.75, 0));
 			const panels = 6;
