@@ -4121,6 +4121,8 @@ import { BundleGroup } from 'three/webgpu';
 					}
 					if (z === null) continue;
 					const s = mid - z;
+					// (kontrola tras – audit.js: miejsca słupów, wysokość spodu pomostu)
+					if (this.auditSink) for (const x of cols) this.auditSink.push({ kind: 'viaduct-col', s, d: x, r: 0.55, top: h0 - 2.3, bridge: b });
 					for (const x of cols) {
 						const hh = Math.max(1, -2.3 - (this.terrainY(s, x) - h0));
 						const p = new T.Mesh(GEO.cyl, conc);
@@ -4203,6 +4205,7 @@ import { BundleGroup } from 'three/webgpu';
 					if (Number.isFinite(bot)) hp = Math.max(2, h - 0.9 - bot + 0.6);
 				}
 				g.add(box(pw, hp, wide - 0.4, stone, cx, -0.9 - hp / 2, z));
+				if (this.auditSink) this.auditSink.push({ kind: 'bridge-pier', s: mid - z, d: cx, r: pw / 2, w: wide - 0.4, top: R.heightAt(this.route, mid - z) - 0.9, bridge: b });
 			}
 			g.add(box(wide, 0.6, len, mat('#4c5257'), cx, -0.75, 0));
 			const panels = 6;

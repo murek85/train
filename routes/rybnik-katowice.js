@@ -502,4 +502,5 @@
 "pos":45664,
 "lvl":"info",
 "m":"„Katowice”: brak wskaźnika W4 w danych – miejsce zatrzymania oszacowane (środek peronu).",
-"fix":"Inne miejsce: \"stations\": { \"Katowice\": { \"pos\": 45664 } } (czoło pociągu)."}]});
+"fix":"Inne miejsce: \"stations\": { \"Katowice\": { \"pos\": 45664 } } (czoło pociągu)."}],
+"fixes":{"crossings":{"add":[41345]}}});

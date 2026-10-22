@@ -4587,6 +4587,12 @@
 				log(`Horyzont: nie udało się (${e.message}) – trasa z pagórkami w tle.`);
 			}
 		}
+		/* poprawki danych otoczenia (routes.js cleanEnv – te same co w grze przy starych plikach): „wiadukty kolejowe”
+		   biegnące obok linii → tory (bit 64), przerwy w torach przy portalach tunelu */
+		{
+			const RT = (typeof globalThis !== 'undefined' && globalThis.TrainRoutes) || (isNode ? require('./routes.js') : null);
+			if (RT && RT.cleanEnv) RT.cleanEnv(def);
+		}
 		log(`Gotowe: ${def.title}, ${lengthKm.toFixed(1)} km, ${route.length} stacji, ${signals.length} semaforów, ${bridges.length} mostów/wiaduktów.`);
 		return def;
 	}

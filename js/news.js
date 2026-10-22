@@ -4,6 +4,44 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.45',
+			date: '22 października 2026',
+			groups: [
+				['Generator tras', [
+					'Generator od razu łączy przerwy w torach przy portalach tuneli i zamienia „wiadukty kolejowe” biegnące obok linii na zwykłe tory – nowe trasy nie potrzebują tych poprawek w grze.',
+				]],
+			],
+		},
+		{
+			version: '0.58.44',
+			date: '22 października 2026',
+			groups: [
+				['Trasy', [
+					'Brakujące przejazdy kolejowe: Toruń – Chełmża (km 19,8), Rybnik – Katowice (km 41,3), Kraków – Zakopane (km 26,0, 98,7, 104,1).',
+					'Tory przechodzące ukośnie pod wiaduktem nie wskakują już na pomost (Zabrze – Gliwice, Rybnik – Katowice).',
+				]],
+			],
+		},
+		{
+			version: '0.58.43',
+			date: '22 października 2026',
+			groups: [
+				['Trasy', [
+					'Przy uwagach generatora i w raporcie kontroli tras linki „Mapa”, „Satelita” i „Widok ulicy” – prosto do miejsca na trasie (widok ulicy skierowany wzdłuż toru).',
+				]],
+			],
+		},
+		{
+			version: '0.58.42',
+			date: '22 października 2026',
+			groups: [
+				['Trasy', [
+					'Automatyczna kontrola tras: wszystkie trasy z mapy sprawdzane jednym adresem (?audit) – filary na jezdniach i torach, ulice przerwane przy torze, skoki wysokości torów, tunele, perony na torach, budynki na torowisku – z kilometrażem i podpowiedzią poprawki.',
+					'Te same uwagi w swobodnej kamerze (zakładka uwag generatora) – przycisk „Pokaż” przenosi na miejsce.',
+				]],
+			],
+		},
+		{
 			version: '0.58.41',
 			date: '22 października 2026',
 			groups: [

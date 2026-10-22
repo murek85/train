@@ -557,6 +557,9 @@
 			double: def.double !== false, // drugi tor po lewej (pociągi z przeciwka – tylko wygląd)
 			// horyzont z prawdziwego terenu (js/horizon-data.js): w trasie (Generator) albo osobny plik routes/horizon/<id>.js
 			horizon: def.horizon || (typeof globalThis !== 'undefined' && globalThis.TrainHorizons && globalThis.TrainHorizons[def.id]) || null,
+			/* dopasowanie do mapy (gra x, z → szerokość i długość geograficzna, js/horizon-data.js toLatLon): z Generatora
+			   albo z pliku horyzontu (tools/horizon.js --geo) – linki do mapy i widoku ulicy przy uwagach */
+			geo: def.geo || (typeof globalThis !== 'undefined' && globalThis.TrainHorizons && globalThis.TrainHorizons[def.id] && globalThis.TrainHorizons[def.id].geo) || null,
 			length: bufferPos + 200,
 		};
 		buildAlignment(route);
@@ -713,5 +716,123 @@
 		return route.limits.find((l) => l.pos > x) || null;
 	}
 
-	return { STOCK, makeConsist, normConfig, configKey, consistLimit, legacyConfig, FREIGHT_MAX, TRAINS, TRAIN_TYPES, prepare, applyFixes, issueStatus, makeTrain, maxCars, defaultConfig, trainLengthOf, gradeAt, heightAt, limitAt, limitOver, nextLimitChange, curvatureAt, trackPoint, sidePoint, singleSections, singleAt, laneWeight };
+	/* przerwy w torach z mapy przy portalach tunelu: odcinek przed portalem kończy się kilka metrów przed początkiem
+	   odcinka w tunelu (podział drogi z mapy na kawałki pod ziemią i na powierzchni – np. Powiśle przed tunelem
+	   średnicowym: 3363 → 3371 m) – tor urywał się przed wjazdem. Koniec toru (do 25 m od portalu) łączony z początkiem
+	   innego toru 1,5–14 m dalej w tym samym kierunku (oba odcinki i łącznik w linii, wysokości ±1 m); jednorazowo */
+	function envJoinPortalGaps(route) {
+		const env = route.env, T = env.t, TH = env.th;
+		if (!T || env._tJoin || !route.tunnels || !route.tunnels.length) return;
+		Object.defineProperty(env, '_tJoin', { value: true, configurable: true });
+		const portal = (s) => route.tunnels.some((t) => Math.abs(s - t.from) < 25 || Math.abs(s - t.to) < 25);
+		// końce torów: punkt, kierunek na zewnątrz, wysokość
+		const ends = [];
+		T.forEach((row, i) => {
+			const m = (row.length - 1) / 2;
+			if (m < 2) return;
+			for (const first of [true, false]) {
+				const a = first ? 0 : m - 1, b = first ? 1 : m - 2;
+				const s = row[1 + a * 2], d = row[2 + a * 2];
+				if (!portal(s)) continue;
+				const ds = s - row[1 + b * 2], dd = d - row[2 + b * 2], L = Math.hypot(ds, dd) || 1;
+				ends.push({ i, first, s, d, us: ds / L, ud: dd / L, h: TH && TH[i] ? TH[i][a] : -1, used: false });
+			}
+		});
+		// koniec połączony już z innym torem (rozjazd) – bez łącznika
+		const near = (e) => ends.some((o) => o !== e && Math.hypot(o.s - e.s, o.d - e.d) < 1.5);
+		for (const e of ends) {
+			if (e.used || near(e)) continue;
+			let best = null, bd = Infinity;
+			for (const o of ends) {
+				if (o.used || o.i === e.i || near(o)) continue;
+				const vs = o.s - e.s, vd = o.d - e.d, L = Math.hypot(vs, vd);
+				if (L < 1.5 || L > 14) continue;
+				if ((vs * e.us + vd * e.ud) / L < 0.98 || -(vs * o.us + vd * o.ud) / L < 0.98) continue;
+				if (e.h >= 0 && o.h >= 0 && Math.abs(e.h - o.h) > 10) continue;
+				if (L < bd) { bd = L; best = o; }
+			}
+			if (!best) continue;
+			e.used = best.used = true;
+			// łącznik dopisany do toru poza tunelem (bez bitu 16) – w tunelu zostaje jego kawałek
+			const [x, y] = T[e.i][0] & 16 && !(T[best.i][0] & 16) ? [best, e] : [e, best];
+			const row = T[x.i], th = TH && TH[x.i];
+			if (x.first) { row.splice(1, 0, y.s, y.d); if (th) th.unshift(th[0]); }
+			else { row.push(y.s, y.d); if (th) th.push(th[th.length - 1]); }
+		}
+	}
+
+	/* „wiadukt kolejowy” z mapy (env.ro), który nie przecina naszego toru (wszystkie punkty po jednej stronie, ponad 3 m
+	   od osi) albo przecina go i dalej biegnie obok – w danych bywa nim cały tor (Chorzów Batory: 1,5 km toru 5–26 m
+	   od osi za przejściem nad linią).
+	   Rysowany jako pomost nad torami leżał przy ziemi szarą płytą i skakał na 7 m tam, gdzie zbliżał się do torów
+	   (skrajnia). Przeniesiony do torów z mapy (bit 2 – most, 8; wysokości z pomiaru pomostu env.roh jak env.th);
+	   jednorazowo */
+	function envRailBesideToTracks(route) {
+		const env = route.env;
+		if (!env.ro || !env.ro.length || !env.t || env._roMoved) return;
+		Object.defineProperty(env, '_roMoved', { value: true, configurable: true });
+		const keep = [], keepZ = [], keepH = [], hasZ = Array.isArray(env.roz), hasH = Array.isArray(env.roh);
+		// (bit 64 – tor odzyskany z wiaduktu: wysokości z pomiaru powierzchni, w grze nie wyżej niż teren + 1,5 m)
+		const toTrack = (row, h, k0, k1, fl) => {
+			if (k1 - k0 < 1) return;
+			env.t.push([fl | 64].concat(row.slice(1 + k0 * 2, 3 + k1 * 2)));
+			if (env.th) env.th.push(h ? h.slice(k0, k1 + 1) : null);
+		}
+		env.ro.forEach((row, i) => {
+			const n = (row.length - 1) / 2, h = hasH && env.roh[i] && env.roh[i].length === n ? env.roh[i] : null;
+			/* przejście nad osią: zmiana strony z ponad 3 m po jednej na ponad 3 m po drugiej (tor kończący się na osi –
+			   zjazd zwrotnicą do naszej linii – nie przecina jej) */
+			let kc = -1, last = 0, lastK = -1;
+			for (let k = 0; k < n && kc < 0; k++) {
+				const d = row[2 + k * 2];
+				if (Math.abs(d) <= 3) continue;
+				const sg = Math.sign(d);
+				if (last && sg !== last) {
+					// punkt przecięcia: najbliższy osi między ostatnim punktem po jednej stronie a pierwszym po drugiej
+					let bd = Infinity;
+					for (let j = lastK; j <= k; j++) if (Math.abs(row[2 + j * 2]) < bd) { bd = Math.abs(row[2 + j * 2]); kc = j; }
+				}
+				last = sg;
+				lastK = k;
+			}
+			if (kc < 0 && n >= 2) { toTrack(row, h, 0, n - 1, 2 | 8); return; }
+			/* przecina tor, ale dalej biegnie obok niego (odcinek równoległy od 60 m, ponad 3 m od osi): wiadukt tylko do
+			   początku tego odcinka (z zapasem 2 punktów), reszta – tor z mapy (bez bitu mostu) */
+			const par = (k, dir) => {
+				let L = 0;
+				for (let j = k; j + dir >= 0 && j + dir < n; j += dir) {
+					const ds = Math.abs(row[1 + (j + dir) * 2] - row[1 + j * 2]), dd = Math.abs(row[2 + (j + dir) * 2] - row[2 + j * 2]);
+					if (dd > 0.15 * ds + 0.05 || Math.abs(row[2 + j * 2]) < 3) break;
+					L += Math.hypot(ds, dd);
+					if (L >= 60) return true;
+				}
+				return false;
+			}
+			let a = 0, b = n - 1;
+			for (let k = kc; k < n - 1; k++) if (par(k, 1)) { b = Math.min(n - 1, k + 2); break; }
+			for (let k = kc; k > 0; k--) if (par(k, -1)) { a = Math.max(0, k - 2); break; }
+			if (a === 0 && b === n - 1) { keep.push(row); if (hasZ) keepZ.push(env.roz[i]); if (hasH) keepH.push(env.roh[i]); return; }
+			const mid = [row[0]].concat(row.slice(1 + a * 2, 3 + b * 2));
+			keep.push(mid);
+			if (hasZ) keepZ.push(env.roz[i]);
+			if (hasH) keepH.push(h ? h.slice(a, b + 1) : env.roh[i]);
+			toTrack(row, h, 0, a, 8);
+			toTrack(row, h, b, n - 1, 8);
+		});
+		env.ro = keep;
+		if (hasZ) env.roz = keepZ;
+		if (hasH) env.roh = keepH;
+	}
+
+	/* poprawki danych otoczenia z mapy (wspólne: gra przy wczytaniu starych plików – real-env envIndex, generator przed
+	   zapisem – osm-route.js): „wiadukty kolejowe” biegnące obok linii → tory, przerwy w torach przy portalach tunelu;
+	   jednorazowo (znaczniki niezapisywane) */
+	function cleanEnv(def) {
+		if (!def || !def.env) return def;
+		envRailBesideToTracks(def);
+		envJoinPortalGaps(def);
+		return def;
+	}
+
+	return { STOCK, makeConsist, normConfig, configKey, consistLimit, legacyConfig, FREIGHT_MAX, TRAINS, TRAIN_TYPES, prepare, applyFixes, issueStatus, makeTrain, maxCars, defaultConfig, trainLengthOf, gradeAt, heightAt, limitAt, limitOver, nextLimitChange, curvatureAt, trackPoint, sidePoint, singleSections, singleAt, laneWeight, cleanEnv };
 });

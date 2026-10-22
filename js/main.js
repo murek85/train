@@ -1940,10 +1940,32 @@
 	}
 	// uwagi generatora trasy: miejsca do sprawdzenia, co można zrobić (poprawka w sekcji fixes pliku trasy)
 	const ISSUE_KIND = { align: 'przebieg', curve: 'łuk', left: 'tor', service: 'tor', speed: 'prędkość', signals: 'semafory', 'station-skip': 'stacja', stop: 'zatrzymanie', platform: 'peron', bridge: 'most', 'bridge-add': 'most', cross: 'skrzyżowanie', slip: 'rozjazd', audit: 'kontrola obiektów' };
+	/* miejsce na trasie (kilometraż s, odsunięcie d) → linki: mapa (OSM), zdjęcie satelitarne i widok ulicy (Google),
+	   widok skierowany wzdłuż toru; wymaga dopasowania trasy do mapy (route.geo – tools/horizon.js --geo albo Generator) */
+	function geoLinks(route, s, d) {
+		const HD = window.TrainHorizonData;
+		if (!route.geo || !HD) return null;
+		const a = R.sidePoint(route, s, d || 0, {}), b = R.sidePoint(route, s + 5, d || 0, {});
+		const p = HD.toLatLon(route.geo, a.x, a.z), q = HD.toLatLon(route.geo, b.x, b.z);
+		const head = ((Math.atan2((q.lon - p.lon) * Math.cos((p.lat * Math.PI) / 180), q.lat - p.lat) * 180) / Math.PI + 360) % 360;
+		const ll = `${p.lat.toFixed(6)},${p.lon.toFixed(6)}`;
+		return {
+			lat: p.lat, lon: p.lon,
+			map: `https://www.openstreetmap.org/?mlat=${p.lat.toFixed(6)}&mlon=${p.lon.toFixed(6)}#map=18/${p.lat.toFixed(6)}/${p.lon.toFixed(6)}`,
+			sat: `https://www.google.com/maps/@${ll},120m/data=!3m1!1e3`,
+			street: `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${ll}&heading=${Math.round(head)}`,
+		};
+	}
 	function buildIssues(route) {
 		const box = $('free-issues');
-		// uwagi generatora i kontrola obiektów nad torami w grze (te same obliczenia co rysowanie)
-		const audit = renderer.world && renderer.world.envAudit ? renderer.world.envAudit() : [];
+		/* uwagi generatora i kontrola geometrii trasy w grze (audit.js – te same obliczenia co rysowanie: filary, ulice
+		   przerwane przy torze, skoki torów, tunel, perony, budynki; liczona raz na świat trasy) */
+		const W = renderer.world;
+		let audit = [];
+		if (W && W.env) {
+			if (!W.env.auditFull) W.env.auditFull = window.Train3D.auditWorld ? window.Train3D.auditWorld(W) : W.envAudit();
+			audit = W.env.auditFull;
+		}
 		const list = (route.issues || []).concat(audit);
 		const st = (x) => R.issueStatus({ fixes: route.fixes }, x);
 		const open = list.filter((x) => !st(x));
@@ -1954,10 +1976,11 @@
 			const el = document.createElement('div');
 			el.className = 'issue ' + (x.lvl === 'warn' ? 'warn' : 'info') + (s0 ? ' done' : '');
 			const km = (x.pos / 1000).toFixed(2).replace('.', ',');
-			el.innerHTML = `<div class="ih"><span>${x.lvl === 'warn' ? '⚠ ' : ''}${ISSUE_KIND[x.k] || x.k} · km ${km}</span><span>${s0 === 'fixed' ? 'poprawione' : s0 === 'ignored' ? 'pominięte' : esc(x.id)}</span></div><b>${esc(x.m)}</b>${s0 ? '' : `<div class="fx">→ ${esc(x.fix)}</div>`}<div class="ib"><button data-a="show">Pokaż</button><button data-a="copy" title="Kopiuje id, opis i podpowiedź poprawki">Kopiuj</button>${x.osm ? `<a href="https://www.openstreetmap.org/${esc(x.osm)}" target="_blank" rel="noopener" title="Obiekt w OpenStreetMap">OSM</a>` : ''}</div>`;
+			el.innerHTML = `<div class="ih"><span>${x.lvl === 'warn' ? '⚠ ' : ''}${ISSUE_KIND[x.k] || x.k} · km ${km}</span><span>${s0 === 'fixed' ? 'poprawione' : s0 === 'ignored' ? 'pominięte' : esc(x.id)}</span></div><b>${esc(x.m)}</b>${s0 ? '' : `<div class="fx">→ ${esc(x.fix)}</div>`}<div class="ib"><button data-a="show">Pokaż</button><button data-a="copy" title="Kopiuje id, opis i podpowiedź poprawki">Kopiuj</button>${x.osm ? `<a href="https://www.openstreetmap.org/${esc(x.osm)}" target="_blank" rel="noopener" title="Obiekt w OpenStreetMap">OSM</a>` : ''}${(() => { const g = geoLinks(route, x.pos, x.d); return g ? `<a href="${g.map}" target="_blank" rel="noopener" title="Miejsce na mapie (OpenStreetMap)">Mapa</a><a href="${g.sat}" target="_blank" rel="noopener" title="Zdjęcie satelitarne (Google)">Satelita</a><a href="${g.street}" target="_blank" rel="noopener" title="Widok ulicy (Google Street View) – wzdłuż toru">Widok ulicy</a>` : ''; })()}</div>`;
 			el.querySelector('[data-a=show]').addEventListener('click', () => freeGo('issue', x));
 			el.querySelector('[data-a=copy]').addEventListener('click', (e) => {
-				const txt = `${route.id} ${x.id} (km ${km}): ${x.m}\nPoprawka: ${x.fix}${x.osm ? '\nOSM: https://www.openstreetmap.org/' + x.osm : ''}`;
+				const g = geoLinks(route, x.pos, x.d);
+				const txt = `${route.id} ${x.id} (km ${km}): ${x.m}\nPoprawka: ${x.fix}${x.osm ? '\nOSM: https://www.openstreetmap.org/' + x.osm : ''}${g ? '\nMapa: ' + g.map + '\nWidok ulicy: ' + g.street : ''}`;
 				const done = () => { e.target.textContent = 'Skopiowano'; setTimeout(() => { e.target.textContent = 'Kopiuj'; }, 1500); };
 				if (navigator.clipboard) navigator.clipboard.writeText(txt).then(done, () => hud.toast(txt, 'info'));
 				else hud.toast(txt, 'info');
@@ -2799,7 +2822,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.58.41';
+	$('version').textContent = 'wersja 0.58.45';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');
@@ -2916,6 +2939,36 @@
 		if (bootWarm < 2) return 'Kompilacja shaderów karty graficznej…';
 		return 'Gotowe';
 	};
+	/* kontrola tras (adres ?audit – wszystkie trasy z mapy, ?audit=id1,id2 – wybrane): świat bez rysowania, raport
+	   z kilometrażem i podpowiedzią poprawki, kopiowanie jako tekst albo JSON (js/3d/audit.js) */
+	const auditParam = new URLSearchParams(location.search).get('audit');
+	if (auditParam !== null && window.Train3D.auditRoutes) setTimeout(async () => {
+		const want = auditParam ? auditParam.split(',') : null;
+		const list = defs.filter((d) => d.env && (!want || want.includes(d.id))).map((d) => ({ id: d.id, title: d.title || d.id, route: routeFor(d, null, 0) }));
+		const box = document.createElement('div');
+		box.style.cssText = 'position:fixed;inset:0;z-index:2147483647;overflow:auto;background:#101418;color:#e6e6e6;font:13px/1.45 system-ui,sans-serif;padding:16px 20px';
+		box.innerHTML = '<h2 style="margin:0 0 8px">Kontrola tras</h2><div id="audit-status">Przygotowanie…</div>';
+		document.body.appendChild(box);
+		const res = await window.Train3D.auditRoutes(list, (i, n, id) => { $('audit-status').textContent = `Sprawdzanie ${i + 1} z ${n}: ${id}…`; });
+		const routeOf = (id) => list.find((q) => q.id === id).route;
+		const line = (x, q) => { const g = geoLinks(routeOf(x.id), q.pos, q.d); return `  ${q.lvl === 'warn' ? '!' : '·'} km ${(q.pos / 1000).toFixed(3).replace('.', ',')} [${q.code}] ${q.m}\n      → ${q.fix}${g ? `\n      mapa: ${g.map}\n      widok ulicy: ${g.street}` : ''}`; };
+		const head = (x) => `${x.id} (${x.title}): ${x.err ? 'BŁĄD ' + x.err : x.items.filter((q) => q.lvl === 'warn').length + ' do poprawy, ' + x.items.filter((q) => q.lvl !== 'warn').length + ' uwag'}`;
+		const text = res.map((x) => [head(x)].concat(x.items.map((q) => line(x, q))).join('\n')).join('\n\n');
+		const sum = res.reduce((a, x) => a + x.items.filter((q) => q.lvl === 'warn').length, 0);
+		$('audit-status').innerHTML = `Sprawdzono ${res.length} tras – ${sum} miejsc do poprawy. <button id="audit-copy">Kopiuj tekst</button> <button id="audit-json">Kopiuj JSON</button>`;
+		// raport: przy każdym miejscu linki do mapy, zdjęcia satelitarnego i widoku ulicy (gdy trasa ma dopasowanie do mapy)
+		const rep = document.createElement('div');
+		rep.style.cssText = 'margin-top:12px';
+		rep.innerHTML = res.map((x) => `<h3 style="margin:14px 0 4px">${esc(head(x))}</h3>` + x.items.map((q) => {
+			const g = geoLinks(routeOf(x.id), q.pos, q.d);
+			const a = (u, t) => `<a href="${u}" target="_blank" rel="noopener" style="color:#8cc4ff;margin-left:8px">${t}</a>`;
+			return `<div style="margin:2px 0 6px;${q.lvl === 'warn' ? '' : 'opacity:.75'}">${q.lvl === 'warn' ? '⚠' : '·'} km ${(q.pos / 1000).toFixed(3).replace('.', ',')} <code>${esc(q.code)}</code> ${esc(q.m)}${g ? a(g.map, 'Mapa') + a(g.sat, 'Satelita') + a(g.street, 'Widok ulicy') : ''}<div style="opacity:.7;margin-left:18px">→ ${esc(q.fix)}</div></div>`;
+		}).join('')).join('');
+		box.appendChild(rep);
+		$('audit-copy').onclick = () => navigator.clipboard.writeText(text);
+		$('audit-json').onclick = () => navigator.clipboard.writeText(JSON.stringify(res.map((x) => ({ id: x.id, err: x.err, items: x.items.map((q) => Object.assign({}, q, geoLinks(routeOf(x.id), q.pos, q.d) || {})) })), null, 1));
+		window.auditResult = res;
+	}, 1500);
 	if (window.TrainScreens) window.TrainScreens.boot({ version: $('version').textContent, ready: bootReady, status: bootStatus });
 	else { renderer.hold = false; if ($('boot')) $('boot').remove(); }
 })();

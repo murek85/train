@@ -27,6 +27,71 @@ Nowa trasa Czechowice-Dziedzice – Wisła Głębce.
 - `real-route.test.js`: pochylenia do 30‰ na trasach z różnicą wysokości ponad 200 m (dotąd 300 m; nowa trasa – 279 m,
   pozostałe trasy nizinne do 87 m).
 
+## 0.58.45 – 22 października 2026
+
+Poprawki danych z mapy w generatorze.
+
+- `routes.js` cleanEnv(def) – wspólne dla gry i generatora (przeniesione z real-env.js):
+  - envRailBesideToTracks: „wiadukty kolejowe” (env.ro) biegnące obok linii zamieniane na tory z mapy, przecinające
+    linię i dalej biegnące obok – dzielone;
+  - envJoinPortalGaps: przerwy w torach przy portalach tunelu.
+  Tory odzyskane z wiaduktów mają w danych bit 64 (dawniej znacznik tylko w pamięci gry – `_roTracks`). envRowMeasured
+  sprawdza ten bit (wysokość z pomiaru powierzchni nie wyżej niż teren + 1,5 m).
+- `osm-route.js` (generator): cleanEnv przed zwróceniem trasy – nowe pliki mają już poprawione dane. Gra stosuje
+  cleanEnv przy wczytaniu (real-env envIndex), co dla starych plików daje ten sam wynik, a dla nowych nic nie zmienia
+  (jednorazowe znaczniki niezapisywane).
+- `tests/clean-env.test.js`: przerwa przy portalu (łączona, bez łączenia przy rozjeździe), „wiadukt” obok linii i
+  przecinający linię.
+
+## 0.58.44 – 22 października 2026
+
+Poprawki z raportu kontroli tras.
+
+- Przejazdy dopisane w poprawkach tras (`fixes.crossings.add`): Toruń – Chełmża 19774, Rybnik – Katowice 41345,
+  Kraków – Zakopane 26017, 98688, 104059 (119138 odrzucony – wypada na peronie). Kryterium: ulica do klasy 7 przerwana przy torze, w poziomie szyn po
+  obu stronach (`road-gap`), i uwaga generatora `bridge-nmt` „usunięto wiadukt … (droga bez przejazdu w danych)” do
+  60 m. Pozostałe 18 takich miejsc zostaje do sprawdzenia na mapie (raport `?audit`).
+- `real-env.js` envOnRailBridge: tor „w tym samym kierunku” co tor na moście z mapy to |cos| ≥ 0,985 (dawniej 0,9).
+  Tor przechodzący pod wiaduktem pod kątem ok. 18° dostawał wysokość pomostu (skoki 3–6 m: Zabrze – Gliwice km 4,0,
+  Rybnik – Katowice km 44,6).
+- envRowY: pod mostem naszej linii tor z mapy ponad 3 m niżej zachowuje wysokość z pomiaru także przy osi (dawniej do
+  5 m od osi ściągany na poziom naszej linii).
+
+## 0.58.43 – 22 października 2026
+
+Linki do mapy i widoku ulicy przy uwagach.
+
+- `tools/horizon.js --geo`: samo dopasowanie trasy do mapy (stacje z OSM ↔ stacje w grze, `fitGeo`), dopisane do
+  pliku horyzontu `routes/horizon/<id>.js` jako `geo` (z błędem średnim `rms`, m) – bez pobierania kafli terenu.
+  Pełne przeliczenie horyzontu zapisuje `geo` zawsze.
+- `routes.js` prepare: `route.geo` – z trasy (Generator: def.geo) albo z pliku horyzontu.
+- `main.js` geoLinks(route, s, d): punkt trasy przeliczany na szerokość i długość geograficzną (horizon-data.js
+  toLatLon); linki „Mapa” (OpenStreetMap), „Satelita” (Google) i „Widok ulicy” (Google Street View, kierunek wzdłuż
+  toru). Pojawiają się w uwagach swobodnej kamery (także w kopiowanym tekście) i w raporcie `?audit` (HTML z linkami;
+  JSON z lat, lon i adresami).
+
+## 0.58.42 – 22 października 2026
+
+Automatyczna kontrola tras.
+
+- `js/3d/audit.js` (nowy): `Train3D.auditWorld(world)` sprawdza geometrię trasy rzeczywistej na świecie bez rysowania.
+  Uwagi mają postać { id, code, k: 'audit', lvl, pos, d, m, fix }:
+  - wiadukty drogowe i kolejowe z mapy – dotychczasowa kontrola envAudit (nasypy, filary, przęsła, wiszące końce,
+    progi, prześwity);
+  - `col-road` / `col-track` – słupy estakad i filary mostów naszej linii na jezdni (maska dróg albo odcinek ulicy
+    ponad 3 m pod pomostem) albo na torze z mapy. Pozycje zapisywane przy budowie (world.js `auditSink`);
+  - `road-gap` – ulica przerwana przy torze (końce po obu stronach osi, 3–16 m od niej), bez przejazdu, wiaduktu ani
+    tunelu w pobliżu. Do poprawy, gdy ulica do klasy 7 w poziomie szyn po obu stronach (z podpowiedzią poprawki
+    `crossings.add`); drogi dojazdowe i ulice na innym poziomie – uwaga;
+  - `track-jump` – tor z mapy (poza tunelem i mostami z danych) zmienia wysokość o ponad 1 m na 2 m;
+  - `tunnel-surface` – ulica albo teren nad tunelem niżej niż jego strop;
+  - `platform-track` – tor z mapy pod peronem stacji z gry albo obrys peronu z mapy na torze;
+  - `building-track` – budynek na poziomie terenu na torowisku (uwaga).
+- `Train3D.auditRoutes(list)` sprawdza wiele tras po kolei. W `main.js` uruchamia się adresem `?audit` (wszystkie
+  trasy z mapy) albo `?audit=id1,id2`. Raport pokazuje kilometraż i podpowiedź poprawki oraz pozwala skopiować go jako
+  tekst albo JSON. Wszystkie trasy sprawdzają się w ok. 25 s.
+- Swobodna kamera: lista uwag generatora zawiera pełną kontrolę (dawniej tylko envAudit), liczoną raz na świat trasy.
+
 ## 0.58.41 – 22 października 2026
 
 Zmienna pogoda, schnące szyny, ruch na stacjach.

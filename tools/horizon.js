@@ -3,7 +3,9 @@
    Powiązanie z mapą: stacje trasy z OpenStreetMap (współrzędne) ↔ położenia stacji w grze (js/horizon-data.js fitGeo).
    Wysokości: kafle terenu AWS „Terrain Tiles” (format Terrarium, przybliżenie 10 – ok. 100 m na piksel; źródła danych:
    SRTM, GMTED, ETOPO1 i inne – © Mapzen i dostawcy, https://github.com/tilezen/joerd/blob/master/docs/attribution.md).
-   Użycie: node tools/horizon.js [id …] – bez argumentów wszystkie trasy rzeczywiste. */
+   Użycie: node tools/horizon.js [id …] – bez argumentów wszystkie trasy rzeczywiste.
+   --geo – tylko dopasowanie do mapy (geo: gra → szerokość i długość geograficzna – linki do mapy i widoku ulicy przy
+   uwagach w grze), dopisane do istniejącego pliku horyzontu, bez pobierania kafli terenu. */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -76,7 +78,8 @@ async function sampler(b) {
 }
 
 (async () => {
-	const want = process.argv.slice(2);
+	const argv = process.argv.slice(2), geoOnly = argv.includes('--geo');
+	const want = argv.filter((a) => !a.startsWith('--'));
 	const files = fs.readdirSync(path.join(ROOT, 'routes')).filter((f) => f.endsWith('.js'));
 	fs.mkdirSync(path.join(ROOT, 'routes', 'horizon'), { recursive: true });
 	for (const f of files) {
@@ -105,11 +108,21 @@ async function sampler(b) {
 		});
 		geo = HD.fitGeo(pairs);
 		console.log(`  dopasowanie do mapy: ${pairs.length} stacji, błąd średni ${Math.round(geo.rms)} m`);
-		const elevAt = await sampler(HD.bounds(route, geo));
-		const h = HD.compute(route, geo, elevAt);
-		const max = Math.max(...h.anchors.flatMap((a) => a.slice(1))) / 100;
-		console.log(`  profile: ${h.anchors.length}, najwyższy horyzont ${max.toFixed(2)}°`);
-		const out = { id: def.id, step: h.step, anchors: h.anchors };
+		// geo – zapis jak w Generatorze (osm-route.js: def.geo), błąd średni do oceny dokładności linków
+		const geoOut = { lat0: geo.lat0, lon0: geo.lon0, c: +geo.c.toFixed(6), s: +geo.s.toFixed(6), flip: geo.flip, tx: Math.round(geo.tx), ty: Math.round(geo.ty), rms: Math.round(geo.rms) };
+		const file = path.join(ROOT, 'routes', 'horizon', def.id + '.js');
+		let out;
+		if (geoOnly) {
+			if (!fs.existsSync(file)) { console.log('  brak pliku horyzontu – pomijam (najpierw bez --geo)'); continue; }
+			const old = require(file);
+			out = { id: def.id, step: old.step, anchors: old.anchors, geo: geoOut };
+		} else {
+			const elevAt = await sampler(HD.bounds(route, geo));
+			const h = HD.compute(route, geo, elevAt);
+			const max = Math.max(...h.anchors.flatMap((a) => a.slice(1))) / 100;
+			console.log(`  profile: ${h.anchors.length}, najwyższy horyzont ${max.toFixed(2)}°`);
+			out = { id: def.id, step: h.step, anchors: h.anchors, geo: geoOut };
+		}
 		const body = `/* Horyzont trasy ${def.title || def.id} – sylwetka dalekiego terenu (2,5–60 km) co ok. 3 km trasy, 180 kierunków,
    kąty w setnych stopnia. Wygenerowano: ${new Date().toISOString().slice(0, 10)} (node tools/horizon.js).
    Dane: kafle terenu AWS Terrain Tiles (SRTM, GMTED i inne – © Mapzen i dostawcy), stacje – © współtwórcy OpenStreetMap. */

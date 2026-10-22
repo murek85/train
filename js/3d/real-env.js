@@ -298,115 +298,6 @@ import * as THREE from 'three';
 		return World.envM;
 	}
 
-	/* przerwy w torach z mapy przy portalach tunelu: odcinek przed portalem kończy się kilka metrów przed początkiem
-	   odcinka w tunelu (podział drogi z mapy na kawałki pod ziemią i na powierzchni – np. Powiśle przed tunelem
-	   średnicowym: 3363 → 3371 m) – tor urywał się przed wjazdem. Koniec toru (do 25 m od portalu) łączony z początkiem
-	   innego toru 1,5–14 m dalej w tym samym kierunku (oba odcinki i łącznik w linii, wysokości ±1 m); jednorazowo */
-	const envJoinPortalGaps = (route) => {
-		const env = route.env, T = env.t, TH = env.th;
-		if (!T || env._tJoin || !route.tunnels || !route.tunnels.length) return;
-		Object.defineProperty(env, '_tJoin', { value: true, configurable: true });
-		const portal = (s) => route.tunnels.some((t) => Math.abs(s - t.from) < 25 || Math.abs(s - t.to) < 25);
-		// końce torów: punkt, kierunek na zewnątrz, wysokość
-		const ends = [];
-		T.forEach((row, i) => {
-			const m = (row.length - 1) / 2;
-			if (m < 2) return;
-			for (const first of [true, false]) {
-				const a = first ? 0 : m - 1, b = first ? 1 : m - 2;
-				const s = row[1 + a * 2], d = row[2 + a * 2];
-				if (!portal(s)) continue;
-				const ds = s - row[1 + b * 2], dd = d - row[2 + b * 2], L = Math.hypot(ds, dd) || 1;
-				ends.push({ i, first, s, d, us: ds / L, ud: dd / L, h: TH && TH[i] ? TH[i][a] : -1, used: false });
-			}
-		});
-		// koniec połączony już z innym torem (rozjazd) – bez łącznika
-		const near = (e) => ends.some((o) => o !== e && Math.hypot(o.s - e.s, o.d - e.d) < 1.5);
-		for (const e of ends) {
-			if (e.used || near(e)) continue;
-			let best = null, bd = Infinity;
-			for (const o of ends) {
-				if (o.used || o.i === e.i || near(o)) continue;
-				const vs = o.s - e.s, vd = o.d - e.d, L = Math.hypot(vs, vd);
-				if (L < 1.5 || L > 14) continue;
-				if ((vs * e.us + vd * e.ud) / L < 0.98 || -(vs * o.us + vd * o.ud) / L < 0.98) continue;
-				if (e.h >= 0 && o.h >= 0 && Math.abs(e.h - o.h) > 10) continue;
-				if (L < bd) { bd = L; best = o; }
-			}
-			if (!best) continue;
-			e.used = best.used = true;
-			// łącznik dopisany do toru poza tunelem (bez bitu 16) – w tunelu zostaje jego kawałek
-			const [x, y] = T[e.i][0] & 16 && !(T[best.i][0] & 16) ? [best, e] : [e, best];
-			const row = T[x.i], th = TH && TH[x.i];
-			if (x.first) { row.splice(1, 0, y.s, y.d); if (th) th.unshift(th[0]); }
-			else { row.push(y.s, y.d); if (th) th.push(th[th.length - 1]); }
-		}
-	};
-
-	/* „wiadukt kolejowy” z mapy (env.ro), który nie przecina naszego toru (wszystkie punkty po jednej stronie, ponad 3 m
-	   od osi) albo przecina go i dalej biegnie obok – w danych bywa nim cały tor (Chorzów Batory: 1,5 km toru 5–26 m
-	   od osi za przejściem nad linią).
-	   Rysowany jako pomost nad torami leżał przy ziemi szarą płytą i skakał na 7 m tam, gdzie zbliżał się do torów
-	   (skrajnia). Przeniesiony do torów z mapy (bit 2 – most, 8; wysokości z pomiaru pomostu env.roh jak env.th);
-	   jednorazowo */
-	const envRailBesideToTracks = (route) => {
-		const env = route.env;
-		if (!env.ro || !env.ro.length || !env.t || env._roMoved) return;
-		Object.defineProperty(env, '_roMoved', { value: true, configurable: true });
-		const keep = [], keepZ = [], keepH = [], hasZ = Array.isArray(env.roz), hasH = Array.isArray(env.roh);
-		if (!env._roTracks) Object.defineProperty(env, '_roTracks', { value: new Set(), configurable: true });
-		const toTrack = (row, h, k0, k1, fl) => {
-			if (k1 - k0 < 1) return;
-			env._roTracks.add(env.t.length);
-			env.t.push([fl].concat(row.slice(1 + k0 * 2, 3 + k1 * 2)));
-			if (env.th) env.th.push(h ? h.slice(k0, k1 + 1) : null);
-		};
-		env.ro.forEach((row, i) => {
-			const n = (row.length - 1) / 2, h = hasH && env.roh[i] && env.roh[i].length === n ? env.roh[i] : null;
-			/* przejście nad osią: zmiana strony z ponad 3 m po jednej na ponad 3 m po drugiej (tor kończący się na osi –
-			   zjazd zwrotnicą do naszej linii – nie przecina jej) */
-			let kc = -1, last = 0, lastK = -1;
-			for (let k = 0; k < n && kc < 0; k++) {
-				const d = row[2 + k * 2];
-				if (Math.abs(d) <= 3) continue;
-				const sg = Math.sign(d);
-				if (last && sg !== last) {
-					// punkt przecięcia: najbliższy osi między ostatnim punktem po jednej stronie a pierwszym po drugiej
-					let bd = Infinity;
-					for (let j = lastK; j <= k; j++) if (Math.abs(row[2 + j * 2]) < bd) { bd = Math.abs(row[2 + j * 2]); kc = j; }
-				}
-				last = sg;
-				lastK = k;
-			}
-			if (kc < 0 && n >= 2) { toTrack(row, h, 0, n - 1, 2 | 8); return; }
-			/* przecina tor, ale dalej biegnie obok niego (odcinek równoległy od 60 m, ponad 3 m od osi): wiadukt tylko do
-			   początku tego odcinka (z zapasem 2 punktów), reszta – tor z mapy (bez bitu mostu) */
-			const par = (k, dir) => {
-				let L = 0;
-				for (let j = k; j + dir >= 0 && j + dir < n; j += dir) {
-					const ds = Math.abs(row[1 + (j + dir) * 2] - row[1 + j * 2]), dd = Math.abs(row[2 + (j + dir) * 2] - row[2 + j * 2]);
-					if (dd > 0.15 * ds + 0.05 || Math.abs(row[2 + j * 2]) < 3) break;
-					L += Math.hypot(ds, dd);
-					if (L >= 60) return true;
-				}
-				return false;
-			};
-			let a = 0, b = n - 1;
-			for (let k = kc; k < n - 1; k++) if (par(k, 1)) { b = Math.min(n - 1, k + 2); break; }
-			for (let k = kc; k > 0; k--) if (par(k, -1)) { a = Math.max(0, k - 2); break; }
-			if (a === 0 && b === n - 1) { keep.push(row); if (hasZ) keepZ.push(env.roz[i]); if (hasH) keepH.push(env.roh[i]); return; }
-			const mid = [row[0]].concat(row.slice(1 + a * 2, 3 + b * 2));
-			keep.push(mid);
-			if (hasZ) keepZ.push(env.roz[i]);
-			if (hasH) keepH.push(h ? h.slice(a, b + 1) : env.roh[i]);
-			toTrack(row, h, 0, a, 8);
-			toTrack(row, h, b, n - 1, 8);
-		});
-		env.ro = keep;
-		if (hasZ) env.roz = keepZ;
-		if (hasH) env.roh = keepH;
-	};
-
 	// ---------- indeks otoczenia trasy ----------
 	World.prototype.envIndex = function (route) {
 		const env = route.env;
@@ -469,8 +360,7 @@ import * as THREE from 'three';
 			rfAll.push(o);
 		}
 		const tByChunk = new Map(), pByChunk = new Map();
-		envRailBesideToTracks(route);
-		envJoinPortalGaps(route);
+		R.cleanEnv(route); // poprawki danych z mapy (routes.js: przerwy przy portalach, „wiadukty” obok linii) – stare pliki tras
 		lines(env.t || [], tByChunk);
 		(env.p || []).forEach((row, i) => {
 			let cs = 0;
@@ -3925,7 +3815,11 @@ import * as THREE from 'three';
 				if (dp > 0.5) yc = Math.min(yl, h - dp);
 			}
 			const diff = yl - h;
-			const yp = h + diff * smoothstep(0.5, 1.2, Math.abs(diff)) * smoothstep(5, 7.5, Math.abs(d));
+			/* pod mostem naszej linii tor z mapy ponad 3 m niżej (przejście pod torem, także ukośne przez oś) – z pomiaru
+			   także przy osi; dawniej przy osi (do 5 m) ściągany na poziom naszej linii i na środku przejścia wyskakiwał na
+			   wiadukt (Zabrze – Gliwice km 4,0: skok o 6 m) */
+			const under = diff < -3 && this.route.bridges.some((b) => s > b.from - 5 && s < b.to + 5);
+			const yp = h + diff * smoothstep(0.5, 1.2, Math.abs(diff)) * (under ? 1 : smoothstep(5, 7.5, Math.abs(d)));
 			return yp + (yc - yp) * wc;
 		}
 		const z = this.envRowZ(i, k, s, d);
@@ -3936,7 +3830,7 @@ import * as THREE from 'three';
 	};
 	// wysokość główki szyny toru z mapy z pomiaru NMT (env.th, dm ponad dem.base) w układzie gry; brak – undefined
 	/* punkt (s, d) na moście z mapy: do 1,5 m od odcinka toru z bitem 2 biegnącego w tym samym kierunku co (us, ud)
-	   (|cos| ≥ 0,9 – tor przechodzący pod mostem w poprzek się nie liczy); siatka odcinków 8 m, raz na trasę */
+	   (|cos| ≥ 0,985 – tor przechodzący pod mostem ukośnie albo w poprzek się nie liczy); siatka odcinków 8 m, raz na trasę */
 	World.prototype.envOnRailBridge = function (s, d, us, ud) {
 		const e = this.env, G = 8;
 		if (!e.brGrid) {
@@ -3958,7 +3852,8 @@ import * as THREE from 'three';
 		for (const [s1, d1, s2, d2] of e.brGrid.get(Math.floor(s / G) * 100003 + Math.floor(d / G)) || []) {
 			const L2 = (s2 - s1) ** 2 + (d2 - d1) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((s - s1) * (s2 - s1) + (d - d1) * (d2 - d1)) / L2));
 			if (Math.hypot(s1 + (s2 - s1) * t - s, d1 + (d2 - d1) * t - d) >= 1.5) continue;
-			if (Math.abs((s2 - s1) * us + (d2 - d1) * ud) >= 0.9 * Math.sqrt(L2)) return true;
+			// (|cos| ≥ 0,985 – do ok. 10°; przy 0,9 tor przechodzący pod wiaduktem pod kątem 18° wskakiwał na pomost)
+			if (Math.abs((s2 - s1) * us + (d2 - d1) * ud) >= 0.985 * Math.sqrt(L2)) return true;
 		}
 		return false;
 	};
@@ -3985,10 +3880,10 @@ import * as THREE from 'three';
 		/* tor na moście ponad 1,5 m pod terenem z pomiaru – wysokość z prostej między końcami długiego „mostu” na nasypie
 		   (pliki z generatora do 0.37): bez pomiaru, na poziomie naszej linii (envTrackY – most) */
 		if (row[0] & 2 && y < this.demGround(s, d) - 1.5) return undefined;
-		/* tor odzyskany z „wiaduktu” z mapy (envRailBesideToTracks): wysokości z pomiaru powierzchni (NMPT – także
+		/* tor odzyskany z „wiaduktu” z mapy (bit 64 – routes.js cleanEnv): wysokości z pomiaru powierzchni (NMPT – także
 		   obiekty nad torem); ponad 1,5 m nad terenem z pomiaru – na terenie (0,3 m nad pomiarem) –
 		   dawniej tor przy Chorzowie Batorym wspinał się nagle na 7–8 m */
-		if (this.route.env._roTracks && this.route.env._roTracks.has(i) && y > this.demGround(s, d) + 1.5) return this.demGround(s, d) + 0.3;
+		if (row[0] & 64 && y > this.demGround(s, d) + 1.5) return this.demGround(s, d) + 0.3;
 		return y;
 	};
 	// głębokość pod mostem z pomiaru (NMT: dno doliny, drogi, wykopu pod przęsłem) – bez pomiaru stała D

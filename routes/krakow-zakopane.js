@@ -1287,4 +1287,5 @@
 "pos":136046,
 "lvl":"info",
 "m":"„Zakopane”: brak wskaźnika W4 w danych – miejsce zatrzymania oszacowane (środek peronu).",
-"fix":"Inne miejsce: \"stations\": { \"Zakopane\": { \"pos\": 136046 } } (czoło pociągu)."}]});
+"fix":"Inne miejsce: \"stations\": { \"Zakopane\": { \"pos\": 136046 } } (czoło pociągu)."}],
+"fixes":{"crossings":{"add":[26017,98688,104059]}}});
