@@ -395,6 +395,8 @@ import { BundleGroup } from 'three/webgpu';
 			this.clear();
 			this.route = route;
 			if (this.envIndex) this.envIndex(route); // trasa rzeczywista: budynki, drogi, wody, zagospodarowanie (real-env.js)
+			// sieć ulic całej trasy (ok. 0,4 s) – przy wczytaniu trasy, nie w pierwszym kroku budowy kawałka (przycięcie)
+			if (this.env && this.envStreets) this.envStreets();
 			if (this.envPortalUniforms) this.envPortalUniforms();
 			this.warm = true;
 		}
@@ -1038,7 +1040,11 @@ import { BundleGroup } from 'three/webgpu';
 			/* kolumny siatki terenu: przy wkopach drogowych gęściej (envTerrainCols); na granicy z sąsiednim kawałkiem
 			   o innych kolumnach – wysokości z kolumn wspólnych (bez szczelin między kawałkami) */
 			// maski dróg (teren przy jezdniach) tego kawałka i sąsiednich – krokami, zanim zażąda ich siatka terenu
-			if (this.env && this.envRoadMaskSteps) for (let cc = c - 1; cc <= c + 1; cc++) yield* this.envRoadMaskSteps(cc);
+			/* (±2 kawałki: ulice kawałka sięgają do sąsiedniego, a wysokość jezdni za nim budowała jego maskę bez przerw –
+			   pojedyncze zapytania po ok. 50 ms) */
+			if (this.env && this.envRoadMaskSteps) for (let cc = c - 2; cc <= c + 2; cc++) yield* this.envRoadMaskSteps(cc);
+			// maski zajętości (drogi, budynki, tory – sadzenie drzew i trawy) – też krokami, przed ich pierwszym użyciem
+			if (this.env && this.envMaskSteps) for (let cc = c - 1; cc <= c + 1; cc++) yield* this.envMaskSteps(cc);
 			const cols = this.envTerrainCols ? this.envTerrainCols(c) : TERRAIN_D;
 			const mY = (s, d) => (this.meshTerrainY ? this.meshTerrainY(s, d) : this.terrainY(s, d));
 			const edgeY = (s, d, other) => {
@@ -1258,7 +1264,9 @@ import { BundleGroup } from 'three/webgpu';
 			});
 			yield;
 			const N3 = new T.Matrix3(), v = new T.Vector3();
-			let n = 0;
+			/* przerwa (yield) po partii, gdy od poprzedniej minęły ponad 4 ms – dawniej co 8 partii, a partie budynków i dróg
+			   bywają duże: jeden krok scalania trwał do 350 ms (przycięcie obrazu przy dobudowie kawałka) */
+			let tY = performance.now();
 			for (const bt of batches.values()) {
 				// pojedyncza zwykła siatka – bez zmian (chyba że do wspólnego materiału z kolorem w wierzchołkach);
 				// pojedyncza instancja (jeden egzemplarz) – też wtapiana
@@ -1311,6 +1319,8 @@ import { BundleGroup } from 'three/webgpu';
 						index[io++] = vo + (flip ? a1 : a2);
 					}
 					vo += cnt;
+					// (duża partia – np. jezdnie albo detale budynków, kilkaset tysięcy wierzchołków – też z przerwami)
+					if (performance.now() - tY > 4) { yield; tY = performance.now(); }
 					if (o.parent) {
 						o.parent.remove(o);
 						if (o.isInstancedMesh) o.dispose();
@@ -1327,8 +1337,9 @@ import { BundleGroup } from 'three/webgpu';
 				mesh.receiveShadow = bt.recv;
 				if (bt.own) mesh.userData.ownMaterial = true;
 				group.add(mesh);
-				if (++n % 8 === 0) yield;
+				if (performance.now() - tY > 4) { yield; tY = performance.now(); }
 			}
+			yield;
 			// puste grupy po scaleniu – usunięte; reszta nieruchoma (bez przeliczania macierzy co klatkę)
 			const empty = [];
 			group.traverse((o) => { if (o !== group && !o.isMesh && !o.isSprite && !o.isLight && !o.isPoints && !o.isLine && !prot.has(o) && !o.children.length) empty.push(o); });
@@ -1346,7 +1357,9 @@ import { BundleGroup } from 'three/webgpu';
 			});
 			lod.casters = lod.casters.filter((o) => o.castShadow);
 			group.userData.lod = lod;
+			yield;
 			if (NS.gpu && World.opt.shadowMerge !== false) this.shadowMerge(group, lod);
+			yield;
 			if (NS.gpu && World.opt.bundle !== false) lod.bundle = this.bundleStatic(group, prot, LAMP);
 		}
 

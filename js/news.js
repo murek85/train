@@ -4,6 +4,34 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.48',
+			date: '22 października 2026',
+			groups: [
+				['Wydajność', [
+					'Jezdnie i chodniki z mniejszej liczby trójkątów (ok. 15% mniej), a przy tym lepiej dopasowane do terenu – rzadziej prześwituje przez nie trawa.',
+				]],
+			],
+		},
+		{
+			version: '0.58.47',
+			date: '22 października 2026',
+			groups: [
+				['Wydajność', [
+					'Lżejsze balkony bloków (o połowę mniej wierzchołków) i tylko w budynkach do 300 m od toru – w miastach detale budynków są o ok. 40% lżejsze.',
+				]],
+			],
+		},
+		{
+			version: '0.58.46',
+			date: '22 października 2026',
+			groups: [
+				['Wydajność', [
+					'Płynniejsza jazda przez miasta: budowa otoczenia jest dzielona na krótsze kroki, a plany wiaduktów są zapamiętywane – mniej przycięć przy dociąganiu kolejnych kawałków świata.',
+					'Sieć ulic jest przygotowywana przy wczytaniu trasy (wczytanie dużych tras trwa przez to kilka sekund dłużej).',
+				]],
+			],
+		},
+		{
 			version: '0.58.45',
 			date: '22 października 2026',
 			groups: [

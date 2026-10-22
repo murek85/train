@@ -963,9 +963,20 @@ import * as THREE from 'three';
 	   jezdniach ani na torach, a korony nie wchodzą w budynki (envFit). Liczona raz na kawałek, potem odczyt O(1). */
 	const MASK_D = 560;
 	World.prototype.envMask = function (c) {
+		const m = this.env.masks.get(c);
+		if (m) return m;
+		const g = this.envMaskSteps(c);
+		let r;
+		while (!(r = g.next()).done);
+		return r.value;
+	};
+	/* maska krokami (przerwy co ok. 4 ms) – budowa kawałka przygotowuje maski kawałka i sąsiednich przed drzewami i trawą;
+	   dawniej pierwsze zapytanie (onRoad przy sadzeniu drzew) budowało ją w jednym kroku – do ok. 0,5 s przycięcia */
+	World.prototype.envMaskSteps = function* (c) {
 		const e = this.env;
 		if (e.masks.has(c)) return e.masks.get(c);
 		for (const k of e.masks.keys()) if (Math.abs(k - c) > 12) e.masks.delete(k);
+		let tY = performance.now();
 		const W = 2 * MASK_D, mask = new Uint8Array(C * W);
 		const s0 = c * C;
 		const paint = (sa, da, sb, db, half, bit = 1) => {
@@ -1001,12 +1012,29 @@ import * as THREE from 'three';
 			}
 		};
 		const ring = (row, off) => { const p = []; for (let k = off; k + 1 < row.length; k += 2) p.push([row[k], row[k + 1]]); return p; };
+		const pause = () => performance.now() - tY > 4;
 		for (const cc of [c - 1, c, c + 1]) {
-			for (const { k, row, i } of e.rByChunk.get(cc) || []) { const q = e.rInfo[i]; paint(row[1 + k * 2], row[2 + k * 2], row[3 + k * 2], row[4 + k * 2], q.w / 2 + (q.sw ? 2.6 : 0.4)); }
+			for (const { k, row, i } of e.rByChunk.get(cc) || []) {
+				const q = e.rInfo[i];
+				paint(row[1 + k * 2], row[2 + k * 2], row[3 + k * 2], row[4 + k * 2], q.w / 2 + (q.sw ? 2.6 : 0.4));
+				if (pause()) { yield; tY = performance.now(); }
+			}
 			for (const J of this.envStreets().jByChunk.get(cc) || []) paint(J.s, J.d, J.s, J.d, J.rad);
-			for (const row of e.pkByChunk.get(cc) || []) { const n = (row.length - 1) / 2; fill(ring(row, 1), 1); for (let k = 0; k < n; k++) { const k2 = (k + 1) % n; paint(row[1 + k * 2], row[2 + k * 2], row[1 + k2 * 2], row[2 + k2 * 2], 1.2); } }
-			for (const b of e.bByChunk.get(cc) || []) if (b.s1 >= s0 - 1 && b.s0 <= s0 + C + 1) fill(ring(b.row, 3).slice(0, b.n), 2);
-			for (const { k, row } of e.tByChunk.get(cc) || []) paint(row[1 + k * 2], row[2 + k * 2], row[3 + k * 2], row[4 + k * 2], 2.2);
+			yield; tY = performance.now();
+			for (const row of e.pkByChunk.get(cc) || []) {
+				const n = (row.length - 1) / 2;
+				fill(ring(row, 1), 1);
+				for (let k = 0; k < n; k++) { const k2 = (k + 1) % n; paint(row[1 + k * 2], row[2 + k * 2], row[1 + k2 * 2], row[2 + k2 * 2], 1.2); }
+				if (pause()) { yield; tY = performance.now(); }
+			}
+			for (const b of e.bByChunk.get(cc) || []) {
+				if (b.s1 >= s0 - 1 && b.s0 <= s0 + C + 1) fill(ring(b.row, 3).slice(0, b.n), 2);
+				if (pause()) { yield; tY = performance.now(); }
+			}
+			for (const { k, row } of e.tByChunk.get(cc) || []) {
+				paint(row[1 + k * 2], row[2 + k * 2], row[3 + k * 2], row[4 + k * 2], 2.2);
+				if (pause()) { yield; tY = performance.now(); }
+			}
 		}
 		// wiadukty i mosty drogowe (długie – całe, odcinki poza kawałkiem pomijane przy malowaniu), wiadukty kolejowe
 		const env = this.route.env;
@@ -1016,7 +1044,11 @@ import * as THREE from 'three';
 				if (Math.max(row[k], row[k + 2]) < s0 - half || Math.min(row[k], row[k + 2]) > s0 + C + half) continue;
 				paint(row[k], row[k + 1], row[k + 2], row[k + 3], half);
 			}
+			if (pause()) { yield; tY = performance.now(); }
 		}
+		/* maska mogła powstać w międzyczasie (wywołanie envMask z innego miejsca w trakcie przerwy) – ta sama treść,
+		   zostaje pierwsza */
+		if (e.masks.has(c)) return e.masks.get(c);
 		e.masks.set(c, mask);
 		return mask;
 	};
@@ -1788,7 +1820,18 @@ import * as THREE from 'three';
 
 	/* Plan wiaduktu nad torem (wspólny dla rysowania i kontroli): łamana zagęszczona co ≤ 4 m (P), długość (cum),
 	   wysokość jezdni (Y), teren (G), nasyp (embk), nasypy przy końcach (ems), filary (piers). */
+	/* plan liczony raz na trasę (wynik tylko do odczytu): ten sam wiadukt liczyły po kilka razy na kawałek sieć trakcyjna
+	   (envOverheads), drogi (inDeckExt), budynki pod pomostem, kontrola i rysowanie – po kilkadziesiąt ms */
 	World.prototype.overpassPlan = function (row, rail) {
+		const e = this.env;
+		if (!e.ovPlan) e.ovPlan = new Map();
+		const key = rail ? 'r' : 'o';
+		let m = e.ovPlan.get(row);
+		if (!m) e.ovPlan.set(row, (m = {}));
+		if (!m[key]) m[key] = this.overpassPlanCalc(row, rail);
+		return m[key];
+	};
+	World.prototype.overpassPlanCalc = function (row, rail) {
 		const r = this.route;
 		const ti = row[0], w = rail ? 5.6 : (ROAD_W[ti] || 6) + 1.2;
 		const pts = [];
@@ -5524,6 +5567,7 @@ import * as THREE from 'three';
 		return b;
 	};
 
+	const BALC_FAR = 300; // balkony bloków tylko bliżej toru (m)
 	World.prototype.buildEnvBuildings = function* (group, list, M) {
 		if (!list.length) return;
 		const r = this.route;
@@ -5549,6 +5593,32 @@ import * as THREE from 'three';
 				if (nn[0] * fc[0] + nn[1] * fc[1] + nn[2] * fc[2] >= 0) { tri(dst, a, b2, c2, Z, Z, Z, rgb); tri(dst, a, c2, d2, Z, Z, Z, rgb); }
 				else { tri(dst, a, c2, b2, Z, Z, Z, rgb); tri(dst, a, d2, c2, Z, Z, Z, rgb); }
 			}
+		};
+		// balkon przed ścianą: (x0, z0) – środek przęsła na ścianie, u – wzdłuż ściany, n – na zewnątrz
+		const balcony = (x0, z0, y, ux, uz, nx, nz, slab, rail) => {
+			const at = (a, o, yy) => [x0 + ux * a + nx * o, yy, z0 + uz * a + nz * o];
+			const quad = (A, B, C2, D, rgb) => { tri(pl, A, B, C2, Z, Z, Z, rgb); tri(pl, A, C2, D, Z, Z, Z, rgb); };
+			const W = 1.25, D = 1.1, y0 = y - 0.16, M0 = at(0, D / 2, y - 0.08);
+			// ściana płyty zwrócona na zewnątrz (od środka płyty) – skrętność układu (u, n) zależy od obrysu
+			const face = (A, B, C2, D2) => {
+				const e1 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], e2 = [C2[0] - A[0], C2[1] - A[1], C2[2] - A[2]];
+				const nn = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+				const out = nn[0] * (A[0] + C2[0] - 2 * M0[0]) + nn[1] * (A[1] + C2[1] - 2 * M0[1]) + nn[2] * (A[2] + C2[2] - 2 * M0[2]) >= 0;
+				if (out) quad(A, B, C2, D2, slab); else quad(A, D2, C2, B, slab);
+			};
+			face(at(-W, 0, y), at(-W, D, y), at(W, D, y), at(W, 0, y)); // wierzch
+			face(at(-W, 0, y0), at(W, 0, y0), at(W, D, y0), at(-W, D, y0)); // spód
+			face(at(-W, D, y0), at(W, D, y0), at(W, D, y), at(-W, D, y)); // czoło
+			face(at(-W, 0, y0), at(-W, D, y0), at(-W, D, y), at(-W, 0, y));
+			face(at(W, D, y0), at(W, 0, y0), at(W, 0, y), at(W, D, y));
+			const panel = (A, B) => {
+				const a0 = at(A[0], A[1], y), b0 = at(B[0], B[1], y), b1 = at(B[0], B[1], y + 1), a1 = at(A[0], A[1], y + 1);
+				quad(a0, b0, b1, a1, rail);
+				quad(a0, a1, b1, b0, rail);
+			};
+			panel([-W, D - 0.03], [W, D - 0.03]);
+			panel([-W + 0.03, 0], [-W + 0.03, D]);
+			panel([W - 0.03, 0], [W - 0.03, D]);
 		};
 		const BALC = ['#d9d4c8', '#8a9aa6', '#c96f4a', '#6f8f6a', '#e3c86b', '#9aa3ab'];
 		const reserved = (this.env && this.env.reserved) || [];
@@ -5748,8 +5818,10 @@ import * as THREE from 'three';
 			}
 			/* balkony bloków mieszkalnych (wg zdjęć bloków z wielkiej płyty): płyta i balustrada przed oknem co drugiego
 			   (albo co trzeciego) przęsła elewacji, od pierwszego piętra – na ścianach dłuższych niż 9 m; przęsła i kondygnacje
-			   jak w teksturze elewacji (okno w środku przęsła 3 m, kondygnacje co 3 m od cokołu) */
-			if (kind === 1 && (!use || use === 2) && h >= 8.5 && hash(seed + 7.7) < 0.8) {
+			   jak w teksturze elewacji (okno w środku przęsła 3 m, kondygnacje co 3 m od cokołu). Tylko budynki bliżej niż
+			   BALC_FAR od toru (dalej balkon to kilka pikseli, a balkony były ok. 2/3 wierzchołków detali budynków) */
+			const dNear = b.d0 > 0 ? b.d0 : b.d1 < 0 ? -b.d1 : 0;
+			if (kind === 1 && (!use || use === 2) && h >= 8.5 && hash(seed + 7.7) < 0.8 && dNear < BALC_FAR) {
 				const every = hash(seed + 8.1) < 0.6 ? 2 : 3, ph = Math.floor(hash(seed + 8.4) * every);
 				const rail = col.set(BALC[Math.floor(hash(seed + 8.8) * BALC.length)]).clone(), slab = col.set('#b9b6ae').clone();
 				let accB = Math.floor(hash(seed + 0.9) * 4) * 3;
@@ -5761,10 +5833,9 @@ import * as THREE from 'three';
 							if (t < 1.6 || Math.round((accB + t - 1.5) / 3) % every !== ph) continue;
 							for (let y = base + 3.3; y + 1.3 < top - 0.45; y += 3) {
 								const x0 = p[0] + ux * t, z0 = p[2] + uz * t;
-								// płyta (wysunięta 1,1 m), balustrada od frontu i po bokach
-								cub(pl, x0 + nx * 0.55, z0 + nz * 0.55, y - 0.16, y, ux, uz, 2.5, 1.1, slab);
-								cub(pl, x0 + nx * 1.07, z0 + nz * 1.07, y, y + 1.0, ux, uz, 2.5, 0.05, rail, true);
-								for (const e of [-1, 1]) cub(pl, x0 + ux * e * 1.225 + nx * 0.55, z0 + uz * e * 1.225 + nz * 0.55, y, y + 1.0, ux, uz, 0.05, 1.0, rail, true);
+								// płyta (wysunięta 1,1 m, bez ściany od budynku), balustrada od frontu i po bokach – cienkie płyty
+								// dwustronne (66 wierzchołków zamiast 126 z czterech prostopadłościanów)
+								balcony(x0, z0, y, ux, uz, nx, nz, slab, rail);
 							}
 						}
 					}
@@ -6923,21 +6994,39 @@ import * as THREE from 'three';
 			if (d0.u) for (const q of up ? [0, 1, 2] : [0, 2, 1]) d0.u.push(...((L && L[q]) || ZL));
 		};
 		const midL = (a, b) => (a.L && b.L ? [(a.L[0] + b.L[0]) / 2, (a.L[1] + b.L[1]) / 2, a.L[2]] : undefined);
-		/* trójkąt w (s, d) dzielony na cztery, dopóki teren w połowie boków odbiega od płaszczyzny trójkąta
-		   (siatka terenu ma załamania co kilka–kilkadziesiąt metrów; duży trójkąt jezdni zapadał się pod nie) */
+		/* trójkąt w (s, d) dzielony, dopóki teren w połowie boków odbiega od płaszczyzny trójkąta (siatka terenu ma
+		   załamania co kilka–kilkadziesiąt metrów; duży trójkąt jezdni zapadał się pod nie). Dzielone są tylko boki
+		   z odchyłką (na 2, 3 albo 4 trójkąty) – dawniej zawsze na cztery, a podział był ok. połowy wierzchołków jezdni;
+		   wspólny bok sąsiednich trójkątów dostaje to samo rozstrzygnięcie (mniej szczelin w kształcie T) */
+		// próg podziału: odchyłka terenu w połowie boku, najkrótszy dzielony bok, liczba poziomów (World.opt – do pomiarów)
+		const SUB_OFF = World.opt.roadSubOff !== undefined ? World.opt.roadSubOff : 0.03;
+		const SUB_LEN = World.opt.roadSubLen || 2, SUB_LVL = World.opt.roadSubLvl || 4;
+		const cut = (P, Q) => {
+			if (Math.hypot(Q[0] - P[0], Q[1] - P[1]) < SUB_LEN) return null;
+			const m = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2];
+			if (Math.abs(sY(m[0], m[1]) - (sY(P[0], P[1]) + sY(Q[0], Q[1])) / 2) <= SUB_OFF) return null;
+			m.L = midL(P, Q);
+			return m;
+		};
 		const triS = (d0, A, B, Cq, dy, rgb, lvl = 0) => {
-			if (lvl < 3) {
-				const ab = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2], bc = [(B[0] + Cq[0]) / 2, (B[1] + Cq[1]) / 2], ca = [(Cq[0] + A[0]) / 2, (Cq[1] + A[1]) / 2];
-				ab.L = midL(A, B); bc.L = midL(B, Cq); ca.L = midL(Cq, A);
-				const L = Math.max(Math.hypot(B[0] - A[0], B[1] - A[1]), Math.hypot(Cq[0] - B[0], Cq[1] - B[1]), Math.hypot(A[0] - Cq[0], A[1] - Cq[1]));
-				if (L > 2.5) {
-					const yA = sY(A[0], A[1]), yB = sY(B[0], B[1]), yC = sY(Cq[0], Cq[1]);
-					const off = Math.max(Math.abs(sY(ab[0], ab[1]) - (yA + yB) / 2), Math.abs(sY(bc[0], bc[1]) - (yB + yC) / 2), Math.abs(sY(ca[0], ca[1]) - (yC + yA) / 2));
-					if (off > 0.03) {
-						triS(d0, A, ab, ca, dy, rgb, lvl + 1); triS(d0, ab, B, bc, dy, rgb, lvl + 1);
-						triS(d0, ca, bc, Cq, dy, rgb, lvl + 1); triS(d0, ab, bc, ca, dy, rgb, lvl + 1);
-						return;
-					}
+			if (lvl < SUB_LVL) {
+				const V = [A, B, Cq], M3 = [cut(A, B), cut(B, Cq), cut(Cq, A)], n = (M3[0] ? 1 : 0) + (M3[1] ? 1 : 0) + (M3[2] ? 1 : 0);
+				const go = (a, b, c) => triS(d0, a, b, c, dy, rgb, lvl + 1);
+				if (n === 3) {
+					const [ab, bc, ca] = M3;
+					go(A, ab, ca); go(ab, B, bc); go(ca, bc, Cq); go(ab, bc, ca);
+					return;
+				}
+				if (n === 1) {
+					const i = M3[0] ? 0 : M3[1] ? 1 : 2, P0 = V[i], P1 = V[(i + 1) % 3], P2 = V[(i + 2) % 3], m = M3[i];
+					go(P0, m, P2); go(m, P1, P2);
+					return;
+				}
+				if (n === 2) {
+					// podzielone boki P0P1 i P1P2 (niepodzielony P2P0)
+					const i = !M3[2] ? 0 : !M3[0] ? 1 : 2, P0 = V[i], P1 = V[(i + 1) % 3], P2 = V[(i + 2) % 3], m01 = M3[i], m12 = M3[(i + 1) % 3];
+					go(m01, P1, m12); go(P0, m01, m12); go(P0, m12, P2);
+					return;
 				}
 			}
 			tri(d0, W(A, dy), W(B, dy), W(Cq, dy), rgb, [A.L, B.L, Cq.L]);
@@ -7033,12 +7122,14 @@ import * as THREE from 'three';
 			// asfalt z pasami ruchu: koleiny i brud przy krawędziach w shaderze (położenie w poprzek – lanes)
 			const lanesK = f.surf === 0 && ti <= 7 && Math.min(ch.w[k], ch.w[k + 1]) >= 4.5 ? Math.max(1, f.lanes || (f.one ? 1 : 2)) : 0;
 			band(dst, ch, k, t0, t1, -1, 0, 1, 0, dy, col.set(SURF_C[f.surf] || ROAD_C[ti] || '#46494c').clone(), lanesK);
+			yield; // (przerwy między jezdnią i chodnikami – długi odcinek ulicy to dawniej krok do ok. 150 ms)
 			const [swP, swN] = ch.sw[k];
 			for (const [on, sg, a0, a1] of [[swP, 1, T0.p, ch.L - T1.n], [swN, -1, T0.n, ch.L - T1.p]]) {
 				if (!on) continue;
 				band(dst, ch, k, a0, a1, sg, 0, sg, sg * 0.16, 0.19, curb);
 				band(dst, ch, k, a0, a1, sg, sg * 0.16, sg, sg * 2.16, 0.17, side);
 				wall(dst, sample(ch, k, a0, a1, sg));
+				yield;
 			}
 			if (f.surf === 0 && ti <= 6 && Math.min(ch.w[k], ch.w[k + 1]) >= 5) {
 				const lo = Math.max(T0.t, T0.p, T0.n) + (T0.t > 0 ? 1 : 0), hi = ch.L - Math.max(T1.t, T1.p, T1.n) - (T1.t > 0 ? 1 : 0);

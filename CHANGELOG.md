@@ -4,6 +4,51 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.48 – 22 października 2026
+
+Lżejsze i lepiej dopasowane jezdnie.
+
+### Wydajność
+- Pomiar: jezdnie to ok. 54% wierzchołków bryły dróg (`envM.road`), chodniki i krawężniki ok. 20%, skrzyżowania
+  ok. 15%; połowa trójkątów pochodziła z 2. i 3. poziomu podziału po terenie.
+- Podział trójkątów nawierzchni po terenie (`buildEnvRoads` → `triS`) dzieli tylko boki z odchyłką terenu
+  (na 2, 3 albo 4 trójkąty) – dawniej przy odchyłce na jednym boku zawsze na cztery. Wspólny bok sąsiednich trójkątów
+  dostaje to samo rozstrzygnięcie (mniej szczelin w kształcie T). Dzielone boki od 2 m, do 4 poziomów
+  (`World.opt.roadSubLen`, `roadSubLvl`, `roadSubOff` – do pomiarów).
+- Pomiar (co dziesiąty kawałek trasy): Tarnowskie Góry – Katowice 2,17 → 1,86 mln wierzchołków (−14%),
+  Gliwice – Katowice 1,56 → 1,29 mln (−17%); budowa kawałków na ciepło ok. 10% krótsza. Powierzchnia jezdni, nad którą
+  wystaje teren (próbki w trójkątach), 1,40% → 1,12%.
+
+## 0.58.47 – 22 października 2026
+
+Lżejsze detale budynków.
+
+### Wydajność
+- Pomiar: balkony bloków to ok. 2/3 wierzchołków bryły detali budynków (`envM.plain`), pasy cokołu, gzymsu
+  i attyki ok. 1/4.
+- Balkon (`buildEnvBuildings` → `balcony`) – płyta bez ściany od budynku i trzy cienkie, dwustronne płyty balustrady
+  zamiast czterech prostopadłościanów: 66 wierzchołków zamiast 126.
+- Balkony tylko w budynkach bliżej niż 300 m od toru (`BALC_FAR`).
+- Pomiar (co dziesiąty kawałek trasy): bryła detali budynków Tarnowskie Góry – Katowice 1,22 mln → 0,67 mln
+  wierzchołków, Gliwice – Katowice 0,77 → 0,46 mln; budowa tych kawałków o 16–20% krótsza.
+
+## 0.58.46 – 22 października 2026
+
+Wydajność budowy świata – mniej przycięć przy dociąganiu kawałków.
+
+### Wydajność
+- `mergeStatic` (`js/3d/world.js`) robi przerwy według czasu (co ok. 4 ms) – także wewnątrz partii brył oraz przed
+  scalaniem cieni i pakietów.
+- Maska zajętości otoczenia jest budowana krokowo (`envMaskSteps` w `js/3d/real-env.js`, przerwy co ok. 4 ms);
+  `chunkSteps` przygotowuje maski wysokości dróg dla ±2 kawałków i maski zajętości dla ±1 kawałka jako osobne kroki.
+- Plany wiaduktów (`overpassPlan`) są zapamiętywane dla wiersza danych (`e.ovPlan`).
+- Sieć ulic (`envStreets`) budowana w `setRoute` – na ekranie wczytywania, a nie w trakcie jazdy.
+- `buildEnvRoads` oddaje sterowanie po jezdni i każdej stronie chodnika; próg podziału trójkątów jezdni
+  konfigurowalny (`World.opt.roadSubOff`, domyślnie 3 cm – bez zmian).
+- Pomiary: najdłuższe pojedyncze kroki z ok. 0,8–0,9 s do 0,3–0,6 s (zimny start), kawałki na ciepło 0,3–0,9 s
+  zamiast 1–2,8 s. Wczytanie trasy dłuższe o budowę sieci ulic (Tarnowskie Góry – Katowice ok. 1,2 s,
+  Kraków – Zakopane ok. 4,5 s). Kontrola tras (`?audit`) bez zmian lub z mniejszą liczbą uwag.
+
 ## 0.58.40 – 22 października 2026
 
 Nowa trasa Czechowice-Dziedzice – Wisła Głębce.
