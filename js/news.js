@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.40',
+			date: '22 października 2026',
+			groups: [
+				['Nowa trasa', [
+					'Czechowice-Dziedzice – Wisła Głębce: przebieg pociągów S6 przez Chybie Mnich, Skoczów, Goleszów i Ustroń, dalej górską linią 191 doliną Wisły – 51,3 km, 18 stacji i przystanków, wzniesienia do 28,6‰, Beskid Śląski na horyzoncie (Czantoria nad Ustroniem).',
+				]],
+			],
+		},
+		{
 			version: '0.58.39',
 			date: '22 października 2026',
 			groups: [

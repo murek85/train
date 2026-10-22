@@ -4,6 +4,29 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.40 – 22 października 2026
+
+Nowa trasa Czechowice-Dziedzice – Wisła Głębce.
+
+### Nowa trasa
+- **Czechowice-Dziedzice – Wisła Głębce** (`routes/czechowice-dziedzice-wisla-glebce.js`, horyzont
+  `routes/horizon/czechowice-dziedzice-wisla-glebce.js`): linie 93 / 150 (do Zabrzega), łącznica i linia 157 (Chybie
+  Mnich – Skoczów), 190 (Skoczów – Goleszów) i 191 (Goleszów – Wisła Głębce) – przebieg pociągów S6, przystanki jak w
+  rozkładzie (bez stacji Chybie); 51,3 km, 18 stacji i przystanków, jednotorowa, zelektryfikowana, niweleta 259–531 m
+  n.p.m., pochylenia do 28,6‰, łuki do R ≈ 175 m (Wisła Kopydło), prędkości w 79% z wykazu PKP PLK. Wygenerowano
+  `--line 93,157,190,191`. Wariant Bielsko-Biała – Istebna nie istnieje: do Istebnej nie ma torów (linia 191 kończy się
+  w Wiśle Głębcach), a linia 190 Bielsko-Biała – Skoczów jest nieczynna (w OSM `disused`).
+- Horyzont z `tools/horizon.js` (kafle terenu, do 13,4° – Czantoria nad Ustroniem Polaną). Horyzont zapisany przez
+  generator w pliku trasy (siatka Open-Meteo, do 4,2° – rzadkie punkty blisko trasy) usunięty, jak w pozostałych
+  trasach wbudowanych. Test horyzontu: dla tej trasy do 15°.
+- Poprawka `fixes`: 100 km/h na km 13,06–13,21 (łącznica do Chybia Mnicha) – w danych 150 m z prędkością 160 km/h
+  między odcinkami 100 i 80 km/h.
+- `index.html` – plik trasy i horyzontu; `tests/horizon.test.js` – trasa na liście horyzontów.
+
+### Testy
+- `real-route.test.js`: pochylenia do 30‰ na trasach z różnicą wysokości ponad 200 m (dotąd 300 m; nowa trasa – 279 m,
+  pozostałe trasy nizinne do 87 m).
+
 ## 0.58.39 – 22 października 2026
 
 Mgła pod chmurami bez białego pasa.

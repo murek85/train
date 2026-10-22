@@ -119,10 +119,10 @@ for (const f of fs.readdirSync(path.join(__dirname, '..', 'routes')).filter((x) 
 		const def = require(path.join(__dirname, '..', 'routes', f));
 		assert.ok(def.real && def.env, 'trasa rzeczywista z otoczeniem');
 		for (let i = 1; i < def.stations.length; i++) assert.ok(def.stations[i].pos - def.stations[i - 1].pos >= 900, 'odstęp stacji');
-		// trasy górskie (różnica wysokości ponad 300 m – np. Kraków – Zakopane, do 29‰) do 30‰, pozostałe do 15‰
+		// trasy górskie (różnica wysokości ponad 200 m – np. Kraków – Zakopane, do 29‰, Czechowice – Wisła Głębce, do 28,6‰) do 30‰, pozostałe do 15‰
 		let hh = 0, hMin = 0, hMax = 0;
 		def.grades.forEach(([s, g], i) => { hh += (g / 1000) * ((def.grades[i + 1] || [s + 50])[0] - s); hMin = Math.min(hMin, hh); hMax = Math.max(hMax, hh); });
-		const gMax = hMax - hMin > 300 ? 30 : 15;
+		const gMax = hMax - hMin > 200 ? 30 : 15;
 		assert.ok(def.grades.every(([, g]) => Math.abs(g) <= gMax), 'pochylenia (pomiar NMT, odcinki co 50 m)');
 		const route = R.prepare(def, { train: 'ezt', cars: 1 });
 		const sim = new Sim(route, { czuwak: true, timetable: buildTimetable(route) });
