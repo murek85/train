@@ -38,7 +38,7 @@ test('profile: góra w jednym kierunku podnosi horyzont tylko tam, płasko – l
 });
 
 test('trasy wbudowane mają horyzont z danych (routes/horizon), wiarygodne kąty', () => {
-	for (const id of ['gliwice-zabrze', 'gliwice-katowice', 'rybnik-katowice', 'torun-chelmza', 'orzesze-mikolow', 'warszawa-wschodnia-zachodnia', 'gdynia-gdansk', 'zabrze-gliwice', 'krakow-zakopane']) {
+	for (const id of ['gliwice-zabrze', 'gliwice-katowice', 'rybnik-katowice', 'torun-chelmza', 'orzesze-mikolow', 'warszawa-wschodnia-zachodnia', 'gdynia-gdansk', 'zabrze-gliwice', 'krakow-zakopane', 'tarnowskie-gory-katowice']) {
 		const h = require(path.join('..', 'routes', 'horizon', id + '.js'));
 		assert.equal(h.id, id);
 		assert.ok(h.anchors.length >= 3 && h.anchors.every((a) => a.length === 181), id);

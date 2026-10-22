@@ -2247,6 +2247,8 @@
 			if (/^(subway|light_rail|monorail|tram|funicular|miniature)$/.test(t.station || '') || t.subway === 'yes' || t.monorail === 'yes') return 'stacja metra lub kolei lekkiej';
 			if (((t.light_rail === 'yes' || t.tram === 'yes') && t.train !== 'yes') || t.train === 'no') return 'stacja kolei lekkiej lub tramwaju';
 			if (/metro/i.test(`${t.network || ''} ${t.operator || ''}`)) return 'stacja metra';
+			// kolej wąskotorowa (np. Bytom Wąskotorowy obok stacji Bytom) – w OSM zwykle tylko nazwa, bez osobnych tagów
+			if (t.narrow_gauge === 'yes' || /wąskotorow/i.test(t.name || '') || /kolei wąskotorowych/i.test(t.operator || '')) return 'stacja kolei wąskotorowej';
 			return null;
 		};
 		const otherLine = (p, s0) => {

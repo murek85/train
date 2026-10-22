@@ -4,6 +4,24 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.29 – 22 października 2026
+
+Nowa trasa Tarnowskie Góry – Katowice.
+
+### Nowa trasa
+- **Tarnowskie Góry – Katowice** (`routes/tarnowskie-gory-katowice.js`, horyzont
+  `routes/horizon/tarnowskie-gory-katowice.js`): linia 131 (Tarnowskie Góry – Nakło Śląskie – Radzionków – Bytom –
+  Chorzów Stary – Chorzów Miasto – Chorzów Batory), dalej linia 137 do Katowic; przebieg pociągów S8 i S9 Kolei
+  Śląskich – 33,5 km, 13 stacji i przystanków, dwutorowa, prędkości w 96% z wykazu PKP PLK, pochylenia do 14,3‰,
+  horyzont do 1°. Wygenerowano `--line 131,137`; poprawka `fixes`: przystanek Chorzów Uniwersytet (otwarty 12.2024,
+  846 m od Chorzowa Miasta – reguła 900 m generatora go pomijała; położenie z wykazu PKP PLK).
+- `index.html` – plik trasy i horyzontu; `tests/horizon.test.js` – trasa na liście horyzontów.
+
+### Generator tras (`osm-route.js`)
+- `otherKind`: stacje kolei wąskotorowej (nazwa „…Wąskotorowy/-e”, `narrow_gauge=yes`, operator „…kolei
+  wąskotorowych”) pomijane jak stacje metra i tramwaju (uwaga `station-other`). Bytom Wąskotorowy (w OSM tylko
+  `railway=halt` i nazwa) leżał 170 m przed stacją Bytom i reguła 900 m wypierała właściwą stację.
+
 ## 0.58.28 – 22 października 2026
 
 Ulica pod mostem kolejowym bez klinów ziemi.

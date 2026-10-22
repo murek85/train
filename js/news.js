@@ -4,6 +4,18 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.29',
+			date: '22 października 2026',
+			groups: [
+				['Nowa trasa', [
+					'Tarnowskie Góry – Katowice: linia 131 przez Radzionków, Bytom i Chorzów, od Chorzowa Batorego linia 137 – 33,5 km, 13 stacji i przystanków (jak pociągi S8 i S9 Kolei Śląskich), z otoczeniem, peronami i horyzontem z prawdziwego terenu.',
+				]],
+				['Generator tras', [
+					'Stacje kolei wąskotorowej obok linii (np. Bytom Wąskotorowy) nie wypierają już prawdziwych stacji przebiegu.',
+				]],
+			],
+		},
+		{
 			version: '0.58.28',
 			date: '22 października 2026',
 			groups: [
