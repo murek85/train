@@ -27,6 +27,30 @@ Nowa trasa Czechowice-Dziedzice – Wisła Głębce.
 - `real-route.test.js`: pochylenia do 30‰ na trasach z różnicą wysokości ponad 200 m (dotąd 300 m; nowa trasa – 279 m,
   pozostałe trasy nizinne do 87 m).
 
+## 0.58.40 – 22 października 2026
+
+Zmienna pogoda, schnące szyny, ruch na stacjach.
+
+- `scenario.js` randomEvents: zmienna pogoda (40% jazd przy pogodzie bez opadu albo z lekkim deszczem / deszczem).
+  Losowany ciąg 3–5 kroków, np. pochmurno → lekki deszcz → deszcz → lekki deszcz → umiarkowane. Pierwszy krok na
+  12–27% trasy, kolejne co ok. 10–15%; zdarzenia `weather` z `slow: true`. Dawniej jedna nagła zmiana (deszcz albo
+  mgła) w 30% jazd.
+- `weather.js` set(…, slow) i `scene.js` setWeather(key, slow): zmiana w trakcie jazdy przechodzi ok. 30 s (tempo
+  0,035/s), zmiana z pauzy jak dotąd ok. 2 s.
+- `sim.js` railWet / `physics.js` adhesion: po ustaniu opadu (setConditions) wilgotność szyn maleje wykładniczo
+  (połowa w ok. 3 min) od poziomu opadu (lekki deszcz 0,8, deszcz / ulewa / burza 1, śnieg 0,6). Przy suchej pogodzie
+  przyczepność ≤ 0,3 − 0,1·wilgotność. Stan zapisywany w zapisie gry.
+- Kałuże (`nodes.js`, `common.js`): także na peronach i betonie (wariant platform / concrete) – płytkie, mniejsze
+  i rzadsze niż na jezdni, z kręgami od kropli.
+- `world.js` updateLamps: szadź zimą także na przewodach rysowanych jako bryły (`World.wireMesh` – trasy z mapy).
+- `real-env.js` envLocalTracks: pociągi innych linii także na powierzchni – przy peronach z mapy przy stacjach trasy
+  (bez peronu naszego przystanku i torów nieużywanych, najwyżej 4 tory na stację, najbliżej osi; bez zapowiedzi –
+  `quiet`). Nowe tory przelotowe (`through`): przy stacjach (nie przystankach) tor z mapy 6–45 m od osi, ciągły
+  co najmniej 250 m w obie strony od środka stacji, nie tor naszej linii ani pociągów z przeciwka – jeden na stację.
+- `life.js` updateLocals: na torze przelotowym towarowy (`freightTrain`, nowy skład co trzeci przejazd) przejeżdża bez
+  zatrzymania z prędkością 45–60 km/h, co 3–7 min. Najwyżej 3 takie pociągi naraz. Pierwszy start na powierzchni
+  losowo w ciągu 2 min.
+
 ## 0.58.39 – 22 października 2026
 
 Mgła pod chmurami bez białego pasa.

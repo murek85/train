@@ -7,6 +7,21 @@
 			version: '0.58.40',
 			date: '22 października 2026',
 			groups: [
+				['Pogoda', [
+					'Zmienna pogoda w trakcie jazdy: kilka kolejnych zmian (np. pochmurno → lekki deszcz → deszcz → przejaśnienie), każda płynnie przez ok. pół minuty.',
+					'Szyny po deszczu schną stopniowo – przyczepność wraca do normy w ciągu kilku minut.',
+					'Kałuże także na peronach i betonie; szadź zimą także na grubych przewodach sieci.',
+				]],
+				['Ruch', [
+					'Na dużych stacjach pociągi innych linii przyjeżdżają, stoją i odjeżdżają przy sąsiednich peronach.',
+					'Przy stacjach z torami przelotowymi co kilka minut przejeżdża pociąg towarowy.',
+				]],
+			],
+		},
+		{
+			version: '0.58.40',
+			date: '22 października 2026',
+			groups: [
 				['Nowa trasa', [
 					'Czechowice-Dziedzice – Wisła Głębce: przebieg pociągów S6 przez Chybie Mnich, Skoczów, Goleszów i Ustroń, dalej górską linią 191 doliną Wisły – 51,3 km, 18 stacji i przystanków, wzniesienia do 28,6‰, Beskid Śląski na horyzoncie (Czantoria nad Ustroniem).',
 				]],

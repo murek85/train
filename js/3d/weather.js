@@ -326,9 +326,10 @@ import * as THREE from 'three';
 			this.build(particles);
 		}
 
-		set(key, routeId, instant) {
+		set(key, routeId, instant, slow) {
 			if (key === 'auto') key = ROUTE_DEFAULT[routeId] || 'clear';
 			this.key = key;
+			this.blend = slow ? 0.035 : 0.5; // tempo przejścia (1/s): w trakcie jazdy ok. 30 s, z pauzy ok. 2 s
 			this.target = PRESETS[key] || PRESETS.clear;
 			if (instant) {
 				Object.assign(this.cur, this.target);
@@ -439,7 +440,7 @@ import * as THREE from 'three';
 			this.box.z = this.box.x;
 			this.box.y += (vert - this.box.y) * kb;
 			this.center.set(focus.x, Math.min(camera.y, focus.y) - 5 + this.box.y / 2, focus.z);
-			const k = Math.min(1, dt * 0.5);
+			const k = Math.min(1, dt * (this.blend || 0.5));
 			for (const p of ['cover', 'shadow', 'haze', 'rain', 'snow', 'fogNear', 'fogFar', 'wind', 'sun', 'lightning']) this.cur[p] += (this.target[p] - this.cur[p]) * k;
 			this.updateLightning(dt, camera);
 			// śnieg osiada powoli (ok. pół minuty) i jeszcze wolniej topnieje

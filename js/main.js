@@ -2286,7 +2286,7 @@
 					else if (e.type === 'order' || e.type === 'order-ack') { hud.order(Object.assign({ train: sim.trainName() }, e.order), fmtClock(sim.route.startClock + e.order.at).slice(0, 5)); hud.orderChip(sim.orders.length); }
 					else if (e.type === 'radio-ack') hud.radioAck();
 					else if (e.type === 'task') hud.task(e);
-					else if (e.type === 'weather') { rideWeather = e.key; renderer.setWeather(e.key); sim.setConditions(rideWeatherKey()); }
+					else if (e.type === 'weather') { rideWeather = e.key; renderer.setWeather(e.key, e.slow !== false); sim.setConditions(rideWeatherKey()); }
 				}
 				sim.events.length = 0;
 				if (mode === 'play' && sim.status !== 'running') {

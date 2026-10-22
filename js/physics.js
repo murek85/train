@@ -223,9 +223,12 @@
 	/* Przyczepność koło–szyna (μ): sucho ok. 0,30, deszcz 0,20, mgła (wilgoć) 0,22, śnieg 0,15, liście na torze
 	   0,06; zima – mniej o 15 %; piasecznica +0,07 (najwyżej 0,33). Siła pociągowa do μ·g·masa napędna, opóźnienie
 	   hamowania do μ·g (wszystkie osie hamowane). */
-	function adhesion(weather, season, leaves, sand) {
+	/* railWet (0…1): szyny jeszcze mokre po opadzie (sim.js – schną kilka minut) – przyczepność przy suchej pogodzie
+	   między suchą a mokrą (0,3 → 0,2) */
+	function adhesion(weather, season, leaves, sand, railWet) {
 		// lekki deszcz – najgorzej (wilgoć z brudem na szynach, opad ich nie zmywa), ulewa – jak deszcz
 		let mu = { drizzle: 0.18, rain: 0.2, downpour: 0.2, storm: 0.19, fog: 0.22, snow: 0.15 }[weather] || 0.3;
+		if (railWet > 0) mu = Math.min(mu, 0.3 - 0.1 * Math.min(1, railWet));
 		if (leaves) mu = Math.min(mu, ['drizzle', 'rain', 'downpour', 'storm'].includes(weather) ? 0.05 : 0.06);
 		if (season === 'winter') mu *= 0.85;
 		if (sand) mu = Math.min(0.33, mu + 0.07);

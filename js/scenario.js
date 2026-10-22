@@ -297,9 +297,19 @@
 		// uszkodzony semafor (nie wyjazdowy stacji początkowej): w środkowej części trasy
 		const sigs = route.signals.map((x, i) => ({ x, i })).filter(({ x }) => x.pos > st[0].pos + 1500 && x.pos < st[last].pos - 1500 && !(x.type === 'starter' && x.station === 0));
 		if (sigs.length && r() < 0.3) events.push({ when: { start: true }, type: 'fault', signal: pick(sigs).i });
-		if (['clear', 'few', 'partly', 'cloudy', 'overcast', 'auto'].includes(weather) && r() < 0.3) {
-			const key = pick(['drizzle', 'rain', 'fog', 'rain', 'downpour']);
-			events.push({ when: { at: Math.round(st[0].pos + (st[last].pos - st[0].pos) * (0.3 + r() * 0.3)) }, type: 'weather', key });
+		/* zmienna pogoda: kilka kroków po kolei (płynne przejścia – weather.js, ok. 30 s), np. pochmurno → lekki deszcz →
+		   deszcz → lekki deszcz → umiarkowane zachmurzenie; dawniej jedna nagła zmiana (deszcz albo mgła) */
+		if (['clear', 'few', 'partly', 'cloudy', 'overcast', 'drizzle', 'rain', 'auto'].includes(weather) && r() < 0.4) {
+			const L = st[last].pos - st[0].pos;
+			const wet = weather === 'drizzle' || weather === 'rain';
+			const seq = wet ? pick([['drizzle', 'overcast', 'partly'], ['downpour', 'rain', 'drizzle', 'cloudy']])
+				: pick([['cloudy', 'drizzle', 'rain', 'drizzle', 'partly'], ['overcast', 'rain', 'downpour', 'rain', 'cloudy'], ['partly', 'cloudy', 'overcast', 'drizzle'], ['few', 'partly', 'cloudy'], ['cloudy', 'fog', 'overcast', 'partly']]);
+			let f = 0.12 + r() * 0.15;
+			const stepF = Math.min(0.15, (0.9 - f) / seq.length);
+			for (const key of seq) {
+				events.push({ when: { at: Math.round(st[0].pos + L * f) }, type: 'weather', key, slow: true });
+				f += stepF * (0.7 + r() * 0.6);
+			}
 		}
 		// zima: zamarznięta zwrotnica przed stacją (semafor wjazdowy na dalszej części trasy) – postój 2–5 min
 		if (season === 'winter') {

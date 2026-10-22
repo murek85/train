@@ -4300,6 +4300,8 @@ import { BundleGroup } from 'three/webgpu';
 			if (World.wireMat) {
 				const rime = this.season === 'winter' ? 0.6 * Math.min(1, NS.util.U.uSnow.value * 1.6) : 0;
 				World.wireMat.color.setHex(0x2a2a2a).lerp(tmpColor.setRGB(0.8, 0.84, 0.88), rime * (1 - 0.75 * Math.min(1, dark)));
+				// (przewody jako bryły – trasy z mapy: też szadź; dawniej tylko linie)
+				if (World.wireMesh) World.wireMesh.color.setHex(0x2c2e31).lerp(tmpColor.setRGB(0.8, 0.84, 0.88), rime * (1 - 0.75 * Math.min(1, dark)));
 			}
 			if (night > 0) M.lampLens.color.setRGB(1, 0.82, 0.55).multiplyScalar(1 + 3.5 * night);
 			else M.lampLens.color.set('#d8d4c8');

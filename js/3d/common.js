@@ -726,7 +726,10 @@ import * as THREE from 'three';
 				roughnessFactor = mix(clamp(roughnessFactor + gRough, 0.3, 1.0), 0.97, gSand);`}
 				#endif
 				${WEATHER_GLSL(ground || gravel || variant === 'road' || variant === 'concrete' || variant === 'platform' || variant === 'roof' ? 1.0 : veg ? 0.6 : 0.75, snowK, train ? 'vLocP' : 'vWorldP')}
-				${ground || variant === 'road' ? `
+				${variant === 'platform' || variant === 'concrete' ? `
+				// perony i beton: płytkie kałuże w zagłębieniach płyt (mniejsze i rzadsze niż na jezdni)
+				puddle = smoothstep(0.58, 0.7, gNoise(vWorldP.xz * 0.12) * 0.7 + gNoise(vWorldP.xz * 0.5) * 0.3 + uWet * 0.08) * smoothstep(0.4, 0.8, uWet) * 0.85;` : ''}
+				${ground || variant === 'road' || variant === 'platform' || variant === 'concrete' ? `
 				// kałuże: ciemne, gładkie jak lustro, z kręgami od kropli (niżej – też światło latarni z mapy nocnej)
 				{
 					float pm = puddle * smoothstep(0.85, 0.97, wN.y);

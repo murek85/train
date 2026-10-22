@@ -889,9 +889,10 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			}
 		}
 
-		setWeather(key) {
+		// slow – zmiana w trakcie jazdy (zdarzenie trasy): przejście ok. 30 s; z pauzy – szybko (ok. 2 s)
+		setWeather(key, slow) {
 			this.weatherKey = key;
-			if (this.routeId) this.weather.set(key, this.routeId.replace(/@\d+$/, ''), false);
+			if (this.routeId) this.weather.set(key, this.routeId.replace(/@\d+$/, ''), false, slow);
 		}
 
 		/* zmiana pory roku w trakcie jazdy (pauza): sam świat od nowa (roślinność, liście, śnieg) – pociąg, kabina i ruch bez

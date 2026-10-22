@@ -3403,9 +3403,12 @@ import * as THREE from 'three';
 			for (let k = 0; k < m; k++) pts.push([row[1 + k * 2], row[2 + k * 2]]);
 			let s0 = Infinity, s1 = -Infinity;
 			for (const [s] of pts) { s0 = Math.min(s0, s); s1 = Math.max(s1, s); }
-			const mid = (s0 + s1) / 2;
-			if (s1 - s0 < 80 || this.envTunnelK(mid) <= 0.5) continue;
-			if (r.stations.some((st) => s1 > st.platformStart - 20 && s0 < st.platformEnd + 20)) continue;
+			const mid = (s0 + s1) / 2, under = this.envTunnelK(mid) > 0.5;
+			if (s1 - s0 < 80) continue;
+			/* peron w tunelu – tylko innej linii (poza stacjami trasy); na powierzchni także perony innych torów przy
+			   stacjach trasy (duże stacje: pociągi innych linii na sąsiednich peronach), bez peronu naszego przystanku */
+			if (under && r.stations.some((st) => s1 > st.platformStart - 20 && s0 < st.platformEnd + 20)) continue;
+			if (!under && this.env.usedPlatforms && this.env.usedPlatforms.has(env.p.indexOf(row))) continue;
 			const across = (s) => {
 				let lo = Infinity, hi = -Infinity;
 				for (let k = 0; k < m; k++) {
@@ -3420,7 +3423,7 @@ import * as THREE from 'three';
 				const s = s0 + (s1 - s0) * f, w = across(s), ln = this.envLaneAt(s);
 				if (!w) continue;
 				for (const t of this.envTracksAt(s)) {
-					if (seen.has(t.i) || t.sk || Math.abs(t.d) < 3 || Math.abs(t.d - ln) < 1) continue;
+					if (seen.has(t.i) || t.sk || Math.abs(t.d) < 3 || Math.abs(t.d - ln) < 1 || env.t[t.i][0] & 4) continue; // (bez torów nieużywanych)
 					if (!((t.d < w[0] && t.d > w[0] - 3.5) || (t.d > w[1] && t.d < w[1] + 3.5))) continue;
 					seen.add(t.i);
 					const tr = env.t[t.i], n = (tr.length - 1) / 2;
@@ -3440,9 +3443,52 @@ import * as THREE from 'three';
 					// nazwa stacji: env.os (stacja innej linii pominięta przez generator) najbliżej środka peronu, do 400 m
 					let name = null, best = 400;
 					for (const [ps, nm] of env.os || []) if (Math.abs(ps - mid) < best) { best = Math.abs(ps - mid); name = nm; }
-					out.push({ i: t.i, sA, sB, stop: mid, lane, y, name });
+					if (!name && !under) { const st = r.stations.find((q) => mid > q.platformStart - 150 && mid < q.platformEnd + 150); if (st) name = st.name; }
+					// (na powierzchni bez zapowiedzi – nie zagłuszają zapowiedzi stacji trasy)
+					out.push({ i: t.i, sA, sB, stop: mid, lane, y, name, quiet: !under });
 				}
 			}
+		}
+		/* na powierzchni najwyżej 4 tory peronowe na stację (najbliżej osi) – na dużych stacjach (Warszawa Wschodnia: kilkanaście
+		   torów przy peronach z mapy) model pociągu na każdy tor to za dużo */
+		{
+			const byName = new Map();
+			for (const L of out) if (L.quiet) { const k = L.name || L.stop; if (!byName.has(k)) byName.set(k, []); byName.get(k).push(L); }
+			for (const list of byName.values()) {
+				if (list.length <= 4) continue;
+				list.sort((a, b) => Math.abs(a.lane(a.stop)) - Math.abs(b.lane(b.stop)));
+				for (const L of list.slice(4)) out.splice(out.indexOf(L), 1);
+			}
+		}
+		/* przejazdy towarowych bez zatrzymania: przy stacjach trasy (nie przystankach) tor z mapy 6–45 m od osi, prawie
+		   równoległy, ciągły co najmniej 250 m w obie strony od środka stacji, nie tor naszej linii ani pociągów z przeciwka –
+		   najwyżej jeden na stację */
+		for (const st of r.stations) {
+			if (st.type === 'halt') continue;
+			const mid = (st.platformStart + st.platformEnd) / 2, ln = this.envLaneAt(mid);
+			if (this.envTunnelK(mid) > 0.5) continue;
+			const cands = this.envTracksAt(mid).filter((t) => !t.sk && Math.abs(t.d) > 6 && Math.abs(t.d) < 45 && Math.abs(t.d - ln) > 2 && !seen.has(t.i) && !(env.t[t.i][0] & 18));
+			let pick = null;
+			for (const t of cands.sort((a, b) => Math.abs(a.d) - Math.abs(b.d))) {
+				const tr = env.t[t.i], n = (tr.length - 1) / 2;
+				let sA = Infinity, sB = -Infinity;
+				for (let k = 0; k < n; k++) { sA = Math.min(sA, tr[1 + k * 2]); sB = Math.max(sB, tr[1 + k * 2]); }
+				if (sA > mid - 250 || sB < mid + 250) continue;
+				pick = { t, tr, n, sA, sB };
+				break;
+			}
+			if (!pick) continue;
+			const { t, tr, n, sA, sB } = pick;
+			seen.add(t.i);
+			const seg = (x) => {
+				const c = Math.max(sA, Math.min(sB, x));
+				for (let k = 0; k < n - 1; k++) {
+					const sa = tr[1 + k * 2], sb = tr[3 + k * 2];
+					if ((sa - c) * (sb - c) <= 0 && sa !== sb) return [k, tr[2 + k * 2] + ((tr[4 + k * 2] - tr[2 + k * 2]) * (c - sa)) / (sb - sa), c];
+				}
+				return [0, tr[2], c];
+			};
+			out.push({ i: t.i, sA, sB, stop: mid, lane: (x) => seg(x)[1], y: (x) => { const [k, d, c] = seg(x); return this.envRowY(t.i, k, c, d) - R.heightAt(r, c); }, name: st.name, quiet: true, through: true });
 		}
 		return out;
 	};

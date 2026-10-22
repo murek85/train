@@ -587,9 +587,22 @@
 		}
 		// ---- przyczepność ----
 		onLeaves(a, b) { return this.leaves.some(([x, y]) => x < b && y > a); }
-		adhesionAt(a, b) { return P.adhesion(this.opts.weather, this.opts.season, this.onLeaves(a, b), this.sand.t > 0); }
+		adhesionAt(a, b) { return P.adhesion(this.opts.weather, this.opts.season, this.onLeaves(a, b), this.sand.t > 0, this.railWet()); }
+		/* szyny po opadzie: od ustania deszczu (setConditions) wilgotność maleje wykładniczo (połowa w ok. 3 min) – po ulewie
+		   przyczepność wraca stopniowo, nie od razu */
+		railWet() {
+			if (this.dryFrom === undefined) return 0;
+			return this.wetAtDry * Math.pow(0.5, (this.time - this.dryFrom) / 180);
+		}
 		// zmiana warunków w czasie jazdy (pogoda w pauzie, zdarzenie scenariusza)
-		setConditions(weather) { if (weather) this.opts.weather = weather; }
+		setConditions(weather) {
+			if (!weather) return;
+			const WET = { drizzle: 0.8, rain: 1, downpour: 1, storm: 1, snow: 0.6 };
+			const was = WET[this.opts.weather] || 0, now = WET[weather] || 0;
+			if (was > 0 && now === 0) { this.wetAtDry = Math.max(was, this.railWet()); this.dryFrom = this.time; }
+			else if (now > 0) this.dryFrom = undefined;
+			this.opts.weather = weather;
+		}
 		// pora roku w trakcie jazdy (pauza): przyczepność wg pory, odcinki „liście na torze” tylko jesienią (losowane od nowa)
 		setSeason(season) {
 			if (!season || season === this.opts.season) return false;
@@ -1130,7 +1143,7 @@
 				stats: copy(this.stats), scen: this.scenario ? this.scenario.snapshot() : null,
 				air: copy(this.air), shp: copy(this.shp), traffic: this.traffic ? this.traffic.snapshot() : null,
 				orders: copy(this.orders), orderSeq: this.orderSeq, said: copy(this.said),
-				drive: copy(this.drive), sand: copy(this.sand), lock: copy(this.lock), leafSeen: copy(this.leafSeen), weather: this.opts.weather,
+				drive: copy(this.drive), sand: copy(this.sand), lock: copy(this.lock), leafSeen: copy(this.leafSeen), weather: this.opts.weather, dryFrom: this.dryFrom, wetAtDry: this.wetAtDry,
 				rate: copy(this.rate), pax: copy(this.pax),
 			};
 		}
@@ -1169,6 +1182,7 @@
 			if (snap.rate) Object.assign(sim.rate, snap.rate);
 			if (snap.pax) { Object.assign(sim.pax, snap.pax); sim.setLoad(); }
 			if (snap.weather) sim.opts.weather = snap.weather;
+			if (snap.dryFrom !== undefined) { sim.dryFrom = snap.dryFrom; sim.wetAtDry = snap.wetAtDry; } // szyny schnące po opadzie
 			sim.crossings.forEach((c, i) => { c.honked = !!snap.crossings[i][0]; c.done = !!snap.crossings[i][1]; });
 			// zapisy sprzed scenariuszy – bez tych pól
 			sim.tempLimits = snap.tempLimits || [];

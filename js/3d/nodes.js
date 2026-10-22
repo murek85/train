@@ -642,7 +642,12 @@ import {
 				}
 				const snowK = opt.noSnow ? 0 : v === 'grass' ? 0 : v === 'wind' ? 0.75 : 1;
 				weather(S, wN, WET_K[v] ?? 0.75, snowK, train ? positionGeometry : positionWorld, standard);
-				if (ground || v === 'road') {
+				// perony i beton: płytkie kałuże w zagłębieniach płyt (mniejsze i rzadsze niż na jezdni), od mokrej nawierzchni
+				if (v === 'platform' || v === 'concrete') {
+					const wq = positionWorld.xz;
+					S.puddle.assign(smoothstep(0.58, 0.7, gNoise(wq.mul(0.12)).mul(0.7).add(gNoise(wq.mul(0.5)).mul(0.3)).add(uWet.mul(0.08))).mul(smoothstep(0.4, 0.8, uWet)).mul(0.85));
+				}
+				if (ground || v === 'road' || v === 'platform' || v === 'concrete') {
 					const pm = S.puddle.mul(smoothstep(0.85, 0.97, wN.y)).toVar();
 					diffuseColor.rgb.assign(mix(diffuseColor.rgb, diffuseColor.rgb.mul(0.35).add(vec3(0.02, 0.03, 0.04)), pm));
 					if (standard) S.rough.assign(mix(S.rough, 0.03, pm));
