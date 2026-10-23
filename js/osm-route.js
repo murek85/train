@@ -2767,6 +2767,14 @@
 			const onPlatform = route.some((st) => s > st.s - platformLength - 20 && s < st.s + 30);
 			if (t && t.tags.railway === 'level_crossing' && !onPlatform && s > route[0].s + 200 && s < route[route.length - 1].s - 200) crossings.push(S(s));
 		}
+		/* przejazd oznaczony tylko na drugim torze linii (węzeł do 5 m od przebiegu, nie na nim – lcS): dawniej wyłącznie
+		   wyciszał uwagę o drodze bez przejazdu, a przejazdu nie było (Kraków – Zakopane km 20,3, 21,9, 28,0, 121,0;
+		   Czechowice-Dziedzice – Wisła Głębce km 16,8, 38,9) */
+		for (const s of lcS) {
+			const onPlatform = route.some((st) => s > st.s - platformLength - 20 && s < st.s + 30);
+			if (onPlatform || s <= route[0].s + 200 || s >= route[route.length - 1].s - 200) continue;
+			if (!crossings.some((c) => Math.abs(c - S(s)) < 30)) crossings.push(S(s));
+		}
 		crossings.sort((a, b) => a - b);
 
 

@@ -4,6 +4,49 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.50 – 23 października 2026
+
+Drogi pod mostami naszej linii.
+
+### Otoczenie
+- Łącznik drogi pod przęsłem (`envLinksZ`) obniżany, by pod spodem pomostu (główka szyny − 0,9 m) było co najmniej
+  3,5 m (drogi klasy 7+ – 2,5 m; `LINK_CLR`), z podjazdem najwyżej 25% od końców łącznika. Teren z pomiaru pod mostem
+  to interpolacja między brzegami, a końce dróg leżą tuż przed przyczółkami – prosta między nimi dawała prześwit
+  0,6–2 m (np. Kraków – Zakopane km 76,5).
+- Maska wysokości dróg (`envRoadMask`): pole w pasie łącznika ma wysokość najbliższego punktu jego osi (dawniej najniższą
+  w promieniu ok. 5 m – przy obniżeniu płaskie dno i pionowe brzegi); łączniki zachodzące na siebie – wysokość
+  bliższego (dawniej niższego).
+
+### Kontrola tras
+- „Droga pod mostem wchodzi w nasyp”: teren porównywany z prostą między końcami drogi (po niej biegnie łącznik), nie
+  z niższym końcem – każda droga pod górę wyglądała na nasyp (27 takich ostrzeżeń, prawdziwe odchyłki ponad 0,6 m
+  tylko w 3 miejscach).
+- „Prześwit pod mostem”: błąd poniżej progu łącznika (3,5 / 2,5 m), do 4 m – uwaga (niskie, ale realne przejścia).
+- Wynik: 66 pozycji do poprawy zamiast 111; drogi pod mostami 4 zamiast 49 (krótkie łączniki – podjazd 25% nie
+  pozwala zejść niżej; Tarnowskie Góry km 16,86 – koniec drogi z mapy pod przyczółkiem).
+
+## 0.58.49 – 22 października 2026
+
+Przegląd kontroli tras: brakujące przejazdy, przyczyna w generatorze, mniej fałszywych alarmów.
+
+### Trasy
+- Przejazdy dopisane w poprawkach (`fixes.crossings.add`) – miejsca, w których kontrola znalazła ulicę przerwaną przy
+  torze, a OSM ma tam węzeł `railway=level_crossing` z numerem PLK: Kraków – Zakopane km 20,27 (097 002 558),
+  21,89 (097 004 158), 28,01 (097 010 325), 120,99 (099 028 255), 131,82 (099 039 163); Czechowice-Dziedzice – Wisła
+  Głębce km 16,76 (157 015 038), 28,74 (190 024 860), 38,92 (191 006 642); Toruń – Chełmża km 19,23 (207 015 457).
+
+### Generator tras
+- Przyczyna: przejazd był dodawany tylko z węzła `level_crossing` na przebiegu (naszym torze); węzeł na drugim torze
+  linii (do 5 m od przebiegu – `lcS`) jedynie wyciszał uwagę o drodze bez przejazdu. Teraz takie przejazdy też trafiają
+  do trasy (poza peronami i 200 m od końców, bez powtórzeń do 30 m).
+
+### Kontrola tras
+- Łączniki dróg pod mostami naszej linii (`envUnderLinks`) pomijają drogi przecinające tor przejazdem tuż przy moście –
+  dawniej fałszywe „droga pod mostem: prześwit 0 m” (np. Kraków – Zakopane km 128,2); takiego łącznika nie rysujemy.
+- „Droga przecina tor z mapy z progiem”: pomijane przy przejazdach naszej linii (jezdnię przez wszystkie tory rysuje
+  przejazd); drogi klasy 8 i dalszej (gospodarcze wzdłuż bocznic) – uwaga zamiast błędu.
+- Wynik: 111 pozycji do poprawy zamiast 134 (wszystkie trasy).
+
 ## 0.58.48 – 22 października 2026
 
 Lżejsze i lepiej dopasowane jezdnie.

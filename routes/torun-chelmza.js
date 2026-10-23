@@ -251,4 +251,4 @@
 "m":"Przebieg lewym torem (km 22,39–22,75) – obok, po prawej, biegnie drugi tor.",
 "fix":"Tor wybiera generator (ruch prawostronny, numer linii). Jeśli to błąd: wygeneruj z innym --line albo sprawdź w OSM numery linii (ref) torów; jeśli to celowe (np. jednotorowy odcinek): \"ignore\": [\"left@22392\"].",
 "to":22752}],
-"fixes":{"crossings":{"add":[19774]}}});
+"fixes":{"crossings":{"add":[19231,19774]}}});

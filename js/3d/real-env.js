@@ -1183,25 +1183,34 @@ import * as THREE from 'three';
 				yield;
 			}
 		}
-		// łączniki pod mostami (wysokość z końców dróg): teren pod mostem w poziomie przejścia
+		// łączniki pod mostami (wysokość z końców dróg): teren pod mostem w poziomie przejścia; łączniki zachodzące na
+		// siebie (dwa końce po jednej stronie do wspólnego po drugiej) – pole bierze wysokość bliższego
+		let lkD = null, lkZ = null;
 		for (const lk of this.envLinksZ()) {
 			if (!lk) continue;
-			const [ti, sa, da, sb, db, za, zb] = lk;
+			const [ti, sa, da, sb, db, za, zb, dip] = lk;
 			if (Math.max(sa, sb) < s0 - 12 || Math.min(sa, sb) > s0 + C + 12) continue;
-			const half = (ROAD_W[ti] || 5) / 2 + 2.5, rr = Math.ceil(half);
-			const L = Math.hypot(sb - sa, db - da), n = Math.max(1, Math.ceil(L / 0.7));
-			for (let q = 0; q <= n; q++) {
-				const ss = sa + ((sb - sa) * q) / n, dd = da + ((db - da) * q) / n, zz = Math.round(za + ((zb - za) * q) / n);
-				const si0 = Math.floor(ss - s0), di0 = Math.floor(dd + MASK_D);
-				for (let a = -rr; a <= rr; a++) for (let b = -rr; b <= rr; b++) {
-					if (a * a + b * b > half * half + 0.5) continue;
-					const si = si0 + a, di = di0 + b;
-					if (si < 0 || si >= C || di < 0 || di >= W) continue;
-					const ix = si * W + di;
-					if (mask[ix] === -32768 || zz < mask[ix]) mask[ix] = zz;
-					if (zz < lowZ[ix]) lowZ[ix] = zz;
-				}
+			/* pole maski – wysokość najbliższego punktu osi łącznika (w pasie do half od osi); dawniej najniższa w promieniu
+			   half wokół kolejnych punktów osi: przy obniżeniu pod przęsłem płaskie dno i pionowe brzegi zamiast podjazdu */
+			const half = (ROAD_W[ti] || 5) / 2 + 2.5, ux = sb - sa, uy = db - da, L2 = ux * ux + uy * uy || 1e-9;
+			const si0 = Math.max(0, Math.floor(Math.min(sa, sb) - half - s0)), si1 = Math.min(C - 1, Math.floor(Math.max(sa, sb) + half - s0));
+			const di0 = Math.max(0, Math.floor(Math.min(da, db) - half + MASK_D)), di1 = Math.min(W - 1, Math.floor(Math.max(da, db) + half + MASK_D));
+			for (let si = si0; si <= si1; si++) for (let di = di0; di <= di1; di++) {
+				const ss = s0 + si + 0.5, dd = di - MASK_D + 0.5;
+				const t = Math.max(0, Math.min(1, ((ss - sa) * ux + (dd - da) * uy) / L2));
+				if (Math.hypot(sa + ux * t - ss, da + uy * t - dd) > half) continue;
+				const q = Math.hypot(sa + ux * t - ss, da + uy * t - dd), ix = si * W + di;
+				if (!lkD) { lkD = new Float32Array(C * W).fill(Infinity); lkZ = new Int16Array(C * W); }
+				if (q >= lkD[ix]) continue;
+				lkD[ix] = q;
+				lkZ[ix] = Math.round(za + (zb - za) * t) - (dip ? dip[Math.round(t * (dip.length - 1))] : 0);
 			}
+		}
+		if (lkD) for (let ix = 0; ix < mask.length; ix++) {
+			if (lkD[ix] === Infinity) continue;
+			const zz = lkZ[ix];
+			if (mask[ix] === -32768 || zz < mask[ix]) mask[ix] = zz;
+			if (zz < lowZ[ix]) lowZ[ix] = zz;
 		}
 		yield;
 		const bridged = new Uint8Array(C * W);
@@ -1394,8 +1403,14 @@ import * as THREE from 'three';
 		return mask;
 	};
 	/* łączniki dróg pod mostami naszej linii (envUnderLinks) z wysokością z pomiaru końców łączonych dróg (dm, jak
-	   env.rh): [ti, sa, da, sb, db, za, zb]; bez pomiaru – null. Dawniej łącznik leżał na terenie, a końce dróg (w
-	   przejściu pod mostem kilka metrów niżej) kończyły się rowem z uskokiem przed mostem. */
+	   env.rh): [ti, sa, da, sb, db, za, zb, dip]; bez pomiaru – null. Dawniej łącznik leżał na terenie, a końce dróg (w
+	   przejściu pod mostem kilka metrów niżej) kończyły się rowem z uskokiem przed mostem.
+	   dip – obniżenie łącznika (dm, co ok. 0,5 m od końca a do b; null – bez obniżenia): pod przęsłem (do 4 m od osi)
+	   jezdnia co najmniej LINK_CLR pod spodem pomostu (główka szyny − 0,9 m), z podjazdem najwyżej 25% od końców.
+	   Teren z pomiaru pod mostem to interpolacja między brzegami, a końce dróg leżą tuż przed przyczółkami – prosta
+	   między nimi dawała prześwit 0,6–2 m (Kraków – Zakopane km 76,5, Tarnowskie Góry – Katowice km 16,9). */
+	// prześwit pod mostem nad łącznikiem drogi (m): ulice – 3,5, drogi gospodarcze, polne i ścieżki (klasa 7+) – 2,5
+	const LINK_CLR = (ti) => (ti >= 7 ? 2.5 : 3.5);
 	World.prototype.envLinksZ = function () {
 		const e = this.env;
 		if (e.linksZ) return e.linksZ;
@@ -1410,7 +1425,28 @@ import * as THREE from 'three';
 			}
 			return null;
 		};
-		e.linksZ = e.roadLinks.map((lk) => { const za = endZ(lk[1], lk[2]), zb = endZ(lk[3], lk[4]); return za === null || zb === null ? null : lk.concat([za, zb]); });
+		const D = e.dem, r = this.route, SL = 0.25;
+		const dig = (lk, za, zb) => {
+			const [ti, sa, da, sb, db] = lk, L = Math.hypot(sb - sa, db - da);
+			if (!D || L < 1) return null;
+			const clr = LINK_CLR(ti), n = Math.max(2, Math.ceil(L / 0.5)), h = L / n, need = new Float32Array(n + 1);
+			let any = false;
+			for (let q = 0; q <= n; q++) {
+				const t = q / n, s = sa + (sb - sa) * t, d = da + (db - da) * t;
+				if (Math.abs(d) >= 4 || !this.underBridge(s, d)) continue;
+				const y = D.base + (za + (zb - za) * t) / 10 - D.off, top = R.heightAt(r, s) - 0.9 - clr;
+				if (y > top) { need[q] = y - top; any = true; }
+			}
+			if (!any) return null;
+			const dip = new Int16Array(n + 1);
+			for (let q = 0; q <= n; q++) {
+				let m = 0;
+				for (let u = 0; u <= n; u++) if (need[u] > 0) m = Math.max(m, need[u] - SL * Math.abs(q - u) * h);
+				dip[q] = Math.round(Math.min(m, SL * Math.min(q, n - q) * h) * 10);
+			}
+			return dip;
+		};
+		e.linksZ = e.roadLinks.map((lk) => { const za = endZ(lk[1], lk[2]), zb = endZ(lk[3], lk[4]); return za === null || zb === null ? null : lk.concat([za, zb, dig(lk, za, zb)]); });
 		return e.linksZ;
 	};
 	/* Mury oporowe (liczone z maską dróg kawałka – envRoadMask): łamane [{ s, d, y0, y1 }] wzdłuż krawędzi jezdni. */
@@ -2131,9 +2167,9 @@ import * as THREE from 'three';
 		if (!this.env) return [];
 		if (this.env.audit) return this.env.audit;
 		const e = this.route.env, out = [];
-		const add = (code, s, d, m, fix) => {
+		const add = (code, s, d, m, fix, lvl = 'warn') => {
 			if (out.some((x) => x.code === code && Math.abs(x.pos - s) < 30 && Math.abs(x.d - d) < 30)) return;
-			out.push({ id: `audit-${code}@${Math.round(s)}`, code, k: 'audit', lvl: 'warn', pos: s, d, m, fix });
+			out.push({ id: `audit-${code}@${Math.round(s)}`, code, k: 'audit', lvl, pos: s, d, m, fix });
 		};
 		const roadY = (s, d) => { const rl = this.roadLevel(s, d); return rl !== undefined ? rl : this.terrainY(s, d); };
 		const trackY = (s, d) => { const t = this.envTracksAt(s).find((q) => Math.abs(q.d - d) < 2); return t && t.y !== undefined ? t.y : this.terrainY(s, d); };
@@ -2223,17 +2259,20 @@ import * as THREE from 'three';
 		// mosty naszej linii: drogi i tory pod przęsłem – nie w nasypie, prześwit
 		if (!this.env.roadLinks) this.env.roadLinks = this.envUnderLinks(e.r, 1);
 		for (const lk of this.env.roadLinks) {
-			const [, s1, d1, s2, d2] = lk, yEnd = Math.min(this.terrainY(s1, d1), this.terrainY(s2, d2));
+			/* nasyp: teren pod przęsłem ponad prostą między końcami drogi (łącznik biegnie po niej – envLinksZ; dawniej
+			   porównanie z niższym końcem: każda droga pod górę wyglądała na nasyp); prześwit: poniżej LINK_CLR – obniżenie
+			   łącznika nie wystarczyło (błąd), do 4 m – niski, ale realny wiadukt (uwaga) */
+			const [ti, s1, d1, s2, d2] = lk, g1 = this.terrainY(s1, d1), g2 = this.terrainY(s2, d2);
 			let worst = 0, ws = s1, wd = d1, clr = Infinity;
 			for (let t = 0; t <= 1; t += 0.05) {
 				const s = s1 + (s2 - s1) * t, d = d1 + (d2 - d1) * t;
 				if (!this.underBridge(s, d)) continue;
-				const g = this.terrainY(s, d);
-				if (g - yEnd > worst) { worst = g - yEnd; ws = s; wd = d; }
+				const g = this.terrainY(s, d), up = g - (g1 + (g2 - g1) * t);
+				if (up > worst) { worst = up; ws = s; wd = d; }
 				if (Math.abs(d) < 3) clr = Math.min(clr, R.heightAt(this.route, s) - 0.9 - g);
 			}
 			if (worst > 1) add('under-road-embk', ws, wd, `Droga pod mostem naszej linii wchodzi w nasyp (teren ${worst.toFixed(1).replace('.', ',')} m nad jezdnią przy moście, ${fmtD(wd)}).`, 'Pod przęsłem brakuje wykopu dla drogi – sprawdź most (przęsło) i przebieg drogi.');
-			if (clr < 4) add('under-road-clear', (s1 + s2) / 2, 0, `Droga pod mostem naszej linii: prześwit tylko ${clr.toFixed(1).replace('.', ',')} m.`, 'Pod mostem drogowym potrzeba co najmniej ok. 4,5 m – sprawdź wysokość toru (profil) i głębokość wykopu.');
+			if (clr < 4) add('under-road-clear', (s1 + s2) / 2, 0, `Droga pod mostem naszej linii: prześwit tylko ${clr.toFixed(1).replace('.', ',')} m.`, 'Pod mostem drogowym potrzeba co najmniej ok. 4,5 m – sprawdź wysokość toru (profil) i głębokość wykopu.', clr < LINK_CLR(ti) - 0.3 ? 'warn' : 'info');
 		}
 		for (const b of this.route.bridges) {
 			if (b.kind !== 'viaduct') continue;
@@ -2293,8 +2332,11 @@ import * as THREE from 'three';
 						if (t < 0 || t > 1 || u < 0 || u > 1) continue;
 						const sx = x1 + (x2 - x1) * t, dx = y1 + (y2 - y1) * t;
 						if (Math.abs(dx) < 8 || this.underBridge(sx, dx) || this.envUnderBridge(sx, dx)) continue;
+						// przejazd naszej linii: jezdnię przez wszystkie tory rysuje przejazd (envCrossingPath), nie teren
+						if (Math.abs(dx) < 40 && this.route.crossings.some((c) => Math.abs(c.pos - sx) < 25)) continue;
 						const diff = this.envRowY(ti, tk, sx, dx) - this.terrainY(sx, dx);
-						if (Math.abs(diff) > 0.6 && Math.abs(diff) < 3.5) add('road-track', sx, dx, `Droga przecina tor z mapy z progiem ${diff.toFixed(1).replace('.', ',')} m (${fmtD(dx)}).`, 'Na przejeździe szyny powinny być na poziomie jezdni – sprawdź wysokość toru i drogi (albo to przejście pod/nad torem bez mostu w danych).');
+						// drogi gospodarcze i dojazdowe (klasa 8+ – wzdłuż bocznic, na place ładunkowe) – uwaga, nie błąd
+						if (Math.abs(diff) > 0.6 && Math.abs(diff) < 3.5) add('road-track', sx, dx, `Droga przecina tor z mapy z progiem ${diff.toFixed(1).replace('.', ',')} m (${fmtD(dx)}).`, 'Na przejeździe szyny powinny być na poziomie jezdni – sprawdź wysokość toru i drogi (albo to przejście pod/nad torem bez mostu w danych).', row[0] >= 8 ? 'info' : 'warn');
 					}
 				}
 			}
@@ -6504,6 +6546,8 @@ import * as THREE from 'three';
 				const [se, de] = P(e), [sf, df] = P(f);
 				if (Math.abs(de) > 16 || Math.abs(df) <= Math.abs(de) || Math.abs(df - de) < 0.3) continue;
 				const sc = se - (de * (sf - se)) / (df - de);
+				// przejazd w poziomie tuż przy moście (droga przecina tor przed przyczółkiem) – nie przejście pod mostem
+				if (this.route.crossings.some((c) => Math.abs(c.pos - sc) < 15)) continue;
 				// zasięg mostu z miejscem przecięcia obiektu pod spodem (dane mostu i drogi bywają przesunięte o kilka metrów)
 				if (!this.route.bridges.some((b) => { const sp = this.bridgeSpan ? this.bridgeSpan(b) : [b.from, b.to]; return sc > sp[0] - 6 && sc < sp[1] + 6; })) continue;
 				ends.push({ row, se, de, sc });

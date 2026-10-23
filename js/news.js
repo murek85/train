@@ -4,6 +4,27 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.50',
+			date: '23 października 2026',
+			groups: [
+				['Otoczenie', [
+					'Drogi pod mostami kolejowymi schodzą pod przęsłem tak, by zmieścił się samochód (ok. 3,5 m prześwitu, ścieżki i drogi polne 2,5 m) – dawniej bywało 0,6–2 m.',
+				]],
+			],
+		},
+		{
+			version: '0.58.49',
+			date: '22 października 2026',
+			groups: [
+				['Trasy', [
+					'Brakujące przejazdy kolejowe (potwierdzone w OSM): Kraków – Zakopane km 20,3, 21,9, 28,0, 121,0, 131,8; Czechowice-Dziedzice – Wisła Głębce km 16,8, 28,7, 38,9; Toruń – Chełmża km 19,2.',
+				]],
+				['Generator tras', [
+					'Przejazdy oznaczone w OSM tylko na drugim torze linii trafiają teraz do trasy (dawniej ich brakowało).',
+				]],
+			],
+		},
+		{
 			version: '0.58.48',
 			date: '22 października 2026',
 			groups: [

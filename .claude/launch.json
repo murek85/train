@@ -4,8 +4,21 @@
 		{
 			"name": "train",
 			"runtimeExecutable": "node",
-			"runtimeArgs": ["server.js"],
+			"runtimeArgs": [
+				"server.js"
+			],
 			"port": 4180
+		},
+		{
+			"name": "train-test",
+			"runtimeExecutable": "node",
+			"runtimeArgs": [
+				"server.js"
+			],
+			"env": {
+				"PORT": "4181"
+			},
+			"port": 4181
 		}
 	]
 }
