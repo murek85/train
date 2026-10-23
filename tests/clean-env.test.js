@@ -35,3 +35,14 @@ test('cleanEnv: „wiadukt” obok linii → tor z mapy (bit 64), przecinający 
 	for (const row of def.env.t) assert.ok(row[0] & 64, 'oznaczenie: tor odzyskany z wiaduktu');
 	assert.ok(def.env.t.some((row) => row[0] & 2), 'tor obok linii zachowuje znacznik mostu');
 });
+
+test('cleanEnv: krótki wiadukt drogowy bez pomostu w pomiarze (oz = −1) usunięty, z pomostem – zostaje', () => {
+	const flat = [5, 100, 5, 100, 0, 100, -5]; // 10 m nad osią, NMPT nie widzi pomostu
+	const real = [5, 200, 6, 200, 0, 200, -6]; // pomost zmierzony
+	const long = [5, 300, 20, 300, 0, 300, -20]; // 40 m – za długi na regułę
+	const def = { tunnels: [], env: { t: [], o: [flat, real, long], oz: [-1, 812, -1], oh: [[1], [2], [3]] } };
+	R.cleanEnv(def);
+	assert.deepEqual(def.env.o, [real, long]);
+	assert.deepEqual(def.env.oz, [812, -1]);
+	assert.deepEqual(def.env.oh, [[2], [3]]);
+});

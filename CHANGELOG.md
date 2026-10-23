@@ -4,6 +4,30 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.51 – 23 października 2026
+
+Wiadukty drogowe kończące się w powietrzu (kontrola tras: 17 → 0).
+
+### Otoczenie
+- Przedłużenie pomostu „nad wykopem” (`overpassPlanCalc` → `ext`) tylko, gdy w zasięgu jest górna krawędź wykopu; teren
+  opadający dalej (dolina, zjazd) – bez przedłużenia. Dawniej pomost wisiał do 40 m dalej nad doliną, a dalsza ulica
+  (przy prawdziwym końcu obiektu) nie była już znajdowana – koniec 6–13 m nad terenem (Kraków – Zakopane km 5,5,
+  Tarnowskie Góry – Katowice km 26,6, Czechowice-Dziedzice – Wisła Głębce km 20,1).
+- `cleanEnv` (gra i generator): krótki wiadukt drogowy nad torem (do 25 m), w którym pomiar powierzchni (NMPT) nie widzi
+  pomostu 5,5–20 m nad główką szyny (`env.oz` = −1), usuwany razem z wpisami w `oz` i `oh` – w terenie nie ma tam
+  obiektu nad torem (Czechowice-Dziedzice – Wisła Głębce km 48,5: ul. Sosnowa w tunelu pod torem; km 50,3: mostek drogi
+  polnej; gra robiła z nich estakady do 391 m kończące się kilkanaście metrów nad ziemią).
+- Czechowice-Dziedzice – Wisła Głębce: mały wiadukt naszej linii nad ul. Sosnową (`fixes.bridges`, km 48,505–48,518) –
+  przejście pod torem.
+
+### Kontrola tras
+- Koniec wiaduktu kolejowego: dalszym ciągiem jest też tor z mapy zaczynający się przy końcu obiektu (tor schodzi
+  nasypem) – 13 fałszywych alarmów (wiadukty w Katowicach na trzech trasach, Gliwice).
+- Końce obiektów: własny koniec rozpoznawany po obiekcie, nie po współrzędnych (koniec wiaduktu w tym samym punkcie co
+  koniec mostu obok toru – jedna estakada w dwóch obiektach – był brany za własny); końce mostów obok toru (`env.ob`)
+  też liczą się jako dalszy ciąg.
+- Wynik: 47 pozycji do poprawy zamiast 66.
+
 ## 0.58.50 – 23 października 2026
 
 Drogi pod mostami naszej linii.

@@ -1961,13 +1961,20 @@ import * as THREE from 'three';
 				   dawniej ostatnie metry skarpy wykopu zostawały pod ulicą bez pomostu (Toruń – Chełmża km 2,25 i 2,34) */
 				if (out.length || this.terrainY(E[0], E[1]) < y - 3) {
 					const tE = tEnd;
+					let edge = false;
 					for (let t = tE + 1; t <= tE + 6; t++) {
 						const q = [E[0] + (ux / L) * t, E[1] + (uy / L) * t];
 						if (this.terrainY(q[0], q[1]) <= y - 0.8) continue;
 						for (let u = tE + 1; u <= t; u++) out.push([E[0] + (ux / L) * u, E[1] + (uy / L) * u]);
 						tEnd = t;
+						edge = true;
 						break;
 					}
+					/* bez górnej krawędzi w zasięgu – to nie wykop, a teren opadający dalej (dolina, zjazd): bez przedłużenia.
+					   Dawniej pomost wisiał 40 m dalej nad doliną, a dalsza ulica (przy prawdziwym końcu obiektu) nie była już
+					   znajdowana – koniec 6–13 m nad terenem (Kraków – Zakopane km 5,5, Tarnowskie Góry – Katowice km 26,6,
+					   Czechowice-Dziedzice – Wisła Głębce km 20,1) */
+					if (!edge) { out.length = 0; tEnd = 0; }
 				}
 				/* dalej (do 6 m) ulica w poziomie pomostu (do 1,2 m) – pomost dochodzi do niej: obiekt w danych krótszy niż przęsło
 				   nad wykopem, między jego końcem a ulicą na skraju wykopu zostawała szczelina 2–4 m (Toruń Miasto) */
@@ -2174,9 +2181,12 @@ import * as THREE from 'three';
 		const roadY = (s, d) => { const rl = this.roadLevel(s, d); return rl !== undefined ? rl : this.terrainY(s, d); };
 		const trackY = (s, d) => { const t = this.envTracksAt(s).find((q) => Math.abs(q.d - d) < 2); return t && t.y !== undefined ? t.y : this.terrainY(s, d); };
 		// końce dróg i innych wiaduktów (dalszy ciąg jezdni przy końcu obiektu)
+		// [s, d, obiekt] – własny koniec rozpoznawany po obiekcie (dawniej po współrzędnych: koniec wiaduktu w tym samym
+		// punkcie co koniec mostu obok toru – jedna estakada w dwóch obiektach – był brany za własny, Kraków – Zakopane km 5,5)
 		const ends = [];
-		for (const row of e.r || []) ends.push([row[1], row[2]], [row[row.length - 2], row[row.length - 1]]);
-		for (const rows of [e.o || [], e.ro || []]) for (const row of rows) ends.push([row[1], row[2]], [row[row.length - 2], row[row.length - 1]]);
+		for (const row of e.r || []) ends.push([row[1], row[2], row], [row[row.length - 2], row[row.length - 1], row]);
+		for (const rows of [e.o || [], e.ro || []]) for (const row of rows) ends.push([row[1], row[2], row], [row[row.length - 2], row[row.length - 1], row]);
+		for (const row of e.ob || []) ends.push([row[2], row[3], row], [row[row.length - 2], row[row.length - 1], row]);
 		const fmtD = (d) => `${Math.abs(Math.round(d))} m ${d < 0 ? 'w lewo' : 'w prawo'} od osi`;
 		for (const [rows, rail] of [[e.o || [], false], [e.ro || [], true]]) {
 			const name = rail ? 'Wiadukt kolejowy' : 'Wiadukt drogowy';
@@ -2226,7 +2236,9 @@ import * as THREE from 'three';
 					if (Y[kE] - G[kE] <= 3) continue;
 					const [s, d] = P[kE];
 					if (Math.abs(d) > 500) continue; // granica danych otoczenia – dalszy ciąg poza danymi
-					if (ends.some(([s2, d2]) => (s2 !== s || d2 !== d) && Math.hypot(s2 - s, d2 - d) < 6)) continue;
+					if (ends.some(([s2, d2, o2]) => o2 !== row && Math.hypot(s2 - s, d2 - d) < 6)) continue;
+					// wiadukt kolejowy: dalej tor z mapy (koniec jego łamanej przy końcu obiektu – tor schodzi nasypem)
+					if (rail && (e.t || []).some((t) => Math.hypot(t[1] - s, t[2] - d) < 6 || Math.hypot(t[t.length - 2] - s, t[t.length - 1] - d) < 6)) continue;
 					// droga z mapy przechodzi tuż za końcem na poziomie jezdni (dalszy ciąg)
 					const rl = this.roadLevel(s, d);
 					if (rl !== undefined && Math.abs(rl - Y[kE]) < 1.5) continue;
@@ -2250,7 +2262,7 @@ import * as THREE from 'three';
 			for (const kE of [0, P.length - 1]) {
 				const [s, d] = P[kE];
 				if (Y[kE] - ground[kE] <= 3 || Math.abs(d) > 500) continue;
-				if (ends.some(([s2, d2]) => (s2 !== s || d2 !== d) && Math.hypot(s2 - s, d2 - d) < 6)) continue;
+				if (ends.some(([s2, d2, o2]) => o2 !== row && Math.hypot(s2 - s, d2 - d) < 6)) continue;
 				const rl = this.roadLevel(s, d);
 				if (rl !== undefined && Math.abs(rl - Y[kE]) < 1.5) continue;
 				add('ob-end', s, d, `Most drogowy obok toru: koniec ${(Y[kE] - ground[kE]).toFixed(1).replace('.', ',')} m nad terenem, bez dalszej drogi (${fmtD(d)}).`, 'Most w danych kończy się w powietrzu – sprawdź wysokość jezdni (NMPT) i dalszy ciąg drogi w OSM.');

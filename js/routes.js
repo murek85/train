@@ -827,8 +827,29 @@
 	/* poprawki danych otoczenia z mapy (wspólne: gra przy wczytaniu starych plików – real-env envIndex, generator przed
 	   zapisem – osm-route.js): „wiadukty kolejowe” biegnące obok linii → tory, przerwy w torach przy portalach tunelu;
 	   jednorazowo (znaczniki niezapisywane) */
+	/* Krótki wiadukt drogowy nad torem (do 25 m), w którym pomiar powierzchni (NMPT) nie widzi pomostu 5,5–20 m nad główką
+	   szyny (env.oz = −1): w terenie nie ma tam obiektu nad torem – zwykle przejście pod torem albo mostek obok, opisany
+	   w danych jako most nad linią (Czechowice-Dziedzice – Wisła Głębce km 48,5: ul. Sosnowa w tunelu pod torem; km 50,3:
+	   mostek drogi polnej). Gra przedłużała taki obiekt nad terenem obok jak estakadę, która kończyła się kilkanaście
+	   metrów nad ziemią – usuwany razem z wpisami w env.oz i env.oh. */
+	function envDropFlatOverpasses(def) {
+		const e = def.env;
+		if (!e.o || !e.oz || e.oz.length !== e.o.length) return;
+		for (let i = e.o.length - 1; i >= 0; i--) {
+			const row = e.o[i];
+			if (e.oz[i] !== -1) continue;
+			let L = 0;
+			for (let k = 1; k + 3 < row.length; k += 2) L += Math.hypot(row[k + 2] - row[k], row[k + 3] - row[k + 1]);
+			if (L > 25) continue;
+			e.o.splice(i, 1);
+			e.oz.splice(i, 1);
+			if (e.oh && e.oh.length > i) e.oh.splice(i, 1);
+		}
+	}
+
 	function cleanEnv(def) {
 		if (!def || !def.env) return def;
+		envDropFlatOverpasses(def);
 		envRailBesideToTracks(def);
 		envJoinPortalGaps(def);
 		return def;

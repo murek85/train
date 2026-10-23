@@ -596,4 +596,4 @@
 "flip":-1,
 "tx":13111,
 "ty":13528},
-"fixes":{"limits":[[13060,100]],"crossings":{"add":[16759,28743,38919]}}});
+"fixes":{"limits":[[13060,100]],"crossings":{"add":[16759,28743,38919]},"bridges":[{"from":48505,"to":48518,"kind":"viaduct"}]}});

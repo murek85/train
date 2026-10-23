@@ -4,6 +4,16 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.51',
+			date: '23 października 2026',
+			groups: [
+				['Otoczenie', [
+					'Wiadukty drogowe nie wiszą już nad doliną urwane w powietrzu – pomost nie jest sztucznie przedłużany nad opadającym terenem, a dalsza ulica łączy się z nim jak trzeba.',
+					'Czechowice-Dziedzice – Wisła Głębce: ul. Sosnowa (km 48,5) przechodzi pod torem zamiast estakadą nad doliną; zniknęła też fałszywa estakada drogi polnej przy km 50,3.',
+				]],
+			],
+		},
+		{
 			version: '0.58.50',
 			date: '23 października 2026',
 			groups: [
