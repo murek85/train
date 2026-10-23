@@ -117,6 +117,17 @@ import * as THREE from 'three';
 		   i towarowe przejeżdżające bez zatrzymania po torze przelotowym przy stacji (through, envLocalTracks). */
 		setLocals(tracks) {
 			for (const L of this.locals || []) if (L.model) L.model.dispose();
+			/* bez torów, które w zasięgu przejazdu (±800 m od środka peronu) schodzą się z torem pociągu gracza albo pociągów
+			   z przeciwka (this.lane – ustawiany przed setLocals): pociąg z peronu przejeżdżał przez nie */
+			const lane = this.lane;
+			tracks = tracks.filter((t) => {
+				let hits = 0;
+				for (let x = Math.max(t.sA, t.stop - 800); x <= Math.min(t.sB, t.stop + 800); x += 20) {
+					const d = t.lane(x);
+					if (Math.abs(d) < 2 || (lane && !Number.isNaN(lane(x)) && Math.abs(d - lane(x)) < 2)) hits++;
+				}
+				return hits < 2;
+			});
 			this.locals = tracks.map((t, k) => ({ ...t, eA: Math.max(t.sA, t.stop - 800), eB: Math.min(t.sB, t.stop + 800), k, state: 'idle', wait: t.quiet ? (t.through ? 40 : 10) + Math.random() * 120 : 10 + k * 25 + Math.random() * 20, dir: k % 2 ? -1 : 1, model: null, s: 0, v: 0 }));
 		}
 		/* zapowiedź na peronie (gong i głos – main.js): głośność wg odległości słuchacza (kamera) od środka peronu – pełna do
@@ -227,10 +238,18 @@ import * as THREE from 'three';
 			const ref = sim.st.pos, route = this.route;
 			const dist = (t) => (t.dir > 0 ? Math.max(0, t.s - t.len - ref, ref - sim.L - t.s) : Math.max(0, t.s - ref, ref - sim.L - (t.s + t.len)));
 			const onLane = (t) => t.dir > 0 || !this.lane || (!Number.isNaN(this.lane(t.s)) && !Number.isNaN(this.lane(t.s + t.len)));
-			const cand = sim.traffic.active()
-				.filter((t) => (t.dir > 0 || route.double || this.lane) && dist(t) < 2200)
-				.sort((a, b) => dist(a) - dist(b))
-				.slice(0, Math.max(1, this.limit || 3));
+			/* wybór modeli z histerezą: pociąg z modelem zachowuje go do 2,4 km; nowy (bliższy) dostaje miejsce, gdy jest wolne
+			   albo gdy najdalszy z modelem jest dalej niż 1,2 km (poza wyraźnym zasięgiem wzroku). Dawniej co klatkę najbliższe
+			   this.limit – przy czterech pociągach w pobliżu najdalszy model znikał nagle w kadrze, a potem wracał */
+			const lim = Math.max(1, this.limit || 3), all = sim.traffic.active().filter((t) => t.dir > 0 || route.double || this.lane);
+			const keep = all.filter((t) => this.models.has(t.id) && dist(t) < 2400).sort((a, b) => dist(a) - dist(b));
+			const fresh = all.filter((t) => !this.models.has(t.id) && dist(t) < 2200).sort((a, b) => dist(a) - dist(b));
+			for (const t of fresh) {
+				if (keep.length < lim) { keep.push(t); continue; }
+				const far = keep[keep.length - 1];
+				if (dist(far) > 1200 && dist(t) < dist(far)) { keep[keep.length - 1] = t; keep.sort((a, b) => dist(a) - dist(b)); }
+			}
+			const cand = keep;
 			const want = new Set(cand.map((t) => t.id));
 			for (const [id, m] of this.models) if (!want.has(id)) { this.release(m.model); this.models.delete(id); }
 			let built = 0;
@@ -329,13 +348,13 @@ import * as THREE from 'three';
 					const rear = o.s + o.len;
 					if (rear < sim.st.pos - sim.L - 450 || rear < -400) this.clear();
 					else if (this.lane) {
-						// trasa rzeczywista: pociąg widoczny tylko na torze z mapy (czoło i koniec składu); bez ruchu na linii –
-						// także na linii jednotorowej tylko po prawdziwym drugim torze (laneRaw), nie po torze gracza
-						const lane = this.laneRaw || this.lane;
+						/* trasa rzeczywista: na linii jednotorowej tylko po prawdziwym drugim torze (laneRaw – czoło i koniec składu na
+						   torze z mapy), nie po torze gracza; na dwutorowej po torze z przerwami uzupełnionymi (lane – bez znikania) */
+						const single = this.route.single, lane = single ? this.laneRaw || this.lane : this.lane;
 						const vis = !Number.isNaN(lane(o.s)) && !Number.isNaN(lane(o.s + o.len));
 						for (const c of o.model.cars) c.group.visible = vis;
 						o.hidden = !vis;
-						if (vis) o.model.updateOther(this.route, o.s, -1, lane, dark, this.laneRawY || this.laneY);
+						if (vis) o.model.updateOther(this.route, o.s, -1, lane, dark, single ? this.laneRawY || this.laneY : this.laneY);
 					} else o.model.updateOther(this.route, o.s, -1, SECOND, dark);
 				}
 			}

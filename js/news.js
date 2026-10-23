@@ -4,6 +4,16 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.60',
+			date: '23 października 2026',
+			groups: [
+				['Ruch na linii', [
+					'Pociągi tła trzymają odstęp za poprzedzającym (także z przeciwka i za pociągiem gracza) – nie przejeżdżają już przez siebie.',
+					'Mniej nagłego pojawiania się i znikania: pociąg widoczny w pobliżu zachowuje model, pociąg z przeciwka nie znika przy przerwie toru w danych mapy, a nowe pociągi ruszają z końców trasy dopiero, gdy jesteś daleko.',
+				]],
+			],
+		},
+		{
 			version: '0.58.59',
 			date: '23 października 2026',
 			groups: [

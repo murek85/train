@@ -185,3 +185,32 @@ test('krzyżowania na liniach jednotorowych: odcinki z mapy, bez spotkań na jed
 	}
 	assert.ok(crossings > 0 && held > 0, `krzyżowania ${crossings}, oczekiwania pociągów z przeciwka ${held}`);
 });
+
+test('ruch na linii: pociągi tła jednego kierunku (także z przeciwka) nigdy nie najeżdżają na siebie w czasie jazdy', () => {
+	for (const [id, cfg] of [['gliwice-katowice', { emu: 'EN76', n: 1 }], ['rybnik-katowice', { emu: 'EN57', n: 1 }], ['tarnowskie-gory-katowice', { emu: 'EN57', n: 1 }]]) {
+		const route = real(id, cfg);
+		const tt = buildTimetable(route);
+		for (const level of [2, 3]) {
+			const traffic = new Traffic(route, { level, seed: 7, timetable: tt });
+			const sim = new Sim(route, { czuwak: false, timetable: tt, traffic });
+			let worst = Infinity, at = null;
+			const check = () => {
+				const act = traffic.active();
+				for (const a of act) for (const b of act) {
+					if (a === b || a.dir !== b.dir || (a.s - b.s) * a.dir <= 0) continue; // a przed b
+					const gap = (a.s - a.dir * a.len - b.s) * a.dir; // koniec a – czoło b
+					if (gap < worst) { worst = gap; at = `${a.id}/${b.id} km ${(b.s / 1000).toFixed(2)} t ${Math.round(sim.time)}`; }
+				}
+			};
+			check();
+			for (let i = 0; sim.status === 'running' && i < 400000; i++) {
+				autopilot(sim);
+				sim.update(0.05);
+				sim.events.length = 0;
+				if (i % 40 === 0) check();
+			}
+			assert.equal(sim.status, 'ended', `${id} poziom ${level}: ${sim.failReason}`);
+			assert.ok(worst > 20, `${id} poziom ${level}: pociągi tła najechały na siebie (odstęp ${worst.toFixed(1)} m, ${at})`);
+		}
+	}
+});

@@ -28,6 +28,12 @@
 	const HOLD_GAP = SIG_GAP + 12;
 	const DECIDE = 1500; // decyzja o wjeździe na odcinek jednotorowy – z tej odległości, m
 	const HELD_AFTER = 20; // pociąg z przeciwka czeka tyle s na krzyżowanie z graczem – komunikat dyżurnego
+	/* odstęp za poprzedzającym pociągiem tego samego kierunku (także za pociągiem gracza), m: blokada liniowa nie wystarcza –
+	   dwa pociągi w jednym odstępie (rzadkie semafory, stan początkowy) albo z przeciwka na linii dwutorowej (bez semaforów)
+	   przejeżdżały przez siebie */
+	const FOLLOW_GAP = 60, FOLLOW_GAP_SINGLE = 80;
+	// pociąg tła rusza z końca trasy dopiero, gdy gracz jest dalej – inaczej pojawiał się nagle na jego oczach, m
+	const SPAWN_HIDE = 2500;
 
 	function rng(seed) {
 		let a = (Math.floor(seed) >>> 0) || 1;
@@ -113,11 +119,10 @@
 				const takt = (route.single ? [0, 3600, 2400, 1800] : [0, 1800, 900, 480])[this.level] || 900;
 				for (let t = -3600; t < 3 * 3600; t += takt * (0.75 + r() * 0.5)) add(pick(['os', 'os', 'ic', 'freight']), -1, t);
 			}
-			// stan początkowy: pociągi już w drodze – przebieg od ich odjazdu do chwili 0 (bez innych pociągów)
-			// (linia z odcinkami jednotorowymi – wszystkie naraz, z blokadą i krzyżowaniami; pociąg gracza jeszcze nie jedzie)
-			if (!this.secs.length) {
-				for (const tr of this.trains) if (tr.t0 < 0) { this.start(tr); for (let t = tr.t0; t < 0 && !tr.gone; t += 0.5) this.move(tr, 0.5, t, null); }
-			} else {
+			/* stan początkowy: pociągi już w drodze – przebieg od ich odjazdu do chwili 0, wszystkie naraz (blokada, odstępy,
+			   krzyżowania; pociąg gracza jeszcze nie jedzie). Dawniej na liniach dwutorowych każdy osobno, bez innych – szybszy
+			   (pospieszny) potrafił już na starcie stać w wolniejszym (osobowym) */
+			{
 				const ghost = {
 					st: { pos: -1e6 }, L: 0, train: { vmax: 1 }, ss: st.map(() => ({ cleared: true })), plannedDep: () => null,
 					signals: route.signals.map((x) => ({ pos: x.pos })),
@@ -261,11 +266,19 @@
 				if (s && (dir > 0 ? front > s.pos : front < s.pos)) tr.next += dir;
 			}
 			if (stopAt !== null) target = Math.min(target, brakeTo(0, stopAt - 0.5));
-			// z przeciwka na linii z odcinkami jednotorowymi: odstęp za poprzedzającym pociągiem z przeciwka, krzyżowania
+			// odstęp za poprzedzającym pociągiem tego samego kierunku (koniec jego składu), w kierunku gracza także za graczem
+			{
+				let rear = null;
+				for (const o of this.trains) {
+					if (o === tr || o.dir !== dir || !o.active || o.gone || (o.s - front) * dir <= 0) continue;
+					const e = o.s - dir * o.len;
+					if (rear === null || (e - rear) * dir < 0) rear = e;
+				}
+				if (dir > 0 && sim && sim.st && sim.st.pos > front) { const e = sim.st.pos - sim.L; if (rear === null || e < rear) rear = e; }
+				if (rear !== null) target = Math.min(target, brakeTo(0, (rear - front) * dir - (dir < 0 && this.secs.length ? FOLLOW_GAP_SINGLE : FOLLOW_GAP)));
+			}
+			// z przeciwka na linii z odcinkami jednotorowymi: krzyżowania
 			if (dir < 0 && this.secs.length) {
-				let lead = null;
-				for (const o of this.trains) if (o !== tr && o.dir < 0 && o.active && !o.gone && o.s < front && (!lead || o.s > lead.s)) lead = o;
-				if (lead) target = Math.min(target, brakeTo(0, front - (lead.s + lead.len) - 80));
 				// zwolnienie odcinków za sobą (koniec składu za początkiem odcinka)
 				for (let j = tr.granted.length - 1; j >= 0; j--) {
 					const x = this.secs[tr.granted[j]];
@@ -337,7 +350,10 @@
 					if (tr.dir > 0) {
 						const first = sim.signals[0], a = Math.min(this.route.stations[0].pos - 400, 0) - 50, e = first ? first.pos : this.route.length;
 						if (sim.st.pos - sim.L < e + 20 || this.occupied(a, e + 20, tr.id) || this.opposed(a, e + 20)) continue;
+						if (sim.st.pos - sim.L - a < SPAWN_HIDE) continue; // (gracz jeszcze blisko początku trasy)
 					}
+					// z przeciwka: z końca trasy, gdy gracz jest daleko od niego
+					if (tr.dir < 0 && this.route.length - sim.st.pos < SPAWN_HIDE) continue;
 					// z przeciwka (linia z odcinkami jednotorowymi): wjazd, gdy koniec trasy jest wolny (pociąg przed nim odjechał)
 					if (tr.dir < 0 && this.secs.length && this.trains.some((o) => o.dir < 0 && o.active && !o.gone && o.s + o.len > this.route.length - 300)) continue;
 					this.start(tr);

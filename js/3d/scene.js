@@ -929,7 +929,6 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			this.cab = new NS.CabInterior(this.trainModel);
 			this.life.reset(sim.route, { shadows: (this.shadowQ || SHADOWQ.medium).size >= 2048 });
 			this.life.prewarm(sim); // modele pociągów tła na ekranie wczytywania (pula)
-			this.life.setLocals(this.world.env ? this.world.envLocalTracks() : []); // pociągi podmiejskie na peronach w tunelu
 			/* trasa rzeczywista: pociągi z przeciwka po prawdziwym torze z mapy (nie po torze z gry); linia jednotorowa
 			   (route.single): na odcinku jednotorowym – po torze pociągu gracza, na mijance – po torze bocznym, przejście
 			   przy rozjeździe (R.laneWeight) */
@@ -937,7 +936,16 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			const laneY = (s) => this.world.envTrackY(s, this.world.envLaneAt(s), false, false) - R.heightAt(rt, s);
 			this.life.laneRaw = this.life.laneRawY = null;
 			if (!this.world.env) this.life.lane = this.life.laneY = null;
-			else if (!rt.single) { this.life.lane = lane; this.life.laneY = laneY; }
+			else if (!rt.single) {
+				/* linia dwutorowa: tam, gdzie w danych brakuje toru z przeciwka (przerwa w mapie, głowica stacji) – najbliższy
+				   rozpoznany do 300 m albo 4,5 m od osi (envLaneNear); dawniej pociąg z przeciwka znikał wtedy cały i nagle
+				   wracał. laneRaw – sam tor z mapy (losowy pociąg z przeciwka bez ruchu na linii) */
+				const near = (s) => this.world.envLaneNear(s);
+				this.life.laneRaw = lane;
+				this.life.laneRawY = laneY;
+				this.life.lane = (s) => { const d = lane(s); return Number.isNaN(d) ? near(s) : d; };
+				this.life.laneY = (s) => { const y = Number.isNaN(lane(s)) ? 0 : laneY(s); return Number.isFinite(y) ? y : 0; };
+			}
 			else {
 				this.life.laneRaw = lane;
 				this.life.laneRawY = laneY;
@@ -957,6 +965,8 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 					return Number.isFinite(y) ? y * w : 0;
 				};
 			}
+			// pociągi innych linii przy peronach (po torze pociągów z przeciwka – life.lane – bez torów, które się z nim schodzą)
+			this.life.setLocals(this.world.env ? this.world.envLocalTracks() : []);
 			this.weather.set(this.weatherKey, sim.route.id, true);
 			this.camHeading = R.trackPoint(sim.route, sim.st.pos + 15).heading;
 			this.zoom = this.zoomLevels[this.zoomIdx];

@@ -4,6 +4,31 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.60 – 23 października 2026
+
+Pociągi tła: bez przejeżdżania przez siebie i nagłego pojawiania się.
+
+### Ruch na linii (`js/traffic.js`)
+- Odstęp za poprzedzającym pociągiem tego samego kierunku (koniec jego składu, 60 m; z przeciwka na liniach
+  z odcinkami jednotorowymi 80 m jak dotąd), w kierunku gracza także za pociągiem gracza – dla wszystkich pociągów tła.
+  Dawniej tylko blokada liniowa (dwa pociągi w jednym odstępie – rzadkie semafory, stan początkowy – przejeżdżały
+  przez siebie) i odstęp z przeciwka tylko na liniach jednotorowych (na dwutorowej szybszy przejeżdżał przez osobowy).
+- Stan początkowy (pociągi już w drodze przy starcie gry) symulowany wspólnie na wszystkich liniach (blokada, odstępy;
+  dawniej na dwutorowych każdy pociąg osobno – szybszy potrafił stać w wolniejszym od pierwszej klatki).
+- Pociąg tła rusza z końca trasy (z przeciwka) albo z jej początku (w kierunku gracza) dopiero, gdy gracz jest dalej
+  niż 2,5 km od tego miejsca – dawniej pojawiał się nagle na oczach gracza.
+- Test: przez cały przejazd automatem (trzy trasy, poziomy ruchu 2 i 3) żadne dwa pociągi tła jednego kierunku nie
+  zachodzą na siebie (na poprzedniej wersji: Tarnowskie Góry – Katowice, 135 m zakładki).
+
+### Rysowanie (`js/3d/life.js`, `scene.js`)
+- Wybór modeli pociągów tła z histerezą: pociąg z modelem zachowuje go do 2,4 km, nowy zabiera miejsce tylko modelowi
+  dalszemu niż 1,2 km – dawniej co klatkę najbliższe (limit z ustawień), więc przy kilku pociągach w pobliżu model
+  najdalszego znikał nagle w kadrze i wracał.
+- Linia dwutorowa z mapy: przy przerwie toru pociągów z przeciwka w danych – najbliższy rozpoznany tor (do 300 m) albo
+  4,5 m od osi (`envLaneNear`, jak na jednotorowych); dawniej pociąg z przeciwka znikał wtedy cały i nagle wracał.
+- Pociągi innych linii przy peronach (`setLocals`): bez torów, które w zasięgu przejazdu schodzą się z torem pociągu
+  gracza albo pociągów z przeciwka (przejeżdżały przez nie); `setLocals` po ustawieniu toru pociągów z przeciwka.
+
 ## 0.58.59 – 23 października 2026
 
 Okluzja otoczenia na jakości średniej i w kabinie.
