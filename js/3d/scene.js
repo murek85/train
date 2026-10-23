@@ -61,7 +61,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 	const QUALITY = {
 		// range – zasięg szczegółów świata (kawałki przed pociągiem, drzewa i drobiazgi z bliska, cienie)
 		low: { name: 'niska', pr: 1, shadow: 1024, post: false, bloom: false, ao: false, atmo: false, msaa: 0, density: 0.5, particles: 0.35, range: 0.8 },
-		medium: { name: 'średnia', pr: 1.5, shadow: 2048, post: true, bloom: true, ao: false, atmo: false, msaa: 4, density: 0.8, particles: 0.7, range: 1 },
+		medium: { name: 'średnia', pr: 1.5, shadow: 2048, post: true, bloom: true, ao: true, atmo: false, msaa: 4, density: 0.8, particles: 0.7, range: 1 },
 		high: { name: 'wysoka', pr: 2, shadow: 4096, post: true, bloom: true, ao: true, atmo: true, msaa: 4, density: 1.15, particles: 1, range: 1.15 },
 	};
 	/* Jakość cieni (ustawienie „Cienie”, domyślnie jak jakość ogólna): rozmiar map (dwie bliższe kaskady; najdalsza do
@@ -1722,7 +1722,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				const wv = (this.W && this.W.wind) || 0.4;
 				this.waterWind.set(0.8 * wv, 0.35 * wv);
 				const wt = this.weather;
-				this.waterRefl.update(this.scene, this.camera, this.scene, this.time, this.waterWind, [wt.rain, wt.rainNear, wt.snow, wt.splash, wt.leaves, this.cab && this.cab.group].concat(this.sunFx.objects || []), q.post ? (q.ao ? 0.6 : 0.5) : 0.35, !(this.waterQ || WATERQ.medium).refl);
+				this.waterRefl.update(this.scene, this.camera, this.scene, this.time, this.waterWind, [wt.rain, wt.rainNear, wt.snow, wt.splash, wt.leaves, this.cab && this.cab.group].concat(this.sunFx.objects || []), q.post ? (q.atmo ? 0.6 : 0.5) : 0.35, !(this.waterQ || WATERQ.medium).refl);
 			}
 			// WebGPU: rysowanie po init(); wspólne uniformy materiałów węzłowych raz na klatkę; macierze świata raz na klatkę
 			// (WebGPURenderer liczy je przy każdym render() – też dla każdej mapy cieni i przebiegów efektów)
@@ -1742,7 +1742,9 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				// (karta jeszcze niegotowa – klatka bez rysowania)
 			} else if (this.usePost) {
 				const W = this.W;
-				const rays = this.e > 0 ? 0.4 * (1 - W.haze) * W.sun * (1 - smoothstep(0.25, 0.55, this.e)) : 0;
+				/* promienie słońca: najmocniej nisko nad horyzontem; przy wysokim słońcu 30% (smugi w prześwitach chmur – maska
+				   z jasności nieba w obrazie, post-gpu.js; dawniej powyżej ok. 33° wcale) */
+				const rays = this.e > 0 ? 0.4 * (1 - W.haze) * W.sun * (0.3 + 0.7 * (1 - smoothstep(0.25, 0.55, this.e))) : 0;
 				this.post.render(this.scene, this.camera, {
 					sharpen: this.renderOpts.sharpen ?? 0.35, // wyostrzanie po wygładzaniu (ustawienia)
 					bloom: q.bloom,
@@ -1752,9 +1754,12 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 					   po zejściu kamery cieniowanie nagle słabło. Płaskie spojrzenie wygasza teraz shader AO (post.js);
 					   w kabinie bez AO (wnętrze widziane z bliska). */
 					// w tunelu (trasa z mapy) bez AO: w zamkniętej obudowie zaciemniało strop i ściany do czerni
-					ao: q.ao && this.viewMode !== 'cab' && !this.camInTunnel(sim),
-					aoRadius: 2.2,
-					aoStrength: 1.2,
+					/* okluzja otoczenia: podstawy budynków, pod drzewami i wiaduktami, skarpy, między wagonami; w kabinie bez jej
+					   wnętrza (aoNear – pierwsze 3,5 m od kamery), dawniej w widoku z kabiny wyłączona; w tunelu – bez */
+					ao: q.ao && !this.camInTunnel(sim),
+					aoNear: this.viewMode === 'cab' ? 3.5 : 0,
+					aoRadius: 2.8,
+					aoStrength: 1.6,
 					aoFade: 140,
 					exposure,
 					saturation: this.grade.saturation,

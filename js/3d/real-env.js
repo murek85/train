@@ -280,7 +280,7 @@ import * as THREE from 'three';
 			road: m({ roughness: 0.94, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -12 }, 'road'),
 			roadMark: m({ roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -24 }, 'road'), // oznakowanie – nad jezdnią
 			roadDouble: m({ roughness: 0.94, side: T.DoubleSide }, 'road'), // wiadukty drogowe
-			ballastOld: patch(new T.MeshStandardMaterial({ color: '#7f766a', roughness: 0.97 }), 'gravel'), // stara podsypka bocznic
+			ballastOld: patch(new T.MeshStandardMaterial({ color: '#7f766a', roughness: 0.97, vertexColors: true }), 'gravel'), // stara podsypka bocznic (zabrudzenie w kolorach wierzchołków)
 			ballastWeed: patch(new T.MeshStandardMaterial({ color: '#6d6a52', roughness: 0.98 }), 'gravel'), // zarośnięta podsypka torów nieużywanych
 			sleeperWood: patch(new T.MeshStandardMaterial({ color: '#4f3e30', roughness: 0.95 }), 'dirt'),
 			deck: patch(new T.MeshStandardMaterial({ color: '#a7a39b', roughness: 0.92, side: T.DoubleSide }), 'concrete'), // pomosty torów na mostach
@@ -4893,7 +4893,7 @@ import * as THREE from 'three';
 	World.prototype.buildEnvTracks = function* (group, segs) {
 		if (!segs.length) return;
 		const r = this.route, M = World.materials();
-		const bal = { p: [] }, balOld = { p: [] }, rails = { p: [], r: [] }, rust = { p: [] };
+		const bal = { p: [], c: [] }, balOld = { p: [], c: [] }, rails = { p: [], r: [] }, rust = { p: [] }, balC = new T.Color();
 		const sleepers = [], woodSl = [];
 		const quadStrip = (dst, cols, ys, sa, da, sb, db) => {
 			// cols – odsunięcia w poprzek łamanej, ys – wysokości względem główki szyny
@@ -4908,12 +4908,15 @@ import * as THREE from 'three';
 			}
 			const mid = (cols[0] + cols[cols.length - 1]) / 2;
 			const R3 = (c) => { const sd = c < mid ? -1 : 1; dst.r.push(lat[0] * sd, 0, lat[1] * sd); };
+			// kolory wierzchołków (dst.c – podsypka): zabrudzenie wg odległości od osi toru (World.ballastTint)
+			const C3 = (c) => { World.ballastTint(c, balC); dst.c.push(balC.r, balC.g, balC.b); };
 			for (let j = 0; j < cols.length - 1; j++) {
 				const a = P(sa, da, cols[j], ys[j]), b = P(sa, da, cols[j + 1], ys[j + 1]), c2 = P(sb, db, cols[j + 1], ys[j + 1]), d2 = P(sb, db, cols[j], ys[j]);
 				const up = ((c2[2] - a[2]) * (b[0] - a[0]) - (c2[0] - a[0]) * (b[2] - a[2])) < 0;
 				if (up) dst.p.push(...a, ...b, ...c2, ...a, ...c2, ...d2);
 				else dst.p.push(...a, ...c2, ...b, ...a, ...d2, ...c2);
 				if (lat) for (const c of up ? [cols[j], cols[j + 1], cols[j + 1], cols[j], cols[j + 1], cols[j]] : [cols[j], cols[j + 1], cols[j + 1], cols[j], cols[j], cols[j + 1]]) R3(c);
+				if (dst.c) for (const c of up ? [cols[j], cols[j + 1], cols[j + 1], cols[j], cols[j + 1], cols[j]] : [cols[j], cols[j + 1], cols[j + 1], cols[j], cols[j], cols[j + 1]]) C3(c);
 			}
 		};
 		const deck = { p: [] };
@@ -4950,7 +4953,8 @@ import * as THREE from 'three';
 				// tor równoległy tuż obok: z pasa naszego toru (envOccupied – do 3,2 m od osi) nie odrzucany – tylko perony
 				const occ = parallel && Math.abs(dm) < 3.6 ? this.envOccupied(sm, Math.sign(dm) * 3.6, 0) : this.envOccupied(sm, dm, 0.6, true);
 				if (occ || (!(row[0] & 18) && (this.envRowFromTunnel(i) || this.envBuriedNearTunnel(sm, dm, R.heightAt(r, sm) - dzOf(sm, dm))))) continue;
-				quadStrip(disused ? balWeed : side ? balOld : bal, [-2.2, -1.6, 1.6, 2.2], [-0.95, -0.31, -0.31, -0.95], sa, da, sb, db);
+				if (disused) quadStrip(balWeed, [-2.2, -1.6, 1.6, 2.2], [-0.95, -0.31, -0.31, -0.95], sa, da, sb, db);
+				else quadStrip(side ? balOld : bal, [-2.2, -1.6, -0.95, -0.75, -0.55, 0, 0.55, 0.75, 0.95, 1.6, 2.2], [-0.95, -0.31, -0.31, -0.31, -0.31, -0.31, -0.31, -0.31, -0.31, -0.31, -0.95], sa, da, sb, db);
 				// tor wyżej niż teren (rampa do wiaduktu innej linii, tor na nasypie): nasyp ze skarpami 1:1,5; wiadukt – filary
 				let slab = false; // nasyp wypadałby na ulicę niżej – tor na pomoście
 				if (this.env.dem || zr) {
@@ -5028,13 +5032,14 @@ import * as THREE from 'three';
 			const geo = new T.BufferGeometry();
 			geo.setAttribute('position', new T.Float32BufferAttribute(d.p, 3));
 			if (d.r && d.r.length === d.p.length) geo.setAttribute('aRail', new T.Float32BufferAttribute(d.r, 3)); // szyny min. 1 piksel
+			if (d.c && d.c.length === d.p.length) geo.setAttribute('color', new T.Float32BufferAttribute(d.c, 3)); // podsypka: zabrudzenie
 			geo.computeVertexNormals();
 			const m = new T.Mesh(geo, material);
 			m.receiveShadow = true;
 			group.add(m);
 		};
 		const EM = envMaterials();
-		mk(bal, M.ballast);
+		mk(bal, M.ballastTrack);
 		mk(balOld, EM.ballastOld);
 		mk(balWeed, EM.ballastWeed);
 		mk(earth, EM.embank);

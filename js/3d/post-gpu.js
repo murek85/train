@@ -3,7 +3,8 @@
    - okluzja otoczenia z głębi w połowie rozdzielczości (16 próbek w półkuli nad powierzchnią) i rozmycie 3 × 3 z progiem
      głębi;
    - bloom: jasne (ponad próg) → łańcuch 5 coraz mniejszych kopii w dół i z powrotem w górę (dodawanie);
-   - promienie słońca: jasne niebo wokół słońca (gdzie nic go nie zasłania) rozmyte promieniście ku słońcu;
+   - promienie słońca: jasne niebo wokół słońca (gdzie nic go nie zasłania) rozmyte promieniście ku słońcu – jasność
+     z obrazu nieba (chmury przy słońcu zasłaniają, prześwity i rozświetlone brzegi chmur dają smugi);
    - wykończenie: okluzja, mgła wysokościowa (całka gęstości malejącej z wysokością wzdłuż promienia, cieplejsza ku
      słońcu), promienie, bloom, ekspozycja, ACES (dopasowanie Hilla), nasycenie i odcień cieni / świateł, sRGB, kontrast,
      winieta, szum przeciw pasmom; na końcu FXAA, gdy w ustawieniach jest wygładzanie.
@@ -86,9 +87,9 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 		// ---------- okluzja otoczenia ----------
 		const U = {
 			projInv: uniform(new THREE.Matrix4()), proj: uniform(new THREE.Matrix4()), camWorld: uniform(new THREE.Matrix4()), camPos: uniform(new THREE.Vector3()),
-			aoRadius: uniform(26), aoStrength: uniform(1.6), aoFade: uniform(3000), aoTexel: uniform(new THREE.Vector2()),
+			aoRadius: uniform(26), aoStrength: uniform(1.6), aoFade: uniform(3000), aoNear: uniform(0), aoTexel: uniform(new THREE.Vector2()),
 			texel: uniform(new THREE.Vector2()), upWeight: uniform(0.9), threshold: uniform(1.2), knee: uniform(0.8),
-			sunDir: uniform(new THREE.Vector3(0, 1, 0)), sunColor: uniform(new THREE.Color()), raysColor: uniform(new THREE.Color()), sunUv: uniform(new THREE.Vector2()), spread: uniform(0.9),
+			sunDir: uniform(new THREE.Vector3(0, 1, 0)), sunColor: uniform(new THREE.Color()), raysColor: uniform(new THREE.Color()), raysRef: uniform(2.0), sunUv: uniform(new THREE.Vector2()), spread: uniform(0.9),
 			aoOn: uniform(0), bloomOn: uniform(0), bloomStrength: uniform(0.35), exposure: uniform(1), saturation: uniform(1.08), contrast: uniform(1.06),
 			shadowTint: uniform(new THREE.Color(0.97, 0.99, 1.04)), lightTint: uniform(new THREE.Color(1.03, 1.0, 0.96)), vignette: uniform(0.28), aspect: uniform(1), grade: uniform(1),
 			atmoOn: uniform(0), hazeColor: uniform(new THREE.Color()), fogBase: uniform(0), fogDensity: uniform(0), fogFalloff: uniform(0.01), raysOn: uniform(0),
@@ -116,6 +117,8 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 				occ.addAssign(step(Q.z.add(U.aoRadius.mul(0.04)).sub(P.z.mul(0.003)), sz).mul(range));
 			}
 			occ.mulAssign(smoothstep(U.aoFade.mul(0.6), U.aoFade, P.z.negate()).oneMinus());
+			// (widok z kabiny: bez okluzji na wnętrzu kabiny – aoNear, tylko świat za szybą)
+			occ.mulAssign(smoothstep(U.aoNear, U.aoNear.mul(1.6).add(0.01), P.z.negate()));
 			occ.mulAssign(smoothstep(0.06, 0.28, facing));
 			const v = pow(clamp(U.aoStrength.mul(occ).div(16).oneMinus(), 0, 1), 1.5);
 			return select(d.greaterThanEqual(0.99999), vec4(1), vec4(vec3(v), 1));
@@ -167,7 +170,12 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			const far = getViewPosition(st, float(1), U.projInv);
 			const rd = normalize(U.camWorld.mul(vec4(far, 0)).xyz).toVar();
 			const s = max(dot(rd, U.sunDir), 0.0).toVar();
-			const c = U.raysColor.mul(pow(s, 24.0).mul(2.0).add(pow(s, 6.0).mul(0.25))).mul(smoothstep(-0.02, 0.06, rd.y));
+			/* jasność nieba w tym miejscu obrazu (z chmurami) względem typowej jasności czystego nieba przy słońcu (raysRef,
+			   pomiar HDR ok. 2,4): chmura przed słońcem gasi promienie, prześwity i jasne brzegi chmur dają smugi; dawniej
+			   sam wzór wokół słońca – promienie także przez gęste chmury */
+			const sky = min(finite(T.color.sample(st).rgb), vec3(8));
+			const k = clamp(dot(sky, vec3(0.2126, 0.7152, 0.0722)).div(U.raysRef), 0, 1.5);
+			const c = U.raysColor.mul(pow(s, 24.0).mul(2.0).add(pow(s, 6.0).mul(0.25))).mul(smoothstep(-0.02, 0.06, rd.y)).mul(k);
 			return select(d.lessThan(0.99999), vec4(0, 0, 0, 1), vec4(c, 1));
 		})());
 		const raysBlurMat = material(Fn(() => {
@@ -270,6 +278,7 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 					U.aoRadius.value = s.aoRadius ?? 26;
 					U.aoStrength.value = s.aoStrength ?? 1.6;
 					U.aoFade.value = s.aoFade ?? 3000;
+					U.aoNear.value = s.aoNear ?? 0;
 					pass(aoMat, aoTarget);
 					U.aoTexel.value.set(1 / aoTarget.width, 1 / aoTarget.height);
 					pass(aoBlurMat, aoBlurTarget);

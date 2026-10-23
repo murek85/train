@@ -4,6 +4,25 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.59',
+			date: '23 października 2026',
+			groups: [
+				['Grafika', [
+					'Okluzja otoczenia (cienie w zakamarkach: przy podstawach budynków, pod drzewami i wiaduktami, między wagonami) także na jakości średniej i w widoku z kabiny – mocniejsza niż dotąd.',
+				]],
+			],
+		},
+		{
+			version: '0.58.58',
+			date: '23 października 2026',
+			groups: [
+				['Grafika', [
+					'Torowisko: zabrudzona podsypka – ciemniejsza między szynami, rdzawa przy szynach od pyłu z hamulców; betonowe korytka kablowe wzdłuż toru na szlaku.',
+					'Promienie słońca uwzględniają chmury: gęste chmury przed słońcem je gaszą, a smugi przebijają przez prześwity i jasne brzegi chmur – także przy wyżej położonym słońcu.',
+				]],
+			],
+		},
+		{
 			version: '0.58.57',
 			date: '23 października 2026',
 			groups: [

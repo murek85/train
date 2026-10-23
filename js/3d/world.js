@@ -311,8 +311,11 @@ import { BundleGroup } from 'three/webgpu';
 			World.M = {
 				terrain: patch(new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }), 'ground'),
 				ballast: patch(new T.MeshStandardMaterial({ color: '#8f8c85', roughness: 0.95 }), 'gravel'),
+				// podsypka toru z zabrudzeniem w kolorach wierzchołków (World.ballastTint): tor pociągu i tory z mapy
+				ballastTrack: patch(new T.MeshStandardMaterial({ color: '#8f8c85', roughness: 0.95, vertexColors: true }), 'gravel'),
 				rail: World.railPxMat(matS('#c3c9cf', { metalness: 0.85, roughness: 0.28 })),
 				sleeper: matS('#9b988f', { roughness: 0.9, surf: 'concrete' }),
+				trough: matS('#a6a39b', { roughness: 0.92, surf: 'concrete' }), // korytka kablowe wzdłuż toru
 				clip: matS('#2b2d30', { roughness: 0.6, metalness: 0.5 }),
 				railSide: matS('#54402f', { roughness: 0.82, metalness: 0.3 }), // boki szyn: ciemna rdza (jaskrawo pomarańczowe w słońcu wyglądały jak pomalowane)
 				grass: patch(new T.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, vertexColors: true, side: T.DoubleSide }), 'grass'),
@@ -912,6 +915,45 @@ import { BundleGroup } from 'three/webgpu';
 			m.customProgramCacheKey = () => key + '-railpx';
 			return m;
 		}
+		/* Korytka kablowe (betonowe, 0,36 × 0,14 m, płyty co 1 m z łączeniem) po prawej stronie toru przy skraju podsypki
+		   (3,85 m od osi). Bez nich: na mostach i w tunelach (z zapasem), przy przejazdach, peronach stacji, przy innych
+		   torach, drogach i zabudowie (trasa z mapy) oraz tam, gdzie teren odbiega od podstawy torowiska ponad 0,6 m (wysoki
+		   nasyp, wykop – korytka na skarpie wyglądały jak zawieszone). Drobny detal – z daleka niewidoczne (userData.fine). */
+		buildCableTrough(group, s0, s1) {
+			const r = this.route, D = 3.85, M = World.materials();
+			const near = (s, list, a, b, m) => list.some((x) => s > a(x) - m && s < b(x) + m);
+			const ok = (s) => {
+				if (near(s, r.bridges || [], (b) => b.from, (b) => b.to, 8) || near(s, r.tunnels || [], (t) => t.from, (t) => t.to, 12)) return false;
+				if ((r.crossings || []).some((c) => Math.abs((c.pos !== undefined ? c.pos : c) - s) < 14)) return false;
+				if (near(s, r.stations || [], (st) => st.platformStart, (st) => st.platformEnd, 15)) return false;
+				if (this.env && (this.envTrackGap(s, D) < 2.6 || this.envOccupied(s, D, 0.4))) return false;
+				const base = R.heightAt(r, s) - 1.0;
+				return Math.abs(this.terrainY(s, D) - base) < 0.6;
+			};
+			const list = [];
+			for (let s = Math.ceil(s0); s + 1 <= s1; s += 1) if (ok(s + 0.5)) list.push(s + 0.5);
+			if (!list.length) return;
+			const mesh = new T.InstancedMesh(GEO.box, M.trough, list.length);
+			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(0.36, 0.14, 0.97), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
+			list.forEach((s, i) => {
+				R.sidePoint(r, s, D, tp);
+				q.setFromAxisAngle(up, -tp.heading); // (jak podkłady: x w poprzek, z wzdłuż toru)
+				m4.compose(p3.set(tp.x, this.terrainY(s, D) + 0.05, tp.z), q, sc);
+				mesh.setMatrixAt(i, m4);
+			});
+			mesh.receiveShadow = true;
+			mesh.userData.fine = true;
+			group.add(mesh);
+		}
+		/* odcień podsypki w odległości o (m) od osi toru: między szynami ciemniejsza, zatłuszczona (smar, pył z wagonów),
+		   przy szynach rdzawa (pył z hamulców i szyn), na ramionach i skarpach czysta; c – wynik (T.Color) */
+		static ballastTint(o, c) {
+			const a = Math.abs(o);
+			if (a < 0.55) return c.setRGB(0.6, 0.55, 0.49);
+			if (a < 0.95) return c.setRGB(0.64, 0.5, 0.39);
+			const t = Math.min(1, (a - 0.95) / 0.8);
+			return c.setRGB(0.64 + 0.36 * t, 0.5 + 0.5 * t, 0.39 + 0.61 * t);
+		}
 		/* atrybut aRail dla wstęgi szyny (ribbon: wiersze po n kolumn w poprzek, od lewej): kierunek od pierwszej do
 		   ostatniej kolumny (w poziomie) × strona kolumny (lewa połowa −1, prawa +1) */
 		static railAttr(geo, n) {
@@ -1110,11 +1152,13 @@ import { BundleGroup } from 'three/webgpu';
 				const a = Math.abs(d);
 				return a < 1.75 ? -0.29 : a < 2.15 ? -0.31 : -0.31 - (a - 2.15) * 0.48;
 			};
+			// (kolumny przy szynach i między nimi – pasy zabrudzenia w kolorach wierzchołków, World.ballastTint)
+			const balC = new T.Color(), IN = [-0.95, -0.75, -0.55, 0, 0.55, 0.75, 0.95];
 			const ballast = new T.Mesh(
 				r.double && !this.env
-					? this.ribbon(s0, s1, 4, [-8.2, -7.6, -7.0, -6.35, -2.3, 1.75, 2.15, 2.8, 3.6], (s, d, h) => h + (d < -2.3 ? bal(d - SECOND) : bal(d)))
-					: this.ribbon(s0, s1, 4, [-3.6, -2.8, -2.15, -1.75, 1.75, 2.15, 2.8, 3.6], (s, d, h) => h + bal(d)),
-				M.ballast,
+					? this.ribbon(s0, s1, 4, [-8.2, -7.6, -7.0, -6.35, ...IN.map((x) => SECOND + x), -2.3, ...IN, 1.75, 2.15, 2.8, 3.6].sort((a, b) => a - b), (s, d, h) => h + (d < -2.3 ? bal(d - SECOND) : bal(d)), (s, d) => World.ballastTint(d < -2.3 ? d - SECOND : d, balC))
+					: this.ribbon(s0, s1, 4, [-3.6, -2.8, -2.15, -1.75, ...IN, 1.75, 2.15, 2.8, 3.6], (s, d, h) => h + bal(d), (s, d) => World.ballastTint(d, balC)),
+				M.ballastTrack,
 			);
 			ballast.receiveShadow = true;
 			group.add(ballast);
@@ -1162,6 +1206,7 @@ import { BundleGroup } from 'three/webgpu';
 			sleepers.userData.fine = clips.userData.fine = true;
 			group.add(sleepers, clips);
 			yield;
+			this.buildCableTrough(group, s0, s1);
 
 			// sieć trakcyjna – cecha linii, nie pociągu; trasa rzeczywista: zawsze (sieć nad torami z mapy wg ich danych,
 			// nad torem pociągu – na odcinkach z siecią)

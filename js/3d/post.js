@@ -130,7 +130,7 @@ function createPost3D(THREE, renderer) {
 
 	// ---------- ambient occlusion ----------
 	const aoMaterial = shader(
-		`uniform sampler2D tDepth; uniform mat4 projInv; uniform mat4 proj; uniform float radius; uniform float strength; uniform float fade;
+		`uniform sampler2D tDepth; uniform mat4 projInv; uniform mat4 proj; uniform float radius; uniform float strength; uniform float fade; uniform float near;
 		varying vec2 vUv;
 		vec3 viewPos(vec2 uv) {
 			float d = texture2D(tDepth, uv).x;
@@ -169,10 +169,11 @@ function createPost3D(THREE, renderer) {
 			}
 			// Far away the depth is too coarse: the occlusion fades out.
 			occ *= 1.0 - smoothstep(fade * 0.6, fade, -P.z);
+			occ *= smoothstep(near, near * 1.6 + 0.01, -P.z); // (cab view: no occlusion on the cab interior, only outside)
 			occ *= smoothstep(0.06, 0.28, facing);
 			gl_FragColor = vec4(vec3(pow(clamp(1.0 - strength * occ / 16.0, 0.0, 1.0), 1.5)), 1.0);
 		}`,
-		{ tDepth: { value: null }, projInv: { value: new THREE.Matrix4() }, proj: { value: new THREE.Matrix4() }, radius: { value: 26 }, strength: { value: 1.6 }, fade: { value: 3000 } },
+		{ tDepth: { value: null }, projInv: { value: new THREE.Matrix4() }, proj: { value: new THREE.Matrix4() }, radius: { value: 26 }, strength: { value: 1.6 }, fade: { value: 3000 }, near: { value: 0 } },
 	);
 	// A 3×3 blur that keeps the edges of objects (samples far in depth do not count).
 	const aoBlur = shader(
@@ -231,16 +232,18 @@ function createPost3D(THREE, renderer) {
 	// The sky round the sun, where nothing stands in front of it, then smeared towards the sun's place on the
 	// screen (each pixel gathers the light along the line to the sun, fading with the distance).
 	const raysMask = shader(
-		`uniform sampler2D tDepth; uniform mat4 projInv; uniform mat4 camWorld; uniform vec3 sunDir; uniform vec3 sunColor; varying vec2 vUv;
+		`uniform sampler2D tDepth; uniform sampler2D tColor; uniform float raysRef; uniform mat4 projInv; uniform mat4 camWorld; uniform vec3 sunDir; uniform vec3 sunColor; varying vec2 vUv;
 		void main() {
 			float d = texture2D(tDepth, vUv).x;
 			if (d < 0.99999) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
 			vec4 v = projInv * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
 			vec3 rd = normalize((camWorld * vec4(v.xyz / v.w, 0.0)).xyz);
 			float s = max(dot(rd, sunDir), 0.0);
-			gl_FragColor = vec4(sunColor * (pow(s, 24.0) * 2.0 + pow(s, 6.0) * 0.25) * smoothstep(-0.02, 0.06, rd.y), 1.0);
+			// sky brightness in the frame (clouds included) against clear sky by the sun: clouds block the rays (as post-gpu.js)
+			float k = clamp(dot(min(texture2D(tColor, vUv).rgb, vec3(8.0)), vec3(0.2126, 0.7152, 0.0722)) / raysRef, 0.0, 1.5);
+			gl_FragColor = vec4(sunColor * (pow(s, 24.0) * 2.0 + pow(s, 6.0) * 0.25) * smoothstep(-0.02, 0.06, rd.y) * k, 1.0);
 		}`,
-		{ tDepth: { value: null }, projInv: { value: new THREE.Matrix4() }, camWorld: { value: new THREE.Matrix4() }, sunDir: { value: new THREE.Vector3() }, sunColor: { value: new THREE.Color() } },
+		{ tDepth: { value: null }, tColor: { value: null }, raysRef: { value: 1.2 }, projInv: { value: new THREE.Matrix4() }, camWorld: { value: new THREE.Matrix4() }, sunDir: { value: new THREE.Vector3() }, sunColor: { value: new THREE.Color() } },
 	);
 	const raysBlur = shader(
 		`uniform sampler2D tColor; uniform vec2 sunUv; uniform float spread; varying vec2 vUv;
@@ -448,6 +451,7 @@ function createPost3D(THREE, renderer) {
 				aoMaterial.uniforms.radius.value = s.aoRadius ?? 26;
 				aoMaterial.uniforms.strength.value = s.aoStrength ?? 1.6;
 				aoMaterial.uniforms.fade.value = s.aoFade ?? 3000;
+				aoMaterial.uniforms.near.value = s.aoNear ?? 0;
 				pass(aoMaterial, aoTarget);
 				aoBlur.uniforms.tAo.value = aoTarget.texture;
 				aoBlur.uniforms.tDepth.value = sceneTarget.depthTexture;
@@ -479,6 +483,7 @@ function createPost3D(THREE, renderer) {
 				if (ahead > 0.05 && a.sunDir.y > -0.02) {
 					rays = true;
 					raysMask.uniforms.tDepth.value = sceneTarget.depthTexture;
+					raysMask.uniforms.tColor.value = sceneTarget.texture;
 					raysMask.uniforms.projInv.value.copy(camera.projectionMatrixInverse);
 					raysMask.uniforms.camWorld.value.copy(camera.matrixWorld);
 					raysMask.uniforms.sunDir.value.copy(a.sunDir);

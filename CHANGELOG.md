@@ -4,6 +4,36 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.59 – 23 października 2026
+
+Okluzja otoczenia na jakości średniej i w kabinie.
+
+### Grafika
+- Okluzja otoczenia (`post-gpu.js`, `post.js` – 16 próbek z głębi w połowie rozdzielczości) włączona także na jakości
+  średniej (dotąd tylko wysoka); mocniejsza – promień 2,2 → 2,8 m, siła 1,2 → 1,6 (przy podstawach budynków, pod
+  drzewami, krzewami i wiaduktami, przy skarpach i pod wagonami – dotąd ledwo widoczna).
+- W widoku z kabiny (dotąd bez okluzji – przyciemniałaby wnętrze): wygaszanie z bliska `aoNear` – pierwsze 3,5 m od
+  kamery (wnętrze kabiny) bez okluzji, świat za szybą z nią. W tunelu – bez zmian (wyłączona).
+- Rozdzielczość odbić w wodzie wg jakości wysokiej (`q.atmo`), nie wg okluzji – jakość średnia bez zmian w odbiciach.
+- README: opis poziomów jakości.
+
+## 0.58.58 – 23 października 2026
+
+Detale torowiska i promienie słońca przez chmury.
+
+### Grafika
+- Podsypka z zabrudzeniem w kolorach wierzchołków (`World.ballastTint`, materiał `ballastTrack` – ten sam shader
+  `gravel`): między szynami ciemniejsza, zatłuszczona, przy szynach rdzawa (pył z hamulców i szyn), na ramionach
+  i skarpach czysta; tor pociągu (dodatkowe kolumny wstęgi przy szynach i między nimi) i tory z mapy (główne i bocznice –
+  `ballastOld` z kolorami wierzchołków; nieużywane, zarośnięte – bez zmian).
+- Korytka kablowe (`buildCableTrough`): betonowe, 0,36 × 0,14 m, płyty co 1 m, po prawej stronie toru 3,85 m od osi;
+  bez nich na mostach i w tunelach, przy przejazdach, peronach, innych torach, drogach i zabudowie oraz przy wysokim
+  nasypie i w wykopie (teren ponad 0,6 m od podstawy torowiska); drobny detal – z daleka niewidoczne.
+- Promienie słońca (WebGPU `post-gpu.js` i WebGL `post.js`): maska z jasności nieba w obrazie (z chmurami) względem
+  czystego nieba przy słońcu (pomiar HDR ok. 2,4 – odniesienie 2,0; WebGL 1,2) – chmura przed słońcem gasi promienie,
+  prześwity i rozświetlone brzegi chmur dają smugi; dawniej sam wzór wokół słońca, także przez gęste chmury. Przy
+  wysokim słońcu 30% siły (dawniej powyżej ok. 33° – wcale).
+
 ## 0.58.57 – 23 października 2026
 
 Przygotowanie długich tras bez zamrożenia okna.
