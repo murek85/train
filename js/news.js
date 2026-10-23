@@ -4,6 +4,18 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.56',
+			date: '23 października 2026',
+			groups: [
+				['Nowa trasa', [
+					'Poznań Główny – Wrocław Główny: linia 271 przez Luboń, Mosinę, Kościan, Leszno, Rawicz, Żmigród i Oborniki Śląskie – 163,7 km, 34 stacje i przystanki, prędkości do 160 km/h. Najdłuższa trasa w grze.',
+				]],
+				['Generator tras', [
+					'Trasy do 180 km w linii prostej (dotąd 100 km); przejazdy tuż przed peronami przystanków nie są już pomijane.',
+				]],
+			],
+		},
+		{
 			version: '0.58.55',
 			date: '23 października 2026',
 			groups: [

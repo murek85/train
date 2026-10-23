@@ -948,9 +948,27 @@
 		});
 	}
 
+	/* Koniec toru z mapy z odstającym pomiarem wysokości (env.th): ostatni punkt ponad 2 m i ponad 15% wyżej lub niżej niż
+	   poprzedni – pomiar trafił w pomost albo konstrukcję nad torem (Poznań – Wrocław km 160,7: 10 m na 40 m – tor
+	   wspinał się w ostatnim odcinku). Wysokość z poprzedniego punktu; tory na moście (bit 2) i w tunelu (16) bez zmian. */
+	function envFixTrackEndHeights(def) {
+		const e = def.env;
+		if (!e.t || !e.th) return;
+		e.t.forEach((row, i) => {
+			const th = e.th[i], m = (row.length - 1) / 2;
+			if (!th || m < 3 || row[0] & 18) return;
+			for (const [k, k2] of [[0, 1], [m - 1, m - 2]]) {
+				if (!(th[k] >= 0) || !(th[k2] >= 0)) continue;
+				const L = Math.hypot(row[1 + k * 2] - row[1 + k2 * 2], row[2 + k * 2] - row[2 + k2 * 2]) || 1, dz = Math.abs(th[k] - th[k2]) / 10;
+				if (dz > 2 && dz > 0.15 * L) th[k] = th[k2];
+			}
+		});
+	}
+
 	function cleanEnv(def) {
 		if (!def || !def.env) return def;
 		envDropFlatOverpasses(def);
+		envFixTrackEndHeights(def);
 		envClipPlatformsToTracks(def);
 		envRailBesideToTracks(def);
 		envJoinPortalGaps(def);

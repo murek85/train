@@ -4030,7 +4030,8 @@ import * as THREE from 'three';
 			const tb = Math.max(0, Math.min(1, ((sx - s1) * (s2 - s1) + (dx - d1) * (d2 - d1)) / L2));
 			const yb = this.envRowMeasured(bi, bk, s1 + (s2 - s1) * tb, d1 + (d2 - d1) * tb);
 			const hh = yb !== undefined ? yb : R.heightAt(this.route, sx);
-			return yv < hh - 1.5 ? hh : yv;
+			// (most ponad 6 m wyżej – tor przechodzi pod nim, nie dochodzi do pomostu: Poznań – Wrocław km 160,7, 10 m)
+			return yv < hh - 1.5 && yv > hh - 6 ? hh : yv;
 		};
 		// tor odzyskany z „wiaduktu” (bit 64): wysokości w wierzchołkach liczone raz dla całego toru (envRow64)
 		if (row[0] & 64) {

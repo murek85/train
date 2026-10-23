@@ -4,6 +4,38 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.56 – 23 października 2026
+
+Nowa trasa Poznań Główny – Wrocław Główny.
+
+### Nowa trasa
+- **Poznań Główny – Wrocław Główny** (`routes/poznan-wroclaw.js`, horyzont `routes/horizon/poznan-wroclaw.js`): linia 271
+  przez Poznań Dębiec, Luboń, Puszczykowo, Mosinę, Czempiń, Kościan, Leszno, Rawicz, Żmigród, Oborniki Śląskie
+  i Wrocław Mikołajów – 163,7 km, 34 stacje i przystanki, 61 semaforów (w tym 37 odstępowych uzupełnionych), 43 mosty
+  i wiadukty, prędkości w 100% z wykazu PKP PLK (do 160 km/h), niweleta 76–123 m n.p.m.; otoczenie z BDOT10k
+  (8 powiatów) i OSM – ok. 32 tys. budynków, 11,4 tys. odcinków dróg, 68 peronów z mapy. Najdłuższa trasa w grze
+  (plik 12 MB, wczytanie ok. 4,6 s).
+- Horyzont z `tools/horizon.js` (do 1,4°); `geo` i `horizon` z generatora usunięte z pliku trasy, jak w pozostałych
+  trasach wbudowanych. `index.html`, `tests/horizon.test.js`.
+- Poprawka `fixes`: przejazdy przy przystankach Drużyna Poznańska (km 22,38), Rydzyna (78,61) i Kaczkowo (82,55) –
+  w OSM z numerami PLK 271 142 265, 271 085 836, 271 081 874, pominięte przez generator (niżej).
+
+### Generator tras
+- Stacje do 180 km od siebie w linii prostej (dotąd 100 km; Poznań – Wrocław: 144 km) – `js/osm-route.js`, podpowiedź
+  w menu, README.
+- Przejazd pomijany tylko na samym peronie – jak peron w grze (od W4 + 15 m − długość peronu do W4 + 15 m, zapas
+  5 m); dawniej strefa od W4 − długość − 20 m: przejazd tuż przed peronem przystanku wypadał z trasy.
+
+### Otoczenie
+- `cleanEnv`: koniec toru z mapy z odstającym pomiarem wysokości (ponad 2 m i ponad 15% względem poprzedniego punktu –
+  pomiar trafił w konstrukcję nad torem) dostaje wysokość poprzedniego punktu (tory na mostach i w tunelach bez zmian).
+- Koniec toru przy moście z mapy podnoszony do pomostu tylko, gdy most jest do 6 m wyżej – wyżej tor przechodzi pod
+  nim (Poznań – Wrocław km 160,7: tor wspinał się o 10 m).
+
+### Kontrola tras
+- Poznań – Wrocław: 3 pozycje (koniec mostu drogowego obok toru przy Poznaniu Głównym, ulica przerwana przy torze na
+  km 14,42 – w OSM bez przejazdu, skok 1,0 m toru przy Wrocławiu Mikołajowie); pozostałe trasy bez zmian.
+
 ## 0.58.55 – 23 października 2026
 
 Ostatnie pozycje kontroli tras (14 → 1).

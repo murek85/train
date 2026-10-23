@@ -2763,15 +2763,17 @@
 		const crossings = [];
 		for (const [id, s] of nodeS) {
 			const t = tagged.get(id);
-			// przejazd także w obrębie stacji – byle nie na samym peronie
-			const onPlatform = route.some((st) => s > st.s - platformLength - 20 && s < st.s + 30);
+			/* przejazd także w obrębie stacji – byle nie na samym peronie (jak peron w grze: od W4 + 15 m − długość peronu do
+			   W4 + 15 m, z zapasem 5 m; dawniej od W4 − długość − 20 m – przejazd tuż przed peronem przystanku wypadał:
+			   Poznań – Wrocław przy Drużynie Poznańskiej, Rydzynie i Kaczkowie) */
+			const onPlatform = route.some((st) => s > st.s + 15 - platformLength - 5 && s < st.s + 30);
 			if (t && t.tags.railway === 'level_crossing' && !onPlatform && s > route[0].s + 200 && s < route[route.length - 1].s - 200) crossings.push(S(s));
 		}
 		/* przejazd oznaczony tylko na drugim torze linii (węzeł do 5 m od przebiegu, nie na nim – lcS): dawniej wyłącznie
 		   wyciszał uwagę o drodze bez przejazdu, a przejazdu nie było (Kraków – Zakopane km 20,3, 21,9, 28,0, 121,0;
 		   Czechowice-Dziedzice – Wisła Głębce km 16,8, 38,9) */
 		for (const s of lcS) {
-			const onPlatform = route.some((st) => s > st.s - platformLength - 20 && s < st.s + 30);
+			const onPlatform = route.some((st) => s > st.s + 15 - platformLength - 5 && s < st.s + 30);
 			if (onPlatform || s <= route[0].s + 200 || s >= route[route.length - 1].s - 200) continue;
 			if (!crossings.some((c) => Math.abs(c - S(s)) < 30)) crossings.push(S(s));
 		}
@@ -4615,7 +4617,8 @@
 		if (!b) throw new Error(`Nie znaleziono stacji „${opts.to}” – wpisz nazwę dokładnie jak na rozkładzie (z polskimi znakami).`);
 		const P = projector(a.lat, a.lon);
 		const d = dist2(P.xy(a.lat, a.lon), P.xy(b.lat, b.lon));
-		if (d > 100000) throw new Error(`Stacje są za daleko od siebie (${Math.round(d / 1000)} km w linii prostej, maksymalnie 100 km).`);
+		// (do 180 km – Poznań – Wrocław: 144 km w linii prostej, ok. 165 km toru; dawniej 100 km)
+		if (d > 180000) throw new Error(`Stacje są za daleko od siebie (${Math.round(d / 1000)} km w linii prostej, maksymalnie 180 km).`);
 		if (d > 70000) log(`Długa trasa (${Math.round(d / 1000)} km w linii prostej) – pobieranie danych potrwa dłużej.`);
 		if (d < 2000) throw new Error('Stacje są zbyt blisko siebie.');
 		// otoczenie domyślnie włączone (opts.environment === false – sama trasa)
