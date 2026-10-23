@@ -4,6 +4,25 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.57 – 23 października 2026
+
+Przygotowanie długich tras bez zamrożenia okna.
+
+### Wydajność
+- `World.setRouteSteps` (generator): usunięcie kawałków poprzedniej trasy, indeks otoczenia (`envIndexSteps`) i sieć ulic
+  (`envStreetsSteps`) w krokach; `setRoute` wykonuje je w całości, a dla trasy już przygotowanej tylko czyści świat.
+  `main.js` – `prepareWorld`: kroki po ok. 25 ms na klatkę przy wyborze trasy w menu (okienko „Przygotowanie otoczenia
+  linii…” z postępem) i na ekranie wczytywania przed utworzeniem jazdy (trasa inna niż w podglądzie – skład,
+  scenariusz); w tym czasie bez rysowania (świat w połowie przygotowania), stary podgląd w menu wyłączony.
+- Przerwy według czasu (co ok. 8 ms) w długich pętlach: wysokości dróg (drogi nachodzące na siebie, pochylenie do 12%),
+  wkopy drogowe (`envTrenchInitSteps`), wagony na bocznicach (`envPlanWagonsSteps`), sieć ulic (łączniki, węzły,
+  siatka odcinków, skrzyżowania, przejścia); korytarze pod mostami (`bridgeCorridor`) liczone krokami przed wagonami –
+  dawniej wszystkie naraz przy pierwszym `dip` (ok. 0,5 s).
+- Wkopy drogowe: odcinki wkopów dróg głównych w kubełkach co 50 m (dawniej każdy punkt ulicy z każdym odcinkiem).
+- Pomiar (przygotowanie trasy, bez rysowania): Poznań – Wrocław 4,2–4,6 s → ok. 2,5 s, najdłuższy krok 0,5 s → 70 ms;
+  Kraków – Zakopane 3,3 → 1,9 s, najdłuższy krok 1,2 s → 70 ms; Tarnowskie Góry – Katowice najdłuższy krok 30 ms.
+  Kontrola tras – wyniki bez zmian.
+
 ## 0.58.56 – 23 października 2026
 
 Nowa trasa Poznań Główny – Wrocław Główny.

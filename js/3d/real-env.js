@@ -299,14 +299,24 @@ import * as THREE from 'three';
 	}
 
 	// ---------- indeks otoczenia trasy ----------
+	/* indeks otoczenia trasy (budynki, drogi, wody, zagospodarowanie…) – w krokach (yield między etapami): ekran
+	   wczytywania przygotowuje go w kilku klatkach (World.setRouteSteps, main.js), bez kilkusekundowego zamrożenia
+	   przy długich trasach (Poznań – Wrocław: ok. 1,7 s) */
 	World.prototype.envIndex = function (route) {
+		const g = this.envIndexSteps(route);
+		while (!g.next().done);
+	};
+	World.prototype.envIndexSteps = function* (route) {
 		const env = route.env;
+		let tY = performance.now(); // (przerwy w długich pętlach co ok. 8 ms)
 		this.env = null;
 		if (!env) return;
 		const bByChunk = new Map(), rByChunk = new Map(), wByChunk = new Map();
 		const push = (map, c, v) => { if (!map.has(c)) map.set(c, []); map.get(c).push(v); };
+		yield;
 		// rodzaj budynku i nazwa z mapy (env.bu, env.bn: indeks, nazwa, …)
 		const bUse = env.bu || [], bName = new Map(), bPitch = new Map();
+		yield;
 		// boiska stadionów (env.sp: indeks budynku, s, d, kierunek ×1000, połowy długości i szerokości w dm)
 		for (let k = 0; k + 6 < (env.sp || []).length; k += 7) {
 			const q = env.sp;
@@ -324,6 +334,7 @@ import * as THREE from 'three';
 			const b = { i, row, n, s0, s1, d0, d1, cs: cs / n };
 			push(bByChunk, Math.floor(b.cs / C), b);
 		});
+		yield;
 		// drogi i cieki: każdy odcinek do kawałka, w którym leży jego środek
 		const lines = (list, map) => list.forEach((row, i) => {
 			const n = (row.length - 1) / 2;
@@ -334,6 +345,7 @@ import * as THREE from 'three';
 		});
 		lines(env.r, rByChunk);
 		lines(env.w, wByChunk);
+		yield;
 		/* ulice: szerokość (z BDOT albo wg klasy), pasy (bez danych – z szerokości), nawierzchnia, chodniki, jednokierunkowa */
 		const ra = env.ra || [];
 		const rInfo = env.r.map((row, i) => {
@@ -349,6 +361,7 @@ import * as THREE from 'three';
 			for (let k = 0; k < n; k++) cs += row[1 + k * 2];
 			push(pkByChunk, Math.floor(cs / n / C), row);
 		});
+		yield;
 		// zadaszenia peronów z mapy (env.rf: wysokość dm, szkło, poziom, s, d, …) wg kawałka środka obrysu
 		const rfByChunk = new Map(), rfAll = [];
 		for (const row of env.rf || []) {
@@ -368,6 +381,7 @@ import * as THREE from 'three';
 			for (let k = 0; k < n; k++) cs += row[1 + k * 2];
 			push(pByChunk, Math.floor(cs / n / C), { i, row, n });
 		});
+		yield;
 		// prawdziwe dworce (rodzaj 6) przy stacjach trasy: zastępują model dworca z gry
 		const stationReal = new Map();
 		for (const list of bByChunk.values()) for (const b of list) {
@@ -379,6 +393,7 @@ import * as THREE from 'three';
 				if (!cur || dist < cur.dist) stationReal.set(si, { b, dist });
 			});
 		}
+		yield;
 		// stacje bez dworca z mapy: miejsce dworca z gry wolne od budynków i dróg z mapy
 		const reserved = [];
 		route.stations.forEach((st, si) => {
@@ -387,6 +402,7 @@ import * as THREE from 'three';
 			const sb = (st.platformStart + st.platformEnd) / 2 + sg * ((st.platformEnd - st.platformStart) / 2 - 22);
 			reserved.push(sg > 0 ? { s0: sb - 18, s1: sb + 18, d0: 5, d1: 26 } : { s0: sb - 18, s1: sb + 18, d0: -26, d1: -5 });
 		});
+		yield;
 		// mosty drogowe obok toru: kawałek wg środka obiektu
 		const obByChunk = new Map();
 		(env.ob || []).forEach((row) => {
@@ -395,6 +411,7 @@ import * as THREE from 'three';
 			for (let k = 0; k < n; k++) cs += row[2 + k * 2];
 			push(obByChunk, Math.floor(cs / n / C), row);
 		});
+		yield;
 		// raster zagospodarowania
 		const g = env.g, rows = g.rows.length;
 		const grid = new Uint8Array(rows * g.cols);
@@ -408,6 +425,7 @@ import * as THREE from 'three';
 				c += cnt;
 			}
 		});
+		yield;
 		// wiadukty drogowe nad torem: kawałek wg punktu nad osią toru
 		const oByChunk = new Map();
 		(env.o || []).forEach((row) => {
@@ -420,6 +438,7 @@ import * as THREE from 'three';
 		const swByChunk = new Map();
 		(env.sw || []).forEach((x) => push(swByChunk, Math.floor(x[0] / C), x));
 		const usedPlatforms = new Set(route.stations.filter((x) => x.platform && x.platform.pi !== undefined).map((x) => x.platform.pi));
+		yield;
 		// przekroje torów z mapy (słupy trakcyjne, semafory, filary – wolne miejsca obok torów): odcinek do każdego
 		// kawałka, który obejmuje
 		const tSpan = new Map();
@@ -430,6 +449,7 @@ import * as THREE from 'three';
 				for (let c = Math.floor(Math.min(a, b) / C); c <= Math.floor(Math.max(a, b) / C); c++) push(tSpan, c, { k, row, i });
 			}
 		});
+		yield;
 		// wiadukty kolejowe nad torem: kawałek wg punktu nad osią toru
 		const roByChunk = new Map();
 		(env.ro || []).forEach((row) => {
@@ -437,6 +457,7 @@ import * as THREE from 'three';
 			for (let i = 1; i < row.length; i += 2) if (Math.abs(row[i + 1]) < bd) { bd = Math.abs(row[i + 1]); best = i; }
 			push(roByChunk, Math.floor(row[best] / C), row);
 		});
+		yield;
 		// korony drzew z pomiaru (NMPT − NMT): siatka jak zagospodarowanie, kod co cv.q m
 		let cvGrid = null;
 		if (env.cv && env.cv.rows) {
@@ -452,9 +473,11 @@ import * as THREE from 'three';
 				}
 			});
 		}
+		yield;
 		// pomosty z pomiaru (dm ponad dem.base, −1 – brak): wiadukty nad torem (drogowe, kolejowe), mosty obok
 		// wysokości dróg z pomiaru (dm ponad dem.base) dla wierszy env.r
 		const roadZ = new Map();
+		yield;
 		/* wysokości jezdni z pomiaru (dm) wygładzone wzdłuż drogi (średnia ważona ±12 m): pomiar co kilka metrów
 		   z dokładnością 0,1 m dawał schodki i załamania pochylenia; końce bez zmian (styk z innymi drogami) */
 		(env.r || []).forEach((row, i) => {
@@ -473,6 +496,7 @@ import * as THREE from 'three';
 			}
 			roadZ.set(row, z);
 		});
+		yield;
 		/* drogi nachodzące na siebie: punkt drogi, której pas jezdni zachodzi na pas równoległej drogi (|cos| ≥ 0,9, osie
 		   bliżej niż suma połówek szerokości + 1 m) wyższej o 0,3–2,5 m – na jej poziomie, z przejściem do własnej wysokości na 15 m. Maska dróg bierze
 		   w takim pasie wyższą jezdnię, a pas ukośnie przecina komórki: niższa droga przeskakiwała co 2 m między dwoma
@@ -491,9 +515,10 @@ import * as THREE from 'three';
 			});
 			const half = (i) => Math.max(rInfo[i].w || 5, ROAD_W[env.r[i][0]] || 5) / 2;
 			const lifted = [];
-			env.r.forEach((row, i) => {
-				const z = roadZ.get(row);
-				if (!z) return;
+			for (let i = 0; i < env.r.length; i++) {
+				if (performance.now() - tY > 8) { yield; tY = performance.now(); }
+				const row = env.r[i], z = roadZ.get(row);
+				if (!z) continue;
 				const n = (row.length - 1) / 2, tz = new Array(n).fill(NaN);
 				let any = false;
 				for (let k = 0; k < n; k++) {
@@ -513,7 +538,7 @@ import * as THREE from 'three';
 					}
 				}
 				if (any) lifted.push([row, z, tz]);
-			});
+			}
 			for (const [row, z, tz] of lifted) {
 				const n = z.length, cum = [0];
 				for (let k = 1; k < n; k++) cum.push(cum[k - 1] + Math.hypot(row[1 + k * 2] - row[k * 2 - 1], row[2 + k * 2] - row[k * 2]));
@@ -526,6 +551,7 @@ import * as THREE from 'three';
 				}
 			}
 		}
+		yield;
 		/* pochylenie jezdni najwyżej 12% (po sieci dróg, także przez węzły): garby z pomiaru ścięte. Węzeł przy końcu
 		   wiaduktu nad torami dostawał wysokość pomostu (pomiar powierzchni) – drogi z niego spadały po 30–50% (rampy
 		   ze stromym klinem terenu); pomost schodzi teraz do skrzyżowania (overpassPlan). Doliny (przejścia pod
@@ -534,6 +560,7 @@ import * as THREE from 'three';
 			// węzły: punkty dróg bliżej niż 1 m (końce dróg w danych nie zawsze w tym samym miejscu)
 			const verts = [], keyOf = (s, d) => Math.floor(s) * 4096 + Math.floor(d + 2048), byKey = new Map();
 			for (const [row, z] of roadZ) {
+				if (performance.now() - tY > 8) { yield; tY = performance.now(); }
 				const n = Math.min((row.length - 1) / 2, z.length), base = verts.length;
 				for (let k = 0; k < n; k++) {
 					const key = keyOf(row[1 + k * 2], row[2 + k * 2]);
@@ -582,9 +609,13 @@ import * as THREE from 'three';
 			}
 			const push = (z, i) => { heap.push([z, i]); let j = heap.length - 1; while (j > 0) { const p2 = (j - 1) >> 1; if (heap[p2][0] <= heap[j][0]) break; [heap[p2], heap[j]] = [heap[j], heap[p2]]; j = p2; } };
 			const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let j = 0; for (;;) { const a = 2 * j + 1, b = a + 1; let m = j; if (a < heap.length && heap[a][0] < heap[m][0]) m = a; if (b < heap.length && heap[b][0] < heap[m][0]) m = b; if (m === j) break; [heap[m], heap[j]] = [heap[j], heap[m]]; j = m; } } return top; };
-			zv.forEach((z, i) => push(z, i));
+			for (let i = 0; i < zv.length; i++) {
+				push(zv[i], i);
+				if ((i & 1023) === 0 && performance.now() - tY > 8) { yield; tY = performance.now(); }
+			}
 			const G = 1.2; // dm na metr
 			while (heap.length) {
+				if (performance.now() - tY > 8) { yield; tY = performance.now(); }
 				const [z, i] = pop();
 				if (z > zv[i]) continue;
 				const v = verts[i], row = v.row, vs = row[1 + v.k * 2], vd = row[2 + v.k * 2];
@@ -602,8 +633,10 @@ import * as THREE from 'three';
 		}
 		const deckZ = new Map();
 		for (const [rows2, zs] of [[env.o, env.oz], [env.ro, env.roz], [env.ob, env.obz]]) (rows2 || []).forEach((row, i) => { if (zs && zs[i] >= 0) deckZ.set(row, zs[i]); });
+		yield;
 		// profil jezdni z pomiaru w każdym punkcie łamanej (dm ponad dem.base)
 		const deckP = new Map();
+		yield;
 		/* profil pomostu z pomiaru (NMPT) – obwiednia dolna: nie wyżej niż 6% od sąsiednich punktów (pylony, liny i wanty
 		   mostów wantowych, latarnie – w pomiarze jak garby pomostu; np. most Świętokrzyski falował o kilkanaście metrów) */
 		const lowEnv = (row, off, hs) => {
@@ -615,6 +648,7 @@ import * as THREE from 'three';
 		};
 		for (const [rows2, hs, off] of [[env.o, env.oh, 1], [env.ro, env.roh, 1], [env.ob, env.obh, 2]]) (rows2 || []).forEach((row, i) => { if (hs && hs[i]) deckP.set(row, hs[i].length === (row.length - off) / 2 ? lowEnv(row, off, hs[i]) : hs[i]); });
 		this.env = { bByChunk, rByChunk, wByChunk, tByChunk, pByChunk, oByChunk, obByChunk, roByChunk, kByChunk, tSpan, tAt: new Map(), usedPlatforms, swByChunk, stationReal, reserved, grid, g, rows, masks: new Map(), cvGrid, deckZ, deckP, roadZ, rmasks: new Map(), rInfo, rxByChunk, pkByChunk, rfByChunk, rfAll, bUse, bName, bPitch };
+		yield;
 		// strefy rozjazdów: od ostrza do ukresu (tory 3,6 m od siebie), skrzyżowania – całe pole skrzyżowania
 		const swZones = new Map();
 		for (const x of env.sw || []) {
@@ -624,6 +658,7 @@ import * as THREE from 'three';
 			for (let c = Math.floor((s - 60) / C); c <= Math.floor((s + 60) / C); c++) push(swZones, c, z);
 		}
 		this.env.swZones = swZones;
+		yield;
 		// ukształtowanie terenu: przesunięcie siatki wysokości tak, by teren na osi toru leżał średnio pod podsypką
 		if (env.dem && env.dem.lidar && env.dem.v && env.dem.v.length === env.dem.rows * env.dem.cols) {
 			// NMT: niweleta i teren z tego samego pomiaru – jedno przesunięcie (wysokość szyny przy 0 w grze)
@@ -654,6 +689,7 @@ import * as THREE from 'three';
 			this.env.dem = Object.assign({}, D, { offs });
 			this.env.shoulders = new Map();
 		}
+		yield;
 		/* peron stacji (model z gry) nie zasłania torów z mapy: dalsza krawędź co najmniej 1,72 m od osi najbliższego toru
 		   za peronem (szerokość z obrysu bywa za duża – obejmuje sąsiedni peron albo tor) */
 		for (const st of route.stations) {
@@ -668,8 +704,17 @@ import * as THREE from 'three';
 			}
 			if (lim - pl.edge < pl.width) st.platform = Object.assign({}, pl, { width: Math.round(Math.max(2.5, lim - pl.edge) * 10) / 10, island: pl.island || lim < Infinity });
 		}
-		this.env.wagons = this.envPlanWagons(env.t || []);
-		this.envTrenchInit();
+		yield;
+		/* korytarze pod mostami (bridgeCorridor – zapamiętywane; obniżenie terenu dip przy wagonach i budowie kawałków):
+		   po kilka na krok – razem przy pierwszym dip ok. 0,5 s w jednym kroku (Poznań – Wrocław, 30 mostów) */
+		for (const b of route.bridges) {
+			if (this.bridgeCorridor) this.bridgeCorridor(b);
+			if (performance.now() - tY > 8) { yield; tY = performance.now(); }
+		}
+		this.env.wagons = yield* this.envPlanWagonsSteps(env.t || []);
+		yield;
+		yield* this.envTrenchInitSteps();
+		yield;
 		envMaterials();
 	};
 
@@ -679,8 +724,11 @@ import * as THREE from 'three';
 	   - e.trench: Map(wiersz env.r → Float64Array poziomu ulic obok w każdym punkcie, NaN – nie we wkopie, dm jak roadZ),
 	   - e.trSegs: odcinki we wkopie [s1, d1, s2, d2, półszerokość, poziom ulic dm] (po kawałkach: e.trByChunk),
 	   - punkty pomiaru terenu w pasie wkopu (do 6 m od krawędzi jezdni) – na poziomie ulic obok (kopia e.dem.v). */
-	World.prototype.envTrenchInit = function () {
+	// (w krokach – przerwy co ok. 8 ms: envIndexSteps, ekran wczytywania)
+	World.prototype.envTrenchInitSteps = function* () {
 		const e = this.env, env = this.route.env, D = e.dem;
+		let tY = performance.now();
+		const due = () => performance.now() - tY > 8;
 		e.trench = new Map();
 		e.trSegs = [];
 		e.trByChunk = new Map();
@@ -771,23 +819,32 @@ import * as THREE from 'three';
 		};
 		/* najpierw drogi główne (do drogi powiatowej – DTŚ, trasy); mniejsze (jednojezdniowe łączniki, ulice) tylko przy
 		   wkopie drogi głównej (zjazdy) – osiedlowa ulica wzdłuż wyższych ulic na zboczu to nie wkop (wąwóz z murami) */
-		env.r.forEach((row, i) => { if (row[0] <= 4) proc(row, i); });
-		const major = e.trSegs.slice();
-		env.r.forEach((row, i) => {
-			if (row[0] <= 4 || row[0] > 6) return;
-			for (let k = 1; k < row.length; k += 2) {
-				const s1 = row[k], d1 = row[k + 1];
-				if (major.some(([sa, da, sb, db]) => {
-					const L2 = (sb - sa) ** 2 + (db - da) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((s1 - sa) * (sb - sa) + (d1 - da) * (db - da)) / L2));
-					return Math.hypot(sa + (sb - sa) * t - s1, da + (db - da) * t - d1) < 20;
-				})) { proc(row, i); return; }
-			}
+		for (let i = 0; i < env.r.length; i++) {
+			if (env.r[i][0] <= 4) proc(env.r[i], i);
+			if (due()) { yield; tY = performance.now(); }
+		}
+		// odcinki wkopów dróg głównych w kubełkach co 50 m wzdłuż trasy (dawniej każdy punkt ulicy z każdym odcinkiem)
+		const major = new Map();
+		for (const sg of e.trSegs) for (let b = Math.floor((Math.min(sg[0], sg[2]) - 20) / 50); b <= Math.floor((Math.max(sg[0], sg[2]) + 20) / 50); b++) {
+			if (!major.has(b)) major.set(b, []);
+			major.get(b).push(sg);
+		}
+		const nearMajor = (s1, d1) => (major.get(Math.floor(s1 / 50)) || []).some(([sa, da, sb, db]) => {
+			const L2 = (sb - sa) ** 2 + (db - da) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((s1 - sa) * (sb - sa) + (d1 - da) * (db - da)) / L2));
+			return Math.hypot(sa + (sb - sa) * t - s1, da + (db - da) * t - d1) < 20;
 		});
+		for (let i = 0; i < env.r.length; i++) {
+			const row = env.r[i];
+			if (row[0] <= 4 || row[0] > 6) continue;
+			for (let k = 1; k < row.length; k += 2) if (nearMajor(row[k], row[k + 1])) { proc(row, i); break; }
+			if (due()) { yield; tY = performance.now(); }
+		}
 		if (!e.trSegs.length) return;
 		// pomiar terenu w pasie wkopu – poziom ulic obok
 		const v = (e.dem.v = Array.from(e.dem.v)), dc = D.dc;
 		if (!dc) return;
 		for (const [sa, da, sb, db, hw, r2] of e.trSegs) {
+			if (due()) { yield; tY = performance.now(); }
 			const L = Math.hypot(sb - sa, db - da) || 1e-9;
 			for (let ri = Math.max(0, Math.floor((Math.min(sa, sb) - hw - 6 - D.s0) / D.ds)); ri <= Math.min(D.rows - 1, Math.ceil((Math.max(sa, sb) + hw + 6 - D.s0) / D.ds)); ri++) {
 				const ss = D.s0 + ri * D.ds;
@@ -2773,17 +2830,21 @@ import * as THREE from 'three';
 		return false;
 	};
 
-	World.prototype.envPlanWagons = function (tracks) {
+	// (w krokach – przerwy co ok. 8 ms; wynik: return generatora – yield* w envIndexSteps)
+	World.prototype.envPlanWagonsSteps = function* (tracks) {
 		const byChunk = new Map();
-		tracks.forEach((row, i) => {
-			if ((row[0] & 1) !== 1 || row[0] & 22) return; // tylko czynne bocznice / tory boczne (nie na moście, nie w tunelu)
-			if (hash(i * 2.17 + 0.3) > 0.6) return; // część torów pusta
+		let tY = performance.now();
+		for (let i = 0; i < tracks.length; i++) {
+			if (performance.now() - tY > 8) { yield; tY = performance.now(); }
+			const row = tracks[i];
+			if ((row[0] & 1) !== 1 || row[0] & 22) continue; // tylko czynne bocznice / tory boczne (nie na moście, nie w tunelu)
+			if (hash(i * 2.17 + 0.3) > 0.6) continue; // część torów pusta
 			const pts = [];
 			for (let k = 1; k < row.length; k += 2) pts.push([row[k], row[k + 1]]);
 			const cum = [0];
 			for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
 			const total = cum[cum.length - 1];
-			if (total < 30) return;
+			if (total < 30) continue;
 			const at = (a) => {
 				let k = 0;
 				while (k < cum.length - 2 && cum[k + 1] < a) k++;
@@ -2801,6 +2862,7 @@ import * as THREE from 'three';
 			const base = palette[Math.floor(hash(i * 7.7) * palette.length)];
 			let n = 0;
 			for (let a = start; a + len <= end; a += step, n++) {
+				if (performance.now() - tY > 8) { yield; tY = performance.now(); }
 				const p0 = at(a), p1 = at(a + len), c = at(a + len / 2);
 				// nie przy krawędzi peronowej (peron stacji, perony z mapy – do 3 m)
 				if ([p0, p1, c].some((q) => this.envOccupied(q[0], q[1], 2.5) || this.envOnPlatform(q[0], q[1], 3))) continue;
@@ -2817,7 +2879,7 @@ import * as THREE from 'three';
 				if (!byChunk.has(ck)) byChunk.set(ck, []);
 				byChunk.get(ck).push(w);
 			}
-		});
+		}
 		return byChunk;
 	};
 
@@ -6703,6 +6765,15 @@ import * as THREE from 'three';
 	World.prototype.envStreets = function () {
 		const e = this.env;
 		if (e.streets) return e.streets;
+		const g = this.envStreetsSteps();
+		while (!g.next().done);
+		return e.streets;
+	};
+	// (w krokach – ekran wczytywania: World.setRouteSteps)
+	World.prototype.envStreetsSteps = function* () {
+		const e = this.env;
+		if (e.streets) return;
+		let tY = performance.now(); // (przerwy w długich pętlach co ok. 8 ms)
 		const env = this.route.env;
 		if (!e.roadLinks) e.roadLinks = this.envUnderLinks(env.r, 1);
 		const rows = [], rInf = [], rZ = [];
@@ -6713,8 +6784,10 @@ import * as THREE from 'three';
 			rInf.push(Object.assign({ ti: row[0] }, e.rInfo[i]));
 			rZ.push(e.roadZ.get(row) || null);
 		});
+		yield;
 		// łączniki pod mostami – atrybuty drogi, którą łączą
 		for (const lk of e.roadLinks) {
+			if (performance.now() - tY > 8) { yield; tY = performance.now(); }
 			const a = [lk[1], lk[2]], b = [lk[3], lk[4]], near = (x) => Math.hypot(x[0] - a[0], x[1] - a[1]) < 1 || Math.hypot(x[0] - b[0], x[1] - b[1]) < 1;
 			const j = rows.findIndex((p, i) => rInf[i].ti === lk[0] && p.length > 1 && (near(p[0]) || near(p[p.length - 1])));
 			rows.push([a, b]);
@@ -6753,20 +6826,24 @@ import * as THREE from 'three';
 			return id;
 		};
 		const cuts = rows.map(() => []); // { pos (odcinek + ułamek), n }
-		rows.forEach((p, i) => {
-			if (p.length < 2) return;
+		for (let i = 0; i < rows.length; i++) {
+			const p = rows[i];
+			if (p.length < 2) continue;
+			if (performance.now() - tY > 8) { yield; tY = performance.now(); }
 			for (const pos of [0, p.length - 1]) {
 				const q = p[pos], f = nearNode(q[0], q[1], 1.5);
 				cuts[i].push({ pos, n: f >= 0 ? f : addNode(q[0], q[1]) });
 			}
-		});
+		}
 		const touch = (j, pos, n) => {
 			const a = along(j, pos);
 			for (const c of cuts[j]) if (Math.abs(along(j, c.pos) - a) < 3) { union(c.n, n); return; }
 			cuts[j].push({ pos, n });
 		};
 		const SG = 10, sGrid = new Map();
-		rows.forEach((p, i) => {
+		for (let i = 0; i < rows.length; i++) {
+			const p = rows[i];
+			if (performance.now() - tY > 8) { yield; tY = performance.now(); }
 			for (let k = 0; k + 1 < p.length; k++) {
 				const [sa, da] = p[k], [sb, db] = p[k + 1];
 				for (let a = Math.floor((Math.min(sa, sb) - 2) / SG); a <= Math.floor((Math.max(sa, sb) + 2) / SG); a++)
@@ -6776,10 +6853,13 @@ import * as THREE from 'three';
 						sGrid.get(key).push(i, k);
 					}
 			}
-		});
+		}
+		yield;
 		// koniec drogi przy odcinku innej – skrzyżowanie typu T
-		rows.forEach((p, i) => {
-			if (p.length < 2) return;
+		for (let i = 0; i < rows.length; i++) {
+			const p = rows[i];
+			if (p.length < 2) continue;
+			if (performance.now() - tY > 8) { yield; tY = performance.now(); }
 			for (const c of cuts[i].slice(0, 2)) {
 				const q = p[c.pos], list = sGrid.get(Math.floor(q[0] / SG) + ',' + Math.floor(q[1] / SG)) || [];
 				let best = null, bd = 1.5;
@@ -6794,10 +6874,12 @@ import * as THREE from 'three';
 				}
 				if (best) touch(best[0], best[1], c.n);
 			}
-		});
+		}
+		yield;
 		// przecięcia dróg bez wspólnego końca
 		const seen = new Set();
 		for (const list of sGrid.values()) for (let x = 0; x < list.length; x += 2) for (let y = x + 2; y < list.length; y += 2) {
+			if (performance.now() - tY > 8) { yield; tY = performance.now(); }
 			const i = list[x], k = list[x + 1], j = list[y], l = list[y + 1];
 			if (i === j) continue;
 			const key = i < j ? i + ',' + k + ',' + j + ',' + l : j + ',' + l + ',' + i + ',' + k;
@@ -6812,6 +6894,7 @@ import * as THREE from 'three';
 			touch(i, k + t, n);
 			touch(j, l + u, n);
 		}
+		yield;
 		// położenie węzła: średnia połączonych
 		const acc = new Map();
 		nodes.forEach((p, n) => { const r = find(n), a = acc.get(r) || [0, 0, 0]; a[0] += p[0]; a[1] += p[1]; a[2]++; acc.set(r, a); });
@@ -6900,6 +6983,7 @@ import * as THREE from 'three';
 		};
 		const used = new Uint8Array(edges.length), chains = [];
 		for (let x = 0; x < edges.length; x++) {
+			if (performance.now() - tY > 8) { yield; tY = performance.now(); }
 			if (used[x]) continue;
 			used[x] = 1;
 			let pts = edges[x].pts.slice(), seg = edges[x].pts.slice(1).map(() => ({ inf: edges[x].inf, flip: false }));
@@ -6937,6 +7021,7 @@ import * as THREE from 'three';
 			if (!armsAt.has(n)) armsAt.set(n, []);
 			armsAt.get(n).push({ ch, end });
 		}
+		yield;
 		// przecięcie krawędzi + wlotu A z krawędzią − wlotu B (odsuniętych o dl dalej od osi): t na obu i punkt
 		const cross = (N, A, B, dl) => {
 			const lA = [-A.u[1], A.u[0]], lB = [-B.u[1], B.u[0]], hA = A.h + dl, hB = B.h + dl;
@@ -6958,6 +7043,7 @@ import * as THREE from 'three';
 		};
 		const juncs = [];
 		for (const [n, arms] of armsAt) {
+			if (performance.now() - tY > 8) { yield; tY = performance.now(); }
 			if (arms.length < 3) continue;
 			const N = NP.get(n);
 			for (const A of arms) {
@@ -7031,11 +7117,13 @@ import * as THREE from 'three';
 		const put = (map, c, v) => { if (!map.has(c)) map.set(c, []); map.get(c).push(v); };
 		for (const ch of chains) for (let k = 0; k + 1 < ch.pts.length; k++) put(chByChunk, Math.floor((ch.pts[k][0] + ch.pts[k + 1][0]) / 2 / C), { ch, k });
 		for (const J of juncs) put(jByChunk, Math.floor(J.s / C), J);
+		yield;
 		/* przejścia dla pieszych (zebry): na najbliższym ciągu ulicy (do 6 m), poza płatem skrzyżowania – przesunięte na
 		   wlot tuż za nim; przejścia bliżej niż 6 m (dwa węzły tego samego przejścia) – jedno; ch.zeb – miejsca na ciągu
 		   (oznakowanie je omija) */
 		const zByChunk = new Map(), zAll = [];
 		for (const x of env.rx || []) {
+			if (performance.now() - tY > 8) { yield; tY = performance.now(); }
 			const [sx, dx] = x, c0 = Math.floor(sx / C);
 			let best = null, bd = 6;
 			for (const cc of [c0 - 1, c0, c0 + 1]) for (const { ch, k } of chByChunk.get(cc) || []) {
@@ -7053,6 +7141,7 @@ import * as THREE from 'three';
 			(ch.zeb || (ch.zeb = [])).push(t);
 			put(zByChunk, Math.floor(pc[0] / C), { ch, t, sig: !!x[2] });
 		}
+		yield;
 		// wysokość jezdni drogi źródłowej odcinka ciągu (inf – obiekt atrybutów drogi) w punkcie (s, d): rzut na jej łamaną
 		const infRow = new Map(rInf.map((o, i) => [o, i]));
 		const rowZAt = (inf, s0, d0) => {
@@ -7068,7 +7157,6 @@ import * as THREE from 'three';
 			return best === null ? null : D.base + best / 10 - D.off;
 		};
 		e.streets = { chains, juncs, chByChunk, jByChunk, zByChunk, rowZAt };
-		return e.streets;
 	};
 
 	const SURF_C = [null, '#5e5a55', '#8b8780', '#857659']; // kostka kamienna, kostka betonowa / płyty, gruntowa

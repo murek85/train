@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.57',
+			date: '23 października 2026',
+			groups: [
+				['Wydajność', [
+					'Wybór długiej trasy w menu i start jazdy bez zamrożenia okna: otoczenie trasy przygotowuje się w krokach z postępem w okienku – i prawie dwa razy szybciej (Poznań – Wrocław ok. 2,5 s zamiast 4,5 s).',
+				]],
+			],
+		},
+		{
 			version: '0.58.56',
 			date: '23 października 2026',
 			groups: [

@@ -1111,6 +1111,27 @@
 		requestAnimationFrame(go);
 		setTimeout(go, 120);
 	});
+	/* przygotowanie trasy w świecie (indeks otoczenia, sieć ulic – World.setRouteSteps) w kolejnych klatkach, do 25 ms
+	   na klatkę: długie trasy (Poznań – Wrocław, Kraków – Zakopane) zamrażały dotąd okienko i ekran wczytywania na kilka
+	   sekund. W tym czasie bez rysowania (frame – worldPrep: świat w połowie przygotowania); przygotowanie zawsze do
+	   końca (krótkie), potem rysowanie i budowa kawałków jak dotąd. onStep(n) – liczba wykonanych kroków (postęp). */
+	let worldPrep = false;
+	async function prepareWorld(route, onStep) {
+		const W = renderer.world;
+		if (!W || !W.setRouteSteps || (W.prepared === route && W.route === route)) return;
+		worldPrep = true;
+		try {
+			const g = W.setRouteSteps(route);
+			for (let n = 0; ;) {
+				const t0 = performance.now();
+				while (performance.now() - t0 < 25) { if (g.next().done) return; n++; }
+				if (onStep) onStep(n);
+				await nextFrame();
+			}
+		} finally {
+			worldPrep = false;
+		}
+	}
 	// head – nagłówek okienka (domyślnie „Wczytywanie trasy”; zmiana składu i warunków – własny)
 	// nadtytuły małych wczytywań (kolejowo): rodzaj – co się dzieje
 	const RL_HEAD = { 'Wczytywanie trasy': 'Wczytywanie trasy · zestawianie przebiegu', 'Zmiana składu': 'Zmiana składu · manewry', 'Podgląd składu': 'Podgląd składu · hala postojowa', 'Zmiana warunków': 'Zmiana warunków · komunikat meteo', 'Zmiana jakości': 'Zmiana jakości · ustawienia grafiki' };
@@ -1142,10 +1163,13 @@
 		await nextFrame();
 		if (!live()) return quit();
 		timetable(routeById(id));
-		routeLoading('Budowa otoczenia linii…', 0.45);
+		routeLoading('Budowa otoczenia linii…', 0.3);
 		await nextFrame();
 		if (!live()) return quit();
 		menuHold();
+		// (stary podgląd bez rysowania – świat przechodzi na nową trasę)
+		demo = null;
+		await prepareWorld(routeById(id), (n) => routeLoading('Przygotowanie otoczenia linii…', 0.3 + 0.15 * Math.min(1, n / 40)));
 		startDemo();
 		await worldNear(live, 0.45, window.Train3D.gpu ? 0.75 : 1);
 		if (!live()) return quit();
@@ -1747,15 +1771,13 @@
 		renderer.hold = !!window.Train3D.gpu; // WebGPU: bez rysowania do kompilacji potoków (scene.js hold)
 		sim = null;
 		requestAnimationFrame(() => requestAnimationFrame(() => {
-			try {
-				beginGame(snap);
-			} catch (e) {
+			beginGame(snap).catch((e) => {
 				if (loadingScreen) loadingScreen.close();
 				loadingScreen = null;
 				mode = 'menu';
 				renderer.hold = false;
-				throw e;
-			}
+				console.error(e);
+			});
 		}));
 	}
 	function finishLoading() {
@@ -1776,10 +1798,15 @@
 		if (loadingScreen) loadingScreen.done();
 		loadingScreen = null;
 	}
-	function beginGame(snap) {
+	async function beginGame(snap) {
 		exitFree();
 		document.querySelector('.controls [data-act=wipers]')?.classList.remove('on');
 		const route = rideRoute();
+		// trasa inna niż w podglądzie menu (skład, scenariusz) – przygotowanie otoczenia w klatkach ekranu wczytywania
+		await prepareWorld(route, (n) => {
+			if (loadingScreen && loadingScreen.status) loadingScreen.status('Przygotowanie otoczenia trasy…');
+			if (loadingScreen && loadingScreen.progress) loadingScreen.progress(0.03 + 0.05 * Math.min(1, n / 40));
+		});
 		applyClock(route);
 		if (scen && scen.clock) route.startClock = hm(scen.clock) - route.originWait; // godzina odjazdu ze scenariusza
 		if (snap) route.startClock = snap.startClock; // godzina z zapisu (także przestawiona w pauzie)
@@ -2216,6 +2243,8 @@
 			fpsN = 0;
 			fpsT = 0;
 		}
+		// przygotowanie trasy w świecie (prepareWorld) – bez rysowania
+		if (worldPrep) { requestAnimationFrame(frame); return; }
 		// ekran wczytywania: kawałki świata budowane bez limitu czasu na klatkę (World.update)
 		if (renderer.world) renderer.world.fast = mode === 'loading' || (seasonBuild && mode === 'pause');
 		// przebudowa świata po zmianie pory roku: postęp w nagłówku sekcji w pauzie
@@ -2822,7 +2851,7 @@
 	const desktop = !!(window.desktop && window.desktop.quit) || /Electron/i.test(navigator.userAgent);
 	$('btn-exit').classList.toggle('hidden', !desktop);
 	$('btn-exit').addEventListener('click', quitApp);
-	$('version').textContent = 'wersja 0.58.56';
+	$('version').textContent = 'wersja 0.58.57';
 	$('opt-assist').checked = load('opt.assist', true);
 	$('opt-shp').checked = load('opt.shp', false);
 	$('opt-drive').value = load('opt.drive', 'simple');

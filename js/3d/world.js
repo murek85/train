@@ -391,14 +391,39 @@ import { BundleGroup } from 'three/webgpu';
 			});
 		}
 
-		setRoute(route) {
+		/* Przygotowanie trasy w krokach (generator): indeks otoczenia trasy rzeczywistej (budynki, drogi, wody,
+		   zagospodarowanie – real-env.js) i sieć ulic całej trasy. Ekran wczytywania wykonuje kroki w kolejnych klatkach
+		   (main.js prepareWorld) – długie trasy (Poznań – Wrocław: ok. 4,5 s) nie zamrażają strony; setRoute tej samej
+		   trasy potem już tylko czyści świat. */
+		*setRouteSteps(route) {
+			this.prepared = null;
+			// kawałki poprzedniej trasy – usuwane krokami (zwalnianie siatek i tekstur dużego świata trwało setki ms)
+			this.abortJob();
+			if (this.streetLifeReset) this.streetLifeReset();
+			let tY = performance.now();
+			for (const [c, ch] of [...this.chunks]) {
+				this.dropChunk(ch);
+				this.chunks.delete(c);
+				if (performance.now() - tY > 8) { yield; tY = performance.now(); }
+			}
 			this.clear();
 			this.route = route;
-			if (this.envIndex) this.envIndex(route); // trasa rzeczywista: budynki, drogi, wody, zagospodarowanie (real-env.js)
-			// sieć ulic całej trasy (ok. 0,4 s) – przy wczytaniu trasy, nie w pierwszym kroku budowy kawałka (przycięcie)
-			if (this.env && this.envStreets) this.envStreets();
+			if (this.envIndexSteps) yield* this.envIndexSteps(route);
+			// sieć ulic (ok. 0,4–1,8 s) – przy wczytaniu trasy, nie w pierwszym kroku budowy kawałka (przycięcie)
+			if (this.env && this.envStreetsSteps) yield* this.envStreetsSteps();
 			if (this.envPortalUniforms) this.envPortalUniforms();
 			this.warm = true;
+			this.prepared = route;
+		}
+
+		setRoute(route) {
+			if (this.prepared === route && this.route === route) {
+				this.clear();
+				this.warm = true;
+				return;
+			}
+			const g = this.setRouteSteps(route);
+			while (!g.next().done);
 		}
 
 		clear() {
