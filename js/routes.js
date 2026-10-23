@@ -847,9 +847,111 @@
 		}
 	}
 
+	/* Perony z mapy (obrys, env.p z flagą 1) z torem we wnętrzu: obrys peronu i oś toru to w OSM osobne obiekty i bywają
+	   przesunięte o 2–3 m, a obrys bywa też narysowany na kilka peronów naraz – tor biegł przez peron (Gliwice, Mikołów,
+	   Raba Wyżna, Tarnowskie Góry, Katowice). W przekrojach co 2 m z peronu wycinany jest pas ±1,7 m wokół każdego toru
+	   (także osi naszego, d = 0; bez torów w tunelu) i zostaje najszerszy kawałek (przy zbliżonej szerokości – ciągły
+	   z poprzednim przekrojem); obrys odtwarzany z krawędzi przekrojów (najdłuższy ciąg kawałków co najmniej 1,2 m).
+	   Peron, którego krawędź w co najmniej 2 przekrojach nie jest bliżej niż 1,1 m od osi toru – bez zmian (w Mikołowie
+	   i Katowicach oś toru biegła po samej krawędzi peronu). */
+	function envClipPlatformsToTracks(def) {
+		const e = def.env;
+		if (!e.p || !e.p.length) return;
+		// odcinki torów w kubełkach co 50 m wzdłuż trasy
+		const BK = 50, bk = new Map();
+		for (const row of e.t || []) {
+			if (row[0] & 16) continue;
+			for (let k = 1; k + 3 < row.length; k += 2) {
+				const q = [row[k], row[k + 1], row[k + 2], row[k + 3]];
+				for (let b = Math.floor(Math.min(q[0], q[2]) / BK); b <= Math.floor(Math.max(q[0], q[2]) / BK); b++) {
+					if (!bk.has(b)) bk.set(b, []);
+					bk.get(b).push(q);
+				}
+			}
+		}
+		const tracksAt = (s, lo, hi) => {
+			const out = [0];
+			for (const [sa, da, sb, db] of bk.get(Math.floor(s / BK)) || []) {
+				if ((sa - s) * (sb - s) > 0 || sa === sb) continue;
+				const d = da + ((db - da) * (s - sa)) / (sb - sa);
+				if (d > lo - 2 && d < hi + 2) out.push(d);
+			}
+			return out;
+		};
+		const HW = 1.7, MIN = 1.2, STEP = 2;
+		e.p.forEach((row, i) => {
+			if (row[0] !== 1) return;
+			const n = (row.length - 1) / 2;
+			if (n < 3) return;
+			let s0 = Infinity, s1 = -Infinity;
+			for (let k = 0; k < n; k++) { s0 = Math.min(s0, row[1 + k * 2]); s1 = Math.max(s1, row[1 + k * 2]); }
+			const cross = (s) => {
+				let lo = Infinity, hi = -Infinity;
+				for (let a = 0, b = n - 1; a < n; b = a++) {
+					const sa = row[1 + a * 2], da = row[2 + a * 2], sb = row[1 + b * 2], db = row[2 + b * 2];
+					if ((sa - s) * (sb - s) > 0 || sa === sb) continue;
+					const d = da + ((db - da) * (s - sa)) / (sb - sa);
+					lo = Math.min(lo, d); hi = Math.max(hi, d);
+				}
+				return hi > lo ? [lo, hi] : null;
+			};
+			const ss = [];
+			for (let s = s0 + 0.25; s < s1 - 0.25; s += STEP) ss.push(s);
+			ss.push(s1 - 0.25);
+			let hits = 0;
+			const secs = ss.map((s) => {
+				const c = cross(s);
+				if (!c) return null;
+				const td = tracksAt(s, c[0], c[1]);
+				// krawędź peronu bliżej niż 1,1 m od osi toru (zwykle 1,65–1,72 m) albo tor we wnętrzu
+				if (td.some((d) => d > c[0] - HW + 0.6 && d < c[1] + HW - 0.6)) hits++;
+				return { s, c, td };
+			});
+			if (hits < 2) return;
+			let prev = null;
+			const kept = secs.map((q) => {
+				if (!q) { prev = null; return null; }
+				let pieces = [q.c];
+				for (const d of q.td) {
+					const nx = [];
+					for (const [a, b] of pieces) {
+						if (d + HW <= a || d - HW >= b) { nx.push([a, b]); continue; }
+						if (d - HW > a) nx.push([a, d - HW]);
+						if (d + HW < b) nx.push([d + HW, b]);
+					}
+					pieces = nx;
+				}
+				pieces = pieces.filter(([a, b]) => b - a >= MIN);
+				if (!pieces.length) { prev = null; return null; }
+				let best = pieces[0];
+				for (const p of pieces) if (p[1] - p[0] > best[1] - best[0]) best = p;
+				if (prev) {
+					const cont = pieces.find(([a, b]) => a < prev[1] && b > prev[0]);
+					if (cont && cont[1] - cont[0] >= 0.7 * (best[1] - best[0])) best = cont;
+				}
+				prev = best;
+				return [q.s, best[0], best[1]];
+			});
+			// najdłuższy ciąg kolejnych przekrojów
+			let run = [], cur = [];
+			for (const k of kept) {
+				if (k) cur.push(k);
+				else { if (cur.length > run.length) run = cur; cur = []; }
+			}
+			if (cur.length > run.length) run = cur;
+			if (run.length < 2) return;
+			const out = [1];
+			const r1 = (v) => Math.round(v * 10) / 10;
+			for (const [s, a] of run) out.push(r1(s), r1(a));
+			for (let k = run.length - 1; k >= 0; k--) out.push(r1(run[k][0]), r1(run[k][2]));
+			e.p[i] = out;
+		});
+	}
+
 	function cleanEnv(def) {
 		if (!def || !def.env) return def;
 		envDropFlatOverpasses(def);
+		envClipPlatformsToTracks(def);
 		envRailBesideToTracks(def);
 		envJoinPortalGaps(def);
 		return def;

@@ -4,6 +4,82 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.55 – 23 października 2026
+
+Ostatnie pozycje kontroli tras (14 → 1).
+
+### Otoczenie
+- Nasyp przy końcu wiaduktu (`overpassPlanCalc` → `embk`): sprawdzane też stopy skarp (1:1,5 po obu stronach pomostu) –
+  na torze albo niższej drodze obok przęsło zamiast nasypu (wiadukty kolejowe: Gliwice – Katowice km 15,3, Rybnik –
+  Katowice km 41,4). Dawniej tylko oś jezdni wiaduktu.
+- Most drogowy obok toru nad torami (`bridgePlan`): filar równoległy do torów tylko do 8 m od toru, dalej w poprzek
+  mostu – dawniej filar do 40 m wzdłuż torów nie mieścił się nigdzie i przęsło nad terenem zostawało bez podpór
+  (Rybnik – Katowice km 37,4: 59 m).
+- Tory odzyskane z „wiaduktów” (bit 64, `envRow64`): wysokości liczone raz w wierzchołkach toru (pomiar przycięty do
+  terenu uśrednionego w promieniu 2 m) i pochylenie między wierzchołkami ograniczone do 10% – dawniej w każdym punkcie,
+  a uskoki pomiaru terenu przy murach przechodziły na tor (Gliwice – Katowice km 16,3, Tarnowskie Góry km 28,1: 1,2 m).
+
+### Kontrola tras
+- Przęsło bez podpór (wiadukty i mosty obok toru): wolne miejsce na filar według tych samych warunków co plan (środek
+  filara ponad 3,2 m od toru, poza ulicą pod pomostem, wolny teren) – dawniej sam obrys filara (Toruń km 4,84,
+  Tarnowskie Góry km 0,46, Czechowice km 0,57).
+- Niski prześwit pod naszym mostem: uwaga zamiast błędu, gdy już koniec drogi w danych leży bliżej spodu pomostu niż
+  wymagany prześwit (przejścia i bulwary pod mostami: Kraków – Zakopane km 2,3, 2,5 i 76,5, Tarnowskie Góry km 16,9).
+- Tor pod naszym mostem: tor biegnący wzdłuż osi (przecięcie o centymetry – drugi zapis naszego toru) pomijany
+  (Gdynia – Gdańsk km 17,4).
+- Ulica przerwana przy torze: koniec liczy się tylko, gdy ostatni odcinek wyraźnie zbliża się do toru (ulica równoległa
+  kończąca się obok – nie; Kraków – Zakopane km 115,0).
+- Wynik: 1 pozycja do poprawy (Kraków – Zakopane km 70,09 – dwie ulice kończące się po obu stronach toru, w OSM bez
+  przejazdu w promieniu 100 m).
+
+## 0.58.54 – 23 października 2026
+
+Progi na przecięciach dróg z torami z mapy (kontrola tras: 7 → 0).
+
+### Kontrola tras
+- „Droga przecina tor z mapy z progiem”: szyny porównywane z wysokością jezdni (`roadLevel` – na przejeździe w poziomie
+  podniesiona do szyn przez `envLevelCrossings`), nie z terenem pod nią – na przejazdach (Gliwice – Katowice km 16,3
+  i 21,6, Rybnik, Kraków – Zakopane km 119,1, Tarnowskie Góry km 20,9–22,0) jezdnia leży już na poziomie szyn.
+- Skrzyżowania bezkolizyjne pomijane: zmierzona wysokość jezdni (NMT) ponad 2,5 m od szyn – przejście pod torem albo
+  wiadukt bez mostu w danych, nie przejazd w poziomie (Gliwice – Katowice km 11,9 i 21,2, Tarnowskie Góry – Katowice
+  km 28,0 i 28,5, Kraków – Zakopane km 94,2). Sprawdzone na obrazie: ulica przechodzi pod pomostem.
+- Wynik: 14 pozycji do poprawy zamiast 21.
+
+## 0.58.53 – 23 października 2026
+
+Skoki wysokości torów z mapy (kontrola tras: 16 → 2).
+
+### Otoczenie
+- Koniec toru z mapy przy moście z mapy (`envRowMeasured` → `lift`): podnoszony do wysokości toru mostowego, przy którym
+  leży (jego pomiar), a nie do poziomu naszej linii (ta tylko bez pomiaru). Dawniej końce torów przy mostach innych linii
+  (100–230 m od osi, mosty kilka metrów niżej) wskakiwały na wysokość naszej linii i schodziły do pomiaru na 4–6 m
+  (Gliwice km 4,5, Kraków – Zakopane km 3,3, Gdynia km 18,7, Zabrze km 4,4, Gliwice – Katowice km 20,2: skoki 1–6 m).
+  `envOnRailBridge(…, true)` zwraca odcinek mostu (tor i odcinek).
+- Obniżenie toru z mapy do dna wykopu pod naszym mostem (`envRowY`) tylko dla torów, które w pobliżu (40 m) przecinają
+  naszą oś (`envRowCrossesAxis`) – tory biegnące obok (stacja, rozjazd przy wiadukcie bez mostu w danych) zostają
+  na swoim poziomie. Dawniej odcinek bez mostu w danych schodził na dno wykopu, a sąsiedni z mostem zostawał na górze
+  (Toruń Miasto km 0,53: 2,9 m; Zabrze km 4,0: 5,8 m; Kraków – Zakopane km 3,5 i 94,2).
+- Tory odzyskane z „wiaduktów” (bit 64): ciągłe przejście do terenu (do 0,9 m nad terenem – pomiar, 0,9–1,5 m – coraz
+  bliżej, dalej 0,3 m nad nim) i teren uśredniony w promieniu 2 m – dawniej uskok 1,2 m na progu 1,5 m.
+- Zostały 2 skoki ok. 1,2 m na torach odzyskanych z „wiaduktów” (Gliwice – Katowice km 16,3, Tarnowskie Góry –
+  Katowice km 28,1 – uskok w samym pomiarze terenu). Kontrola tras: 21 pozycji do poprawy zamiast 36.
+
+## 0.58.52 – 23 października 2026
+
+Tory przez perony (kontrola tras: 12 → 0).
+
+### Stacje
+- `cleanEnv` (gra i generator): perony z mapy (obrys, `env.p` z flagą 1), których krawędź w co najmniej 2 przekrojach
+  jest bliżej niż 1,1 m od osi toru (albo tor biegnie przez wnętrze), są obcinane: w przekrojach co 2 m wycinany pas
+  ±1,7 m wokół każdego toru (także osi naszego, bez torów w tunelu), zostaje najszerszy kawałek (ciągły z poprzednim
+  przekrojem), obrys odtwarzany z krawędzi przekrojów (najdłuższy ciąg kawałków od 1,2 m). Obrys peronu i oś toru to
+  w OSM osobne obiekty przesunięte o 2–3 m, a obrys bywa narysowany na kilka peronów naraz – tor biegł przez peron
+  (Gliwice, Mikołów, Katowice, Raba Wyżna, Tarnowskie Góry); perony przy naszym torze z krawędzią ok. 1 m od osi –
+  odsunięte na 1,7 m. Zmienia 43 perony na 10 trasach, zwykle o 2–12% powierzchni.
+- Czechowice-Dziedzice – Wisła Głębce: peron stacji końcowej (wywnioskowany, bez danych z mapy) od km 51,895 – dawniej od
+  51,845, w strefie rozjazdu na torze odchodzącym obok (`fixes.stations`).
+- Wynik: 36 pozycji do poprawy zamiast 47.
+
 ## 0.58.51 – 23 października 2026
 
 Wiadukty drogowe kończące się w powietrzu (kontrola tras: 17 → 0).

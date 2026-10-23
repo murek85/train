@@ -46,3 +46,20 @@ test('cleanEnv: krótki wiadukt drogowy bez pomostu w pomiarze (oz = −1) usuni
 	assert.deepEqual(def.env.oz, [812, -1]);
 	assert.deepEqual(def.env.oh, [[2], [3]]);
 });
+
+test('cleanEnv: peron z mapy z torem we wnętrzu – obcięty do 1,7 m od osi toru, peron obok toru bez zmian', () => {
+	// peron d −20…−6 na 100 m, tor z mapy wzdłuż d = −17 (przez peron); drugi peron 2–6 m – krawędź 2 m od naszej osi
+	const pf = [1, 0, -20, 100, -20, 100, -6, 0, -6];
+	const ok = [1, 0, 2, 100, 2, 100, 6, 0, 6];
+	const def = { tunnels: [], env: { t: [[8, -10, -17, 110, -17]], p: [pf, ok] } };
+	R.cleanEnv(def);
+	const out = def.env.p[0];
+	const ds = [];
+	for (let k = 2; k < out.length; k += 2) ds.push(out[k]);
+	assert.ok(Math.min(...ds) >= -15.31, 'krawędź peronu co najmniej 1,7 m od toru (d ≥ −15,3)');
+	assert.ok(Math.max(...ds) <= -5.99, 'druga krawędź bez zmian');
+	assert.deepEqual(def.env.p[1], ok, 'peron bez toru przy krawędzi – bez zmian');
+	const again = JSON.stringify(def.env.p);
+	R.cleanEnv(def);
+	assert.equal(JSON.stringify(def.env.p), again, 'drugi raz – bez zmian');
+});

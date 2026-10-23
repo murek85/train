@@ -596,4 +596,4 @@
 "flip":-1,
 "tx":13111,
 "ty":13528},
-"fixes":{"limits":[[13060,100]],"crossings":{"add":[16759,28743,38919]},"bridges":[{"from":48505,"to":48518,"kind":"viaduct"}]}});
+"fixes":{"limits":[[13060,100]],"crossings":{"add":[16759,28743,38919]},"bridges":[{"from":48505,"to":48518,"kind":"viaduct"}],"stations":{"Wisła Głębce":{"platform":{"side":1,"edge":1.7,"width":2.5,"island":true,"h":0.4,"s0":51895}}}}});

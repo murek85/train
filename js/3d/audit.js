@@ -63,6 +63,8 @@ import * as THREE from 'three';
 			for (const [k, k2] of [[0, 1], [n - 1, n - 2]]) {
 				const s = row[1 + k * 2], d = row[2 + k * 2];
 				if (Math.abs(d) < 3 || Math.abs(d) > 16 || Math.abs(row[2 + k2 * 2]) <= Math.abs(d)) continue;
+				// ostatni odcinek wyraźnie w stronę toru (ulica równoległa do toru kończąca się obok – nie przerwana przy torze)
+				if (Math.abs(row[2 + k2 * 2] - d) < 0.5 * Math.abs(row[1 + k2 * 2] - s)) continue;
 				ends.push({ s, d, ti: row[0] });
 			}
 		});

@@ -2089,6 +2089,18 @@ import * as THREE from 'three';
 		// droga lub ścieżka pod pomostem (poziom jezdni ponad 3 m niżej) – przęsło otwarte, bez nasypu
 		const roadUnder = (s, d, y) => { const rl = this.onRoad(s, d) ? this.roadLevel(s, d) : undefined; return rl !== undefined ? y - rl > 3 : this.onRoad(s, d) && y - this.terrainY(s, d) > 3; };
 		const embk = P.map(([s, d], k) => Y[k] - 0.9 - G[k] > 0.3 && Math.abs(d) > 7 && this.envTrackGap(s, d) > 5.5 && !roadUnder(s, d, Y[k]));
+		/* skarpy nasypu (1:1,5 po obu stronach pomostu) nie na torze ani na niższej drodze obok – dawniej sprawdzana tylko
+		   oś jezdni wiaduktu, a skarpa przykrywała ulicę obok (wiadukty kolejowe: Gliwice km 15,3, Rybnik km 41,4) */
+		const rY = (s, d) => { const rl = this.roadLevel(s, d); return rl !== undefined ? rl : this.terrainY(s, d); };
+		P.forEach(([s0, d0], k) => {
+			if (!embk[k]) return;
+			const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+			const n = [-(b[1] - a[1]) / L, (b[0] - a[0]) / L], h = Math.max(0, Y[k] - 0.9 - G[k]);
+			for (const eg of [-1, 1]) for (const f of [0.5, 0.9]) {
+				const o = w / 2 + 1.5 * h * f, s = s0 + n[0] * o * eg, d = d0 + n[1] * o * eg, top = Y[k] - 0.9 - h * f;
+				if (this.envTrackGap(s, d) < 2 || (this.onRoad(s, d) && rY(s, d) < top - 1)) { embk[k] = false; return; }
+			}
+		});
 		// koniec obiektu wysoko nad terenem (pomiar: jezdnia dalej na estakadzie, w danych obiekt krótszy) – bez nasypu
 		// po tej stronie, estakada na filarach
 		for (const kE of [0, P.length - 1]) {
@@ -2225,6 +2237,8 @@ import * as THREE from 'three';
 					for (let k2 = 0; k2 < P.length && k < 0; k2++) {
 						// (jak w planie: filary nie bliżej niż 6 m od osi toru pociągu)
 						if (cum[k2] < sup[q] + 10 || cum[k2] > sup[q + 1] - 10 || Y[k2] - 0.9 - G[k2] < 3 || Math.abs(P[k2][1]) < 6) continue;
+						// (jak w planie: środek filara ponad 3,2 m od toru i poza ulicą pod pomostem – dawniej sam obrys filara)
+						if (this.envTrackGap(P[k2][0], P[k2][1]) <= 3.2 || this.roadBelowDeck(P[k2][0], P[k2][1], Y[k2])) continue;
 						const a2 = P[Math.max(0, k2 - 1)], b2 = P[Math.min(P.length - 1, k2 + 1)], n2 = dirN(k2), top = Y[k2] - 0.9;
 						if (this.pierFree({ s: P[k2][0], d: P[k2][1], top, len: Math.min(40, (w + 1) / Math.max(0.25, Math.abs(n2[0]))) }) || this.pierFree({ s: P[k2][0], d: P[k2][1], top, ang: Math.atan2(b2[1] - a2[1], b2[0] - a2[0]), cross: w + 1 })) k = k2;
 					}
@@ -2256,7 +2270,8 @@ import * as THREE from 'three';
 			sup.sort((x, y) => x - y);
 			for (let q = 0; q + 1 < sup.length; q++) {
 				if (sup[q + 1] - sup[q] <= 50) continue;
-				const k = P.findIndex((pp, k2) => cum[k2] > sup[q] + 10 && cum[k2] < sup[q + 1] - 10 && Y[k2] - 0.9 - ground[k2] > 3 && this.pierFree({ s: pp[0], d: pp[1], top: Y[k2] - 0.9, ang: Math.atan2(P[Math.min(P.length - 1, k2 + 1)][1] - P[Math.max(0, k2 - 1)][1], P[Math.min(P.length - 1, k2 + 1)][0] - P[Math.max(0, k2 - 1)][0]), cross: 5 }));
+				// (jak w planie – bridgePlan: wolne miejsce, środek ponad 3,2 m od toru)
+				const k = P.findIndex((pp, k2) => cum[k2] > sup[q] + 10 && cum[k2] < sup[q + 1] - 10 && Y[k2] - 0.9 - ground[k2] > 3 && !this.envOccupied(pp[0], pp[1], 0.5) && this.envTrackGap(pp[0], pp[1]) > 3.2 && this.pierFree({ s: pp[0], d: pp[1], top: Y[k2] - 0.9, ang: Math.atan2(P[Math.min(P.length - 1, k2 + 1)][1] - P[Math.max(0, k2 - 1)][1], P[Math.min(P.length - 1, k2 + 1)][0] - P[Math.max(0, k2 - 1)][0]), cross: 5 }));
 				if (k >= 0) add('ob-span', P[k][0], P[k][1], `Most drogowy obok toru: pomost bez podpór na ${Math.round(sup[q + 1] - sup[q])} m (${fmtD(P[k][1])}).`, 'Pod pomostem jest wolne miejsce na filar – sprawdź rozmieszczenie filarów.');
 			}
 			for (const kE of [0, P.length - 1]) {
@@ -2270,7 +2285,8 @@ import * as THREE from 'three';
 		}
 		// mosty naszej linii: drogi i tory pod przęsłem – nie w nasypie, prześwit
 		if (!this.env.roadLinks) this.env.roadLinks = this.envUnderLinks(e.r, 1);
-		for (const lk of this.env.roadLinks) {
+		const LZa = this.envLinksZ(), Da = this.env.dem;
+		this.env.roadLinks.forEach((lk, li) => {
 			/* nasyp: teren pod przęsłem ponad prostą między końcami drogi (łącznik biegnie po niej – envLinksZ; dawniej
 			   porównanie z niższym końcem: każda droga pod górę wyglądała na nasyp); prześwit: poniżej LINK_CLR – obniżenie
 			   łącznika nie wystarczyło (błąd), do 4 m – niski, ale realny wiadukt (uwaga) */
@@ -2284,8 +2300,12 @@ import * as THREE from 'three';
 				if (Math.abs(d) < 3) clr = Math.min(clr, R.heightAt(this.route, s) - 0.9 - g);
 			}
 			if (worst > 1) add('under-road-embk', ws, wd, `Droga pod mostem naszej linii wchodzi w nasyp (teren ${worst.toFixed(1).replace('.', ',')} m nad jezdnią przy moście, ${fmtD(wd)}).`, 'Pod przęsłem brakuje wykopu dla drogi – sprawdź most (przęsło) i przebieg drogi.');
-			if (clr < 4) add('under-road-clear', (s1 + s2) / 2, 0, `Droga pod mostem naszej linii: prześwit tylko ${clr.toFixed(1).replace('.', ',')} m.`, 'Pod mostem drogowym potrzeba co najmniej ok. 4,5 m – sprawdź wysokość toru (profil) i głębokość wykopu.', clr < LINK_CLR(ti) - 0.3 ? 'warn' : 'info');
-		}
+			/* koniec drogi w danych sam bliżej spodu pomostu niż LINK_CLR (przejście piesze, bulwar pod mostem nad rzeką) –
+			   obniżenie łącznika z podjazdem 25% tego nie nadrobi: uwaga, nie błąd */
+			const lz = LZa[li], deck = R.heightAt(this.route, (s1 + s2) / 2) - 0.9;
+			const endsLow = lz && Da && Math.min(deck - (Da.base + lz[5] / 10 - Da.off), deck - (Da.base + lz[6] / 10 - Da.off)) < LINK_CLR(ti);
+			if (clr < 4) add('under-road-clear', (s1 + s2) / 2, 0, `Droga pod mostem naszej linii: prześwit tylko ${clr.toFixed(1).replace('.', ',')} m${endsLow ? ' (końce drogi w danych tuż pod pomostem)' : ''}.`, 'Pod mostem drogowym potrzeba co najmniej ok. 4,5 m – sprawdź wysokość toru (profil) i głębokość wykopu.', clr < LINK_CLR(ti) - 0.3 && !endsLow ? 'warn' : 'info');
+		});
 		for (const b of this.route.bridges) {
 			if (b.kind !== 'viaduct') continue;
 			const sp = this.bridgeSpan(b);
@@ -2295,6 +2315,8 @@ import * as THREE from 'three';
 				for (let k = 0; k + 1 < m; k++) {
 					const sa = row[1 + k * 2], da = row[2 + k * 2], sb = row[3 + k * 2], db = row[4 + k * 2];
 					if (Math.sign(da) === Math.sign(db) || da === db) continue;
+					// (tor wzdłuż osi – „przecięcie” o centymetry, np. drugi zapis naszego toru: nie przejście pod mostem)
+					if (Math.abs(db - da) < 0.3 * Math.abs(sb - sa)) continue;
 					const sc = sa + ((sb - sa) * da) / (da - db);
 					if (sc < sp[0] - 2 || sc > sp[1] + 2) continue;
 					const y = this.envRowY(i, k, sc, 0), clr = R.heightAt(this.route, sc) - y;
@@ -2346,7 +2368,12 @@ import * as THREE from 'three';
 						if (Math.abs(dx) < 8 || this.underBridge(sx, dx) || this.envUnderBridge(sx, dx)) continue;
 						// przejazd naszej linii: jezdnię przez wszystkie tory rysuje przejazd (envCrossingPath), nie teren
 						if (Math.abs(dx) < 40 && this.route.crossings.some((c) => Math.abs(c.pos - sx) < 25)) continue;
-						const diff = this.envRowY(ti, tk, sx, dx) - this.terrainY(sx, dx);
+						// (wysokość jezdni – na przejeździe w poziomie podniesiona do szyn, envLevelCrossings; dawniej teren pod nią)
+						const rl = this.roadLevel(sx, dx), yT = this.envRowY(ti, tk, sx, dx), diff = yT - (rl !== undefined ? rl : this.terrainY(sx, dx));
+						// skrzyżowanie bezkolizyjne: zmierzona wysokość jezdni ponad 2,5 m od szyn (przejście pod torem albo wiadukt
+						// bez mostu w danych) – nie przejazd w poziomie
+						const zr = this.env.roadZ && this.env.roadZ.get(row), D = this.env.dem;
+						if (zr && D && D.lidar && Math.abs(yT - (D.base + (zr[k] + (zr[k + 1] - zr[k]) * t) / 10 - D.off)) > 2.5) continue;
 						// drogi gospodarcze i dojazdowe (klasa 8+ – wzdłuż bocznic, na place ładunkowe) – uwaga, nie błąd
 						if (Math.abs(diff) > 0.6 && Math.abs(diff) < 3.5) add('road-track', sx, dx, `Droga przecina tor z mapy z progiem ${diff.toFixed(1).replace('.', ',')} m (${fmtD(dx)}).`, 'Na przejeździe szyny powinny być na poziomie jezdni – sprawdź wysokość toru i drogi (albo to przejście pod/nad torem bez mostu w danych).', row[0] >= 8 ? 'info' : 'warn');
 					}
@@ -3891,6 +3918,25 @@ import * as THREE from 'three';
 		const L2 = (sb0 - sa0) ** 2 + (db0 - da0) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((s - sa0) * (sb0 - sa0) + (d - da0) * (db0 - da0)) / L2));
 		return w[k] + (w[k + 1] - w[k]) * t;
 	};
+	// tor z mapy i przecina oś naszego toru (zmiana strony, |d| > 1 m po obu) w odległości do r od s; raz na tor
+	World.prototype.envRowCrossesAxis = function (i, s, r) {
+		const e = this.env;
+		if (!e.rowAxisX) e.rowAxisX = new Map();
+		let xs = e.rowAxisX.get(i);
+		if (!xs) {
+			xs = [];
+			const row = this.route.env.t[i], m = (row.length - 1) / 2;
+			let last = null; // ostatni punkt dalej niż 1 m od osi
+			for (let k = 0; k < m; k++) {
+				const sk = row[1 + k * 2], dk = row[2 + k * 2];
+				if (Math.abs(dk) <= 1) continue;
+				if (last && Math.sign(last[1]) !== Math.sign(dk)) xs.push((last[0] + sk) / 2);
+				last = [sk, dk];
+			}
+			e.rowAxisX.set(i, xs);
+		}
+		return xs.some((x) => Math.abs(x - s) < r);
+	};
 	World.prototype.envRowY = function (i, k, s, d) {
 		const row = this.route.env.t[i];
 		const wc = this.envRowCross(i, k, s, d);
@@ -3908,7 +3954,12 @@ import * as THREE from 'three';
 				// torów, nie przejście pod nim)
 				const sa = row[1 + k * 2], da = row[2 + k * 2], sb = row[3 + k * 2], db = row[4 + k * 2], Lk = Math.hypot(sb - sa, db - da) || 1;
 				const onBr = this.envOnRailBridge(sa, da, (sb - sa) / Lk, (db - da) / Lk) || this.envOnRailBridge(sb, db, (sb - sa) / Lk, (db - da) / Lk);
-				const dp = yl < h + 2 && !onBr ? this.dip(s, d, true) : 0;
+				/* tor, który w pobliżu (40 m) nie przecina naszej osi – biegnie obok (na naszym pomoście: tory stacji, rozjazd przy
+				   wiadukcie bez mostu w danych), nie przechodzi pod mostem; dawniej schodził na dno wykopu, a sąsiedni odcinek
+				   z mostem w danych zostawał na górze (Toruń Miasto km 0,53: 2,9 m; Zabrze km 4,0: 5,8 m; Kraków – Zakopane
+				   km 3,5 i 94,2) */
+				const level = !this.envRowCrossesAxis(i, s, 40);
+				const dp = yl < h + 2 && !onBr && !level ? this.dip(s, d, true) : 0;
 				if (dp > 0.5) yc = Math.min(yl, h - dp);
 			}
 			const diff = yl - h;
@@ -3928,11 +3979,11 @@ import * as THREE from 'three';
 	// wysokość główki szyny toru z mapy z pomiaru NMT (env.th, dm ponad dem.base) w układzie gry; brak – undefined
 	/* punkt (s, d) na moście z mapy: do 1,5 m od odcinka toru z bitem 2 biegnącego w tym samym kierunku co (us, ud)
 	   (|cos| ≥ 0,985 – tor przechodzący pod mostem ukośnie albo w poprzek się nie liczy); siatka odcinków 8 m, raz na trasę */
-	World.prototype.envOnRailBridge = function (s, d, us, ud) {
+	World.prototype.envOnRailBridge = function (s, d, us, ud, out) {
 		const e = this.env, G = 8;
 		if (!e.brGrid) {
 			e.brGrid = new Map();
-			(this.route.env.t || []).forEach((row) => {
+			(this.route.env.t || []).forEach((row, i) => {
 				if (!(row[0] & 2)) return;
 				const m = (row.length - 1) / 2;
 				for (let k = 0; k < m - 1; k++) {
@@ -3941,18 +3992,18 @@ import * as THREE from 'three';
 						for (let b = Math.floor((Math.min(d1, d2) - 2) / G); b <= Math.floor((Math.max(d1, d2) + 2) / G); b++) {
 							const key = a * 100003 + b;
 							if (!e.brGrid.has(key)) e.brGrid.set(key, []);
-							e.brGrid.get(key).push([s1, d1, s2, d2]);
+							e.brGrid.get(key).push([s1, d1, s2, d2, i, k]);
 						}
 				}
 			});
 		}
-		for (const [s1, d1, s2, d2] of e.brGrid.get(Math.floor(s / G) * 100003 + Math.floor(d / G)) || []) {
-			const L2 = (s2 - s1) ** 2 + (d2 - d1) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((s - s1) * (s2 - s1) + (d - d1) * (d2 - d1)) / L2));
+		for (const q of e.brGrid.get(Math.floor(s / G) * 100003 + Math.floor(d / G)) || []) {
+			const [s1, d1, s2, d2] = q, L2 = (s2 - s1) ** 2 + (d2 - d1) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((s - s1) * (s2 - s1) + (d - d1) * (d2 - d1)) / L2));
 			if (Math.hypot(s1 + (s2 - s1) * t - s, d1 + (d2 - d1) * t - d) >= 1.5) continue;
 			// (|cos| ≥ 0,985 – do ok. 10°; przy 0,9 tor przechodzący pod wiaduktem pod kątem 18° wskakiwał na pomost)
-			if (Math.abs((s2 - s1) * us + (d2 - d1) * ud) >= 0.985 * Math.sqrt(L2)) return true;
+			if (Math.abs((s2 - s1) * us + (d2 - d1) * ud) >= 0.985 * Math.sqrt(L2)) return out ? q : true;
 		}
-		return false;
+		return out ? null : false;
 	};
 	World.prototype.envRowMeasured = function (i, k, s, d) {
 		const th = this.route.env.th, D = this.env.dem;
@@ -3967,21 +4018,56 @@ import * as THREE from 'three';
 		   pomiar to droga pod przęsłem: na wysokości naszej linii (pomostu). Dawniej tory dochodzące do mostu zjeżdżały
 		   w ostatnim punkcie do jezdni pod nim (Toruń Główny, wiadukt nad ulicą: uskoki ok. 4 m) */
 		const Lr = Math.hypot(sb0 - sa0, db0 - da0) || 1;
+		/* poziom pomostu: wysokość toru mostowego, przy którym leży punkt (jego pomiar), bez pomiaru – naszej linii.
+		   Dawniej zawsze poziom naszej linii: końce torów przy mostach innych linii (100–230 m od osi, mosty kilka metrów
+		   niżej) wskakiwały na wysokość naszej linii i schodziły do pomiaru na kilku metrach (Gliwice km 4,5, Kraków –
+		   Zakopane km 3,3, Gdynia km 18,7, Zabrze km 4,4: skoki 1–6 m) */
 		const lift = (yv, sx, dx) => {
-			if (row[0] & 2 || !this.envOnRailBridge(sx, dx, (sb0 - sa0) / Lr, (db0 - da0) / Lr)) return yv;
-			const hh = R.heightAt(this.route, sx);
+			if (row[0] & 2) return yv;
+			const q = this.envOnRailBridge(sx, dx, (sb0 - sa0) / Lr, (db0 - da0) / Lr, true);
+			if (!q) return yv;
+			const [s1, d1, s2, d2, bi, bk] = q, L2 = (s2 - s1) ** 2 + (d2 - d1) ** 2 || 1e-9;
+			const tb = Math.max(0, Math.min(1, ((sx - s1) * (s2 - s1) + (dx - d1) * (d2 - d1)) / L2));
+			const yb = this.envRowMeasured(bi, bk, s1 + (s2 - s1) * tb, d1 + (d2 - d1) * tb);
+			const hh = yb !== undefined ? yb : R.heightAt(this.route, sx);
 			return yv < hh - 1.5 ? hh : yv;
 		};
+		// tor odzyskany z „wiaduktu” (bit 64): wysokości w wierzchołkach liczone raz dla całego toru (envRow64)
+		if (row[0] & 64) {
+			const Y64 = this.envRow64(i);
+			return Y64[k] + (Y64[k + 1] - Y64[k]) * Math.max(0, Math.min(1, t));
+		}
 		const ya = lift(D.base + a / 10 - D.off, sa0, da0), yb = lift(D.base + b / 10 - D.off, sb0, db0);
 		const y = ya + (yb - ya) * Math.max(0, Math.min(1, t));
 		/* tor na moście ponad 1,5 m pod terenem z pomiaru – wysokość z prostej między końcami długiego „mostu” na nasypie
 		   (pliki z generatora do 0.37): bez pomiaru, na poziomie naszej linii (envTrackY – most) */
 		if (row[0] & 2 && y < this.demGround(s, d) - 1.5) return undefined;
-		/* tor odzyskany z „wiaduktu” z mapy (bit 64 – routes.js cleanEnv): wysokości z pomiaru powierzchni (NMPT – także
-		   obiekty nad torem); ponad 1,5 m nad terenem z pomiaru – na terenie (0,3 m nad pomiarem) –
-		   dawniej tor przy Chorzowie Batorym wspinał się nagle na 7–8 m */
-		if (row[0] & 64 && y > this.demGround(s, d) + 1.5) return this.demGround(s, d) + 0.3;
 		return y;
+	};
+	/* Tor odzyskany z „wiaduktu” z mapy (bit 64 – routes.js cleanEnv): wysokości w wierzchołkach (raz na tor). Pomiar
+	   powierzchni (NMPT) łapie też obiekty nad torem: do 0,9 m nad terenem – pomiar, 0,9–1,5 m – coraz bliżej terenu, dalej
+	   0,3 m nad nim (dawniej tor przy Chorzowie Batorym wspinał się nagle na 7–8 m); teren uśredniony w promieniu 2 m;
+	   na koniec pochylenie między wierzchołkami ograniczone do 10% (dwa przejścia). Dawniej liczone w każdym punkcie –
+	   uskoki pomiaru terenu przy murach i skarpach przechodziły na tor (Gliwice km 16,3, Tarnowskie Góry km 28,1: 1,2 m). */
+	World.prototype.envRow64 = function (i) {
+		const e = this.env;
+		if (!e.row64) e.row64 = new Map();
+		if (e.row64.has(i)) return e.row64.get(i);
+		const row = this.route.env.t[i], th = this.route.env.th[i], D = e.dem, m = (row.length - 1) / 2;
+		const dg = (a, b) => this.demGround(a, b), Y = new Float64Array(m);
+		for (let k = 0; k < m; k++) {
+			const s = row[1 + k * 2], d = row[2 + k * 2];
+			const g = (2 * dg(s, d) + dg(s - 2, d) + dg(s + 2, d) + dg(s, d - 2) + dg(s, d + 2)) / 6;
+			const y = th[k] >= 0 ? D.base + th[k] / 10 - D.off : g + 0.3, ex = y - g; // (bez pomiaru – na terenie)
+			Y[k] = ex > 0.9 ? g + Math.max(0.3, 1.8 - ex) : y;
+		}
+		const L = (k) => Math.hypot(row[3 + k * 2] - row[1 + k * 2], row[4 + k * 2] - row[2 + k * 2]);
+		for (let pass = 0; pass < 2; pass++) {
+			for (let k = 1; k < m; k++) { const lim = 0.1 * L(k - 1); Y[k] = Math.min(Math.max(Y[k], Y[k - 1] - lim), Y[k - 1] + lim); }
+			for (let k = m - 2; k >= 0; k--) { const lim = 0.1 * L(k); Y[k] = Math.min(Math.max(Y[k], Y[k + 1] - lim), Y[k + 1] + lim); }
+		}
+		e.row64.set(i, Y);
+		return Y;
 	};
 	// głębokość pod mostem z pomiaru (NMT: dno doliny, drogi, wykopu pod przęsłem) – bez pomiaru stała D
 	World.prototype.bridgeDepth = function (b, D) {
@@ -4662,7 +4748,9 @@ import * as THREE from 'three';
 		P.forEach((p, k) => {
 			if (Y[k] - ground[k] <= 2.5 || this.envOccupied(p[0], p[1], 0.5) || this.envTrackGap(p[0], p[1]) <= 3.2) return;
 			const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)], ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
-			const pr = row[1] >= 60 ? { k, s: p[0], d: p[1], top: Y[k] - 0.9, ang: 0, par: Math.min(40, (w + 1) / Math.max(0.25, Math.abs(Math.sin(ang)))) } : { k, s: p[0], d: p[1], top: Y[k] - 0.9, ang };
+			// (równolegle do torów tylko przy torach – dalej, pod częścią nad ulicą lub terenem, w poprzek mostu; dawniej
+			// filar do 40 m wzdłuż torów nie mieścił się nigdzie i przęsło nad terenem zostawało bez podpór – Rybnik km 37,4)
+			const pr = row[1] >= 60 && this.envTrackGap(p[0], p[1]) < 8 ? { k, s: p[0], d: p[1], top: Y[k] - 0.9, ang: 0, par: Math.min(40, (w + 1) / Math.max(0.25, Math.abs(Math.sin(ang)))) } : { k, s: p[0], d: p[1], top: Y[k] - 0.9, ang };
 			if (this.pierFree(pr.par ? { s: pr.s, d: pr.d, top: pr.top, len: pr.par } : { s: pr.s, d: pr.d, top: pr.top, ang, cross: 5 })) cand.push(pr);
 		});
 		const piers = [];

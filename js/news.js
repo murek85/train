@@ -4,6 +4,43 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.55',
+			date: '23 października 2026',
+			groups: [
+				['Otoczenie', [
+					'Nasypy przy końcach wiaduktów nie przykrywają już ulic obok, mosty drogowe nad torami dostają filary także nad terenem, a tory odzyskane z danych o wiaduktach biegną płynnie, bez uskoków.',
+				]],
+			],
+		},
+		{
+			version: '0.58.54',
+			date: '23 października 2026',
+			groups: [
+				['Kontrola tras', [
+					'Dokładniejsza kontrola przecięć dróg z torami innych linii – bez fałszywych alarmów na przejazdach i przy przejściach pod torami.',
+				]],
+			],
+		},
+		{
+			version: '0.58.53',
+			date: '23 października 2026',
+			groups: [
+				['Otoczenie', [
+					'Tory innych linii przy mostach nie wskakują już nagle o kilka metrów w górę ani w dół – dochodzą do pomostu na jego wysokości, a tory biegnące obok naszego wiaduktu zostają na nim.',
+				]],
+			],
+		},
+		{
+			version: '0.58.52',
+			date: '23 października 2026',
+			groups: [
+				['Stacje', [
+					'Perony z mapy nie zachodzą już na tory – krawędź co najmniej 1,7 m od osi toru (m.in. Gliwice, Mikołów, Katowice, Raba Wyżna, Tarnowskie Góry).',
+					'Wisła Głębce: peron zaczyna się za rozjazdem, a nie na torze obok.',
+				]],
+			],
+		},
+		{
 			version: '0.58.51',
 			date: '23 października 2026',
 			groups: [
