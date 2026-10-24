@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.65',
+			date: '24 października 2026',
+			groups: [
+				['Nowa trasa', [
+					'Żywiec – Zwardoń: linia 139 w górę doliną Soły przez Węgierską Górkę, Milówkę, Rajczę i Sól aż pod granicę ze Słowacją – 36,6 km, 15 stacji i przystanków, prędkości do 120 km/h, podjazd z 355 na 672 m n.p.m. (pochylenia do 24‰ za Solą).',
+				]],
+			],
+		},
+		{
 			version: '0.58.60',
 			date: '23 października 2026',
 			groups: [

@@ -4,6 +4,22 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.65 – 24 października 2026
+
+Nowa trasa Żywiec – Zwardoń.
+
+### Nowa trasa
+- **Żywiec – Zwardoń** (`routes/zywiec-zwardon.js`, horyzont `routes/horizon/zywiec-zwardon.js`): linia 139 (przebieg S5)
+  w górę doliną Soły przez Radziechowy Wieprz, Cięcinę, Węgierską Górkę, Cisiec, Milówkę, Rajczę, Rycerkę, Sól,
+  Sól Kiczorę i Laliki – 36,6 km (km PLK 76,479–113,354), 15 stacji i przystanków, prędkości w 100% z wykazu PKP PLK
+  (40–120 km/h), niweleta 355–672 m n.p.m. zgodna z profilem RINF (pochylenia do 24‰, za Solą ok. 4 km powyżej 15‰),
+  6 semaforów (5 odstępowych uzupełnionych), 9 mostów i wiaduktów, 41 przejazdów; otoczenie z BDOT10k (powiat żywiecki)
+  i OSM – ok. 8,2 tys. budynków, 2,3 tys. odcinków dróg. Przedłużenie trasy Bielsko-Biała – Żywiec.
+- Horyzont z `tools/horizon.js` (do 12,5° – stoki wąskiej doliny Soły; wyjątek w `tests/horizon.test.js`); `geo`
+  i `horizon` z generatora usunięte z pliku trasy, jak w pozostałych trasach wbudowanych. `index.html`.
+- Poprawka `fixes`: miejsce zatrzymania w Rycerce 20 m wcześniej (semafor wyjazdowy wypadał na przejeździe km 25,34);
+  `ignore` dla przebiegu torem stacyjnym w Żywcu (start z toru przy peronie).
+
 ## 0.58.60 – 23 października 2026
 
 Pociągi tła: bez przejeżdżania przez siebie i nagłego pojawiania się.
