@@ -43,7 +43,7 @@ test('trasy wbudowane mają horyzont z danych (routes/horizon), wiarygodne kąty
 		assert.equal(h.id, id);
 		assert.ok(h.anchors.length >= 3 && h.anchors.every((a) => a.length === 181), id);
 		const all = h.anchors.flatMap((a) => a.slice(1));
-		assert.ok(Math.max(...all) < (id === 'krakow-zakopane' ? 1200 : id === 'czechowice-dziedzice-wisla-glebce' ? 1500 : id === 'bielsko-biala-zywiec' ? 1000 : id === 'szklarska-poreba-jakuszyce' ? 900 : id === 'zywiec-zwardon' ? 1300 : id === 'klodzko-miedzylesie' ? 700 : id === 'jelenia-gora-szklarska-poreba' ? 900 : 600) && Math.min(...all) > -100, id); // −1°…6° (Tatry nad Zakopanem – do 12°, Czantoria nad Ustroniem – do 15°, Beskid Śląski i Mały nad Wilkowicami i Łodygowicami – do 10°, Karkonosze nad Szklarską Porębą – do 9°, stoki wąskiej doliny Soły nad Solą i Rycerką – do 12,5°, Góry Bystrzyckie nad Długopolem-Zdrojem – do 7°, Karkonosze nad Szklarską Porębą – do 9°)
+		assert.ok(Math.max(...all) < (id === 'krakow-zakopane' ? 1200 : id === 'czechowice-dziedzice-wisla-glebce' ? 1500 : id === 'bielsko-biala-zywiec' ? 1000 : id === 'szklarska-poreba-jakuszyce' ? 900 : id === 'zywiec-zwardon' ? 1300 : id === 'klodzko-miedzylesie' ? 700 : id === 'jelenia-gora-szklarska-poreba' ? 900 : 600) && Math.min(...all) > -100, id); // −1°…6° (Tatry nad Zakopanem – do 12°, Czantoria nad Ustroniem – do 15°, Beskid Śląski i Mały nad Wilkowicami i Łodygowicami – do 10°, Karkonosze nad Szklarską Porębą – do 9°, stoki wąskiej doliny Soły nad Solą i Rycerką – do 12,5°, Góry Bystrzyckie nad Długopolem-Zdrojem – do 7°)
 	}
 });
 
