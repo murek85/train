@@ -4,7 +4,7 @@
 	'use strict';
 	window.TrainNews = [
 		{
-			version: '0.58.68',
+			version: '0.58.69',
 			date: '24 października 2026',
 			groups: [
 				['Nowa trasa', [
@@ -16,7 +16,7 @@
 			],
 		},
 		{
-			version: '0.58.67',
+			version: '0.58.68',
 			date: '24 października 2026',
 			groups: [
 				['Nowa trasa', [
@@ -25,7 +25,7 @@
 			],
 		},
 		{
-			version: '0.58.66',
+			version: '0.58.67',
 			date: '24 października 2026',
 			groups: [
 				['Trasy', [
@@ -34,7 +34,7 @@
 			],
 		},
 		{
-			version: '0.58.65',
+			version: '0.58.66',
 			date: '24 października 2026',
 			groups: [
 				['Nowa trasa', [
@@ -43,7 +43,7 @@
 			],
 		},
 		{
-			version: '0.58.64',
+			version: '0.58.65',
 			date: '24 października 2026',
 			groups: [
 				['Trasy', [
@@ -52,7 +52,7 @@
 			],
 		},
 		{
-			version: '0.58.63',
+			version: '0.58.64',
 			date: '24 października 2026',
 			groups: [
 				['Trasy', [
@@ -61,7 +61,7 @@
 			],
 		},
 		{
-			version: '0.58.62',
+			version: '0.58.63',
 			date: '24 października 2026',
 			groups: [
 				['Trasy', [
@@ -70,7 +70,7 @@
 			],
 		},
 		{
-			version: '0.58.61',
+			version: '0.58.62',
 			date: '24 października 2026',
 			groups: [
 				['Nowa trasa', [

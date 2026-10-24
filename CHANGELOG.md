@@ -4,7 +4,7 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
-## 0.58.68 – 24 października 2026
+## 0.58.69 – 24 października 2026
 
 Nowa trasa wbudowana Władysławowo – Hel.
 
@@ -19,7 +19,7 @@ Nowa trasa wbudowana Władysławowo – Hel.
   a nie z prostej A→B. We Władysławowie tor wychodzi ze stacji na północ i dopiero łukiem skręca na wschód – rozbieg
   trafiał za stację i generator kończył się błędem „Stacje leżą w złej kolejności”.
 
-## 0.58.67 – 24 października 2026
+## 0.58.68 – 24 października 2026
 
 Nowa trasa Jelenia Góra – Szklarska Poręba Górna.
 
@@ -39,7 +39,7 @@ Nowa trasa Jelenia Góra – Szklarska Poręba Górna.
 - Uwagi generatora (nierozstrzygnięte): start w Jeleniej Górze torem stacyjnym (249 m), łuki o promieniu poniżej
   180 m na km 18,6, 19,2, 25,7–25,9, 26,8–26,9 i 28,5 (górska linia o ciasnych łukach).
 
-## 0.58.66 – 24 października 2026
+## 0.58.67 – 24 października 2026
 
 Nowa trasa wbudowana Kłodzko Główne – Międzylesie.
 
@@ -55,7 +55,7 @@ Nowa trasa wbudowana Kłodzko Główne – Międzylesie.
 - Horyzont z danych (najwyżej 6,25° – stok Gór Bystrzyckich na zachód od Długopola-Zdroju); w teście horyzontu
   wyjątek do 7° (`tests/horizon.test.js`). Trasa dopisana do `index.html` i README.
 
-## 0.58.65 – 24 października 2026
+## 0.58.66 – 24 października 2026
 
 Nowa trasa Żywiec – Zwardoń.
 
@@ -71,7 +71,7 @@ Nowa trasa Żywiec – Zwardoń.
 - Poprawka `fixes`: miejsce zatrzymania w Rycerce 20 m wcześniej (semafor wyjazdowy wypadał na przejeździe km 25,34);
   `ignore` dla przebiegu torem stacyjnym w Żywcu (start z toru przy peronie).
 
-## 0.58.64 – 24 października 2026
+## 0.58.65 – 24 października 2026
 
 Trasa Wałbrzych Główny – Jedlina-Zdrój.
 
@@ -80,7 +80,7 @@ Trasa Wałbrzych Główny – Jedlina-Zdrój.
 - Tunel pod Małym Wołowcem (RINF km 47,992–49,596, 1603 m; w grze km 1,64–3,23 wg OSM i NMT), most nad Pełcznicą (122 m) i wiadukty nad drogami (trzy dodane przez generator, potwierdzone pomiarem NMT).
 - Pierwotnie planowany przebieg od Wałbrzycha Szczawienka (linia 274) wymaga zmiany kierunku jazdy w Wałbrzychu Głównym, której generator nie obsługuje – trasa zaczyna się w Wałbrzychu Głównym.
 
-## 0.58.63 – 24 października 2026
+## 0.58.64 – 24 października 2026
 
 Nowa trasa wbudowana: Szklarska Poręba Górna – Polana Jakuszycka.
 
@@ -95,7 +95,7 @@ Nowa trasa wbudowana: Szklarska Poręba Górna – Polana Jakuszycka.
 - Test tras (`tests/real-route.test.js`): próg trasy górskiej (pochylenia do 30‰) obniżony z 200 do 150 m różnicy wysokości –
   ta trasa ma 191 m przy 27‰, nizinne do ok. 90 m (Poznań – Wrocław na 164 km – 116 m).
 
-## 0.58.62 – 24 października 2026
+## 0.58.63 – 24 października 2026
 
 Nowa trasa wbudowana: Bielsko-Biała Główna – Żywiec.
 
@@ -105,7 +105,7 @@ Nowa trasa wbudowana: Bielsko-Biała Główna – Żywiec.
   Prędkości w 100% z wykazu PKP PLK (do 140 km/h), profil z NMT zgodny z RINF (podjazd do 15,8‰ za Mikuszowicami,
   zjazd do 14,6‰ w stronę Łodygowic). Wygenerowano `tools/osm-route.js`; horyzont z `tools/horizon.js`.
 
-## 0.58.61 – 24 października 2026
+## 0.58.62 – 24 października 2026
 
 Nowa trasa wbudowana: Kraków Główny – Wieliczka Rynek-Kopalnia.
 
