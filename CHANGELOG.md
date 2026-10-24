@@ -4,6 +4,21 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.68 – 24 października 2026
+
+Nowa trasa wbudowana Władysławowo – Hel.
+
+### Trasy (`routes/wladyslawowo-hel.js`, `routes/horizon/wladyslawowo-hel.js`)
+- Władysławowo – Hel (linia 213, 34,9 km): Władysławowo, Władysławowo Port, Chałupy, Kuźnica, Jastarnia Wczasy,
+  Jastarnia, Jurata, Hel. Linia niezelektryfikowana – skład spalinowy `dd`, prędkości w 100% z wykazu PKP PLK
+  (100 km/h na szlakach, 60 km/h przez Kuźnicę i Jastarnię, 40 km/h przy wjeździe do Helu), krzyżowania w stacjach
+  Władysławowo, Kuźnica, Jastarnia i Hel. Poprawka: usunięty peron turystycznej kolejki wąskotorowej „Hel - Bruno”.
+
+### Generator tras (`js/osm-route.js`)
+- Kierunek rozbiegu przed stacją początkową (i odcinka za końcową) z pierwszych/ostatnich 500 m wstępnego przebiegu,
+  a nie z prostej A→B. We Władysławowie tor wychodzi ze stacji na północ i dopiero łukiem skręca na wschód – rozbieg
+  trafiał za stację i generator kończył się błędem „Stacje leżą w złej kolejności”.
+
 ## 0.58.67 – 24 października 2026
 
 Nowa trasa Jelenia Góra – Szklarska Poręba Górna.

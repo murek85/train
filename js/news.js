@@ -4,6 +4,18 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.68',
+			date: '24 października 2026',
+			groups: [
+				['Nowa trasa', [
+					'Władysławowo – Hel: linia 213 mierzeją Helską, między Bałtykiem a Zatoką Pucką – 34,9 km, 8 stacji i przystanków (Chałupy, Kuźnica, Jastarnia, Jurata), bez sieci trakcyjnej, skład spalinowy.',
+				]],
+				['Generator tras', [
+					'Rozbieg przed stacją początkową według kierunku, w którym tor naprawdę wychodzi ze stacji – trasy zaczynające się na łuku (np. Władysławowo) nie gubią już pierwszej stacji.',
+				]],
+			],
+		},
+		{
 			version: '0.58.67',
 			date: '24 października 2026',
 			groups: [
