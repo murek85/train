@@ -2001,7 +2001,22 @@
 		};
 
 		// rozbieg przed stacją początkową (pociąg stoi czołem przy W4, reszta składu za nim) i odcinek za końcową
-		const dirAB = [pB[0] - pA[0], pB[1] - pA[1]];
+		let dirAB = [pB[0] - pA[0], pB[1] - pA[1]], dirBA = [-dirAB[0], -dirAB[1]];
+		/* kierunek wyjazdu ze stacji z wstępnego przebiegu (pierwsze ok. 500 m), nie z prostej A→B: linia bywa wyprowadzona
+		   ze stacji w inną stronę (Władysławowo – tor na północ, potem łuk na wschód ku Helowi) */
+		{
+			const f0 = search(nA.id, nB.id);
+			if (f0.hit) {
+				const ns = edgePath(f0.prev, f0.hit).nodes.map((id) => pos.get(id));
+				const at = (list) => {
+					let acc = 0;
+					for (let i = 1; i < list.length; i++) { acc += dist2(list[i - 1], list[i]); if (acc >= 500) return list[i]; }
+					return null;
+				};
+				const qa = at(ns), qb = at(ns.slice().reverse());
+				if (qa && qb) { dirAB = [qa[0] - pA[0], qa[1] - pA[1]]; dirBA = [qb[0] - pB[0], qb[1] - pB[1]]; }
+			}
+		}
 		// kandydaci (różne tory) w odległości lo–hi od stacji, w stronę przeciwną do `away`
 		const behind = (start, away, lo, hi) => {
 			const { dist } = search(start, null, hi * 2);
@@ -2020,7 +2035,7 @@
 		};
 		log('Wyznaczam przebieg toru…');
 		const pres = behind(nA.id, dirAB, 450, 900);
-		const post = behind(nB.id, [-dirAB[0], -dirAB[1]], 120, 400)[0];
+		const post = behind(nB.id, dirBA, 120, 400)[0];
 
 		// tor dla naszego kierunku: wariant z największą liczbą semaforów zwróconych w stronę jazdy
 		const facing = (path) => {
