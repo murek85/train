@@ -4,6 +4,22 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.66 – 24 października 2026
+
+Nowa trasa wbudowana Kłodzko Główne – Międzylesie.
+
+### Trasy (`routes/klodzko-miedzylesie.js`, `routes/horizon/klodzko-miedzylesie.js`)
+- Linia 276 z Kłodzka Głównego przez Kłodzko Miasto, Krosnowice Kłodzkie, Gorzanów, Bystrzycę Kłodzką, Bystrzycę
+  Kłodzką Przedmieście, Długopole-Zdrój, Domaszków i Roztoki Bystrzyckie do Międzylesia: 36,1 km, 10 stacji
+  i przystanków (kilometraż PLK 93,481–129,950), linia jednotorowa zelektryfikowana – skład EZT. Prędkości w całości
+  z wykazu PKP PLK (40–120 km/h), niweleta z NMT (287–469 m n.p.m., pochylenia do 14,3‰), tunel przed Długopolem-Zdrojem
+  (RINF km 117,936–118,296).
+- Poprawki (`fixes`): usunięty most dodany przez generator z pomiaru NMT na 800 m przy Długopolu-Zdroju (oś toru
+  zgodna z NMT co do 0,3 m – to zbocze doliny, nie wiadukt); przebieg torem stacyjnym w Kłodzku Głównym (tory
+  peronowe oznaczone w OSM jako boczne) – sprawdzony, pominięty.
+- Horyzont z danych (najwyżej 6,25° – stok Gór Bystrzyckich na zachód od Długopola-Zdroju); w teście horyzontu
+  wyjątek do 7° (`tests/horizon.test.js`). Trasa dopisana do `index.html` i README.
+
 ## 0.58.65 – 24 października 2026
 
 Nowa trasa Żywiec – Zwardoń.
