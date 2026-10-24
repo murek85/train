@@ -38,12 +38,12 @@ test('profile: góra w jednym kierunku podnosi horyzont tylko tam, płasko – l
 });
 
 test('trasy wbudowane mają horyzont z danych (routes/horizon), wiarygodne kąty', () => {
-	for (const id of ['gliwice-zabrze', 'gliwice-katowice', 'rybnik-katowice', 'torun-chelmza', 'orzesze-mikolow', 'warszawa-wschodnia-zachodnia', 'gdynia-gdansk', 'zabrze-gliwice', 'krakow-zakopane', 'tarnowskie-gory-katowice', 'czechowice-dziedzice-wisla-glebce', 'poznan-wroclaw']) {
+	for (const id of ['gliwice-zabrze', 'gliwice-katowice', 'rybnik-katowice', 'torun-chelmza', 'orzesze-mikolow', 'warszawa-wschodnia-zachodnia', 'gdynia-gdansk', 'zabrze-gliwice', 'krakow-zakopane', 'tarnowskie-gory-katowice', 'czechowice-dziedzice-wisla-glebce', 'poznan-wroclaw', 'jelenia-gora-szklarska-poreba']) {
 		const h = require(path.join('..', 'routes', 'horizon', id + '.js'));
 		assert.equal(h.id, id);
 		assert.ok(h.anchors.length >= 3 && h.anchors.every((a) => a.length === 181), id);
 		const all = h.anchors.flatMap((a) => a.slice(1));
-		assert.ok(Math.max(...all) < (id === 'krakow-zakopane' ? 1200 : id === 'czechowice-dziedzice-wisla-glebce' ? 1500 : 600) && Math.min(...all) > -100, id); // −1°…6° (Tatry nad Zakopanem – do 12°, Czantoria nad Ustroniem – do 15°)
+		assert.ok(Math.max(...all) < (id === 'krakow-zakopane' ? 1200 : id === 'czechowice-dziedzice-wisla-glebce' ? 1500 : id === 'jelenia-gora-szklarska-poreba' ? 900 : 600) && Math.min(...all) > -100, id); // −1°…6° (Tatry nad Zakopanem – do 12°, Czantoria nad Ustroniem – do 15°, Karkonosze nad Szklarską Porębą – do 9°)
 	}
 });
 
