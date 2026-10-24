@@ -4,6 +4,16 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.62 – 24 października 2026
+
+Nowa trasa wbudowana: Bielsko-Biała Główna – Żywiec.
+
+### Trasy (`routes/bielsko-biala-zywiec.js`, `routes/horizon/bielsko-biala-zywiec.js`)
+- Linia 139 z Bielska-Białej Głównej przez Bielsko-Białą Lipnik, Leszczyny, Mikuszowice, Wilkowice Bystrą, Łodygowice Górne,
+  Łodygowice i Pietrzykowice Żywieckie do Żywca: 20,7 km, 9 stacji i przystanków, tunel pod Bielskiem (ok. 260 m).
+  Prędkości w 100% z wykazu PKP PLK (do 140 km/h), profil z NMT zgodny z RINF (podjazd do 15,8‰ za Mikuszowicami,
+  zjazd do 14,6‰ w stronę Łodygowic). Wygenerowano `tools/osm-route.js`; horyzont z `tools/horizon.js`.
+
 ## 0.58.61 – 24 października 2026
 
 Nowa trasa wbudowana: Kraków Główny – Wieliczka Rynek-Kopalnia.
