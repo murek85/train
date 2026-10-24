@@ -4,6 +4,26 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.67 – 24 października 2026
+
+Nowa trasa Jelenia Góra – Szklarska Poręba Górna.
+
+### Nowa trasa
+- **Jelenia Góra – Szklarska Poręba Górna** (`routes/jelenia-gora-szklarska-poreba.js`, horyzont
+  `routes/horizon/jelenia-gora-szklarska-poreba.js`): przebieg D6 Kolei Dolnośląskich – od Jeleniej Góry do Zabobrza
+  obok linii 274, dalej linia 311 (Kolej Izerska) przez Jelenia Góra Zachodnia, Przemysłowa, Cieplice, Orle, Sobieszów,
+  Piechowice Dolne, Piechowice, Górzyniec, Szklarską Porębę Dolną i Średnią – 31,8 km, 13 stacji i przystanków
+  (zgodnie z relacją D6 w OSM), 10 mostów i wiaduktów, tunel 146 m (km 25,70–25,91, potwierdzony w RINF), 24 przejazdy,
+  5 semaforów odstępowych uzupełnionych; prędkości w 99% z wykazu PKP PLK (40–70 km/h, 100 km/h tylko przy wyjeździe
+  z Jeleniej Góry), niweleta z NMT 343–704 m n.p.m., od Piechowic pochylenia 20–26‰ (RINF do 26‰); otoczenie z BDOT10k
+  (powiaty 0261, 0206) – ok. 6,5 tys. budynków, 2,4 tys. odcinków dróg.
+- Niweleta: dwa krótkie zygzaki pomiaru NMT ponad 30‰ (km 18,56 – 36‰, km 19,71 – 33,2‰; w RINF tam 24,7–25‰)
+  wyrównane średnią z pięciu odcinków po 50 m (wysokość końca bez zmian).
+- Horyzont z `tools/horizon.js` (do 8,2° – Karkonosze); `geo` i `horizon` z generatora usunięte z pliku trasy.
+  `tests/horizon.test.js` – wyjątek do 9° dla tej trasy. `index.html`, README.
+- Uwagi generatora (nierozstrzygnięte): start w Jeleniej Górze torem stacyjnym (249 m), łuki o promieniu poniżej
+  180 m na km 18,6, 19,2, 25,7–25,9, 26,8–26,9 i 28,5 (górska linia o ciasnych łukach).
+
 ## 0.58.66 – 24 października 2026
 
 Nowa trasa wbudowana Kłodzko Główne – Międzylesie.

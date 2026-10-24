@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.67',
+			date: '24 października 2026',
+			groups: [
+				['Nowa trasa', [
+					'Jelenia Góra – Szklarska Poręba Górna: Kolej Izerska (linia 311) przez Cieplice, Sobieszów, Piechowice i Górzyniec – 31,8 km, 13 stacji i przystanków, 360 m w górę, pochylenia do 26‰, tunel pod Szklarską Porębą, prędkości 40–70 km/h.',
+				]],
+			],
+		},
+		{
 			version: '0.58.66',
 			date: '24 października 2026',
 			groups: [
