@@ -4,6 +4,81 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.69',
+			date: '24 października 2026',
+			groups: [
+				['Nowa trasa', [
+					'Władysławowo – Hel: linia 213 mierzeją Helską, między Bałtykiem a Zatoką Pucką – 34,9 km, 8 stacji i przystanków (Chałupy, Kuźnica, Jastarnia, Jurata), bez sieci trakcyjnej, skład spalinowy.',
+				]],
+				['Generator tras', [
+					'Rozbieg przed stacją początkową według kierunku, w którym tor naprawdę wychodzi ze stacji – trasy zaczynające się na łuku (np. Władysławowo) nie gubią już pierwszej stacji.',
+				]],
+			],
+		},
+		{
+			version: '0.58.68',
+			date: '24 października 2026',
+			groups: [
+				['Nowa trasa', [
+					'Jelenia Góra – Szklarska Poręba Górna: Kolej Izerska (linia 311) przez Cieplice, Sobieszów, Piechowice i Górzyniec – 31,8 km, 13 stacji i przystanków, 360 m w górę, pochylenia do 26‰, tunel pod Szklarską Porębą, prędkości 40–70 km/h.',
+				]],
+			],
+		},
+		{
+			version: '0.58.67',
+			date: '24 października 2026',
+			groups: [
+				['Trasy', [
+					'Nowa trasa: Kłodzko Główne – Międzylesie (linia 276, 36 km, 10 stacji i przystanków) – doliną Nysy Kłodzkiej przez Bystrzycę Kłodzką i Długopole-Zdrój, prawie cały czas pod górę, z tunelem przed Długopolem.',
+				]],
+			],
+		},
+		{
+			version: '0.58.66',
+			date: '24 października 2026',
+			groups: [
+				['Nowa trasa', [
+					'Żywiec – Zwardoń: linia 139 w górę doliną Soły przez Węgierską Górkę, Milówkę, Rajczę i Sól aż pod granicę ze Słowacją – 36,6 km, 15 stacji i przystanków, prędkości do 120 km/h, podjazd z 355 na 672 m n.p.m. (pochylenia do 24‰ za Solą).',
+				]],
+			],
+		},
+		{
+			version: '0.58.65',
+			date: '24 października 2026',
+			groups: [
+				['Trasy', [
+					'Nowa trasa wbudowana: Wałbrzych Główny – Jedlina-Zdrój (linia 286, 6 km) – spalinowym składem w górę przez tunel pod Małym Wołowcem (1,6 km), po wiaduktach i w dół do Jedliny-Zdroju.',
+				]],
+			],
+		},
+		{
+			version: '0.58.64',
+			date: '24 października 2026',
+			groups: [
+				['Trasy', [
+					'Nowa trasa: Szklarska Poręba Górna – Polana Jakuszycka (Kolej Izerska, linia 311) – 9,2 km górskiej jazdy szynobusem, przez ponad 7 km pod górę powyżej 20‰.',
+				]],
+			],
+		},
+		{
+			version: '0.58.63',
+			date: '24 października 2026',
+			groups: [
+				['Trasy', [
+					'Nowa trasa: Bielsko-Biała Główna – Żywiec (linia 139, 20,7 km, 9 stacji i przystanków) – podjazd przez Mikuszowice i Wilkowice Bystrą pod Beskidy, zjazd przez Łodygowice do Kotliny Żywieckiej; pochylenia do 15,8‰, prędkości do 140 km/h.',
+				]],
+			],
+		},
+		{
+			version: '0.58.62',
+			date: '24 października 2026',
+			groups: [
+				['Nowa trasa', [
+					'Kraków Główny – Wieliczka Rynek-Kopalnia: przebieg SKA1 torami aglomeracyjnymi przez Grzegórzki, Zabłocie, Płaszów i Bieżanów, dalej pod górę do Wieliczki – 13,8 km, 10 stacji i przystanków, ok. 20 minut jazdy.',
+				]],
+			],
+		},
+		{
 			version: '0.58.61',
 			date: '24 października 2026',
 			groups: [

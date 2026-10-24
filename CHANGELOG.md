@@ -4,6 +4,120 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.69 – 24 października 2026
+
+Nowa trasa wbudowana Władysławowo – Hel.
+
+### Trasy (`routes/wladyslawowo-hel.js`, `routes/horizon/wladyslawowo-hel.js`)
+- Władysławowo – Hel (linia 213, 34,9 km): Władysławowo, Władysławowo Port, Chałupy, Kuźnica, Jastarnia Wczasy,
+  Jastarnia, Jurata, Hel. Linia niezelektryfikowana – skład spalinowy `dd`, prędkości w 100% z wykazu PKP PLK
+  (100 km/h na szlakach, 60 km/h przez Kuźnicę i Jastarnię, 40 km/h przy wjeździe do Helu), krzyżowania w stacjach
+  Władysławowo, Kuźnica, Jastarnia i Hel. Poprawka: usunięty peron turystycznej kolejki wąskotorowej „Hel - Bruno”.
+
+### Generator tras (`js/osm-route.js`)
+- Kierunek rozbiegu przed stacją początkową (i odcinka za końcową) z pierwszych/ostatnich 500 m wstępnego przebiegu,
+  a nie z prostej A→B. We Władysławowie tor wychodzi ze stacji na północ i dopiero łukiem skręca na wschód – rozbieg
+  trafiał za stację i generator kończył się błędem „Stacje leżą w złej kolejności”.
+
+## 0.58.68 – 24 października 2026
+
+Nowa trasa Jelenia Góra – Szklarska Poręba Górna.
+
+### Nowa trasa
+- **Jelenia Góra – Szklarska Poręba Górna** (`routes/jelenia-gora-szklarska-poreba.js`, horyzont
+  `routes/horizon/jelenia-gora-szklarska-poreba.js`): przebieg D6 Kolei Dolnośląskich – od Jeleniej Góry do Zabobrza
+  obok linii 274, dalej linia 311 (Kolej Izerska) przez Jelenia Góra Zachodnia, Przemysłowa, Cieplice, Orle, Sobieszów,
+  Piechowice Dolne, Piechowice, Górzyniec, Szklarską Porębę Dolną i Średnią – 31,8 km, 13 stacji i przystanków
+  (zgodnie z relacją D6 w OSM), 10 mostów i wiaduktów, tunel 146 m (km 25,70–25,91, potwierdzony w RINF), 24 przejazdy,
+  5 semaforów odstępowych uzupełnionych; prędkości w 99% z wykazu PKP PLK (40–70 km/h, 100 km/h tylko przy wyjeździe
+  z Jeleniej Góry), niweleta z NMT 343–704 m n.p.m., od Piechowic pochylenia 20–26‰ (RINF do 26‰); otoczenie z BDOT10k
+  (powiaty 0261, 0206) – ok. 6,5 tys. budynków, 2,4 tys. odcinków dróg.
+- Niweleta: dwa krótkie zygzaki pomiaru NMT ponad 30‰ (km 18,56 – 36‰, km 19,71 – 33,2‰; w RINF tam 24,7–25‰)
+  wyrównane średnią z pięciu odcinków po 50 m (wysokość końca bez zmian).
+- Horyzont z `tools/horizon.js` (do 8,2° – Karkonosze); `geo` i `horizon` z generatora usunięte z pliku trasy.
+  `tests/horizon.test.js` – wyjątek do 9° dla tej trasy. `index.html`, README.
+- Uwagi generatora (nierozstrzygnięte): start w Jeleniej Górze torem stacyjnym (249 m), łuki o promieniu poniżej
+  180 m na km 18,6, 19,2, 25,7–25,9, 26,8–26,9 i 28,5 (górska linia o ciasnych łukach).
+
+## 0.58.67 – 24 października 2026
+
+Nowa trasa wbudowana Kłodzko Główne – Międzylesie.
+
+### Trasy (`routes/klodzko-miedzylesie.js`, `routes/horizon/klodzko-miedzylesie.js`)
+- Linia 276 z Kłodzka Głównego przez Kłodzko Miasto, Krosnowice Kłodzkie, Gorzanów, Bystrzycę Kłodzką, Bystrzycę
+  Kłodzką Przedmieście, Długopole-Zdrój, Domaszków i Roztoki Bystrzyckie do Międzylesia: 36,1 km, 10 stacji
+  i przystanków (kilometraż PLK 93,481–129,950), linia jednotorowa zelektryfikowana – skład EZT. Prędkości w całości
+  z wykazu PKP PLK (40–120 km/h), niweleta z NMT (287–469 m n.p.m., pochylenia do 14,3‰), tunel przed Długopolem-Zdrojem
+  (RINF km 117,936–118,296).
+- Poprawki (`fixes`): usunięty most dodany przez generator z pomiaru NMT na 800 m przy Długopolu-Zdroju (oś toru
+  zgodna z NMT co do 0,3 m – to zbocze doliny, nie wiadukt); przebieg torem stacyjnym w Kłodzku Głównym (tory
+  peronowe oznaczone w OSM jako boczne) – sprawdzony, pominięty.
+- Horyzont z danych (najwyżej 6,25° – stok Gór Bystrzyckich na zachód od Długopola-Zdroju); w teście horyzontu
+  wyjątek do 7° (`tests/horizon.test.js`). Trasa dopisana do `index.html` i README.
+
+## 0.58.66 – 24 października 2026
+
+Nowa trasa Żywiec – Zwardoń.
+
+### Nowa trasa
+- **Żywiec – Zwardoń** (`routes/zywiec-zwardon.js`, horyzont `routes/horizon/zywiec-zwardon.js`): linia 139 (przebieg S5)
+  w górę doliną Soły przez Radziechowy Wieprz, Cięcinę, Węgierską Górkę, Cisiec, Milówkę, Rajczę, Rycerkę, Sól,
+  Sól Kiczorę i Laliki – 36,6 km (km PLK 76,479–113,354), 15 stacji i przystanków, prędkości w 100% z wykazu PKP PLK
+  (40–120 km/h), niweleta 355–672 m n.p.m. zgodna z profilem RINF (pochylenia do 24‰, za Solą ok. 4 km powyżej 15‰),
+  6 semaforów (5 odstępowych uzupełnionych), 9 mostów i wiaduktów, 41 przejazdów; otoczenie z BDOT10k (powiat żywiecki)
+  i OSM – ok. 8,2 tys. budynków, 2,3 tys. odcinków dróg. Przedłużenie trasy Bielsko-Biała – Żywiec.
+- Horyzont z `tools/horizon.js` (do 12,5° – stoki wąskiej doliny Soły; wyjątek w `tests/horizon.test.js`); `geo`
+  i `horizon` z generatora usunięte z pliku trasy, jak w pozostałych trasach wbudowanych. `index.html`.
+- Poprawka `fixes`: miejsce zatrzymania w Rycerce 20 m wcześniej (semafor wyjazdowy wypadał na przejeździe km 25,34);
+  `ignore` dla przebiegu torem stacyjnym w Żywcu (start z toru przy peronie).
+
+## 0.58.65 – 24 października 2026
+
+Trasa Wałbrzych Główny – Jedlina-Zdrój.
+
+### Trasy (`routes/walbrzych-jedlina-zdroj.js`, `routes/horizon/walbrzych-jedlina-zdroj.js`)
+- Nowa trasa wbudowana z `tools/osm-route.js`: linia 286 (niezelektryfikowana – skład spalinowy `dd`), 6,0 km, stacje Wałbrzych Główny, Jedlina-Zdrój Borowa i Jedlina-Zdrój; prędkości w 100% z wykazu PKP PLK (60 km/h, przy Jedlinie 40 km/h), pochylenia do 13,3‰ (RINF, zgodność z NMT 0,32 m).
+- Tunel pod Małym Wołowcem (RINF km 47,992–49,596, 1603 m; w grze km 1,64–3,23 wg OSM i NMT), most nad Pełcznicą (122 m) i wiadukty nad drogami (trzy dodane przez generator, potwierdzone pomiarem NMT).
+- Pierwotnie planowany przebieg od Wałbrzycha Szczawienka (linia 274) wymaga zmiany kierunku jazdy w Wałbrzychu Głównym, której generator nie obsługuje – trasa zaczyna się w Wałbrzychu Głównym.
+
+## 0.58.64 – 24 października 2026
+
+Nowa trasa wbudowana: Szklarska Poręba Górna – Polana Jakuszycka.
+
+### Trasy (`routes/szklarska-poreba-jakuszyce.js`, `routes/horizon/szklarska-poreba-jakuszyce.js`)
+- Linia 311 (Kolej Izerska), 9,2 km: Szklarska Poręba Górna – Szklarska Poręba Huta – Polana Jakuszycka (km 28,438–37,693
+  wg PKP PLK). Prędkości w całości z wykazu PKP PLK (50 km/h, przed Polaną Jakuszycką 40 km/h), pochylenia z NMT
+  i RINF – ponad 7 km powyżej 20‰, najwięcej 27‰. Bez sieci trakcyjnej (sieć kończy się w Szklarskiej Porębie Górnej) –
+  skład spalinowy.
+- Przystanek przy Jakuszycach od 11 grudnia 2022 nazywa się Polana Jakuszycka (w OSM nie ma stacji „Jakuszyce”); peron
+  z OpenStreetMap (po prawej, km 9,70–9,85) i miejsce zatrzymania przy jego końcu – poprawką `fixes.stations`.
+- Horyzont z pliku `routes/horizon/`; najwyżej 7,8° (Karkonosze nad Szklarską Porębą) – wyjątek do 9° w teście horyzontu.
+- Test tras (`tests/real-route.test.js`): próg trasy górskiej (pochylenia do 30‰) obniżony z 200 do 150 m różnicy wysokości –
+  ta trasa ma 191 m przy 27‰, nizinne do ok. 90 m (Poznań – Wrocław na 164 km – 116 m).
+
+## 0.58.63 – 24 października 2026
+
+Nowa trasa wbudowana: Bielsko-Biała Główna – Żywiec.
+
+### Trasy (`routes/bielsko-biala-zywiec.js`, `routes/horizon/bielsko-biala-zywiec.js`)
+- Linia 139 z Bielska-Białej Głównej przez Bielsko-Białą Lipnik, Leszczyny, Mikuszowice, Wilkowice Bystrą, Łodygowice Górne,
+  Łodygowice i Pietrzykowice Żywieckie do Żywca: 20,7 km, 9 stacji i przystanków, tunel pod Bielskiem (ok. 260 m).
+  Prędkości w 100% z wykazu PKP PLK (do 140 km/h), profil z NMT zgodny z RINF (podjazd do 15,8‰ za Mikuszowicami,
+  zjazd do 14,6‰ w stronę Łodygowic). Wygenerowano `tools/osm-route.js`; horyzont z `tools/horizon.js`.
+
+## 0.58.62 – 24 października 2026
+
+Nowa trasa wbudowana: Kraków Główny – Wieliczka Rynek-Kopalnia.
+
+### Trasy (`routes/krakow-wieliczka.js`, `routes/horizon/krakow-wieliczka.js`)
+- Kraków Główny – Wieliczka Rynek-Kopalnia: linie 629 i 109 (przebieg SKA1 z relacji OSM – tory aglomeracyjne przez
+  Grzegórzki, Zabłocie, Płaszów, Prokocim i Bieżanów, dalej linia 109 przez Drożdżownię, Bogucice i Wieliczkę Park),
+  13,8 km, 10 stacji i przystanków, prędkości do 120 km/h (95% z wykazu PKP PLK), pochylenia do 14,3‰.
+- Poprawki: peron Krakowa Grzegórzek z mapy (pomiar NMPT na estakadzie wskazywał peron sąsiednich torów),
+  przystanek Wieliczka Park (648 m przed końcową – reguła 900 m go pomijała), wiadukt zamiast przejazdu w poziomie
+  pod peronami Krakowa Głównego.
+- Dołączona do gry (`index.html`), test horyzontu, README.
+
 ## 0.58.61 – 24 października 2026
 
 Bez czarnych ścian przy ruchu kamery.
