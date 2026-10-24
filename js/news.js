@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.66',
+			date: '24 października 2026',
+			groups: [
+				['Trasy', [
+					'Nowa trasa: Kłodzko Główne – Międzylesie (linia 276, 36 km, 10 stacji i przystanków) – doliną Nysy Kłodzkiej przez Bystrzycę Kłodzką i Długopole-Zdrój, prawie cały czas pod górę, z tunelem przed Długopolem.',
+				]],
+			],
+		},
+		{
 			version: '0.58.60',
 			date: '23 października 2026',
 			groups: [
