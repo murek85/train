@@ -4,6 +4,15 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.64 – 24 października 2026
+
+Trasa Wałbrzych Główny – Jedlina-Zdrój.
+
+### Trasy (`routes/walbrzych-jedlina-zdroj.js`, `routes/horizon/walbrzych-jedlina-zdroj.js`)
+- Nowa trasa wbudowana z `tools/osm-route.js`: linia 286 (niezelektryfikowana – skład spalinowy `dd`), 6,0 km, stacje Wałbrzych Główny, Jedlina-Zdrój Borowa i Jedlina-Zdrój; prędkości w 100% z wykazu PKP PLK (60 km/h, przy Jedlinie 40 km/h), pochylenia do 13,3‰ (RINF, zgodność z NMT 0,32 m).
+- Tunel pod Małym Wołowcem (RINF km 47,992–49,596, 1603 m; w grze km 1,64–3,23 wg OSM i NMT), most nad Pełcznicą (122 m) i wiadukty nad drogami (trzy dodane przez generator, potwierdzone pomiarem NMT).
+- Pierwotnie planowany przebieg od Wałbrzycha Szczawienka (linia 274) wymaga zmiany kierunku jazdy w Wałbrzychu Głównym, której generator nie obsługuje – trasa zaczyna się w Wałbrzychu Głównym.
+
 ## 0.58.60 – 23 października 2026
 
 Pociągi tła: bez przejeżdżania przez siebie i nagłego pojawiania się.

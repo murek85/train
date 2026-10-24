@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.64',
+			date: '24 października 2026',
+			groups: [
+				['Trasy', [
+					'Nowa trasa wbudowana: Wałbrzych Główny – Jedlina-Zdrój (linia 286, 6 km) – spalinowym składem w górę przez tunel pod Małym Wołowcem (1,6 km), po wiaduktach i w dół do Jedliny-Zdroju.',
+				]],
+			],
+		},
+		{
 			version: '0.58.60',
 			date: '23 października 2026',
 			groups: [
