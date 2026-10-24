@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.62',
+			date: '24 października 2026',
+			groups: [
+				['Trasy', [
+					'Nowa trasa: Bielsko-Biała Główna – Żywiec (linia 139, 20,7 km, 9 stacji i przystanków) – podjazd przez Mikuszowice i Wilkowice Bystrą pod Beskidy, zjazd przez Łodygowice do Kotliny Żywieckiej; pochylenia do 15,8‰, prędkości do 140 km/h.',
+				]],
+			],
+		},
+		{
 			version: '0.58.60',
 			date: '23 października 2026',
 			groups: [
