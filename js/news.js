@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.63',
+			date: '24 października 2026',
+			groups: [
+				['Trasy', [
+					'Nowa trasa: Szklarska Poręba Górna – Polana Jakuszycka (Kolej Izerska, linia 311) – 9,2 km górskiej jazdy szynobusem, przez ponad 7 km pod górę powyżej 20‰.',
+				]],
+			],
+		},
+		{
 			version: '0.58.62',
 			date: '24 października 2026',
 			groups: [
