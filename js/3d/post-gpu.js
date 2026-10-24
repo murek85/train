@@ -100,7 +100,10 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			const d = T.depth.sample(st).x;
 			const P = getViewPosition(st, d, U.projInv).toVar();
 			const N0 = normalize(cross(dFdx(P), dFdy(P))).toVar();
-			const N = select(N0.z.lessThan(0), N0.negate(), N0).toVar();
+			/* normalna zwrócona do obserwatora (dot(N, −P) ≥ 0), nie do osi z: ściana widziana skośnie z boku kadru ma
+			   normalną ku kamerze z ujemnym z – odwrócona w głąb ściany dawała próbki za ścianą i czarną ścianę do
+			   zasięgu wygaszania (w ruchu kamery pojawiała się i znikała) */
+			const N = select(dot(N0, P).greaterThan(0), N0.negate(), N0).toVar();
 			// widziane prawie stycznie (rozległa płaska ziemia z niskiej kamery) – okluzja gaśnie
 			const facing = abs(dot(N, normalize(P.negate())));
 			const a0 = hash(screenCoordinate.xy).mul(6.2831853).toVar();

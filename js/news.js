@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.61',
+			date: '24 października 2026',
+			groups: [
+				['Grafika', [
+					'Bez czarnych ścian budynków przy obracaniu kamery (błąd w okluzji otoczenia).',
+				]],
+			],
+		},
+		{
 			version: '0.58.60',
 			date: '23 października 2026',
 			groups: [

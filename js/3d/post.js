@@ -143,7 +143,7 @@ function createPost3D(THREE, renderer) {
 			if (d >= 0.99999) { gl_FragColor = vec4(1.0); return; }
 			vec3 P = viewPos(vUv);
 			vec3 N = normalize(cross(dFdx(P), dFdy(P)));
-			if (N.z < 0.0) N = -N;
+			if (dot(N, P) > 0.0) N = -N; // facing the viewer (dot(N, -P) >= 0), not the z axis: an oblique wall at the side of the frame got a normal into the wall – black wall
 			// Seen almost edge-on (wide flat ground from a low camera) the samples drop under the neighbouring
 			// pixels of the same surface and darken it falsely: there the occlusion fades out.
 			float facing = abs(dot(N, normalize(-P)));

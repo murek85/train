@@ -4,6 +4,17 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.61 – 24 października 2026
+
+Bez czarnych ścian przy ruchu kamery.
+
+### Okluzja otoczenia (`js/3d/post-gpu.js`, `js/3d/post.js`)
+- Normalna powierzchni w AO zwrócona do obserwatora (`dot(N, −P) ≥ 0`), nie do osi z kamery. Ściana widziana
+  skośnie z boku kadru ma normalną ku kamerze z ujemnym z – była odwracana w głąb ściany, wszystkie próbki AO
+  wypadały za ścianą i ściana wychodziła czarna aż do zasięgu wygaszania AO (ukośna granica „czarne blisko, jasne
+  dalej”). Zależało to od kierunku kamery – przy obracaniu czarne plamy pojawiały się i znikały (np. fasada dworca
+  Poznań Główny); od 0.58.58 AO działa też na jakości średniej, więc problem był częstszy.
+
 ## 0.58.60 – 23 października 2026
 
 Pociągi tła: bez przejeżdżania przez siebie i nagłego pojawiania się.
