@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.70',
+			date: '24 października 2026',
+			groups: [
+				['Testy tras', [
+					'Jedna reguła pochyleń dla wszystkich tras wbudowanych: górskie (ponad 150 m różnicy wysokości) do 30‰, pozostałe do 16‰ – bez wyjątków dla pojedynczych tras.',
+				]],
+			],
+		},
+		{
 			version: '0.58.69',
 			date: '24 października 2026',
 			groups: [

@@ -4,6 +4,15 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.70 – 24 października 2026
+
+Jedna reguła pochyleń w teście tras wbudowanych.
+
+### Testy
+- `real-route.test.js`: pochylenia tras nizinnych i podgórskich do 16‰ (dotąd 15‰), górskich (ponad 150 m różnicy
+  wysokości) do 30‰; usunięty wyjątek do 16‰ dla Bielsko-Biała – Żywiec (106 m różnicy wysokości, podjazd za
+  Mikuszowicami do 15,8‰ – zgodnie z RINF).
+
 ## 0.58.69 – 24 października 2026
 
 Nowa trasa wbudowana Władysławowo – Hel.
