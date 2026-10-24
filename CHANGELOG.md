@@ -4,6 +4,19 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.61 – 24 października 2026
+
+Nowa trasa wbudowana: Kraków Główny – Wieliczka Rynek-Kopalnia.
+
+### Trasy (`routes/krakow-wieliczka.js`, `routes/horizon/krakow-wieliczka.js`)
+- Kraków Główny – Wieliczka Rynek-Kopalnia: linie 629 i 109 (przebieg SKA1 z relacji OSM – tory aglomeracyjne przez
+  Grzegórzki, Zabłocie, Płaszów, Prokocim i Bieżanów, dalej linia 109 przez Drożdżownię, Bogucice i Wieliczkę Park),
+  13,8 km, 10 stacji i przystanków, prędkości do 120 km/h (95% z wykazu PKP PLK), pochylenia do 14,3‰.
+- Poprawki: peron Krakowa Grzegórzek z mapy (pomiar NMPT na estakadzie wskazywał peron sąsiednich torów),
+  przystanek Wieliczka Park (648 m przed końcową – reguła 900 m go pomijała), wiadukt zamiast przejazdu w poziomie
+  pod peronami Krakowa Głównego.
+- Dołączona do gry (`index.html`), test horyzontu, README.
+
 ## 0.58.60 – 23 października 2026
 
 Pociągi tła: bez przejeżdżania przez siebie i nagłego pojawiania się.
