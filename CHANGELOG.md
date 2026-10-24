@@ -4,6 +4,21 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.63 – 24 października 2026
+
+Nowa trasa wbudowana: Szklarska Poręba Górna – Polana Jakuszycka.
+
+### Trasy (`routes/szklarska-poreba-jakuszyce.js`, `routes/horizon/szklarska-poreba-jakuszyce.js`)
+- Linia 311 (Kolej Izerska), 9,2 km: Szklarska Poręba Górna – Szklarska Poręba Huta – Polana Jakuszycka (km 28,438–37,693
+  wg PKP PLK). Prędkości w całości z wykazu PKP PLK (50 km/h, przed Polaną Jakuszycką 40 km/h), pochylenia z NMT
+  i RINF – ponad 7 km powyżej 20‰, najwięcej 27‰. Bez sieci trakcyjnej (sieć kończy się w Szklarskiej Porębie Górnej) –
+  skład spalinowy.
+- Przystanek przy Jakuszycach od 11 grudnia 2022 nazywa się Polana Jakuszycka (w OSM nie ma stacji „Jakuszyce”); peron
+  z OpenStreetMap (po prawej, km 9,70–9,85) i miejsce zatrzymania przy jego końcu – poprawką `fixes.stations`.
+- Horyzont z pliku `routes/horizon/`; najwyżej 7,8° (Karkonosze nad Szklarską Porębą) – wyjątek do 9° w teście horyzontu.
+- Test tras (`tests/real-route.test.js`): próg trasy górskiej (pochylenia do 30‰) obniżony z 200 do 150 m różnicy wysokości –
+  ta trasa ma 191 m przy 27‰, nizinne do ok. 90 m (Poznań – Wrocław na 164 km – 116 m).
+
 ## 0.58.60 – 23 października 2026
 
 Pociągi tła: bez przejeżdżania przez siebie i nagłego pojawiania się.
