@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.61',
+			date: '24 października 2026',
+			groups: [
+				['Nowa trasa', [
+					'Kraków Główny – Wieliczka Rynek-Kopalnia: przebieg SKA1 torami aglomeracyjnymi przez Grzegórzki, Zabłocie, Płaszów i Bieżanów, dalej pod górę do Wieliczki – 13,8 km, 10 stacji i przystanków, ok. 20 minut jazdy.',
+				]],
+			],
+		},
+		{
 			version: '0.58.60',
 			date: '23 października 2026',
 			groups: [
