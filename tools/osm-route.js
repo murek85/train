@@ -15,7 +15,8 @@
    prędkości, kilometraż, perony); --data-cache katalog – pobrane paczki i arkusze; --no-bdot, --no-plk – bez nich
    --fixes plik.json | routes/plik.js – poprawki (sekcja fixes) nakładane w grze; z pliku trasy – jego sekcja fixes
    (ponowne generowanie zachowuje poprawki). RINF (ERA, js/gen/rinf-pl.js): pochylenia w tunelach i na mostach,
-   brakujące tunele; --no-rinf – bez nich. Na końcu wypisywane są uwagi generatora (miejsca do sprawdzenia). */
+   brakujące tunele; --no-rinf – bez nich. --no-horizon – bez horyzontu. --construction – tory w przebudowie (railway=construction, np. linia
+   w remoncie) jak zwykłe. Na końcu wypisywane są uwagi generatora (miejsca do sprawdzenia). */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -51,6 +52,10 @@ function args(argv) {
 		if (opts.fixes) console.log(`Poprawki z ${a.fixes}: ${Object.keys(opts.fixes).join(', ')}`);
 	}
 	const flags = process.argv.slice(2);
+	// tory w przebudowie (railway=construction) jak zwykłe – linia w remoncie bywa w OSM bez zwykłych torów
+	if (flags.includes('--construction')) opts.construction = true;
+	// bez sylwetki gór na horyzoncie (Open-Meteo – ok. godziny dla trasy górskiej; horyzont osobno: tools/horizon.js)
+	if (flags.includes('--no-horizon')) opts.horizon = false;
 	if (flags.includes('--no-env')) opts.environment = false;
 	else if (a['env-data']) opts.environment = async (poly, l) => {
 		const d = JSON.parse(fs.readFileSync(a['env-data'], 'utf8'));

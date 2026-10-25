@@ -798,6 +798,9 @@ import * as THREE from 'three';
 				const es = row[1 + k * 2], ed = row[2 + k * 2];
 				// koniec przy granicy obszaru mapy (droga ucięta, nie tunel)
 				if (Math.abs(ed) > MASK_D - 40 || es < 40 || es > this.route.length - 40) continue;
+				/* koniec przy torze pod naszym mostem – przejście pod wiaduktem, nie tunel (Jelenia Góra km 4,35: strop portalu
+				   2 m nad szyną przykrywał tor, a ciemne wnętrze tunelu stało na jezdni) */
+				if (Math.abs(ed) < 30 && this.route.bridges.some((b) => es > b.from - 12 && es < b.to + 12)) continue;
 				let joined = false;
 				for (let a = -1; a <= 1 && !joined; a++) for (let b = -1; b <= 1 && !joined; b++) for (const q of grid.get(key(es, ed) + a * 8192 + b) || []) {
 					if (q.i !== i && Math.hypot(q.s - es, q.d - ed) < 1.5) { joined = true; break; }
@@ -4940,6 +4943,9 @@ import * as THREE from 'three';
 				const sa = sa0 + ((sb0 - sa0) * q) / pieces, da = da0 + ((db0 - da0) * q) / pieces;
 				const sb = sa0 + ((sb0 - sa0) * (q + 1)) / pieces, db = da0 + ((db0 - da0) * (q + 1)) / pieces;
 				const sm = (sa + sb) / 2, dm = (da + db) / 2;
+				/* tor nieużywany: bez odcinków w obrysie budynku i na czynnym torze z mapy (do 1,6 m od jego osi) – w Jeleniej Górze
+				   stare tory przecinały czynne tory stacji bez rozjazdu (szyny na szynach) i biegły przez budynki */
+				if (disused && (this.inBuilding(sm, dm) || this.envTracksAt(sm).some((t) => !(t.side & 4) && t.i !== i && Math.abs(t.d - dm) < 1.6))) continue;
 				/* przy torze pociągu (rozjazd): same szyny – podsypka i podkłady są wspólne z torem pociągu; tor równoległy
 				   (odcinek prawie równoległy, ponad 2,3 m od osi – w danych mapy tor sąsiedni bywa bliżej niż 4 m, np. Rybnik –
 				   Katowice km 3,2–4,3: same szyny na trawie) – z własną podsypką i podkładami */

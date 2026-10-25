@@ -345,7 +345,19 @@
 	// wszystko, co potrzebne do zbudowania trasy w prostokącie obejmującym obie stacje
 	// line – numer linii: wtedy tylko tory tej linii + wszystkie tory w promieniu 1,5 km od obu stacji (mniejsze zapytanie);
 	// bez numeru (albo gdy przebieg się nie domknie) – wszystkie tory w prostokącie
-	async function fetchCorridor(a, b, log, line) {
+	/* tory w przebudowie (railway=construction – np. linia 311 w remoncie jesienią 2026, w OSM bez numeru linii) jako zwykłe
+	   (opcja construction): bez peronów i obszarów, bez przebudowy na inny rodzaj (construction=tram itp.) */
+	const RAIL = (cons) => (cons ? 'way["railway"~"^(rail|construction)$"]' : 'way["railway"="rail"]');
+	function asRail(j) {
+		for (const e of (j && j.elements) || []) {
+			const t = e.tags;
+			if (e.type !== 'way' || !t || t.railway !== 'construction' || t.public_transport || t.area === 'yes' || (t.construction && t.construction !== 'rail')) continue;
+			e.tags = Object.assign({}, t, { railway: 'rail', 'construction:railway': 'rail' });
+		}
+		return j;
+	}
+
+	async function fetchCorridor(a, b, log, line, cons) {
 		if (![a.lat, a.lon, b.lat, b.lon].every(Number.isFinite)) throw new Error('Brak współrzędnych stacji.');
 		/* margines prostokąta; z numerem linii znacznie szerszy (pobierane tylko tory tych linii) – linia może odbijać daleko
 		   na bok (Kraków – Zakopane przez Suchą Beskidzką: 25 km na zachód od prostej) */
@@ -358,8 +370,8 @@
 		// kilka linii (przebieg przez węzły): numery po przecinku, np. „91,94,97”
 		const L = lineList(line).join('|');
 		const sel = L
-			? `(way["railway"="rail"]["ref"~"(^|;)(${L})(;|$)"];way["railway"="rail"](around:1500,${a.lat},${a.lon});way["railway"="rail"](around:1500,${b.lat},${b.lon});)`
-			: 'way["railway"="rail"]["service"!~"^(yard|siding|spur)$"]';
+			? `(${RAIL(cons)}["ref"~"(^|;)(${L})(;|$)"];${RAIL(cons)}(around:1500,${a.lat},${a.lon});${RAIL(cons)}(around:1500,${b.lat},${b.lon});)`
+			: `${RAIL(cons)}["service"!~"^(yard|siding|spur)$"]`;
 		// semafory, przejazdy i rozjazdy osobno, po dokładnych wartościach tagów (szybkie wyszukiwanie w indeksie
 		// zamiast pobierania wszystkich węzłów torów); węzły spoza przebiegu generator po prostu pomija
 		/* z numerem linii: także łącznice (linie 5xx i 6xx – np. 624 i 629 między liniami 91 i 94 w Krakowie) i tory bez
@@ -371,12 +383,13 @@
 			? `[out:json][timeout:180][bbox:${bb}];(${sel};way["railway"="rail"]["ref"~"^[56][0-9][0-9]$"]["service"!~"^(yard|siding|spur)$"];)->.l;${hop('l', 'h1')}${hop('h1', 'h2')}(.l;.h1;.h2;)->.t;.t out body geom;node(w.t)["railway"~"^(signal|level_crossing|switch)$"];out tags;(node["railway"="station"];node["railway"="halt"];);out body;(way["waterway"="river"](around.t:1500);way["waterway"="canal"](around.t:1500););out geom;`
 			: `[out:json][timeout:150][bbox:${bb}];${sel};out body geom;(node["railway"="signal"];node["railway"="level_crossing"];node["railway"="switch"];);out tags;(node["railway"="station"];node["railway"="halt"];);out body;(way["waterway"="river"];way["waterway"="canal"];);out geom;`;
 		if (log) log('Pobieram tory, semafory i stacje z OpenStreetMap (zwykle do minuty)…');
-		return overpass(q, log, 190000);
+		const j = await overpass(q, log, 190000);
+		return cons ? asRail(j) : j;
 	}
 
 	// otoczenie (budynki, drogi, zagospodarowanie, wody) w prostokątach co ~1,5 km wzdłuż przebiegu (z marginesem);
 	// prostokąty serwer obsługuje z indeksu przestrzennego – zapytanie „wokół linii” było dla niego za ciężkie
-	async function fetchEnvironment(poly, log) {
+	async function fetchEnvironment(poly, log, cons) {
 		const boxes = [];
 		for (let i = 0; i < poly.length - 1; i += 6) {
 			const seg = poly.slice(i, i + 7);
@@ -386,9 +399,10 @@
 		}
 		const sel = (f) => boxes.map((b) => `${f}(${b});`).join('');
 		const hw = 'way["highway"]["highway"!~"^(footway|path|steps|cycleway|track|bridleway|corridor|platform|proposed|construction|elevator|raceway|bus_stop|services|rest_area)$"]';
-		const q = `[out:json][timeout:240];(${sel('way["building"]')}${sel(hw)}${sel('way["landuse"]')}${sel('way["natural"]')}${sel('way["leisure"]')}${sel('way["waterway"]')}${sel('way["amenity"="grave_yard"]')}${sel('way["railway"="rail"]')}${sel('way["railway"="disused"]')}${sel('way["disused:railway"="rail"]')}${sel('way["railway"="platform"]')}${sel('way["public_transport"="platform"]["train"="yes"]')}${sel('way["amenity"="parking"]')}${sel('way["place"="square"]')})->.w;.w out tags geom;(${sel('node["railway"="switch"]')}${sel('node["railway"="railway_crossing"]')}${sel('node["power"="catenary_mast"]')}${sel('node["highway"="crossing"]')}${sel('node["highway"="bus_stop"]')}${sel('node["public_transport"="platform"]["bus"="yes"]')}${sel('node["amenity"~"^(police|fire_station|post_office|school|kindergarten|childcare|hospital|clinic|doctors|dentist|veterinary|pharmacy|bank|townhall|courthouse|library|theatre|cinema|place_of_worship|restaurant|fast_food|cafe|pub|bar|community_centre|arts_centre|social_facility|nursing_home|bus_station|fuel|car_wash|car_repair|university|college)$"]')}${sel('node["shop"]')}${sel('node["office"]')}${sel('node["healthcare"]')}${sel('node["tourism"~"^(hotel|hostel|guest_house|museum)$"]')})->.n;.n out;(${sel('relation["landuse"]')}${sel('relation["natural"]')}${sel('relation["leisure"]')}${sel('relation["railway"="platform"]')})->.m;.m out geom;`;
+		const q = `[out:json][timeout:240];(${sel('way["building"]')}${sel(hw)}${sel('way["landuse"]')}${sel('way["natural"]')}${sel('way["leisure"]')}${sel('way["waterway"]')}${sel('way["amenity"="grave_yard"]')}${sel(RAIL(cons))}${sel('way["railway"="disused"]')}${sel('way["disused:railway"="rail"]')}${sel('way["railway"="platform"]')}${sel('way["public_transport"="platform"]["train"="yes"]')}${sel('way["amenity"="parking"]')}${sel('way["place"="square"]')})->.w;.w out tags geom;(${sel('node["railway"="switch"]')}${sel('node["railway"="railway_crossing"]')}${sel('node["power"="catenary_mast"]')}${sel('node["highway"="crossing"]')}${sel('node["highway"="bus_stop"]')}${sel('node["public_transport"="platform"]["bus"="yes"]')}${sel('node["amenity"~"^(police|fire_station|post_office|school|kindergarten|childcare|hospital|clinic|doctors|dentist|veterinary|pharmacy|bank|townhall|courthouse|library|theatre|cinema|place_of_worship|restaurant|fast_food|cafe|pub|bar|community_centre|arts_centre|social_facility|nursing_home|bus_station|fuel|car_wash|car_repair|university|college)$"]')}${sel('node["shop"]')}${sel('node["office"]')}${sel('node["healthcare"]')}${sel('node["tourism"~"^(hotel|hostel|guest_house|museum)$"]')})->.n;.n out;(${sel('relation["landuse"]')}${sel('relation["natural"]')}${sel('relation["leisure"]')}${sel('relation["railway"="platform"]')})->.m;.m out geom;`;
 		if (log) log(`Pobieram otoczenie: budynki, drogi, lasy, wody (${boxes.length} odcinków; zwykle 1–2 minuty)…`);
-		return overpass(q, log, 280000);
+		const j = await overpass(q, log, 280000);
+		return cons ? asRail(j) : j;
 	}
 
 	// same maszty sieci trakcyjnej w pasie trasy (dane otoczenia zapisane przed ich dodaniem do zapytania)
@@ -1976,9 +1990,9 @@
 			const a = edgeDir(e), b = edgeDir(f);
 			return a[0] * b[0] + a[1] * b[1] > 0.72; // do ok. 44° między kolejnymi odcinkami
 		};
-		const search = (src, target, maxCost) => {
+		const search = (src, target, maxCost, cf = cost) => {
 			const dist = new Map(), prev = new Map(), h = new Heap();
-			for (const e of adj.get(src) || []) { const c = cost(e); dist.set(e, c); h.push(c, e); }
+			for (const e of adj.get(src) || []) { const c = cf(e); dist.set(e, c); h.push(c, e); }
 			let hit = null;
 			while (h.size) {
 				const [d, e] = h.pop();
@@ -1987,7 +2001,7 @@
 				if (maxCost && d > maxCost) continue;
 				for (const f of adj.get(e.to) || []) {
 					if (!smoothTurn(e, f)) continue;
-					const nd = d + cost(f);
+					const nd = d + cf(f);
 					if (nd < (dist.has(f) ? dist.get(f) : Infinity)) { dist.set(f, nd); prev.set(f, e); h.push(nd, f); }
 				}
 			}
@@ -2017,9 +2031,13 @@
 				if (qa && qb) { dirAB = [qa[0] - pA[0], qa[1] - pA[1]]; dirBA = [qb[0] - pB[0], qb[1] - pB[1]]; }
 			}
 		}
-		// kandydaci (różne tory) w odległości lo–hi od stacji, w stronę przeciwną do `away`
+		/* kandydaci (różne tory) w odległości lo–hi od stacji, w stronę przeciwną do `away`. Odległość po torze w metrach
+		   (bocznice ×4), nie koszt przebiegu: z numerem linii tory innej linii za stacją kosztowały ×2,5 – za stacją, w której
+		   linia się zaczyna (Jelenia Góra – linia 311, dalej 274), rozbieg wypadał ok. 100 m przed W4 i peron stał na
+		   dopełnionym prostym odcinku bez otoczenia */
+		const lenCost = (e) => e.L * (e.w.tags.service && e.w.tags.service !== 'crossover' ? 4 : 1);
 		const behind = (start, away, lo, hi) => {
-			const { dist } = search(start, null, hi * 2);
+			const { dist } = search(start, null, hi * 2, lenCost);
 			const p0 = pos.get(start), na = Math.hypot(away[0], away[1]);
 			const c = [];
 			for (const [e, d] of dist) {
@@ -4637,7 +4655,7 @@
 		if (d > 70000) log(`Długa trasa (${Math.round(d / 1000)} km w linii prostej) – pobieranie danych potrwa dłużej.`);
 		if (d < 2000) throw new Error('Stacje są zbyt blisko siebie.');
 		// otoczenie domyślnie włączone (opts.environment === false – sama trasa)
-		const environment = opts.environment === false ? null : opts.envFetch || ((poly, l) => fetchEnvironment(poly, l));
+		const environment = opts.environment === false ? null : opts.envFetch || ((poly, l) => fetchEnvironment(poly, l, opts.construction));
 		const dem = opts.dem === false || !environment ? null : opts.dem || ((pts, l) => elevations(pts, l));
 		const lidar = opts.lidar === false ? null : opts.lidar || ((pts, l) => nmtHeights(pts, l, nmtCache));
 		// oficjalne źródła (js/gen/sources.js): BDOT10k (otoczenie), PKP PLK (prędkości, kilometraż, perony)
@@ -4648,7 +4666,7 @@
 		// RINF (ERA): pochylenia linii i tunele – razem z danymi oficjalnymi PKP PLK
 		const rinf = opts.rinf === false || opts.plk === false || !SRC ? null : opts.rinf || (() => SRC.rinfData());
 		const build = (data) => buildRoute(data, Object.assign({}, opts, { elevation: (pts, l) => elevations(pts, l), environment, dem, lidar, bdot, plk, rinf, horizonElev }));
-		let data = await fetchCorridor(a, b, log, opts.line);
+		let data = await fetchCorridor(a, b, log, opts.line, opts.construction);
 		if (opts.onData) opts.onData(data);
 		if (!opts.line) return build(data);
 		try {
@@ -4657,7 +4675,7 @@
 			// tory linii nie łączą się po drodze (np. inny numer na odcinku) – pełny obszar
 			if (!/połączyć/.test(e.message)) throw e;
 			log('Tory linii nie tworzą ciągłego przebiegu – pobieram wszystkie tory w obszarze…');
-			data = await fetchCorridor(a, b, log, null);
+			data = await fetchCorridor(a, b, log, null, opts.construction);
 			if (opts.onData) opts.onData(data);
 			return build(data);
 		}

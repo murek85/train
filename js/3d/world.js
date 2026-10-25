@@ -25,7 +25,7 @@ import { BundleGroup } from 'three/webgpu';
 	const HOUSE_WALLS = ['#e8dcc4', '#d9b99b', '#c9d3d9', '#efe6b8', '#f2f0ea', '#cfb7a3'];
 	const HOUSE_ROOFS = ['#8e3b2e', '#6d4c3d', '#59626b', '#a0522d'];
 	const tmpColor = new T.Color();
-	const tp = {};
+	const tp = {}, ftp = {}; // ftp – foldOther
 	/* żółty pas ostrzegawczy peronu: od 0,55 do 0,95 m od krawędzi (PM.tact); wyposażenie (ławki z nogami siedzących,
 	   kosze) – co najmniej 1 m za nim, ludzie stoją i chodzą co najmniej 0,3 m za nim (do pociągu przechodzą przez pas
 	   tylko przy wsiadaniu i wysiadaniu) */
@@ -793,6 +793,105 @@ import { BundleGroup } from 'three/webgpu';
 		}
 
 		// rzut punktu świata (x, z) na oś toru: kilometraż s i odsunięcie d (w prawo); hint – przybliżone s
+		/* Węzeł siatki terenu daleko od osi (siatka sięga 600 m w bok), bliżej innego miejsca trasy (zakręt, pętla) niż
+		   własnego toru: nie wyżej niż teren tamtego miejsca, przy nim 0,25 m pod spodem. Dawniej surowy pomiar z cudzej
+		   siatki przykrywał tam wykop i wyrównaną stację – gładka płyta nad torami (Szklarska Poręba Górna, km 17,3). */
+		foldY(s, d, y) {
+			const p = this.foldOther(s, d);
+			return p ? Math.min(y, this.terrainY(p.s, p.d) - 0.25 * (1 - smoothstep(50, 80, Math.abs(p.d)))) : y;
+		}
+
+		// punkt (s, d) bliżej innego miejsca trasy (do 80 m) niż własnego toru – położenie względem tamtego toru, inaczej null
+		foldOther(s, d) {
+			const ad = Math.abs(d);
+			if (ad < 20) return null;
+			const r = this.route, G = 64;
+			let F = r._fold;
+			if (!F) {
+				F = r._fold = { cells: new Map() };
+				for (let ss = 0; ss <= r.length; ss += 8) {
+					R.trackPoint(r, ss, ftp);
+					const k = Math.floor(ftp.x / G) + ',' + Math.floor(ftp.z / G);
+					let a = F.cells.get(k);
+					if (!a) F.cells.set(k, (a = []));
+					a.push(ss, ftp.x, ftp.z);
+				}
+			}
+			R.trackPoint(r, s, ftp);
+			const x = ftp.x + Math.cos(ftp.heading) * d, z = ftp.z + Math.sin(ftp.heading) * d;
+			const cx = Math.floor(x / G), cz = Math.floor(z / G);
+			let best = Math.min(ad - 0.5, 80), bs = null;
+			for (let i = cx - 1; i <= cx + 1; i++) for (let j = cz - 1; j <= cz + 1; j++) {
+				const a = F.cells.get(i + ',' + j);
+				if (a) for (let q = 0; q < a.length; q += 3) {
+					if (Math.abs(a[q] - s) < 30) continue;
+					const e = Math.hypot(a[q + 1] - x, a[q + 2] - z);
+					if (e < best) { best = e; bs = a[q]; }
+				}
+			}
+			if (bs === null) return null;
+			// rzut na tor (jak toTrack, z własnym punktem – wspólny tp trzyma położenie węzła siatki i drzewa u wywołującego)
+			let ps = bs;
+			for (let k = 0; k < 6; k++) {
+				R.trackPoint(r, ps, ftp);
+				const ds = (x - ftp.x) * Math.sin(ftp.heading) - (z - ftp.z) * Math.cos(ftp.heading);
+				ps += ds;
+				if (Math.abs(ds) < 0.02) break;
+			}
+			R.trackPoint(r, ps, ftp);
+			const p = { s: ps, d: (x - ftp.x) * Math.cos(ftp.heading) + (z - ftp.z) * Math.sin(ftp.heading) };
+			const ap = Math.abs(p.d);
+			if (Math.abs(p.s - s) < 30 || ap >= ad || ap > 80 || p.s < 0 || p.s > r.length) return null;
+			return p;
+		}
+
+		/* miejsce na koronę w (s, d): odległość od skraju torowiska naszej linii, od torów z mapy (2,5 m od osi) i od toru tej
+		   samej trasy w innym miejscu (zakręt, pętla – foldOther). Korony drzew, krzaki i masy lasu nie wchodzą nad tory –
+		   dawniej korony z pomiaru (promień do ok. 10 m, pień od 11 m od osi) przykrywały tor, a na zakrętach drzewa
+		   kawałka rosły na torze z innego miejsca trasy. */
+		crownRoom(s, d) {
+			let room;
+			if (this.env && this.envShoulder) {
+				const sh = this.envShoulder(s);
+				room = d >= 0 ? d - sh.r : -d - sh.l;
+				for (const t of this.envTracksAt(s)) room = Math.min(room, Math.abs(t.d - d) - 2.5);
+			} else room = this.eff(d) - 3;
+			const p = this.foldOther(s, d);
+			if (p) room = Math.min(room, this.eff(p.d) - 3.5);
+			return room - 0.5;
+		}
+
+		/* trójkąty siatki terenu (wiersze ss, kolumny cols) z węzłem przy innym miejscu trasy (foldOther) – osobno, po jednej
+		   siatce na kawałek tamtego miejsca: rysowane tylko bez niego (updateLod), z nim – jego dokładny teren z wykopem
+		   i stacją (jedna siatka na kilka kawałków na skraju wczytanych przykrywała tor ostatniego wczytanego). Wynik: lista
+		   { geo, c } albo null (geo – bez tych trójkątów) */
+		foldSplit(geo, ss, cols) {
+			const n = cols.length, fc = new Int32Array(ss.length * n).fill(-1e9);
+			let any = false;
+			for (let i = 0; i < ss.length; i++) for (let j = 0; j < n; j++) {
+				const p = this.foldOther(ss[i], cols[j]);
+				if (!p) continue;
+				fc[i * n + j] = Math.floor(p.s / C);
+				any = true;
+			}
+			if (!any) return null;
+			const idx = geo.index.array, keep = [], out = new Map();
+			for (let t = 0; t < idx.length; t += 3) {
+				let c = -1e9;
+				for (let q = 0; q < 3; q++) c = Math.max(c, fc[idx[t + q]]);
+				const L = c > -1e9 ? out.get(c) || (out.set(c, []), out.get(c)) : keep;
+				L.push(idx[t], idx[t + 1], idx[t + 2]);
+			}
+			const list = [];
+			for (const [c, L] of out) {
+				const g2 = geo.clone();
+				g2.setIndex(L);
+				list.push({ geo: g2, c });
+			}
+			geo.setIndex(keep);
+			return list;
+		}
+
 		toTrack(x, z, hint) {
 			const r = this.route;
 			let s = hint;
@@ -1113,7 +1212,7 @@ import { BundleGroup } from 'three/webgpu';
 			// maski zajętości (drogi, budynki, tory – sadzenie drzew i trawy) – też krokami, przed ich pierwszym użyciem
 			if (this.env && this.envMaskSteps) for (let cc = c - 1; cc <= c + 1; cc++) yield* this.envMaskSteps(cc);
 			const cols = this.envTerrainCols ? this.envTerrainCols(c) : TERRAIN_D;
-			const mY = (s, d) => (this.meshTerrainY ? this.meshTerrainY(s, d) : this.terrainY(s, d));
+			const mY = (s, d) => this.foldY(s, d, this.meshTerrainY ? this.meshTerrainY(s, d) : this.terrainY(s, d));
 			const edgeY = (s, d, other) => {
 				if (other === cols || other.includes(d)) return mY(s, d);
 				const com = cols.filter((x) => other.includes(x));
@@ -1145,6 +1244,19 @@ import { BundleGroup } from 'three/webgpu';
 			// cienie terenu (wzgórza, wykopy) – wysoka jakość cieni; w zasięgu cieni kawałków (updateLod – lod.casters)
 			terrain.castShadow = !!this.terrainShadows;
 			group.add(terrain);
+			// (trójkąty przy innym miejscu trasy – zakręt, pętla – osobno, foldSplit)
+			const rowS = Array.isArray(tRows) ? tRows : Array.from({ length: Math.max(2, Math.ceil((s1 - s0) / tRows) + 1) }, (_, i) => Math.min(s1, s0 + i * tRows));
+			const fold = this.foldSplit(terrain.geometry, rowS, cols);
+			if (fold) {
+				for (const f of fold) {
+					const fm = new T.Mesh(f.geo, M.terrain);
+					fm.receiveShadow = true;
+					fm.userData.fold = f.c;
+					group.add(fm);
+				}
+				// (cały teren kawałka przy innym miejscu trasy – bez pustej siatki)
+				if (!terrain.geometry.index.count) { group.remove(terrain); terrain.geometry.dispose(); }
+			}
 			yield;
 
 			// podsypka: korona, ramiona i skarpy (ziarno kamieni w shaderze)
@@ -1264,7 +1376,7 @@ import { BundleGroup } from 'three/webgpu';
 		   materiale bez znaczenia – pomijane). Pozostałe obiekty nieruchome –
 		   bez przeliczania macierzy co klatkę (matrixAutoUpdate = false). */
 		*mergeStatic(group, dyn) {
-			if (World.opt.merge === false) { group.userData.lod = { trees: [], fine: [], casters: [] }; return; } // diagnostyka: bez scalania
+			if (World.opt.merge === false) { group.userData.lod = { trees: [], fine: [], casters: [], fold: [] }; return; } // diagnostyka: bez scalania
 			const prot = new Set(), seen = new Set([group]);
 			const walk = (v, depth) => {
 				if (!v || typeof v !== 'object' || seen.has(v) || depth > 6) return;
@@ -1315,7 +1427,7 @@ import { BundleGroup } from 'three/webgpu';
 				const m = o.material, g = o.geometry;
 				if (Array.isArray(m) || m.transparent || o.renderOrder || !o.frustumCulled || o.customDepthMaterial || o.customDistanceMaterial) return;
 				if (g.morphAttributes.position || g.drawRange.count !== Infinity || !g.attributes.position || !g.attributes.normal) return;
-				if (LAMP.some((k) => o.userData[k] !== undefined) || movable(o)) return;
+				if (LAMP.some((k) => o.userData[k] !== undefined) || o.userData.fold !== undefined || movable(o)) return;
 				const mw = new T.Matrix4().multiplyMatrices(inv, o.matrixWorld);
 				if (!o.isInstancedMesh) { add(o, g, mw, null); return; }
 				/* instancje z niewielu egzemplarzy (latarnie, słupki, znaki, wsporniki…) – wtopione w bryłę kawałka; bez koron
@@ -1418,8 +1530,9 @@ import { BundleGroup } from 'three/webgpu';
 			group.traverse((o) => { if (o !== group && !prot.has(o) && !LAMP.some((k) => o.userData[k] !== undefined)) o.matrixAutoUpdate = false; });
 			/* poziomy szczegółów kawałka (World.update): trees – korony z bryłą dokładną i uproszczoną; fine – drobne instancje
 			   (userData.fine: podkłady, przytwierdzenia, trawa, kwiaty, trzciny), z daleka niewidoczne */
-			const lod = { trees: [], fine: [], casters: [] };
+			const lod = { trees: [], fine: [], casters: [], fold: [] };
 			group.traverse((o) => {
+				if (o.userData.fold !== undefined) lod.fold.push(o);
 				if (o.isMesh && o.castShadow && !prot.has(o)) lod.casters.push(o);
 				if (!o.isInstancedMesh || prot.has(o)) return;
 				if (o.userData.lo) lod.trees.push(o);
@@ -1484,7 +1597,7 @@ import { BundleGroup } from 'three/webgpu';
 		bundleStatic(group, prot, LAMP) {
 			const list = [];
 			group.traverse((o) => {
-				if (!o.isMesh || prot.has(o) || o.matrixAutoUpdate !== false || !o.visible && !o.userData.fine) return;
+				if (!o.isMesh || prot.has(o) || o.matrixAutoUpdate !== false || !o.visible && !o.userData.fine && o.userData.fold === undefined) return;
 				if (LAMP.some((k) => o.userData[k] !== undefined) || (o.material && !Array.isArray(o.material) && o.material.userData && o.material.userData.water)) return;
 				for (let p = o.parent; p && p !== group; p = p.parent) if (prot.has(p) || p.isLOD) return;
 				list.push(o);
@@ -1527,6 +1640,14 @@ import { BundleGroup } from 'three/webgpu';
 					L.show = show;
 					for (const m of L.fine) m.visible = show;
 					if (L.bundle) L.bundle.needsUpdate = true;
+				}
+				// teren przy innym miejscu trasy (foldSplit) – tylko bez kawałka tamtego miejsca
+				for (const m of L.fold || []) {
+					const has = this.chunks.has(m.userData.fold);
+					if (m.visible === has) {
+						m.visible = !has;
+						if (L.bundle) L.bundle.needsUpdate = true;
+					}
 				}
 				// cienie: kawałki dalej niż shadowFar nie rzucają cienia (najdalsza kaskada – mniej brył do rysowania)
 				const cast = d < shadowFar;
@@ -1692,11 +1813,15 @@ import { BundleGroup } from 'three/webgpu';
 				}
 				const sh = 0.8 + hash(seed + 0.4) * 0.35;
 				// trasa rzeczywista: korona (promień wg gatunku) nie wchodzi w budynki ani nad jezdnię – drzewo mniejsze albo żadne
+				const rc = sp > 0.6 ? 3.1 : sp > 0.5 ? 3 : sp > 0.33 ? 4.25 : sp > 0.22 ? 2.2 : 1.8;
 				if (this.env && this.envFit) {
-					const f = this.envFit(s, d, (sp > 0.6 ? 3.1 : sp > 0.5 ? 3 : sp > 0.33 ? 4.25 : sp > 0.22 ? 2.2 : 1.8) * k);
+					const f = this.envFit(s, d, rc * k);
 					if (!f || k * f < 0.35) continue;
 					k *= f;
 				}
+				// korona przed skrajem torowiska (crownRoom) – drzewo mniejsze albo żadne
+				k = Math.min(k, this.crownRoom(s, d) / rc);
+				if (k < 0.35) continue;
 				if (sp > 0.6) { // świerk
 					put(trunks, tp.x, y + 1 * k, tp.z, 0.45 * k, 2 * k, 0.45 * k);
 					put(spruces, tp.x, y + 6.2 * k, tp.z, 6.2 * k, 11 * k, 6.2 * k, this.seasonTree('spruce', [0.17 * sh, 0.34 * sh, 0.2 * sh], seed));
@@ -1736,6 +1861,8 @@ import { BundleGroup } from 'three/webgpu';
 					if (!f) continue;
 					k *= f;
 				}
+				k = Math.min(k, this.crownRoom(s, d) / 1.5);
+				if (k < 0.3) continue;
 				q.setFromAxisAngle(up, hash(seed + 0.1) * 6.28);
 				const sh = 0.8 + hash(seed + 0.3) * 0.3;
 				const kb = this.seasonCrown('bush');
@@ -1761,6 +1888,8 @@ import { BundleGroup } from 'three/webgpu';
 					if (!f || k * f < 0.4) continue;
 					k *= f;
 				}
+				k = Math.min(k, this.crownRoom(s, d) / 10);
+				if (k < 0.4) continue;
 				q.setFromAxisAngle(up, hash(seed + 0.1) * 6.28);
 				const sh = 0.7 + hash(seed + 0.3) * 0.3;
 				put(blobs, tp.x, y + 7 * k, tp.z, 20 * k, 15 * k, 20 * k, [0.17 * sh, 0.33 * sh, 0.17 * sh]);

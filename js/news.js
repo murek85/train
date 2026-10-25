@@ -4,6 +4,35 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.72',
+			date: '25 października 2026',
+			groups: [
+				['Trasy', [
+					'Jelenia Góra – Szklarska Poręba Górna wygenerowana ponownie: stacja Jelenia Góra z pełnym otoczeniem (dawniej połowa peronu stała na pustym odcinku), trasa zaczyna się 330 m wcześniej.',
+					'Wiadukt nad drogą w km 4,68 (dawniej 4,35): bez płyty i ciemnej bryły „tunelu” nad jezdnią.',
+				]],
+				['Krajobraz', [
+					'Stare, nieczynne tory nie przecinają już czynnych torów stacji (szyny na szynach) i nie biegną przez budynki.',
+				]],
+				['Generator tras', [
+					'Opcja --construction: tory w przebudowie (linia w remoncie) jak zwykłe; --no-horizon – bez horyzontu.',
+				]],
+			],
+		},
+		{
+			version: '0.58.71',
+			date: '25 października 2026',
+			groups: [
+				['Krajobraz', [
+					'Bez gładkich płyt terenu nad torami na ciasnych łukach i pętlach trasy (np. Szklarska Poręba Górna): teren z dalszej części trasy nie przykrywa już toru, wykopu ani stacji.',
+					'Korony drzew, krzaki i masy lasu nie wchodzą nad tory – drzewo przy torze jest mniejsze albo go nie ma; na łukach drzewa nie rosną też na torze z innej części trasy.',
+				]],
+				['Trasy', [
+					'Jelenia Góra – Szklarska Poręba Górna: ulica w km 28,5 przechodzi pod torem wiaduktem (zamiast przejazdu w poziomie na nasypie).',
+				]],
+			],
+		},
+		{
 			version: '0.58.70',
 			date: '24 października 2026',
 			groups: [

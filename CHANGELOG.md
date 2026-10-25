@@ -4,6 +4,50 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.72 – 25 października 2026
+
+Jelenia Góra – Szklarska Poręba Górna wygenerowana ponownie; portal tunelu pod wiaduktem; stare tory na stacjach.
+
+### Trasy
+- Jelenia Góra – Szklarska Poręba Górna wygenerowana ponownie (`--construction`): linia 311 jest w OSM w remoncie
+  (`railway=construction`, „remont od 31 sierpnia do 30 października”, bez `ref`) – generator nie łączył stacji.
+  Rozbieg przed Jelenią Górą liczony długością toru (`behind` – `lenCost`, bocznice ×4), nie kosztem przebiegu: dawniej
+  otoczenie zaczynało się na km 0,16, a peron stacji (305 m) w połowie stał na dopełnionym prostym odcinku bez
+  torów stacji i budynków. Teraz trasa zaczyna się 330 m wcześniej (wszystkie kilometry +330 m), otoczenie od km 0.
+  Niweleta: zygzaki pomiaru NMT na km 18,8–19,05 (35,4‰) i 19,95–20,2 (31,7‰) wyrównane średnią z pięciu odcinków
+  po 50 m; poprawki (`fixes`): wiadukt km 28,841–28,859, bez przejazdu km 28,865; opis i numer linii jak dotąd,
+  horyzont bez zmian (`routes/horizon/`).
+
+### Krajobraz
+- `real-env.js` (`envTrenchInitSteps`): koniec jezdni we wkopie przy torze (do 30 m) pod naszym mostem to przejście
+  pod wiaduktem, nie wlot tunelu – bez portalu (Jelenia Góra km 4,35: strop portalu 2,1 m nad szyną przykrywał tor,
+  ciemne wnętrze tunelu stało na jezdni).
+- Tory nieużywane z mapy: bez odcinków w obrysie budynków i do 1,6 m od osi czynnego toru z mapy (Jelenia Góra:
+  stare tory przecinały tory stacji bez rozjazdu, trzy biegły ok. 115 m przez budynki).
+
+### Generator tras
+- `--construction` – tory `railway=construction` (bez peronów, obszarów i przebudowy na inny rodzaj) jak zwykłe, także
+  tory z mapy w otoczeniu; `--no-horizon` – bez horyzontu (Open-Meteo: ok. godziny dla trasy górskiej).
+
+## 0.58.71 – 25 października 2026
+
+Teren i drzewa na łukach i pętlach trasy; wiadukt w Szklarskiej Porębie.
+
+### Krajobraz
+- `world.js`: siatka terenu kawałka sięga 600 m w bok – na ciasnym łuku albo pętli jej daleka część leżała nad torem
+  z innej części trasy, z surowym pomiarem (bez wykopu i wyrównania stacji): gładka płyta nad torami (Szklarska
+  Poręba Górna, km 17,3 i 17,97). `foldOther` – punkt bliżej innego miejsca trasy (do 80 m) niż własnego toru;
+  `foldSplit` – trójkąty z takim węzłem w osobnych siatkach, po jednej na kawałek tamtego miejsca, rysowanych tylko
+  bez niego (`updateLod`); węzły obniżone do terenu tamtego miejsca (`foldY`, gdy kawałek nie jest wczytany).
+- Korony drzew, krzaki i masy lasu przed skrajem torowiska (`crownRoom`: korona naszej linii, tory z mapy 2,5 m od osi,
+  tor tej samej trasy w innym miejscu) – drzewo mniejsze albo żadne; dawniej korony z pomiaru (promień do ok. 10 m,
+  pień od 11 m od osi) przykrywały tor.
+
+### Trasy
+- Jelenia Góra – Szklarska Poręba Górna (`fixes`): wiadukt km 28,511–28,529 nad ulicą (nasyp ok. 10 m, jezdnia 14–20 m
+  pod szyną), bez przejazdu w poziomie w km 28,535 – pomiar NMT w osi toru wypełnia przejście pod nasypem i generator
+  usunął wiadukt.
+
 ## 0.58.70 – 24 października 2026
 
 Jedna reguła pochyleń w teście tras wbudowanych.
