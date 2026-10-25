@@ -4,6 +4,23 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.73 – 25 października 2026
+
+Ulice pod wiaduktami i przejścia pod wysokim nasypem w generatorze.
+
+### Krajobraz
+- `real-env.js` (`envLinksZ`): końce dróg łączonych pod naszym mostem różne o więcej niż 12% długości łącznika (pomiar
+  NMT przy przyczółku chwyta skarpę nasypu) – nadmiar po połowie na obie drogi: wyższy koniec niżej, niższy wyżej,
+  zmiana zanika wzdłuż drogi (dodatkowe pochylenie do 5%). Szklarska Poręba km 28,85: końce −19,7 i −9,9 m pod szyną
+  na 17,5 m (56%) – teraz −15,8 i −13,7 m (12%). Łączniki liczone przed pierwszą maską dróg (`envRoadMaskSteps`).
+
+### Generator tras
+- Wiadukt dodany przez generator (droga bez przejazdu w danych) zostaje mimo braku obniżenia pod osią, gdy teren po obu
+  stronach toru przy drodze (11–19 m od osi, w całym pasie, ±10 m wzdłuż) leży co najmniej 4 m niżej niż podtorze –
+  pod wąskim przejściem NMT jest interpolowany między skarpami. Na trasach wbudowanych zmieniłoby to dwa miejsca:
+  Jelenia Góra – Szklarska Poręba km 28,86 (już poprawione w `fixes`) i Kłodzko – Międzylesie km 29,14 (przy
+  ponownym generowaniu).
+
 ## 0.58.72 – 25 października 2026
 
 Jelenia Góra – Szklarska Poręba Górna wygenerowana ponownie; portal tunelu pod wiaduktem; stare tory na stacjach.

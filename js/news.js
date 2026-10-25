@@ -4,6 +4,18 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.73',
+			date: '25 października 2026',
+			groups: [
+				['Krajobraz', [
+					'Ulica pod wiaduktem bez uskoku: gdy końce drogi po obu stronach toru różnią się za bardzo (pomiar przy nasypie), różnica rozkłada się na dłuższy odcinek ulicy (Szklarska Poręba km 28,85: pod mostem 12% zamiast 56%).',
+				]],
+				['Generator tras', [
+					'Droga pod wysokim nasypem nie zamienia się już w przejazd w poziomie: gdy teren po obu stronach toru przy drodze leży co najmniej 4 m niżej, wiadukt zostaje.',
+				]],
+			],
+		},
+		{
 			version: '0.58.72',
 			date: '25 października 2026',
 			groups: [

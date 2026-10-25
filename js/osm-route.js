@@ -4081,6 +4081,24 @@
 					for (const x of own) x.m = x.m.replace(/, przyjęto\)/, ')') + ' Pomiar NMT nie pokazuje obniżenia (wąskie przejście pod nasypem jest interpolowane) – wiadukt zostaje, tor pod spodem w wykopie typowej głębokości.';
 					continue;
 				}
+				/* droga: teren po obu stronach toru przy drodze (11–19 m od osi, w całym pasie) co najmniej 4 m niżej niż podtorze –
+				   jezdnia nie wjedzie na nasyp, przejazdu w poziomie być nie może; pod osią pomiar interpolowany między skarpami
+				   (Szklarska Poręba km 28,86: pod osią 2,1 m, obok 7–8 m – wiadukt usuwany, ulica wjeżdżała rampą na tory) */
+				{
+					const cL = [-11, -15, -19].map((x) => DC.indexOf(x)), cR = [11, 15, 19].map((x) => DC.indexOf(x));
+					const cx0 = (a0 + b0) / 2;
+					let side = 0;
+					for (let s2 = Math.round(cx0 / DS) * DS - DS; s2 <= Math.round(cx0 / DS) * DS + DS; s2 += DS) {
+						const ri = Math.max(0, Math.min(rowS.length - 1, Math.round(s2 / DS))), F0 = railAbs(s2) - 0.95;
+						const dep = (cs) => Math.min(...cs.map((c) => F0 - H[ri * NC + c]));
+						side = Math.max(side, Math.min(dep(cL), dep(cR)));
+					}
+					if (side >= 4) {
+						o.nmt = 1;
+						for (const x of own) x.m = x.m.replace(/, przyjęto\)/, ')') + ` Pod osią pomiar NMT interpolowany, ale teren po obu stronach toru przy drodze leży ${side.toFixed(1)} m niżej niż podtorze – przejazdu w poziomie być nie może, wiadukt zostaje.`;
+						continue;
+					}
+				}
 				bridges.splice(q, 1);
 				for (const x of own) issues.splice(issues.indexOf(x), 1);
 				/* droga w poziomie toru bez znacznika przejazdu w danych (np. Radzionków km 6,2) – przejazd kolejowy; dawniej

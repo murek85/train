@@ -1187,6 +1187,8 @@ import * as THREE from 'three';
 		const e = this.env;
 		if (e.rmasks.has(c)) return e.rmasks.get(c);
 		(e.rmBusy || (e.rmBusy = new Set())).add(c);
+		// łączniki pod mostami przed pierwszą maską: wyrównują wysokości końców dróg (envLinksZ) – maska bierze już nowe
+		if (!e.linksZ && e.roadZ) this.envLinksZ();
 		try {
 			return yield* this.envRoadMaskBuild(c);
 		} finally {
@@ -1506,6 +1508,36 @@ import * as THREE from 'three';
 			}
 			return dip;
 		};
+		/* końce łączonych dróg bardziej różne niż 12% na długości łącznika (pomiar przy przyczółku chwyta skarpę nasypu –
+		   Szklarska Poręba km 28,85: −19,7 i −9,9 m pod szyną na 17,5 m, jezdnia pod mostem 56%): nadmiar po połowie na obie
+		   drogi – wyższy koniec niżej, niższy wyżej, ze zmianą zanikającą wzdłuż drogi (dodatkowe pochylenie do 5%) */
+		const endRow = (sx, dx) => {
+			for (const row of env.r) {
+				const z = e.roadZ.get(row);
+				if (!z) continue;
+				const n = (row.length - 1) / 2;
+				for (const k of [0, n - 1]) if (Math.hypot(row[1 + k * 2] - sx, row[2 + k * 2] - dx) < 0.6) return { row, z, n, k };
+			}
+			return null;
+		};
+		const ramp = (q, dz) => {
+			const R2 = Math.max(10, Math.abs(dz) / 10 / 0.05), st = q.k ? -1 : 1;
+			let dist = 0;
+			for (let k = q.k; k >= 0 && k < q.n; k += st) {
+				if (k !== q.k) dist += Math.hypot(q.row[1 + k * 2] - q.row[1 + (k - st) * 2], q.row[2 + k * 2] - q.row[2 + (k - st) * 2]);
+				if (dist >= R2) break;
+				q.z[k] += dz * (1 - dist / R2);
+			}
+		};
+		for (const lk of e.roadLinks) {
+			const A = endRow(lk[1], lk[2]), B = endRow(lk[3], lk[4]);
+			if (!A || !B || A.row === B.row) continue;
+			const L = Math.hypot(lk[3] - lk[1], lk[4] - lk[2]), diff = B.z[B.k] - A.z[A.k], over = Math.abs(diff) - 0.12 * L * 10;
+			if (over <= 0) continue;
+			const sg = Math.sign(diff);
+			ramp(A, (sg * over) / 2);
+			ramp(B, (-sg * over) / 2);
+		}
 		e.linksZ = e.roadLinks.map((lk) => { const za = endZ(lk[1], lk[2]), zb = endZ(lk[3], lk[4]); return za === null || zb === null ? null : lk.concat([za, zb, dig(lk, za, zb)]); });
 		return e.linksZ;
 	};
