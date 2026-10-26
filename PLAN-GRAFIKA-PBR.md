@@ -90,7 +90,7 @@ Tekstury: skany CC0 z ambientCG i Poly Haven (bez wymogu przypisania, wolno je d
 - Ryzyka: smugi za szybko ruchomymi obiektami (pociąg, auta) i przezroczystościami (deszcz, śnieg, woda) – obiekty
   przezroczyste rysowane po TAA albo z maską reaktywności; paczki rysowania (BundleGroup) muszą zapisywać prędkość
   (macierze z poprzedniej klatki) – do sprawdzenia w pierwszej kolejności, bo od tego zależy wykonalność.
-- Ustawienie „Wygładzanie: wyłączone / FXAA / TAA”. WebGL bez zmian (MSAA + wyostrzanie).
+- Ustawienie „Wygładzanie: wyłączone / FXAA / TAA”.
 
 ## Budżet
 
@@ -112,6 +112,9 @@ Liczby z wyliczenia na ok. 30 materiałów × 3 mapy; do potwierdzenia po konwer
 
 ## Postęp
 
+- **WebGL nie jest rozwijany** (decyzja 2026-10-26): grafika tylko w WebGPU; tryb WebGL zostaje taki, jaki jest
+  (wzory proceduralne, bez tekstur z plików, bez TAA).
+
 - **Krok 1 – gotowy** (bez zmiany wyglądu): `js/3d/textures.js` (spis, KTX2 i WebP/JPG/PNG, jakość, zapas
   proceduralny), ustawienie „Tekstury – jakość”, `tools/textures.py` (zestawy ambientCG/Poly Haven → WebP 1k/2k,
   ORM), loader KTX2 i transkoder w `vendor/`, MIME i pakowanie. Zestawy próbne (CC0, ambientCG): `ground/grass`
@@ -130,7 +133,15 @@ Liczby z wyliczenia na ok. 30 materiałów × 3 mapy; do potwierdzenia po konwer
   wierzchołków (asfalt / kostka kamienna / polbruk i płyty / gruntowa), asfalt przeplatany plamami spękanego.
   Tekstury w tablicach rodzin (grunty, drogi, płyty – po 3 tekstury i 3 samplery w shaderze): samplerów WebGPU jest
   sprzętowo 16 na etap, osobne tekstury pięciu zestawów przekraczały limit razem z mapami cieni, nocy i chmur.
-  Zostało: perony – wybór płyt (gładkie Concrete008 albo z fugami), WebGL, tablice z plików KTX2.
+  Zostało: perony – wybór płyt (gładkie Concrete008 albo z fugami), tablice z plików KTX2.
+- **Krok 4 – budynki (WebGPU)**: 11 zestawów CC0 (ambientCG): ściany – tynk gładki i szorstki, cegła czerwona,
+  stara i jasna, beton, blacha falista, deski; dachy – dachówka czerwona i grafitowa, blacha trapezowa (papa – zestaw
+  spękanego asfaltu); razem 83 MB WebP. Warstwa ściany per budynek (real-env.js envWallLayer – rodzaj, przeznaczenie,
+  wysokość, ceglasty kolor elewacji) w atrybucie aSurf; okna z obecnej fasady (maska w alfie tekstury fasady),
+  ściana spod tekstury; dach – rodzaj z koloru i nachylenia; współrzędne na płaszczyźnie ściany / połaci (rzędy
+  wzdłuż okapu), cokoły i gzymsy bez UV – rzut na płaszczyznę. Metaliczność z tekstur (gMetal). Tablice tekstur
+  w orientacji GL (wcześniej odwrócone w pionie). Narzędzie: kafle 2:1 powtarzane do kwadratu, --rotate 90.
+  Sprawdzone: Mosina – dworzec z cegły z oknami, dachówka; bez błędów, FPS bez zmian.
 - Wersja na tej gałęzi bez podnoszenia – jeden wpis zbiorczy przy scalaniu do `webgpu`.
 
 ## Kolejność prac

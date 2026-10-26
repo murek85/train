@@ -124,6 +124,10 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 	function pixels(img, n) {
 		const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(n, n) : Object.assign(document.createElement('canvas'), { width: n, height: n });
 		const g = c.getContext('2d', { willReadFrequently: true });
+		/* odbicie w pionie: dane tablicy bez flipY – pierwszy wiersz to v = 0; tak góra obrazu wypada przy v = 1, jak
+		   w zwykłych teksturach (cegły, dachówki; normalne: G w stronę +v) */
+		g.translate(0, n);
+		g.scale(1, -1);
 		g.drawImage(img, 0, 0, n, n);
 		return g.getImageData(0, 0, n, n).data;
 	}

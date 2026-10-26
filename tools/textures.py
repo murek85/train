@@ -2,7 +2,7 @@
 """Przygotowanie tekstur PBR do gry (js/3d/textures.js) z pobranego zestawu ambientCG lub Poly Haven (CC0).
 
 Użycie:
-  python tools/textures.py <folder lub .zip zestawu> <grupa/nazwa> [--scale 2.0] [--sizes 1024,2048]
+  python tools/textures.py <folder lub .zip zestawu> <grupa/nazwa> [--scale 2.0] [--sizes 1024,2048] [--rotate 90]
 
 Rozpoznawane mapy (nazwy plików ambientCG / Poly Haven):
   kolor          *_Color.*, *_diff_*, *_diffuse_*, *_albedo*
@@ -71,7 +71,20 @@ def open_img(data, mode):
     return im.convert(mode)
 
 
+ROT = {'deg': 0}
+
+
 def square(im, n):
+    # prostokątny kafel (np. 2048 × 1024 – cegły, deski, blacha): powtórzony do kwadratu w krótszym wymiarze –
+    # rozciągnięcie zmieniłoby proporcje cegieł; potem obrót (--rotate 90: fale blachy w poprzek)
+    w, h = im.size
+    if w != h and max(w, h) % min(w, h) == 0:
+        sq = Image.new(im.mode, (max(w, h), max(w, h)))
+        for k in range(max(w, h) // min(w, h)):
+            sq.paste(im, (0, k * h) if w > h else (k * w, 0))
+        im = sq
+    if ROT['deg']:
+        im = im.rotate(ROT['deg'])
     return im.resize((n, n), Image.LANCZOS)
 
 
@@ -84,6 +97,10 @@ def build(found, n):
     elif 'normal_dx' in found:
         r, g, b = square(open_img(found['normal_dx'][1], 'RGB'), n).split()
         nm = Image.merge('RGB', (r, g.point(lambda v: 255 - v), b))
+    if nm is not None and ROT['deg'] == 90:
+        # obraz obrócony o 90° przeciwnie do zegara – wektory normalnych też: (x, y) → (−y, x)
+        r, g, b = nm.split()
+        nm = Image.merge('RGB', (g.point(lambda v: 255 - v), r, b))
     if nm is not None:
         out['normal'] = nm
     if 'arm' in found:
@@ -110,6 +127,10 @@ def main(argv):
         return 1
     src, name = args[0], args[1].strip('/')
     scale = float(opts.get('scale', 2.0))
+    ROT['deg'] = int(opts.get('rotate', 0))
+    if ROT['deg'] not in (0, 90):
+        print('--rotate: 0 albo 90')
+        return 1
     sizes = [int(s) for s in opts.get('sizes', '1024,2048').split(',')]
     found = sources(src)
     if 'color' not in found:

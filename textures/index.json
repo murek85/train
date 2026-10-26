@@ -240,6 +240,226 @@
 			],
 			"source": "Road012B_2K-JPG.zip",
 			"license": "CC0"
+		},
+		"roof/metal": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 2.0,
+			"mean": [
+				0.2253,
+				0.2239,
+				0.223
+			],
+			"source": "CorrugatedSteel009_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"roof/tiles-graphite": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 3.0,
+			"mean": [
+				0.0315,
+				0.0303,
+				0.0364
+			],
+			"source": "RoofingTiles013A_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"roof/tiles-red": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 3.0,
+			"mean": [
+				0.3815,
+				0.1179,
+				0.0621
+			],
+			"source": "RoofingTiles012A_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"wall/brick-light": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 2.4,
+			"mean": [
+				0.4854,
+				0.298,
+				0.1476
+			],
+			"source": "Bricks105_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"wall/brick-old": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 2.3,
+			"mean": [
+				0.2459,
+				0.1581,
+				0.0979
+			],
+			"source": "Bricks097_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"wall/brick-red": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 1.2,
+			"mean": [
+				0.3904,
+				0.1657,
+				0.1172
+			],
+			"source": "Bricks051_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"wall/concrete": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 3.0,
+			"mean": [
+				0.6089,
+				0.6159,
+				0.4863
+			],
+			"source": "Concrete046_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"wall/metal": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 1.6,
+			"mean": [
+				0.3217,
+				0.3291,
+				0.3418
+			],
+			"source": "CorrugatedSteel005_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"wall/plaster": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 2.5,
+			"mean": [
+				0.6796,
+				0.6531,
+				0.6299
+			],
+			"source": "Plaster001_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"wall/plaster-rough": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 2.5,
+			"mean": [
+				0.693,
+				0.6686,
+				0.6446
+			],
+			"source": "Plaster002_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"wall/wood": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 2.0,
+			"mean": [
+				0.5892,
+				0.534,
+				0.3445
+			],
+			"source": "WoodSiding009_2K-JPG.zip",
+			"license": "CC0"
 		}
 	}
 }

@@ -808,14 +808,14 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			this.mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		}
 
-		/* materiały z teksturami z plików (nodes.js pbrSet – teren, drogi, perony): po wczytaniu lub zmianie tekstur przebudowa
+		/* materiały z teksturami z plików (nodes.js pbrSet – teren, drogi, perony, ściany, dachy): po wczytaniu lub zmianie tekstur przebudowa
 		   ich shaderów i nagrań paczek. Sama podmiana tekstury w węźle nie docierała do powiązań obiektów w paczkach
 		   (BundleGroup – odświeżenie współdzielone, scene.js gpuInit): zostawała tekstura zastępcza 1×1 (szara,
 		   jednolita trawa i perony bez płyt) */
 		rebuildTextured() {
 			const seen = new Set();
 			const mark = (m) => {
-				if (!m || seen.has(m) || !['ground', 'platform', 'road'].includes(m.patchVariant)) return;
+				if (!m || seen.has(m) || !(['ground', 'platform', 'road', 'roof'].includes(m.patchVariant) || (m.patchOpt && m.patchOpt.wall))) return;
 				seen.add(m);
 				m.needsUpdate = true;
 			};

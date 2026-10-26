@@ -166,6 +166,27 @@ import * as THREE from 'three';
 	const AREA_FOREST = [0, 1, 0.35, 0, 0, 0, 0, 0, 0.2, 0, 0, 1, 1];
 
 	// materiały otoczenia (wspólne)
+	/* warstwa tekstury ściany (nodes.js FAMILIES.wall: 0 tynk gładki, 1 tynk szorstki, 2 cegła czerwona, 3 stara cegła,
+	   4 jasna cegła, 5 beton / wielka płyta, 6 blacha falista, 7 deski) wg rodzaju budynku (0 dom, 1 blok, 2 hala,
+	   3 usługi, 4 kościół, 5 garaż, 6 dworzec), przeznaczenia (env.bu), wysokości i koloru elewacji z tabel (ceglaste
+	   kolory – cegła) */
+	const BRICKY = new Set(['#b5543c', '#c98f72', '#b88a68', '#a8432f', '#a8968a', '#b5765c']);
+	function envWallLayer(kind, use, h, seed, hex) {
+		const r = hash(seed * 1.93 + 0.37);
+		if (BRICKY.has(hex) || use === 30 || use === 14) return r < 0.75 ? 2 : 3;
+		if (use === 15 || use === 17) return r < 0.5 ? 2 : r < 0.75 ? 4 : 0;
+		switch (kind) {
+			case 0: return h < 3.2 ? (r < 0.45 ? 7 : r < 0.75 ? 1 : 0) : r < 0.5 ? 0 : r < 0.75 ? 1 : r < 0.88 ? 2 : 4;
+			case 1: return h >= 12 ? (r < 0.55 ? 5 : r < 0.85 ? 0 : 1) : r < 0.55 ? 0 : r < 0.85 ? 1 : 4;
+			case 2: return h > 9 ? (r < 0.5 ? 5 : 0) : r < 0.45 ? 6 : r < 0.7 ? 3 : 5;
+			case 3: return r < 0.6 ? 0 : r < 0.8 ? 4 : 5;
+			case 4: return r < 0.6 ? 2 : 0;
+			case 5: return r < 0.3 ? 3 : r < 0.6 ? 5 : r < 0.8 ? 6 : 7;
+			case 6: return r < 0.45 ? 2 : r < 0.65 ? 3 : 0;
+			default: return 0;
+		}
+	}
+
 	function envMaterials() {
 		if (World.envM) return World.envM;
 		/* elewacja: 4 przęsła × 4 kondygnacje (12 × 12 m, 128 px na 3 m): okna z ramą, słupkiem i ślemieniem,
@@ -232,6 +253,14 @@ import * as THREE from 'three';
 				}
 				g.restore();
 			}
+			/* maska okien w kanale alfa (tekstury ścian z plików – nodes.js dirtPattern): ściana 1, okno z ościeżem, parapetem
+			   i nadprożem 0,75 (nie 0 – kanwa trzyma kolor przemnożony przez alfę) */
+			const im2 = g.getImageData(0, 0, w, w), d2 = im2.data;
+			for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+				const W2 = win(i, j);
+				for (let y = Math.max(0, W2.y0 - 7); y < Math.min(w, W2.y1 + 11); y++) for (let x = Math.max(0, W2.x0 - 6); x < Math.min(w, W2.x1 + 6); x++) d2[(y * w + x) * 4 + 3] = 191;
+			}
+			g.putImageData(im2, 0, 0);
 		});
 		// mapa normalnych z mapy wysokości: ściana 0,5, otwór okna 0, rama 0,25, parapet 0,85, nadproże 0,62
 		const facadeNorm = canvasTexture('env-facade2-n', FW, FW, (g, w) => {
@@ -272,10 +301,11 @@ import * as THREE from 'three';
 		});
 		for (const t of [facadeTex, litTex, facadeNorm]) { t.wrapS = t.wrapT = T.RepeatWrapping; t.anisotropy = 16; }
 		litTex.colorSpace = T.SRGBColorSpace;
-		const m = (o, v) => patch(new T.MeshStandardMaterial(Object.assign({ vertexColors: true, roughness: 0.9 }, o)), v || 'lit');
+		const m = (o, v, opt) => patch(new T.MeshStandardMaterial(Object.assign({ vertexColors: true, roughness: 0.9 }, o)), v || 'lit', opt);
 		World.envM = {
-			facade: m({ map: facadeTex, normalMap: facadeNorm, normalScale: new T.Vector2(1, 1), emissiveMap: litTex, emissive: '#ffffff', emissiveIntensity: 0 }, 'dirt'),
-			plain: m({}, 'dirt'),
+			// wall – tekstury ścian z plików (warstwa w atrybucie aSurf, okna z maski w alfie fasady)
+			facade: m({ map: facadeTex, normalMap: facadeNorm, normalScale: new T.Vector2(1, 1), emissiveMap: litTex, emissive: '#ffffff', emissiveIntensity: 0 }, 'dirt', { wall: true }),
+			plain: m({}, 'dirt', { wall: true }),
 			roof: m({ roughness: 0.78 }, 'roof'), // dachy: dachówki, blachodachówka, papa (common.js ROOF_GLSL)
 			// przesunięcie głębi: między wierzchołkami jezdnia nie przecina załamań siatki terenu i mogła się pod nie
 			// zapadać o kilka centymetrów (z ukosa – zielone kliny w jezdni)
@@ -5821,11 +5851,14 @@ import * as THREE from 'three';
 	World.prototype.buildEnvBuildings = function* (group, list, M) {
 		if (!list.length) return;
 		const r = this.route;
-		const fa = { p: [], uv: [], c: [] }, pl = { p: [], uv: [], c: [] }, rf = { p: [], uv: [], c: [] }; // rf – dachy (osobny materiał)
+		const fa = { p: [], uv: [], c: [], s: [] }, pl = { p: [], uv: [], c: [], s: [] }, rf = { p: [], uv: [], c: [], s: [] }; // rf – dachy (osobny materiał)
+		// SURF – warstwa tekstury ściany bieżącego budynku (envWallLayer; atrybut aSurf)
+		let SURF = 0;
 		const tri = (dst, a, b, c2, ua, ub, uc, rgb) => {
 			dst.p.push(a[0], a[1], a[2], b[0], b[1], b[2], c2[0], c2[1], c2[2]);
 			dst.uv.push(ua[0], ua[1], ub[0], ub[1], uc[0], uc[1]);
 			for (let k = 0; k < 3; k++) dst.c.push(rgb.r, rgb.g, rgb.b);
+			dst.s.push(SURF, SURF, SURF);
 		};
 		const Z = [0, 0];
 		/* prostopadłościan do siatki dst: środek (x, z), od y0 do y1, w – wzdłuż kierunku (ax, az), dp – w poprzek;
@@ -5912,7 +5945,9 @@ import * as THREE from 'three';
 			const use = (this.env.bUse && this.env.bUse[b.i]) || 0;
 			// elewacja wg rodzaju (urzędy, służby, szkoły…; bloki i domy z usługą na parterze – bez zmian)
 			const UW = USE_WALL[use] && kind !== 0 && kind !== 1 ? USE_WALL[use] : null;
-			const wall = col.set(UW ? UW[Math.floor(hash(seed) * UW.length)] : WALLS[kind][Math.floor(hash(seed) * WALLS[kind].length)]).clone();
+			const wallHex = UW ? UW[Math.floor(hash(seed) * UW.length)] : WALLS[kind][Math.floor(hash(seed) * WALLS[kind].length)];
+			const wall = col.set(wallHex).clone();
+			SURF = envWallLayer(kind, use, h, seed, wallHex);
 			const roofC = col.set(ROOFS[kind][Math.floor(hash(seed + 0.5) * ROOFS[kind].length)]).clone();
 			// wierzchołki obrysu w świecie, podstawa – najniższy punkt terenu pod budynkiem
 			/* budynek przy tunelu (część obrysu nad obudową): stoi na stropie – przy portalu także część nad wykopem przed nim
@@ -6165,6 +6200,7 @@ import * as THREE from 'three';
 			geo.setAttribute('position', new T.Float32BufferAttribute(d.p, 3));
 			geo.setAttribute('uv', new T.Float32BufferAttribute(d.uv, 2));
 			geo.setAttribute('color', new T.Float32BufferAttribute(d.c, 3));
+			geo.setAttribute('aSurf', new T.Float32BufferAttribute(d.s, 1));
 			geo.computeVertexNormals();
 			const m = new T.Mesh(geo, material);
 			m.castShadow = this.shadows;

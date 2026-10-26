@@ -202,7 +202,16 @@ import {
 		ground: ['ground/grass', 'ground/forest-floor', 'ground/soil', 'ground/gravel', 'ground/sand'],
 		road: ['road/asphalt', 'road/asphalt-cracked', 'paving/granite-setts', 'paving/behaton', 'ground/dirt'],
 		paving: ['paving/concrete-slabs', 'paving/pavers'],
+		wall: ['wall/plaster', 'wall/plaster-rough', 'wall/brick-red', 'wall/brick-old', 'wall/brick-light', 'wall/concrete', 'wall/metal', 'wall/wood'],
+		roof: ['roof/tiles-red', 'roof/tiles-graphite', 'roof/metal', 'road/asphalt-cracked'], // (papa – ten sam zestaw co spękany asfalt)
 	};
+	// wybór z listy węzłów wg indeksu (int) – warstwa zmienna w pikselu (atrybut, kolor)
+	const pick = (idx, arr) => arr.slice(1).reduce((acc, v, k) => select(idx.equal(k + 1), v, acc), arr[0]);
+	// warstwa rodziny o indeksie z węzła: skala, średni kolor i włączenie wybrane z uniformów warstw
+	function pbrDyn(fam, idx) {
+		const F = pbrFamily(fam), L = F.names.map((n) => F.layers[n]);
+		return { F, i: idx, scale: pick(idx, L.map((l) => l.scale)), mean: pick(idx, L.map((l) => l.mean)), on: pick(idx, L.map((l) => l.on)) };
+	}
 	const FAM = new Map();
 	function pbrFamily(fam) {
 		let F = FAM.get(fam);
@@ -248,7 +257,7 @@ import {
 	   Wynik: c – kolor liniowy, ratio – detal względem średniej (do zabarwienia kolorem z danych), n – zaburzenie
 	   normalnej w świecie (xz), orm – okluzja, chropowatość, metaliczność */
 	function pbrPlanar(s, wp, single = false) {
-		const F = s.F, li = int(s.i);
+		const F = s.F, li = typeof s.i === 'number' ? int(s.i) : s.i;
 		const smp = (node, uv) => node.sample(uv).depth(li);
 		const uv1 = vec2(wp.x, wp.y.negate()).div(s.scale).toVar();
 		let c, nT, orm;
@@ -269,7 +278,16 @@ import {
 		const lumC = dot(c, vec3(0.2126, 0.7152, 0.0722)), lumM = max(dot(s.mean, vec3(0.2126, 0.7152, 0.0722)), 0.01);
 		// detal: jasność względem średniej, z częścią barwy tekstury (źdźbła, kamyki różnych kolorów)
 		const ratio = clamp(mix(vec3(lumC.div(lumM)), c.div(max(s.mean, vec3(0.01))), 0.35), 0, 3);
-		return { c, ratio, n: vec3(nT.x, 0, nT.y.negate()), orm, lumM };
+		return { c, ratio, n: vec3(nT.x, 0, nT.y.negate()), nT, orm, lumM };
+	}
+	/* współrzędne tekstury na płaszczyźnie ściany lub połaci (bez UV): u – w poziomie wzdłuż płaszczyzny (T), v – w górę
+	   (ściana) albo w górę stoku (połać); płaskie – rzut z góry. Wynik: { uv (m), T, B } – osie w świecie */
+	function planeUV(wP, gN) {
+		const T = normalize(vec3(gN.z.negate(), 0, gN.x).add(vec3(1e-5, 0, 0))).toVar();
+		const B0 = normalize(cross(gN, T)).toVar();
+		const B = select(B0.y.lessThan(0), B0.negate(), B0).toVar();
+		const flat = abs(gN.y).greaterThan(0.985);
+		return { uv: select(flat, vec2(wP.x, wP.z.negate()), vec2(dot(wP, T), dot(wP, B))), T, B, flat };
 	}
 	const LUMA = vec3(0.2126, 0.7152, 0.0722);
 	/* mieszanie warstw z tekstur: L – [{ w, c, p }] (waga w pikselu, kolor, próbka pbrPlanar); wynik – kolor (z resztą
@@ -493,13 +511,35 @@ import {
 		S.gRough.subAssign(stain.mul(0.1).mul(uWet));
 	}
 
-	function dirtPattern(S) {
+	function dirtPattern(S, wall, map) {
 		const { wP, wp, gN, fl, AAK, c0 } = surfHead();
-		const m1 = gFbm(vec2(wp.x.add(wp.y), wP.y).mul(0.18).add(wp.mul(0.05)));
-		const streak = gNoise(vec2(wp.x.sub(wp.y).mul(2.2).add(gN.x.mul(3)), wP.y.mul(0.12))).mul(fl.oneMinus());
+		const m1 = gFbm(vec2(wp.x.add(wp.y), wP.y).mul(0.18).add(wp.mul(0.05))).toVar();
+		const streak = smoothstep(0.5, 0.9, gNoise(vec2(wp.x.sub(wp.y).mul(2.2).add(gN.x.mul(3)), wP.y.mul(0.12))).mul(fl.oneMinus())).toVar();
 		const grain = mix(0.5, gNoise(wP.xy.mul(20).add(wP.zy.mul(20))), AAK(30)).toVar();
-		diffuseColor.rgb.assign(c0.mul(m1.mul(0.2).add(0.88)).mul(smoothstep(0.5, 0.9, streak).mul(0.14).oneMinus()).mul(grain.mul(0.1).add(0.95)));
+		diffuseColor.rgb.assign(c0.mul(m1.mul(0.2).add(0.88)).mul(streak.mul(0.14).oneMinus()).mul(grain.mul(0.1).add(0.95)));
 		S.gH.assign(grain.mul(0.002));
+		if (!wall) return;
+		/* ściany budynków z tekstur (real-env.js envWallLayer – warstwa w aSurf): elewacja z oknami – współrzędne fasady
+		   (uv × 12 m, ciągłe wokół narożników), poza oknami (maska w alfie fasady: 1 ściana, 0,75 okno); cokoły, gzymsy,
+		   balkony (bez UV) – rzut na płaszczyznę. Tynk i beton zabarwione kolorem elewacji z danych, cegła i drewno
+		   w barwie własnej; zacieki i plamy jak we wzorze proceduralnym */
+		const li = int(Fn((b) => (b.geometry.hasAttribute('aSurf') ? attribute('aSurf', 'float') : float(0)))().add(0.5)).toVar();
+		const L = pbrDyn('wall', li);
+		const uvA = Fn((b) => (b.geometry.hasAttribute('uv') ? attribute('uv', 'vec2') : vec2(0)))().toVar();
+		const hasUV = abs(uvA.x).add(abs(uvA.y)).greaterThan(1e-5);
+		const PL = planeUV(wP, gN);
+		const q = select(hasUV, uvA.mul(12), PL.uv).toVar();
+		const pW = pbrPlanar(L, vec2(q.x, q.y.negate()), true);
+		const own = pick(li, [0, 0, 0.85, 0.9, 0.8, 0.35, 0.3, 0.4].map((x) => float(x)));
+		const vc = vertexColor().rgb;
+		const wc = mix(vc.mul(pW.ratio), pW.c.mul(dot(vc, LUMA).div(0.6).clamp(0.6, 1.3)), own);
+		// (alfa z tekstury fasady wprost – w diffuseColor nieprzezroczysty materiał ma alfę 1)
+		const wm = (map ? smoothstep(0.8, 0.95, texture(map, uvA).a) : float(1)).mul(L.on).toVar();
+		diffuseColor.rgb.assign(mix(diffuseColor.rgb, wc.mul(m1.mul(0.2).add(0.88)).mul(streak.mul(0.14).oneMinus()).mul(mix(1, pW.orm.x, 0.6)), wm));
+		S.gRough.assign(pW.orm.y.sub(materialRoughness).mul(wm));
+		S.gMetal.assign(pW.orm.z.mul(wm));
+		S.gH.mulAssign(wm.oneMinus());
+		S.nPert.assign(select(PL.flat, vec3(pW.nT.x, 0, pW.nT.y.negate()), PL.T.mul(pW.nT.x).add(PL.B.mul(pW.nT.y))).mul(wm).mul(0.8));
 	}
 
 	function roofPattern(S) {
@@ -531,8 +571,21 @@ import {
 			const grain = mix(0.5, gNoise(wP.xy.mul(20).add(wP.zy.mul(20))), AAK(30));
 			base.assign(c0.mul(m1.mul(0.15).add(0.9)).mul(grain.mul(0.1).add(0.95)));
 		});
-		diffuseColor.rgb.assign(base);
-		S.gH.assign(hgt);
+		/* dachy z tekstur (ściany szczytowe – bez): rodzaj z koloru i nachylenia – płaski: papa; czerwony / brązowy:
+		   dachówka ceramiczna; ciemny: dachówka grafitowa; jasnoszary (hale): blacha trapezowa. Rzędy wzdłuż okapu
+		   (planeUV), zabarwione kolorem dachu z danych; mech jak we wzorze proceduralnym */
+		const redK = c0.r.sub(c0.b).div(max(c0.r, 0.01)).toVar(), lumR = dot(c0, LUMA).toVar();
+		const PL = planeUV(wP, gN);
+		const ri = int(select(PL.flat, float(3), select(redK.greaterThan(0.3), float(0), select(lumR.lessThan(0.11), float(1), float(2))))).toVar();
+		const L = pbrDyn('roof', ri);
+		const pR = pbrPlanar(L, vec2(PL.uv.x, PL.uv.y.negate()), true);
+		const rc = mix(c0.mul(pR.ratio), pR.c.mul(lumR.div(pR.lumM).clamp(0.5, 1.6)), 0.45);
+		const rm = L.on.mul(step(0.12, abs(gN.y))).toVar();
+		diffuseColor.rgb.assign(mix(base, rc.mul(m1.mul(0.22).add(0.88)).mul(mix(1, pR.orm.x, 0.6)), rm));
+		S.gH.assign(hgt.mul(rm.oneMinus()));
+		S.gRough.assign(pR.orm.y.sub(materialRoughness).mul(rm));
+		S.gMetal.assign(pR.orm.z.mul(rm));
+		S.nPert.assign(select(PL.flat, vec3(pR.nT.x, 0, pR.nT.y.negate()), PL.T.mul(pR.nT.x).add(PL.B.mul(pR.nT.y))).mul(rm).mul(0.8));
 	}
 
 	function leafPattern(S, hasMap) {
@@ -760,7 +813,7 @@ import {
 							.and(positionWorld.y.greaterThan(pa.y)).and(positionWorld.y.lessThan(pa.y.add(pa.w))), () => { Discard(); });
 					});
 				}
-				S.gH.assign(0); S.puddle.assign(0); S.gSand.assign(0); S.gRough.assign(0); S.nPert.assign(vec3(0));
+				S.gH.assign(0); S.puddle.assign(0); S.gSand.assign(0); S.gRough.assign(0); S.nPert.assign(vec3(0)); S.gMetal.assign(0);
 				if (train) { S.wearG.assign(0); S.wearAO.assign(1); }
 				const defs = this.defines || {};
 				// (opt.rm – chropowatość, metaliczność i zabrudzenie bazowe w wierzchołkach: atrybut aRM, train.js vcConvert)
@@ -773,7 +826,7 @@ import {
 				else if (v === 'concrete') concretePattern(S);
 				else if (v === 'platform') platformPattern(S, 'PL_TACT' in defs ? 'tact' : 'PL_EDGE' in defs ? 'edge' : 'top');
 				else if (v === 'roof') roofPattern(S);
-				else if (v === 'dirt') dirtPattern(S);
+				else if (v === 'dirt') dirtPattern(S, !!opt.wall, this.map);
 				// normalna (widok): geometryczna, na tylnej stronie odwrócona; mikrorzeźba
 				let n = normalViewGeometry;
 				if (this.side === THREE.DoubleSide) n = n.mul(faceDirection);
@@ -781,7 +834,7 @@ import {
 				const amp = train ? (opt.panels ? 1.0 : 0) : BUMP_K[v] || 0;
 				S.normal.assign(amp ? bump(n, S.gH, amp) : n);
 				// normalne z tekstur (teren): zaburzenie w świecie (xz) przeniesione do układu widoku
-				if (ground || v === 'road') S.normal.assign(normalize(S.normal.add(cameraViewMatrix.mul(vec4(S.nPert, 0)).xyz)));
+				if (ground || v === 'road' || v === 'roof' || (v === 'dirt' && opt.wall)) S.normal.assign(normalize(S.normal.add(cameraViewMatrix.mul(vec4(S.nPert, 0)).xyz)));
 				const wN = normalize(vec4(S.normal, 0).mul(cameraViewMatrix).xyz).toVar();
 				if (v === 'wind') {
 					const rim = pow(abs(dot(S.normal, normalize(positionView))).oneMinus(), 2.0);
@@ -794,7 +847,7 @@ import {
 						S.metal.assign(mix(m0, m0.mul(0.35), S.wearG));
 					} else {
 						S.rough.assign(mix(clamp(materialRoughness.add(S.gRough), 0.3, 1.0), 0.97, S.gSand));
-						S.metal.assign(materialMetalness);
+						S.metal.assign(clamp(materialMetalness.add(S.gMetal), 0, 1)); // gMetal – z tekstur (blacha)
 					}
 				}
 				const snowK = opt.noSnow ? 0 : v === 'grass' ? 0 : v === 'wind' ? 0.75 : 1;
@@ -844,8 +897,8 @@ import {
 			customProgramCacheKey() {
 				const o = this.patchOpt || {}, d = this.defines ? Object.keys(this.defines).sort().join('+') : '';
 				const h = (this.patchHooks ? Object.keys(this.patchHooks).sort().join('+') + (this.patchHooks.tag || '') : '') + (this.patchNodes ? '|' + Object.keys(this.patchNodes).sort().join('+') : '');
-				const tx = this.patchVariant === 'ground' || this.patchVariant === 'platform' || this.patchVariant === 'road' ? '|tx' + texGen : '';
-				return super.customProgramCacheKey() + '|' + this.patchVariant + '|' + [o.grime, o.panels ? 1 : 0, o.rm ? 1 : 0, o.noSnow ? 1 : 0].join(',') + '|' + d + '|' + h + tx;
+				const tx = ['ground', 'platform', 'road', 'roof'].includes(this.patchVariant) || o.wall ? '|tx' + texGen : '';
+				return super.customProgramCacheKey() + '|' + this.patchVariant + '|' + [o.grime, o.panels ? 1 : 0, o.rm ? 1 : 0, o.noSnow ? 1 : 0, o.wall ? 1 : 0].join(',') + '|' + d + '|' + h + tx;
 			}
 			copy(source) {
 				super.copy(source);
@@ -876,7 +929,7 @@ import {
 		const S = (m.patchVars = {
 			gH: property('float', 'tGH'), puddle: property('float', 'tPuddle'), gSand: property('float', 'tSand'), gRough: property('float', 'tGRough'),
 			rough: property('float', 'tRough'), metal: property('float', 'tMetal'), normal: property('vec3', 'tNormal'), night: property('vec3', 'tNight'),
-			wearG: property('float', 'tWearG'), wearAO: property('float', 'tWearAO'), nPert: property('vec3', 'tNPert'),
+			wearG: property('float', 'tWearG'), wearAO: property('float', 'tWearAO'), nPert: property('vec3', 'tNPert'), gMetal: property('float', 'tGMetal'),
 		});
 		nodeProps(m, { normalNode: S.normal, emissiveNode: materialEmissive.add(S.night) });
 		if (m.isMeshStandardMaterial) nodeProps(m, { roughnessNode: S.rough, metalnessNode: S.metal });
