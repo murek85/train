@@ -4,6 +4,19 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.74',
+			date: '25 października 2026',
+			groups: [
+				['Trasy', [
+					'Kłodzko – Międzylesie: ulica w km 29,1 przechodzi pod wiaduktem zamiast przez tory na wysokim nasypie.',
+					'Jelenia Góra – Szklarska Poręba Górna: wiadukty w km 28,85 i 29,4 nad jezdniami (dawniej przęsło stało kilka metrów obok ulicy).',
+				]],
+				['Generator tras', [
+					'Wiadukt nad drogą stawiany nad jezdnią, którą rysuje gra (BDOT10k), a nie nad drogą z OSM, która bywa przesunięta o kilkanaście metrów.',
+				]],
+			],
+		},
+		{
 			version: '0.58.73',
 			date: '25 października 2026',
 			groups: [

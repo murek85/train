@@ -4,6 +4,23 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.74 – 25 października 2026
+
+Przęsła wiaduktów nad jezdniami otoczenia; Kłodzko – Międzylesie i Jelenia Góra – Szklarska Poręba wygenerowane ponownie.
+
+### Generator tras
+- Wiadukt dodany dla drogi bez przejazdu: przęsło nad przecięciem osi z jezdnią otoczenia (BDOT10k – rysowaną przez grę),
+  do 25 m od przecięcia z drogą OSM i nie przy przejeździe; jezdnia ucięta przy torze – ostatni odcinek przedłużony do
+  osi. Przęsło z pomiaru NMT (obniżenie terenu) rozszerzone tak, by obejmowało tę jezdnię (±6 m). Dawniej przęsło stało
+  nad drogą z OSM, a jezdnia biegła 8–18 m obok, pod nasypem (Szklarska Poręba km 28,85 i 29,41, Kłodzko km 29,12).
+
+### Trasy
+- Kłodzko – Międzylesie wygenerowana ponownie (opis, trudność i poprawki jak dotąd): wiadukt km 29,11–29,13 nad ulicą
+  (pomiar NMT pod jezdnią BDOT: 6 m niżej), bez przejazdu w poziomie; most nad ciekiem km 31,50–31,52 w `fixes` (w OSM
+  most 11 m, generator traktował ciek jako przepust; dotąd 46 m). Kilometraż −2 m.
+- Jelenia Góra – Szklarska Poręba Górna wygenerowana ponownie: wiadukt km 28,84–28,85 bez ręcznej poprawki (`fixes`
+  usunięte), przęsło km 29,38–29,42 nad jezdnią; wygładzenie niwelety, opis i numer linii jak dotąd.
+
 ## 0.58.73 – 25 października 2026
 
 Ulice pod wiaduktami i przejścia pod wysokim nasypem w generatorze.

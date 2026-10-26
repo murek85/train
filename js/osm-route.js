@@ -4057,10 +4057,41 @@
 			for (let q = bridges.length - 1; q >= 0; q--) {
 				const o = bridges[q];
 				if (!o.auto || o.nmt) continue;
+				const own = issues.filter((x) => (x.k === 'bridge-add' || x.k === 'cross') && x.pos >= o.from - 10 && x.pos <= o.to + 10);
+				/* droga pod torem: przęsło nad przecięciem osi z jezdnią otoczenia (BDOT – ta, którą rysuje gra), do 25 m od
+				   przecięcia z drogą OSM i nie przy przejeździe; dawniej przęsło stało nad drogą z OSM, a jezdnia w grze biegła
+				   ok. 10 m obok – pod nasypem (Szklarska Poręba km 28,85) */
+				let bx = null;
+				if (o.over === 'road' && env.r) {
+					const c0 = (o.from + o.to) / 2;
+					let bd = 25;
+					const take = (sx) => { if (Math.abs(sx - c0) < bd && !crossings.some((c) => Math.abs(c - sx) < 15)) { bd = Math.abs(sx - c0); bx = sx; } };
+					for (const row of env.r) {
+						if (row[0] > 8) continue;
+						const n = (row.length - 1) / 2;
+						for (let k = 1; k + 3 < row.length; k += 2) {
+							const sa = row[k], da = row[k + 1], sb = row[k + 2], db = row[k + 3];
+							if (da * db > 0 || da === db) continue;
+							take(sa + ((sb - sa) * -da) / (db - da));
+						}
+						// jezdnia ucięta przy torze (BDOT – przerwa pod nasypem): koniec do 16 m od osi, ostatni odcinek przedłużony do osi
+						if (n < 2) continue;
+						for (const [e, f] of [[0, 1], [n - 1, n - 2]]) {
+							const se = row[1 + e * 2], de = row[2 + e * 2], sf = row[1 + f * 2], df = row[2 + f * 2];
+							if (Math.abs(de) > 16 || Math.abs(df) <= Math.abs(de) || Math.abs(df - de) < 0.3) continue;
+							take(se - (de * (sf - se)) / (df - de));
+						}
+					}
+					if (bx !== null && bd > 2) {
+						const h = (o.to - o.from) / 2;
+						o.from = Math.round(bx - h);
+						o.to = Math.round(bx + h);
+						for (const x of own) x.m += ` Przęsło nad jezdnią z otoczenia (km ${fmtKm(bx)}, ${Math.round(bd)} m od drogi z OSM).`;
+					}
+				}
 				const a0 = o.from - shift, b0 = o.to - shift;
 				let best = 0, bestS = null;
 				for (let s2 = Math.floor((a0 - 25) / DS) * DS; s2 <= b0 + 25; s2 += DS) { const dpt = depthAt(s2); if (dpt > best) { best = dpt; bestS = s2; } }
-				const own = issues.filter((x) => (x.k === 'bridge-add' || x.k === 'cross') && x.pos >= o.from - 10 && x.pos <= o.to + 10);
 				if (best >= 2.5) {
 					// zasięg obniżenia (wiersze siatki co 10 m z głębokością od 2 m) wokół najgłębszego miejsca
 					let lo = bestS, hi = bestS;
@@ -4068,6 +4099,8 @@
 					while (hi + DS <= b0 + 40 && depthAt(hi + DS) >= 2) hi += DS;
 					o.from = S(lo - 7);
 					o.to = S(hi + 7);
+					// (jezdnia z otoczenia – pod przęsłem, także gdy obniżenie terenu jest obok niej)
+					if (bx !== null) { o.from = Math.min(o.from, Math.round(bx - 6)); o.to = Math.max(o.to, Math.round(bx + 6)); }
 					o.nmt = 1;
 					for (const x of own) {
 						x.lvl = 'info';
