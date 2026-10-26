@@ -1420,6 +1420,8 @@ import * as THREE from 'three';
 			sh.onBeforeRender = (r, sc, c, g) => { g.drawRange.count = c.isOrthographicCamera ? Infinity : 0; };
 			sh.onBeforeShadow = (r, o, c, shc, g) => { g.drawRange.count = Infinity; };
 			sh.userData.shadowProxy = true;
+			// tylko warstwa cieni (jak bryły świata – world.js shadowMerge): bez potoków w obrazie i odbiciu wody
+			if (NS.World && NS.World.SHADOW_LAYER !== undefined) sh.layers.set(NS.World.SHADOW_LAYER);
 			root.add(sh);
 			return sh;
 		}

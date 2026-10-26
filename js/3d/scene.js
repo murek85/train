@@ -796,7 +796,8 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			const pr = Math.min(window.devicePixelRatio || 1, this.quality.pr) * this.renderOpts.scale;
 			this.gl.setPixelRatio(pr);
 			this.gl.setSize(w, h, true);
-			this.post.setSize(w * pr, h * pr, this.renderOpts.aa ? this.quality.msaa : 0);
+			// (TAA – tylko WebGPU z efektami; w WebGL i bez efektów jak FXAA / MSAA)
+			this.post.setSize(w * pr, h * pr, this.renderOpts.aa ? this.quality.msaa : 0, !!(NS.gpu && this.renderOpts.aa && this.renderOpts.taa));
 			if (this.skyGpu) this.skyGpu.setSize(w * pr, h * pr);
 			this.camera.aspect = w / h;
 			this.camera.updateProjectionMatrix();

@@ -142,6 +142,14 @@ Liczby z wyliczenia na ok. 30 materiałów × 3 mapy; do potwierdzenia po konwer
   wzdłuż okapu), cokoły i gzymsy bez UV – rzut na płaszczyznę. Metaliczność z tekstur (gMetal). Tablice tekstur
   w orientacji GL (wcześniej odwrócone w pionie). Narzędzie: kafle 2:1 powtarzane do kwadratu, --rotate 90.
   Sprawdzone: Mosina – dworzec z cegły z oknami, dachówka; bez błędów, FPS bez zmian.
+- **Krok 5 – TAA (WebGPU)**: ustawienie „Wygładzanie krawędzi: wyłączone / FXAA / TAA” (dawny zapis: włączone → FXAA).
+  Drganie kamery co klatkę (Halton 2, 3) na czas rysowania sceny; rozwiązanie na obrazie po wykończeniu: reprojekcja
+  z głębi i macierzy kamery poprzedniej klatki (piksel najbliższy w 3 × 3, niebo – kierunek), historia przycięta do
+  zakresu sąsiadów, waga bieżącej rośnie z przesunięciem; po TAA wyostrzanie. Bez bufora ruchu: węzeł velocity z three
+  (MRT) nie współpracuje z paczkami rysowania (brak danych poprzedniej klatki instancji – wyjątek, zawieszony start)
+  ani z odroczoną budową shaderów (shadery bez drugiego wyjścia). Bryły cieni składu – w warstwie cieni.
+  Sprawdzone: Mosina, start bez błędów, porównanie z FXAA (gładsze podkłady i sieć w oddali), obrót kamery bez smug.
+  Do sprawdzenia: jazda – pociąg nieruchomy względem kamery przy przesuwającym się świecie.
 - Wersja na tej gałęzi bez podnoszenia – jeden wpis zbiorczy przy scalaniu do `webgpu`.
 
 ## Kolejność prac

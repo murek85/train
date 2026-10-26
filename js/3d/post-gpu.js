@@ -16,6 +16,7 @@ import { RenderTarget, QuadMesh, NodeMaterial } from 'three/webgpu';
 import {
 	Fn, float, vec2, vec3, vec4, uniform, texture, uv, select, mix, smoothstep, step, max, min, clamp, pow, exp, abs, dot,
 	cross, normalize, length, fract, sin, cos, sqrt, dFdx, dFdy, screenCoordinate, getViewPosition, getScreenPosition,
+	If, sign,
 } from 'three/tsl';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 
@@ -26,17 +27,28 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 	function createPostGPU(renderer) {
 		const LEVELS = 5;
 		let width = 1, height = 1, aa = 0, built = false;
+		/* TAA (wygładzanie czasowe): taa – włączone; scena rysowana z kamerą przesuniętą co klatkę o ułamek piksela
+		   (ciąg Haltona 2, 3); przebieg rozwiązania łączy bieżącą klatkę z historią w miejscu, gdzie ten punkt świata był
+		   w poprzedniej klatce (reprojekcja z głębi i macierzy kamery – bez bufora ruchu: węzeł velocity z three nie
+		   współpracuje z paczkami rysowania), historia przycięta do zakresu kolorów sąsiadów (bez smug, także na
+		   obiektach ruchomych względem świata – pociąg, auta) */
+		let taa = false, taaJ = 0, taaFresh = true;
+		const HALTON = Array.from({ length: 16 }, (_, i) => {
+			const h = (b, n) => { let f = 1, r = 0; for (let k = n + 1; k > 0; k = Math.floor(k / b)) { f /= b; r += f * (k % b); } return r; };
+			return [h(2, i), h(3, i)];
+		});
+		const prevVP = new THREE.Matrix4();
 		const half = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false };
-		let sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget;
+		let sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget, taaTarget, histTarget;
 		const mips = [];
 		// węzły tekstur (wartości podmieniane po zmianie rozmiaru buforów)
 		const blank = new THREE.DataTexture(new Uint8Array(4), 1, 1);
 		blank.needsUpdate = true;
-		const T = { color: texture(blank), depth: texture(blank), ao: texture(blank), aoBlur: texture(blank), raysA: texture(blank), raysB: texture(blank), bloom: texture(blank), finish: texture(blank), aa: texture(blank) };
+		const T = { color: texture(blank), depth: texture(blank), ao: texture(blank), aoBlur: texture(blank), raysA: texture(blank), raysB: texture(blank), bloom: texture(blank), finish: texture(blank), aa: texture(blank), taa: texture(blank), hist: texture(blank) };
 		const mipTex = Array.from({ length: LEVELS }, () => texture(blank));
 
 		function build() {
-			for (const t of [sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget, ...mips]) t?.dispose();
+			for (const t of [sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget, taaTarget, histTarget, ...mips]) t?.dispose();
 			sceneTarget?.depthTexture?.dispose();
 			sceneTarget = new RenderTarget(width, height, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
 			sceneTarget.depthTexture = new THREE.DepthTexture(width, height);
@@ -50,6 +62,9 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			raysB = new RenderTarget(hw, hh, half);
 			finishTarget = new RenderTarget(width, height, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
 			aaTarget = new RenderTarget(width, height, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+			taaTarget = taa ? new RenderTarget(width, height, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false }) : null;
+			histTarget = taa ? new RenderTarget(width, height, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false }) : null;
+			taaFresh = true;
 			T.color.value = sceneTarget.texture;
 			T.depth.value = sceneTarget.depthTexture;
 			T.ao.value = aoTarget.texture;
@@ -59,6 +74,8 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			T.bloom.value = mips[0].texture;
 			T.finish.value = finishTarget.texture;
 			T.aa.value = aaTarget.texture;
+			T.taa.value = taa ? taaTarget.texture : blank;
+			T.hist.value = taa ? histTarget.texture : blank;
 			mips.forEach((m, i) => { mipTex[i].value = m.texture; });
 			built = true;
 		}
@@ -249,7 +266,43 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			const wt = amp.mul(mix(-0.1, -0.2, U.sharp)).mul(min(U.sharp.mul(3), 1));
 			return vec4(clamp(c.add(n.add(s).add(e).add(w).mul(wt)).div(wt.mul(4).add(1)), 0, 1), 1);
 		})());
-		const sharpAaMat = sharpen(T.aa), sharpFinishMat = sharpen(T.finish);
+		const sharpAaMat = sharpen(T.aa), sharpFinishMat = sharpen(T.finish), sharpTaaMat = sharpen(T.taa);
+		/* rozwiązanie TAA (na obrazie po wykończeniu – po tonemappingu; jasne punkty nie dają migotania): punkt świata
+		   z głębi piksela najbliższego kamerze w otoczeniu 3 × 3 (ostre krawędzie), rzut macierzą poprzedniej klatki
+		   (prevVP) – położenie w historii; niebo (głębia 1) – sam kierunek. Historia przycięta do zakresu sąsiadów, waga
+		   bieżącej klatki rośnie z przesunięciem; historia poza kadrem lub pierwsza klatka – sama bieżąca */
+		U.taaTexel = uniform(new THREE.Vector2());
+		U.taaValid = uniform(0);
+		U.prevVP = uniform(new THREE.Matrix4());
+		const taaMat = material(Fn(() => {
+			const st = uv().toVar(), tx = U.taaTexel;
+			const bd = float(1).toVar(), best = vec2(0).toVar();
+			for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) {
+				const o = vec2(x, y).mul(tx);
+				const d = T.depth.sample(st.add(o)).x.toVar();
+				If(d.lessThan(bd), () => { bd.assign(d); best.assign(o); });
+			}
+			const sb = st.add(best);
+			const vp = getViewPosition(sb, bd, U.projInv);
+			const sky = bd.greaterThanEqual(0.99999);
+			const wp = U.camWorld.mul(vec4(vp, select(sky, float(0), float(1))));
+			const pc = U.prevVP.mul(wp).toVar();
+			const pn = pc.xy.div(max(abs(pc.w), 1e-6)).mul(sign(pc.w));
+			// (przesunięcie piksela najbliższego – do bieżącego piksela)
+			const hUV = vec2(pn.x.mul(0.5).add(0.5), float(0.5).sub(pn.y.mul(0.5))).sub(best).toVar();
+			const cur = T.finish.sample(st).rgb.toVar();
+			const mn = vec3(cur).toVar(), mx = vec3(cur).toVar();
+			for (const [x, y] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+				const c = T.finish.sample(st.add(vec2(x, y).mul(tx))).rgb;
+				mn.assign(min(mn, c));
+				mx.assign(max(mx, c));
+			}
+			const hist = clamp(T.hist.sample(hUV).rgb, mn, mx);
+			const inside = step(0, hUV.x).mul(step(0, hUV.y)).mul(step(hUV.x, 1)).mul(step(hUV.y, 1)).mul(step(0, pc.w)).mul(U.taaValid);
+			const motion = clamp(length(st.sub(hUV).div(tx)).div(10), 0, 1);
+			const w = mix(1, clamp(motion.mul(0.5).add(0.1), 0, 1), inside);
+			return vec4(mix(hist, cur, w), 1);
+		})());
 
 		const v3 = new THREE.Vector3(), fw = new THREE.Vector3();
 		return {
@@ -260,11 +313,14 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 				if (!built) build();
 				return sceneTarget;
 			},
-			setSize(w, h, msaa = aa) {
+			// useTaa – wygładzanie czasowe zamiast FXAA (nowe bufory: drugi cel sceny, historia)
+			setSize(w, h, msaa = aa, useTaa = taa) {
 				w = Math.max(1, Math.round(w));
 				h = Math.max(1, Math.round(h));
 				aa = msaa;
-				if (w === width && h === height && built) return;
+				const tChanged = !!useTaa !== taa;
+				taa = !!useTaa;
+				if (w === width && h === height && built && !tChanged) return;
 				width = w;
 				height = h;
 				build();
@@ -276,7 +332,16 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 				U.camWorld.value.copy(camera.matrixWorld);
 				U.camPos.value.copy(camera.position);
 				renderer.setRenderTarget(sceneTarget);
-				renderer.render(scene, camera);
+				if (taa) {
+					// przesunięcie o ułamek piksela (macierze dla efektów i reprojekcji – bez przesunięcia, sprzed rysowania)
+					const j = HALTON[taaJ++ % HALTON.length];
+					camera.setViewOffset(width, height, j[0] - 0.5, j[1] - 0.5, width, height);
+					try {
+						renderer.render(scene, camera);
+					} finally {
+						camera.clearViewOffset();
+					}
+				} else renderer.render(scene, camera);
 				if (s.ao) {
 					U.aoRadius.value = s.aoRadius ?? 26;
 					U.aoStrength.value = s.aoStrength ?? 1.6;
@@ -340,7 +405,18 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 				const sh = (s.sharpen ?? 0) > 0.01;
 				U.sharp.value = s.sharpen ?? 0;
 				U.sharpTexel.value.set(1 / width, 1 / height);
-				if (aa > 0) {
+				if (taa) {
+					pass(finishMat, finishTarget);
+					U.taaTexel.value.set(1 / width, 1 / height);
+					U.taaValid.value = taaFresh ? 0 : 1;
+					taaFresh = false;
+					U.prevVP.value.copy(prevVP);
+					pass(taaMat, taaTarget);
+					// macierz tej klatki – dla następnej (rzut bez przesunięcia: projectionMatrix po clearViewOffset)
+					prevVP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+					renderer.copyTextureToTexture(taaTarget.texture, histTarget.texture);
+					pass(sharpTaaMat, null); // (wyostrzanie 0 – bez zmian obrazu)
+				} else if (aa > 0) {
 					pass(finishMat, finishTarget);
 					if (sh) {
 						pass(fxaaMat, aaTarget);
@@ -353,8 +429,8 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			},
 			dispose() {
 				sceneTarget?.depthTexture?.dispose();
-				for (const t of [sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget, ...mips]) t?.dispose();
-				for (const m of [aoMat, aoBlurMat, brightMat, raysMaskMat, raysBlurMat, finishMat, fxaaMat, sharpAaMat, sharpFinishMat, ...downMats, ...upMats]) m.dispose();
+				for (const t of [sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget, taaTarget, histTarget, ...mips]) t?.dispose();
+				for (const m of [aoMat, aoBlurMat, brightMat, raysMaskMat, raysBlurMat, finishMat, fxaaMat, sharpAaMat, sharpFinishMat, sharpTaaMat, taaMat, ...downMats, ...upMats]) m.dispose();
 			},
 		};
 	}

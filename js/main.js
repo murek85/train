@@ -1547,7 +1547,9 @@
 		}
 		audio.setMix(mix);
 		save('opt.mix', mix);
-		const opts = { scale: Number($('set-scale').value), aa: $('set-aa').checked, shadows: $('set-shadows').checked, sharpen: Number($('set-sharpen').value) / 100 };
+		// wygładzanie: wyłączone / FXAA (w WebGL – MSAA) / TAA (czasowe, WebGPU z efektami)
+		const aaMode = $('set-aa').value;
+		const opts = { scale: Number($('set-scale').value), aa: aaMode !== 'off', taa: aaMode === 'taa', shadows: $('set-shadows').checked, sharpen: Number($('set-sharpen').value) / 100 };
 		$('set-sharpen-val').textContent = $('set-sharpen').value + '%';
 		renderer.setRenderOptions(opts);
 		$('fps').classList.toggle('hidden', !$('set-fps').checked);
@@ -2634,7 +2636,7 @@
 	const MIX_DEF = { voice: 0.6 }; // domyślnie 100 %, głos zapowiedzi – 60 %
 	for (const k of MIX_KEYS) $('set-mix-' + k).value = Math.round((mix0[k] === undefined ? (MIX_DEF[k] === undefined ? 1 : MIX_DEF[k]) : mix0[k]) * 100);
 	$('set-scale').value = String(ro.scale);
-	$('set-aa').checked = ro.aa;
+	$('set-aa').value = ro.aa === false ? 'off' : ro.taa ? 'taa' : 'fxaa'; // (dawny zapis: aa true / false)
 	$('set-shadows').checked = ro.shadows;
 	$('set-sharpen').value = Math.round((ro.sharpen ?? 0.35) * 100);
 	$('set-fps').checked = load('opt.fps', false);
@@ -2703,7 +2705,7 @@
 	const onOff = (el) => (el.checked ? 'włączone' : 'wyłączone');
 	const GFX_OPTS = {
 		'set-scale': (el) => 'Rozdzielczość renderowania: ' + el.selectedOptions[0].text,
-		'set-aa': (el) => 'Wygładzanie krawędzi: ' + onOff(el),
+		'set-aa': (el) => 'Wygładzanie krawędzi: ' + el.selectedOptions[0].text,
 		'set-shadows': (el) => 'Cienie: ' + onOff(el),
 		'set-traffic-max': (el) => 'Pociągi tła: najwyżej ' + el.value,
 		'set-traffic-people': (el) => 'Ludzie w pociągach tła: ' + (el.checked ? 'tak' : 'nie'),
