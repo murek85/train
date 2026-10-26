@@ -162,6 +162,8 @@ import * as THREE from 'three';
 	const AREA_RGB = [[0.38, 0.47, 0.25], [0.2, 0.3, 0.14], [0.3, 0.5, 0.22], [0.37, 0.53, 0.24], [0.47, 0.5, 0.29], [0.41, 0.48, 0.31], [0.53, 0.51, 0.46], [0.56, 0.55, 0.52], [0.3, 0.42, 0.22], [0.42, 0.4, 0.32], [0.26, 0.55, 0.26], [0.22, 0.31, 0.15], [0.18, 0.28, 0.14]];
 	const AREA_SAND = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0.35, 0]; // piasek tylko na brzegach wód (na placach shader piasku robił „wydmy”)
 	const TREE_P = [0.06, 1, 0.45, 0.12, 0.03, 0.14, 0.03, 0.02, 0.4, 0, 0.02, 1, 1]; // 11, 12 – las liściasty / iglasty
+	// udział ściółki leśnej w gruncie (tekstura dna lasu; park – częściowo)
+	const AREA_FOREST = [0, 1, 0.35, 0, 0, 0, 0, 0, 0.2, 0, 0, 1, 1];
 
 	// materiały otoczenia (wspólne)
 	function envMaterials() {
@@ -3071,10 +3073,10 @@ import * as THREE from 'three';
 		return [c[0] + 0.08 * (n - 0.5), c[1] + 0.07 * (n - 0.5), c[2] + 0.04 * (n - 0.5)];
 	};
 	World.prototype.envTerrainMat = function (s, d) {
-		if (this.envInTrench(s, d, 1)) return [0, 0, 1];
+		if (this.envInTrench(s, d, 1)) return [0, 0, 1, 0, 0, 1];
 		const k = this.areaAt(s, d);
 		const sd = AREA_SAND[k] || 0;
-		return [1 - sd, sd, 0];
+		return [1 - sd, sd, 0, AREA_FOREST[k] || 0, k === 4 ? 1 : 0, k === 6 ? 1 : 0];
 	};
 	World.prototype.envTreeP = function (s, d) {
 		return TREE_P[this.areaAt(s, d)] || 0;

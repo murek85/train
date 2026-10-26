@@ -124,7 +124,13 @@ Liczby z wyliczenia na ok. 30 materiałów × 3 mapy; do potwierdzenia po konwer
   (`nodes.js` pbrSet, bindTextures) z teksturą zastępczą; po wczytaniu / zmianie jakości przebudowa tylko materiałów
   terenu i peronów (numer generacji tekstur w kluczu shadera – sama podmiana tekstury nie docierała do paczek).
   Sprawdzone: Mosina, start bez tekstur i włączenie w trakcie jazdy, wyłączenie z powrotem; bez spadku FPS (62).
-  Zostało: drogi (asfalt, kostka, płyty), więcej zestawów gruntu (ziemia orna, ściółka, piasek), WebGL.
+  Druga część: 9 zestawów (ambientCG CC0): asfalt i spękany asfalt, kostka granitowa, polbruk (behaton), płyty
+  z fugami, ziemia orna, ściółka, piasek, droga gruntowa – razem 12 zestawów, 56 MB WebP. Teren: atrybut aLand
+  (udział lasu, pola, terenu kolejowego – envTerrainMat / terrainMat), pięć warstw gruntu. Drogi: nawierzchnia z koloru
+  wierzchołków (asfalt / kostka kamienna / polbruk i płyty / gruntowa), asfalt przeplatany plamami spękanego.
+  Tekstury w tablicach rodzin (grunty, drogi, płyty – po 3 tekstury i 3 samplery w shaderze): samplerów WebGPU jest
+  sprzętowo 16 na etap, osobne tekstury pięciu zestawów przekraczały limit razem z mapami cieni, nocy i chmur.
+  Zostało: perony – wybór płyt (gładkie Concrete008 albo z fugami), WebGL, tablice z plików KTX2.
 - Wersja na tej gałęzi bez podnoszenia – jeden wpis zbiorczy przy scalaniu do `webgpu`.
 
 ## Kolejność prac

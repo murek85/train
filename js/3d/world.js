@@ -673,11 +673,12 @@ import { BundleGroup } from 'three/webgpu';
 			return k;
 		}
 
-		// materiał terenu dla shadera: [trawa, piasek, ziemia uprawna]
+		/* materiał terenu dla shadera: [trawa, piasek, ziemia uprawna] i udział [lasu, pola, terenu kolejowego] (aLand –
+		   wybór tekstury gruntu: ściółka, ziemia orna, żwir) */
 		terrainMat(s, d) {
 			if (this.env) return this.eff(d) < 6 ? [1, 0, 0] : this.envTerrainMat(s, d);
 			const f = this.field(s, d);
-			if (f && !f.border) return [0, 0, 1];
+			if (f && !f.border) return [0, 0, 1, 0, 1, 0];
 			const k = this.sandK(s, d);
 			return [1 - k, k, 0];
 		}
@@ -737,6 +738,8 @@ import { BundleGroup } from 'three/webgpu';
 			const col = colorFn ? new Float32Array(rows * cols.length * 3) : null;
 			const rowA = rowFn ? new Float32Array(rows * cols.length * 2) : null;
 			const matA = matFn ? new Float32Array(rows * cols.length * 3) : null;
+			// aLand – udział lasu, pola uprawnego i terenu kolejowego / przemysłowego (tekstury gruntu, nodes.js groundPattern)
+			const landA = matFn ? new Float32Array(rows * cols.length * 3) : null;
 			let k = 0;
 			for (let i = 0; i < rows; i++) {
 				const s = sList ? sList[i] : Math.min(s1, s0 + i * ds);
@@ -756,6 +759,7 @@ import { BundleGroup } from 'three/webgpu';
 					if (matA) {
 						const m = matFn(s, d);
 						matA[k] = m[0]; matA[k + 1] = m[1]; matA[k + 2] = m[2];
+						landA[k] = m[3] || 0; landA[k + 1] = m[4] || 0; landA[k + 2] = m[5] || 0;
 					}
 					if (rowA) {
 						const w = rowFn(s, d);
@@ -779,6 +783,7 @@ import { BundleGroup } from 'three/webgpu';
 			if (col) geo.setAttribute('color', new T.BufferAttribute(col, 3));
 			if (rowA) geo.setAttribute('aRow', new T.BufferAttribute(rowA, 2));
 			if (matA) geo.setAttribute('aMat', new T.BufferAttribute(matA, 3));
+			if (landA) geo.setAttribute('aLand', new T.BufferAttribute(landA, 3));
 			geo.setIndex(idx);
 			geo.computeVertexNormals();
 			return geo;

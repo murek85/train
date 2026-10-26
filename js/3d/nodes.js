@@ -187,37 +187,52 @@ import {
 	   on – 1, gdy zestaw wczytany (inaczej wzór proceduralny), scale – metry na kafel, mean – średni kolor liniowy.
 	   Próbki zawsze poza rozgałęzieniami zależnymi od piksela (WGSL: próbkowanie z pochodnymi tylko w jednolitym
 	   przepływie sterowania). */
-	const blankTex = (srgb) => {
-		const t = new THREE.DataTexture(new Uint8Array(srgb ? [128, 128, 128, 255] : [128, 128, 255, 255]), 1, 1);
-		t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-		t.wrapS = t.wrapT = THREE.RepeatWrapping;
-		t.needsUpdate = true;
-		return t;
+	const blankArr = (srgb, px) => {
+		const tx = new THREE.DataArrayTexture(new Uint8Array(px), 1, 1, 1);
+		tx.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+		tx.wrapS = tx.wrapT = THREE.RepeatWrapping;
+		tx.needsUpdate = true;
+		return tx;
 	};
-	const BLANK_C = blankTex(true), BLANK_L = blankTex(false);
-	const PBR = new Map();
-	function pbrSet(name) {
-		let s = PBR.get(name);
-		if (s) return s;
-		s = {
-			on: uniform(0).setGroup(renderGroup), scale: uniform(1).setGroup(renderGroup), mean: uniform(new THREE.Vector3(0.2, 0.2, 0.2)).setGroup(renderGroup),
-			// (jawne współrzędne – próbki i tak przez sample(uv); domyślne uv() szukało atrybutu, którego teren nie ma)
-			color: texture(BLANK_C, vec2(0)), normal: texture(BLANK_L, vec2(0)), orm: texture(BLANK_L, vec2(0)),
-		};
-		PBR.set(name, s);
-		bindSet(name, s); // shader budowany po wczytaniu tekstur – od razu z nimi
-		return s;
+	const BLANK_C = blankArr(true, [128, 128, 128, 255]), BLANK_N = blankArr(false, [128, 128, 255, 255]), BLANK_O = blankArr(false, [255, 204, 0, 255]);
+	/* rodziny zestawów: jedna tablica tekstur (warstwa na zestaw) na rodzaj mapy – 3 tekstury i 3 samplery w shaderze
+	   niezależnie od liczby zestawów (limit WebGPU: 16 samplerów na etap shadera, sprzętowy – osobne tekstury terenu
+	   z pięcioma zestawami przekraczały go razem z mapami cieni, nocy i chmur) */
+	const FAMILIES = {
+		ground: ['ground/grass', 'ground/forest-floor', 'ground/soil', 'ground/gravel', 'ground/sand'],
+		road: ['road/asphalt', 'road/asphalt-cracked', 'paving/granite-setts', 'paving/behaton', 'ground/dirt'],
+		paving: ['paving/concrete-slabs', 'paving/pavers'],
+	};
+	const FAM = new Map();
+	function pbrFamily(fam) {
+		let F = FAM.get(fam);
+		if (F) return F;
+		F = { fam, names: FAMILIES[fam], color: texture(BLANK_C, vec2(0)), normal: texture(BLANK_N, vec2(0)), orm: texture(BLANK_O, vec2(0)), layers: {} };
+		F.names.forEach((name, i) => {
+			F.layers[name] = { F, i, on: uniform(0).setGroup(renderGroup), scale: uniform(1).setGroup(renderGroup), mean: uniform(new THREE.Vector3(0.2, 0.2, 0.2)).setGroup(renderGroup) };
+		});
+		FAM.set(fam, F);
+		bindFamily(F); // shader budowany po wczytaniu tekstur – od razu z nimi
+		return F;
 	}
-	function bindSet(name, s) {
-		const tx = NS.textures && NS.textures.get(name);
-		s.on.value = tx ? 1 : 0;
-		s.color.value = (tx && tx.maps.color) || BLANK_C;
-		s.normal.value = (tx && tx.maps.normal) || BLANK_L;
-		s.orm.value = (tx && tx.maps.orm) || BLANK_L;
-		if (tx) {
-			s.scale.value = tx.scale;
-			s.mean.value.fromArray(tx.mean);
+	function bindFamily(F) {
+		const A = NS.textures && NS.textures.array(F.fam, F.names);
+		F.color.value = (A && A.color) || BLANK_C;
+		F.normal.value = (A && A.normal) || BLANK_N;
+		F.orm.value = (A && A.orm) || BLANK_O;
+		for (const name of F.names) {
+			const l = F.layers[name], s = A && A.layers[name];
+			l.on.value = s ? 1 : 0;
+			if (s) {
+				l.scale.value = s.scale;
+				l.mean.value.fromArray(s.mean);
+			}
 		}
+	}
+	// warstwa zestawu (name – np. 'ground/grass') w tablicach swojej rodziny
+	function pbrSet(name) {
+		for (const fam in FAMILIES) if (FAMILIES[fam].includes(name)) return pbrFamily(fam).layers[name];
+		throw new Error('Tekstury: zestaw spoza rodzin – ' + name);
 	}
 	/* po wczytaniu tekstur (scene.js – texReady) albo zmianie ich jakości. texGen – w kluczu shadera materiałów
 	   z teksturami (customProgramCacheKey): WebGPURenderer przebudowuje obiekt rysowania po needsUpdate tylko przy
@@ -226,26 +241,46 @@ import {
 	let texGen = 0;
 	function bindTextures() {
 		texGen++;
-		for (const [name, s] of PBR) bindSet(name, s);
+		for (const F of FAM.values()) bindFamily(F);
 	}
 	/* próbka zestawu w rzucie z góry (xz świata; v = −z – normalne w konwencji OpenGL: styczna +x, dwustyczna −z):
 	   druga próbka w obróconym i przesuniętym układzie, mieszana plamami szumu – bez widocznego powtarzania kafla.
 	   Wynik: c – kolor liniowy, ratio – detal względem średniej (do zabarwienia kolorem z danych), n – zaburzenie
 	   normalnej w świecie (xz), orm – okluzja, chropowatość, metaliczność */
-	function pbrPlanar(s, wp) {
+	function pbrPlanar(s, wp, single = false) {
+		const F = s.F, li = int(s.i);
+		const smp = (node, uv) => node.sample(uv).depth(li);
 		const uv1 = vec2(wp.x, wp.y.negate()).div(s.scale).toVar();
-		const uv2 = rot(uv1, 0.8, -0.6, 0.6, 0.8).add(vec2(0.37, 0.71));
-		const k = smoothstep(0.3, 0.7, gNoise(wp.mul(0.09).add(5))).toVar();
-		const c = mix(s.color.sample(uv1).rgb, s.color.sample(uv2).rgb, k).toVar();
-		const nA = s.normal.sample(uv1).xy.mul(2).sub(1), nB0 = s.normal.sample(uv2).xy.mul(2).sub(1);
-		// (druga próbka w układzie obróconym – jej normalna obrócona z powrotem)
-		const nB = vec2(nB0.x.mul(0.8).add(nB0.y.mul(0.6)), nB0.x.mul(-0.6).add(nB0.y.mul(0.8)));
-		const nT = mix(nA, nB, k).toVar();
-		const orm = mix(s.orm.sample(uv1).rgb, s.orm.sample(uv2).rgb, k).toVar();
+		let c, nT, orm;
+		if (single) {
+			c = smp(F.color, uv1).rgb.toVar();
+			nT = smp(F.normal, uv1).xy.mul(2).sub(1).toVar();
+			orm = smp(F.orm, uv1).rgb.toVar();
+		} else {
+			const uv2 = rot(uv1, 0.8, -0.6, 0.6, 0.8).add(vec2(0.37, 0.71));
+			const k = smoothstep(0.3, 0.7, gNoise(wp.mul(0.09).add(5))).toVar();
+			c = mix(smp(F.color, uv1).rgb, smp(F.color, uv2).rgb, k).toVar();
+			const nA = smp(F.normal, uv1).xy.mul(2).sub(1), nB0 = smp(F.normal, uv2).xy.mul(2).sub(1);
+			// (druga próbka w układzie obróconym – jej normalna obrócona z powrotem)
+			const nB = vec2(nB0.x.mul(0.8).add(nB0.y.mul(0.6)), nB0.x.mul(-0.6).add(nB0.y.mul(0.8)));
+			nT = mix(nA, nB, k).toVar();
+			orm = mix(smp(F.orm, uv1).rgb, smp(F.orm, uv2).rgb, k).toVar();
+		}
 		const lumC = dot(c, vec3(0.2126, 0.7152, 0.0722)), lumM = max(dot(s.mean, vec3(0.2126, 0.7152, 0.0722)), 0.01);
 		// detal: jasność względem średniej, z częścią barwy tekstury (źdźbła, kamyki różnych kolorów)
 		const ratio = clamp(mix(vec3(lumC.div(lumM)), c.div(max(s.mean, vec3(0.01))), 0.35), 0, 3);
-		return { c, ratio, n: vec3(nT.x, 0, nT.y.negate()), orm };
+		return { c, ratio, n: vec3(nT.x, 0, nT.y.negate()), orm, lumM };
+	}
+	const LUMA = vec3(0.2126, 0.7152, 0.0722);
+	/* mieszanie warstw z tekstur: L – [{ w, c, p }] (waga w pikselu, kolor, próbka pbrPlanar); wynik – kolor (z resztą
+	   wagi z wzoru proceduralnego proc), łączna waga tw, okluzja, chropowatość (względem materiału), zaburzenie normalnej */
+	function pbrMix(L, proc) {
+		const tw = L.reduce((a, l) => a.add(l.w), float(0)).toVar();
+		const col = L.reduce((a, l) => a.add(l.c.mul(l.w)), proc.mul(max(tw.oneMinus(), 0))).toVar();
+		const ao = L.reduce((a, l) => a.sub(l.p.orm.x.oneMinus().mul(l.w)), float(1)).toVar();
+		const rough = L.reduce((a, l) => a.add(l.p.orm.y.sub(materialRoughness).mul(l.w)), float(0)).toVar();
+		const n = L.reduce((a, l) => a.add(l.p.n.mul(l.w)), vec3(0)).toVar();
+		return { tw, col, ao, rough, n };
 	}
 
 	function groundPattern(S) {
@@ -275,21 +310,30 @@ import {
 		const rowsX = sin(wp.x.mul(2.3)).mul(0.5).add(0.5), rowsZ = sin(wp.y.mul(2.3)).mul(0.5).add(0.5);
 		const rows = mix(1, rowsX.mul(0.22).add(0.78), clamp(vRow.x, 0, 1)).mul(mix(1, rowsZ.mul(0.22).add(0.78), clamp(vRow.y, 0, 1))).toVar();
 		const soilC = base.mul(rows).mul(g2.mul(0.2).add(0.85).add(g4.mul(0.1).mul(near))).toVar();
-		/* tekstury z plików: trawa (waga trawy) i żwir (ziemia – tereny kolejowe, przemysł, pola) zabarwione kolorem
-		   terenu z danych i zmiennością makro (gM); z bliska w pełni, dalej (powtarzanie z wysoka) częściowo */
-		const tGr = pbrSet('ground/grass'), tGv = pbrSet('ground/gravel');
-		const pG = pbrPlanar(tGr, wp), pV = pbrPlanar(tGv, wp);
+		/* tekstury z plików – warstwy gruntu wg wag aMat (trawa, piasek, ziemia) i udziałów aLand (las, pole, teren
+		   kolejowy): trawa, ściółka leśna, ziemia orna, żwir, piasek. Kolor z danych (base) zabarwia teksturę (detal
+		   względem średniej zestawu) – łąka, pole i las zachowują odcień; ściółka częściowo we własnej barwie (brąz pod
+		   koronami). Z bliska w pełni, dalej (powtarzanie z wysoka) częściowo; brak zestawu – wzór proceduralny */
+		const land = clamp(attr('aLand', 'vec3'), 0, 1).toVar();
+		const tGr = pbrSet('ground/grass'), tFo = pbrSet('ground/forest-floor'), tSo = pbrSet('ground/soil'), tGv = pbrSet('ground/gravel'), tSa = pbrSet('ground/sand');
+		const pG = pbrPlanar(tGr, wp), pF = pbrPlanar(tFo, wp, true), pS = pbrPlanar(tSo, wp, true), pV = pbrPlanar(tGv, wp, true), pA = pbrPlanar(tSa, wp, true);
 		const tFar = mix(1, 0.45, smoothstep(90, 420, length(positionView))).toVar();
-		const twG = tGr.on.mul(tFar).toVar(), twV = tGv.on.mul(tFar).mul(0.85).toVar();
-		grassC.assign(mix(grassC, base.mul(pG.ratio).mul(gM.mul(0.28).add(0.86)).mul(g1.mul(0.2).add(0.9)), twG));
-		soilC.assign(mix(soilC, base.mul(pV.ratio).mul(mix(1, rows, 0.6)), twV));
-		diffuseColor.rgb.assign(grassC.mul(mw.x).add(sandC.mul(mw.y)).add(soilC.mul(mw.z)));
-		const tw = twG.mul(mw.x).add(twV.mul(mw.z)).toVar();
-		const tOrm = pG.orm.mul(mw.x).add(pV.orm.mul(mw.z)).add(vec3(1, 0.9, 0).mul(mw.y));
-		diffuseColor.rgb.mulAssign(mix(1, tOrm.x, tw.mul(0.6)));
-		S.gRough.assign(tOrm.y.sub(materialRoughness).mul(tw));
-		S.nPert.assign(pG.n.mul(twG.mul(mw.x)).add(pV.n.mul(twV.mul(mw.z))).mul(near.mul(0.7).add(0.3)));
-		S.gH.assign(blades.mul(mw.x).mul(0.8).mul(twG.oneMinus()).add(rip.mul(0.7).add(g4.mul(0.3)).mul(mw.y)).add(rows.mul(0.6).add(g3.mul(0.4)).mul(mw.z).mul(twV.oneMinus())).mul(near).mul(0.035));
+		const lumB = dot(base, LUMA).toVar();
+		const wF = mw.x.mul(land.x).mul(tFo.on).mul(tFar), wSf = mw.x.mul(land.y).mul(tSo.on).mul(tFar), wVr = mw.x.mul(land.z).mul(tGv.on).mul(tFar);
+		const wG = max(mw.x.mul(tFar).sub(wF).sub(wSf).sub(wVr), 0).mul(tGr.on);
+		const wS2 = mw.z.mul(land.y).mul(tSo.on).mul(tFar), wV2 = mw.z.mul(land.y.oneMinus()).mul(tGv.on).mul(tFar);
+		const cS = base.mul(pS.ratio).mul(mix(1, rows, 0.6)), cV = base.mul(pV.ratio);
+		const T = pbrMix([
+			{ w: wG, c: base.mul(pG.ratio).mul(gM.mul(0.28).add(0.86)).mul(g1.mul(0.2).add(0.9)), p: pG },
+			{ w: wF, c: mix(base.mul(pF.ratio), pF.c.mul(lumB.div(pF.lumM)), 0.6), p: pF },
+			{ w: wSf.add(wS2), c: cS, p: pS },
+			{ w: wVr.add(wV2), c: cV, p: pV },
+			{ w: mw.y.mul(tSa.on).mul(tFar), c: base.mul(pA.ratio), p: pA },
+		], grassC.mul(mw.x).add(sandC.mul(mw.y)).add(soilC.mul(mw.z)));
+		diffuseColor.rgb.assign(T.col.mul(mix(1, T.ao, 0.6)));
+		S.gRough.assign(T.rough);
+		S.nPert.assign(T.n.mul(near.mul(0.7).add(0.3)));
+		S.gH.assign(blades.mul(mw.x).mul(0.8).add(rip.mul(0.7).add(g4.mul(0.3)).mul(mw.y)).add(rows.mul(0.6).add(g3.mul(0.4)).mul(mw.z)).mul(near).mul(0.035).mul(T.tw.oneMinus()));
 		S.gSand.assign(mw.y);
 		S.puddle.assign(smoothstep(0.62, 0.78, gNoise(wp.mul(0.06)).mul(0.7).add(gNoise(wp.mul(0.25)).mul(0.3)).add(uWet.mul(0.12))).mul(smoothstep(0.25, 0.6, uWet)).mul(mw.y.mul(0.8).oneMinus()));
 	}
@@ -363,11 +407,31 @@ import {
 		const pvC = c0.mul(mix(1, tone.add(0.88).mul(mix(0.62, 1.0, jm)), AAK(22).mul(fl))).mul(m1.mul(0.22).add(0.88));
 		const wear = smoothstep(0.5, 0.8, gNoise(wp.mul(1.4)).mul(0.6).add(gNoise(wp.mul(7)).mul(0.4).mul(AAK(7))));
 		const mkC = mix(c0, vec3(0.05), wear.mul(0.45));
-		diffuseColor.rgb.assign(asC.mul(asph).add(pvC.mul(pave)).add(mkC.mul(mark)));
-		S.gH.assign(speck.mul(0.004).mul(asph).mul(aaF).sub(crack.mul(0.006)).add(jm.mul(pave).mul(AAK(22)).mul(fl).mul(0.008)));
+		/* tekstury z plików wg nawierzchni z koloru wierzchołków (real-env SURF_C, ROAD_C): asfalt – ciemny (z plamami
+		   spękanego), kostka kamienna – szarobrązowa ciemniejsza, kostka betonowa i płyty – jasnoszare, gruntowa –
+		   brązowa (czerwony wyraźnie ponad niebieskim). Zabarwione kolorem drogi; oznakowanie, koleiny i kałuże – jak
+		   dotąd. Tylko na poziomych (fl) – boki krawężników bez tekstur */
+		const tAs = pbrSet('road/asphalt'), tAc = pbrSet('road/asphalt-cracked'), tSe = pbrSet('paving/granite-setts'), tBe = pbrSet('paving/behaton'), tDi = pbrSet('ground/dirt');
+		const pAs = pbrPlanar(tAs, wp), pAc = pbrPlanar(tAc, wp, true), pSe = pbrPlanar(tSe, wp, true), pBe = pbrPlanar(tBe, wp, true), pDi = pbrPlanar(tDi, wp, true);
+		const rFar = mix(1, 0.5, smoothstep(80, 400, length(positionView))).mul(fl).toVar();
+		const dirtK = smoothstep(0.3, 0.45, c0.r.sub(c0.b).div(max(c0.r, 0.01))).mul(pave).toVar();
+		const settK = pave.mul(dirtK.oneMinus()).mul(nsm(0.15, 0.2, lum)).toVar();
+		const paverK = pave.mul(dirtK.oneMinus()).sub(settK).toVar();
+		const oldK = smoothstep(0.45, 0.7, gFbm(wp.mul(0.03).add(13))).mul(tAc.on).toVar();
+		const asT = c0.mul(1.5).mul(mix(pAs.ratio, pAc.ratio, oldK)).mul(rut.mul(0.28).oneMinus().sub(edgeD.mul(0.22))).mul(crack.mul(0.3).oneMinus());
+		const RT = pbrMix([
+			{ w: asph.mul(oldK.oneMinus()).mul(tAs.on).mul(rFar), c: asT, p: pAs },
+			{ w: asph.mul(oldK).mul(rFar), c: asT, p: pAc },
+			{ w: settK.mul(tSe.on).mul(rFar), c: c0.mul(pSe.ratio).mul(m1.mul(0.22).add(0.88)), p: pSe },
+			{ w: paverK.mul(tBe.on).mul(rFar), c: c0.mul(pBe.ratio).mul(m1.mul(0.22).add(0.88)), p: pBe },
+			{ w: dirtK.mul(tDi.on).mul(rFar), c: c0.mul(pDi.ratio).mul(m1.mul(0.22).add(0.88)), p: pDi },
+		], asC.mul(asph).add(pvC.mul(pave)));
+		diffuseColor.rgb.assign(RT.col.mul(mix(1, RT.ao, 0.6)).add(mkC.mul(mark)));
+		S.nPert.assign(RT.n.mul(0.8));
+		S.gH.assign(speck.mul(0.004).mul(asph).mul(aaF).sub(crack.mul(0.006)).add(jm.mul(pave).mul(AAK(22)).mul(fl).mul(0.008)).mul(RT.tw.oneMinus()));
 		S.puddle.assign(smoothstep(0.66, 0.8, gNoise(wp.mul(0.09)).mul(0.7).add(gNoise(wp.mul(0.4)).mul(0.3)).add(uWet.mul(0.1))).mul(smoothstep(0.3, 0.7, uWet)).mul(asph.add(pave.mul(0.5))).mul(fl));
 		S.puddle.assign(max(S.puddle, rut.mul(0.75).add(edgeD.mul(0.6)).mul(smoothstep(0.35, 0.8, uWet)).mul(asph).mul(fl).mul(gNoise(wp.mul(0.6)).mul(0.5).add(0.5))));
-		S.gRough.assign(mark.mul(-0.08).add(m2.sub(0.5).mul(0.05)).sub(rut.mul(0.12).mul(asph)));
+		S.gRough.assign(mark.mul(-0.08).add(m2.sub(0.5).mul(0.05)).sub(rut.mul(0.12).mul(asph)).add(RT.rough));
 	}
 
 	function concretePattern(S) {
@@ -717,7 +781,7 @@ import {
 				const amp = train ? (opt.panels ? 1.0 : 0) : BUMP_K[v] || 0;
 				S.normal.assign(amp ? bump(n, S.gH, amp) : n);
 				// normalne z tekstur (teren): zaburzenie w świecie (xz) przeniesione do układu widoku
-				if (ground) S.normal.assign(normalize(S.normal.add(cameraViewMatrix.mul(vec4(S.nPert, 0)).xyz)));
+				if (ground || v === 'road') S.normal.assign(normalize(S.normal.add(cameraViewMatrix.mul(vec4(S.nPert, 0)).xyz)));
 				const wN = normalize(vec4(S.normal, 0).mul(cameraViewMatrix).xyz).toVar();
 				if (v === 'wind') {
 					const rim = pow(abs(dot(S.normal, normalize(positionView))).oneMinus(), 2.0);
@@ -780,7 +844,7 @@ import {
 			customProgramCacheKey() {
 				const o = this.patchOpt || {}, d = this.defines ? Object.keys(this.defines).sort().join('+') : '';
 				const h = (this.patchHooks ? Object.keys(this.patchHooks).sort().join('+') + (this.patchHooks.tag || '') : '') + (this.patchNodes ? '|' + Object.keys(this.patchNodes).sort().join('+') : '');
-				const tx = this.patchVariant === 'ground' || this.patchVariant === 'platform' ? '|tx' + texGen : '';
+				const tx = this.patchVariant === 'ground' || this.patchVariant === 'platform' || this.patchVariant === 'road' ? '|tx' + texGen : '';
 				return super.customProgramCacheKey() + '|' + this.patchVariant + '|' + [o.grime, o.panels ? 1 : 0, o.rm ? 1 : 0, o.noSnow ? 1 : 0].join(',') + '|' + d + '|' + h + tx;
 			}
 			copy(source) {
@@ -1198,5 +1262,5 @@ import {
 		return m;
 	}
 
-	NS.nodes = { sync, bindTextures, _pbr: PBR, patch, extend, wetGlass, personHooks, driftHooks, railHooks, interior, waterMaterial, waterReflector, setupCascades, createEnvironment, horizonMaterial, cloudShadow, gHash, gNoise, gPerlin, gFbm, gStones, uniforms: { uTime, uWind, uWet, uSnow, uRain, uWear, uNightK, uNightBox } };
+	NS.nodes = { sync, bindTextures, _pbr: FAM, patch, extend, wetGlass, personHooks, driftHooks, railHooks, interior, waterMaterial, waterReflector, setupCascades, createEnvironment, horizonMaterial, cloudShadow, gHash, gNoise, gPerlin, gFbm, gStones, uniforms: { uTime, uWind, uWet, uSnow, uRain, uWear, uNightK, uNightBox } };
 })();

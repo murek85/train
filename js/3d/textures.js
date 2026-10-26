@@ -20,7 +20,7 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 	const ROOT = 'textures/';
 	const label = (n) => (n >= 1024 ? n / 1024 + 'k' : String(n));
 
-	const st = { key: null, size: 0, sets: new Map(), loading: null, ktx: null, ktxFor: null, manifest: undefined };
+	const st = { key: null, size: 0, sets: new Map(), arrays: new Map(), loading: null, ktx: null, ktxFor: null, manifest: undefined };
 
 	async function manifest() {
 		if (st.manifest !== undefined) return st.manifest;
@@ -88,6 +88,10 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 				st.sets = sets;
 				st.size = want;
 				disposeLater(old);
+				// tablice rodzin z poprzednich tekstur – zwolnione później (jak zestawy), nowe składane przy pierwszym użyciu
+				const arr = st.arrays;
+				st.arrays = new Map();
+				if (arr.size) setTimeout(() => { for (const A of arr.values()) for (const x of [A.color, A.normal, A.orm]) x.dispose(); }, 5000);
 				return out;
 			};
 			if (!want || !man || !man.sets) return done();
@@ -113,10 +117,52 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 		return run;
 	}
 
+	/* Tablice tekstur rodziny zestawów (nodes.js FAMILIES – grunty, nawierzchnie dróg, płyty): warstwa na zestaw, osobno
+	   kolor (sRGB), normalne i ORM, mipmapy na karcie. Składane z pikseli wczytanych obrazów (rozdzielczość najmniejszego
+	   zestawu rodziny); brakujący zestaw – warstwa zastępcza (layers bez niego – shader rysuje wzór proceduralny).
+	   null – brak tekstur albo pliki KTX2 (skompresowanych nie da się złożyć w przeglądarce – tablica KTX2 z narzędzia). */
+	function pixels(img, n) {
+		const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(n, n) : Object.assign(document.createElement('canvas'), { width: n, height: n });
+		const g = c.getContext('2d', { willReadFrequently: true });
+		g.drawImage(img, 0, 0, n, n);
+		return g.getImageData(0, 0, n, n).data;
+	}
+	function array(fam, names) {
+		if (st.arrays.has(fam)) return st.arrays.get(fam);
+		const have = names.map((nm) => st.sets.get(nm)).filter(Boolean);
+		if (!have.length || have.some((s) => !s.maps.color.image || !(s.maps.color.image.width > 0) || s.maps.color.isCompressedTexture)) return null;
+		const n = Math.min(...have.map((s) => s.size)), L = names.length;
+		const mk = (map, srgb, fill) => {
+			const data = new Uint8Array(n * n * 4 * L);
+			names.forEach((nm, i) => {
+				const s = st.sets.get(nm), off = n * n * 4 * i;
+				if (s && s.maps[map]) data.set(pixels(s.maps[map].image, n), off);
+				else for (let q = 0; q < n * n; q++) data.set(fill, off + q * 4);
+			});
+			const tx = new T.DataArrayTexture(data, n, n, L);
+			tx.colorSpace = srgb ? T.SRGBColorSpace : T.NoColorSpace;
+			tx.wrapS = tx.wrapT = T.RepeatWrapping;
+			tx.magFilter = T.LinearFilter;
+			tx.minFilter = T.LinearMipmapLinearFilter;
+			tx.generateMipmaps = true;
+			tx.anisotropy = 16;
+			tx.name = fam + ':' + map;
+			tx.needsUpdate = true;
+			return tx;
+		};
+		const A = { color: mk('color', true, [128, 128, 128, 255]), normal: mk('normal', false, [128, 128, 255, 255]), orm: mk('orm', false, [255, 204, 0, 255]), layers: {}, size: n };
+		for (const nm of names) {
+			const s = st.sets.get(nm);
+			if (s) A.layers[nm] = { scale: s.scale, mean: s.mean };
+		}
+		st.arrays.set(fam, A);
+		return A;
+	}
+
 	// zestaw map ({ maps: { color, normal, orm }, scale, mean – średni kolor liniowy, size }) albo null – brak pliku / tekstury wyłączone
 	function get(name) {
 		return st.sets.get(name) || null;
 	}
 
-	NS.textures = { TEXQ, load, get, get key() { return st.key; }, get size() { return st.size; }, get count() { return st.sets.size; } };
+	NS.textures = { TEXQ, load, get, array, get key() { return st.key; }, get size() { return st.size; }, get count() { return st.sets.size; } };
 })();

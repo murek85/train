@@ -192,7 +192,24 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			if (NS.gpu) {
 				// ?gputime – znaczniki czasu karty (nakładka F3: czas GPU; trochę kosztują, więc tylko na życzenie)
 				this.gl = new WebGPURenderer({ canvas, antialias: true, powerPreference: 'high-performance', forceWebGL: NS.gpuForceWebGL, trackTimestamp: /[?&]gputime/.test(location.search) });
-				this.gpuInit = this.gl.init().then(() => {
+				/* zapas tekstur na etap shadera (domyślnie w WebGPU 16): limit karty odczytany przed init() i zamówiony
+				   (do 48, NS.gpuMaxTex). Samplerów jest sprzętowo 16 – tekstury z plików i tak w tablicach (nodes.js pbrFamily) */
+				const limits = async () => {
+					NS.gpuMaxTex = 16;
+					if (NS.gpuForceWebGL || !navigator.gpu) return;
+					try {
+						const a = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+						const m = (a && a.limits.maxSampledTexturesPerShaderStage) || 16;
+						if (m > 16) {
+							NS.gpuMaxTex = Math.min(m, 48);
+							const P = this.gl.backend.parameters;
+							P.requiredLimits = Object.assign({}, P.requiredLimits, { maxSampledTexturesPerShaderStage: NS.gpuMaxTex });
+						}
+					} catch (e) {
+						NS.gpuMaxTex = 16;
+					}
+				};
+				this.gpuInit = limits().then(() => this.gl.init()).then(() => {
 					if (!/[?&]noshare/.test(location.search)) shareInstancing(this.gl); // (?noshare – bez wspólnych shaderów instancji, do porównań)
 					/* paczki (world.js bundleStatic) przy rysowaniu do bufora (efekty po renderowaniu): odtwarzane bez odświeżenia
 					   wspólnych uniformów (kamera) – obraz z nieaktualnej kamery; co najmniej odświeżenie współdzielone (tanie – jak
@@ -791,14 +808,14 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			this.mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		}
 
-		/* materiały z teksturami z plików (nodes.js pbrSet – teren, perony): po wczytaniu lub zmianie tekstur przebudowa
+		/* materiały z teksturami z plików (nodes.js pbrSet – teren, drogi, perony): po wczytaniu lub zmianie tekstur przebudowa
 		   ich shaderów i nagrań paczek. Sama podmiana tekstury w węźle nie docierała do powiązań obiektów w paczkach
 		   (BundleGroup – odświeżenie współdzielone, scene.js gpuInit): zostawała tekstura zastępcza 1×1 (szara,
 		   jednolita trawa i perony bez płyt) */
 		rebuildTextured() {
 			const seen = new Set();
 			const mark = (m) => {
-				if (!m || seen.has(m) || (m.patchVariant !== 'ground' && m.patchVariant !== 'platform')) return;
+				if (!m || seen.has(m) || !['ground', 'platform', 'road'].includes(m.patchVariant)) return;
 				seen.add(m);
 				m.needsUpdate = true;
 			};
