@@ -40,6 +40,10 @@
 			"!server.js",
 			"!vendor/three/addons/**",
 			"vendor/three/addons/tsl/display/FXAANode.js",
+			"vendor/three/addons/loaders/KTX2Loader.js",
+			"vendor/three/addons/utils/WorkerPool.js",
+			"vendor/three/addons/libs/**",
+			"vendor/three/addons/math/ColorSpaces.js",
 			"!**/*.py",
 			"!**/*.cmd",
 			"!.claude/**"

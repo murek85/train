@@ -1,0 +1,65 @@
+{
+	"version": 1,
+	"sets": {
+		"ground/grass": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 2.5,
+			"mean": [
+				0.1317,
+				0.2305,
+				0.0249
+			],
+			"source": "Grass005_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"ground/gravel": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 2.0,
+			"mean": [
+				0.1257,
+				0.1266,
+				0.1071
+			],
+			"source": "Gravel040_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"paving/concrete-slabs": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				1024,
+				2048
+			],
+			"ext": "webp",
+			"scale": 1.5,
+			"mean": [
+				0.3551,
+				0.355,
+				0.3577
+			],
+			"source": "Concrete008_2K-JPG.zip",
+			"license": "CC0"
+		}
+	}
+}

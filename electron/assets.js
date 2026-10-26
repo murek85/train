@@ -15,6 +15,8 @@ const MIME = {
 	'.jpg': 'image/jpeg',
 	'.jpeg': 'image/jpeg',
 	'.webp': 'image/webp',
+	'.ktx2': 'image/ktx2',
+	'.wasm': 'application/wasm',
 	'.gif': 'image/gif',
 	'.ico': 'image/x-icon',
 	'.ogg': 'audio/ogg',

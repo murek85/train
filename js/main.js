@@ -1895,7 +1895,8 @@
 		save('opt.weather', w);
 		save('opt.shadowQ', $('set-shadowq').value);
 		save('opt.waterQ', $('set-water').value);
-		renderer.setQuality(q, { shadow: $('set-shadowq').value, water: $('set-water').value });
+		save('opt.texQ', $('set-tex').value);
+		renderer.setQuality(q, { shadow: $('set-shadowq').value, water: $('set-water').value, tex: $('set-tex').value });
 		if (src === 'pause' || !sim) rideWeather = w;
 		renderer.setWeather(sim && rideWeather ? rideWeather : w);
 		if (sim) sim.setConditions(rideWeatherKey());
@@ -2585,6 +2586,7 @@
 	$('opt-quality').value = load('opt.quality', 'medium');
 	$('set-shadowq').value = load('opt.shadowQ', 'auto');
 	$('set-water').value = load('opt.waterQ', 'auto');
+	$('set-tex').value = load('opt.texQ', 'auto');
 	$('opt-weather').value = $('pause-weather').value = load('opt.weather', 'auto');
 	/* jakość grafiki: nowe shadery (wszystkie materiały), mapy cieni, efekty po renderowaniu i przebudowa świata (zasięg,
 	   gęstość) – okienko przeładowania jak przy zmianie składu (menu) albo warunków (pauza) */
@@ -2595,7 +2597,7 @@
 		else applyGraphics('pause');
 	});
 	// jakość cieni i wody: jak zmiana jakości (mapy cieni, przebudowa świata – zasięg cieni, cienie terenu)
-	for (const [id, nm] of [['set-shadowq', 'Cienie'], ['set-water', 'Woda']]) $(id).addEventListener('change', () => {
+	for (const [id, nm] of [['set-shadowq', 'Cienie'], ['set-water', 'Woda'], ['set-tex', 'Tekstury']]) $(id).addEventListener('change', () => {
 		const title = nm + ': ' + $(id).selectedOptions[0].text;
 		if (mode === 'menu') menuBusy('Zmiana jakości', title, () => applyGraphics(), true, true);
 		else if (mode === 'pause') pauseBusy(title, () => applyGraphics('pause'), true, 'Przebudowa świata i shaderów…', 'Zmiana jakości');

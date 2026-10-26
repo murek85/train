@@ -791,12 +791,45 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			this.mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		}
 
-		// over – { shadow, water }: 'auto' (jak jakość) albo low / medium / high
+		/* materiały z teksturami z plików (nodes.js pbrSet – teren, perony): po wczytaniu lub zmianie tekstur przebudowa
+		   ich shaderów i nagrań paczek. Sama podmiana tekstury w węźle nie docierała do powiązań obiektów w paczkach
+		   (BundleGroup – odświeżenie współdzielone, scene.js gpuInit): zostawała tekstura zastępcza 1×1 (szara,
+		   jednolita trawa i perony bez płyt) */
+		rebuildTextured() {
+			const seen = new Set();
+			const mark = (m) => {
+				if (!m || seen.has(m) || (m.patchVariant !== 'ground' && m.patchVariant !== 'platform')) return;
+				seen.add(m);
+				m.needsUpdate = true;
+			};
+			for (const m of NS.util.allMaterials) mark(m);
+			this.scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(mark); });
+			this.rebundleFrames = Math.max(this.rebundleFrames || 0, 2);
+		}
+
+		// over – { shadow, water, tex }: 'auto' (jak jakość) albo low / medium / high (tex – także off)
 		setQuality(key, over = {}) {
 			const q = QUALITY[key] || QUALITY.medium;
 			const qk = QUALITY[key] ? key : 'medium';
 			const sk = SHADOWQ[over.shadow] ? over.shadow : qk, wk = WATERQ[over.water] ? over.water : qk;
 			this.waterQ = WATERQ[wk];
+			/* tekstury z plików (textures.js): „jak jakość” – w aplikacji desktopowej wg jakości ogólnej, w przeglądarce
+			   najwyżej niska (pobieranie przez sieć); wczytywanie w tle – texReady (świat buduje się z tym, co jest) */
+			const TQ = NS.textures && NS.textures.TEXQ, desk = !!window.desktop || /Electron/i.test(navigator.userAgent);
+			const tk = TQ && TQ[over.tex] !== undefined ? over.tex : desk ? qk : qk === 'low' ? 'off' : 'low';
+			if (NS.textures && tk !== this.texKey) {
+				this.texKey = tk;
+				this.texReady = (NS.gpu && !this.gl.hasInitialized() ? this.gpuInit : Promise.resolve())
+					.then(() => NS.textures.load(this.gl, tk))
+					.then((r) => {
+						// materiały WebGPU (nodes.js): podmiana tekstur w gotowych shaderach; WebGL – na razie bez tekstur z plików
+						if (NS.gpu && NS.nodes && NS.nodes.bindTextures && this.texKey === tk) {
+							NS.nodes.bindTextures();
+							this.rebuildTextured();
+						}
+						return r;
+					});
+			}
 			if (NS.waterUniforms) NS.waterUniforms.uWQ.value = this.waterQ.wq;
 			/* włączenie / wyłączenie odbicia wody też z pełnym odświeżeniem (WebGPU: po przebudowie świata bez odbicia
 			   w shaderze woda zostawała bez odbicia do następnej przebudowy przy włączonym) */

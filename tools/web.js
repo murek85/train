@@ -14,8 +14,8 @@ const WEB = path.join(ROOT, 'web'), OUT = path.join(WEB, 'maszynista');
 const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 
 // pliki i foldery gry (ścieżki względem katalogu projektu)
-const FILES = ['index.html', 'style.css', 'favicon.ico', 'vendor/three/three.core.js', 'vendor/three/three.module.js', 'vendor/three/three.webgpu.js', 'vendor/three/three.tsl.js', 'vendor/three/addons/tsl/display/FXAANode.js', 'vendor/three/LICENSE'];
-const DIRS = ['js', 'routes', 'icons', 'sounds'];
+const FILES = ['index.html', 'style.css', 'favicon.ico', 'vendor/three/three.core.js', 'vendor/three/three.module.js', 'vendor/three/three.webgpu.js', 'vendor/three/three.tsl.js', 'vendor/three/addons/tsl/display/FXAANode.js', 'vendor/three/addons/loaders/KTX2Loader.js', 'vendor/three/addons/utils/WorkerPool.js', 'vendor/three/addons/libs/ktx-parse.module.js', 'vendor/three/addons/libs/zstddec.module.js', 'vendor/three/addons/libs/basis/basis_transcoder.js', 'vendor/three/addons/libs/basis/basis_transcoder.wasm', 'vendor/three/addons/math/ColorSpaces.js', 'vendor/three/LICENSE'];
+const DIRS = ['js', 'routes', 'icons', 'sounds', 'textures']; // textures/ – materiały PBR (js/3d/textures.js)
 const skip = (rel) => /\.md$/i.test(rel) || /(^|\/)\./.test(rel); // opisy i pliki ukryte
 
 const list = [...FILES];

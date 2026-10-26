@@ -12,6 +12,9 @@ const DST = path.join(ROOT, 'vendor', 'three');
 const FILES = ['build/three.core.js', 'build/three.module.js', 'build/three.webgpu.js', 'build/three.tsl.js', 'LICENSE'];
 // Dodatki TSL (TAA, bloom, AO, …) – cały katalog, bo moduły importują się nawzajem.
 const DIRS = ['examples/jsm/tsl'];
+/* tekstury KTX2 (js/3d/textures.js): loader z zależnościami i transkoder Basis (wasm – kopiowany osobno, copyDir
+   bierze tylko .js) */
+const ADDONS = ['loaders/KTX2Loader.js', 'utils/WorkerPool.js', 'libs/ktx-parse.module.js', 'libs/zstddec.module.js', 'math/ColorSpaces.js', 'libs/basis/basis_transcoder.js', 'libs/basis/basis_transcoder.wasm'];
 
 function copyDir(from, to) {
 	fs.mkdirSync(to, { recursive: true });
@@ -33,6 +36,11 @@ for (const f of FILES) {
 	fs.copyFileSync(path.join(SRC, f), to);
 }
 for (const d of DIRS) copyDir(path.join(SRC, d), path.join(DST, 'addons', path.relative('examples/jsm', d)));
+for (const f of ADDONS) {
+	const to = path.join(DST, 'addons', f);
+	fs.mkdirSync(path.dirname(to), { recursive: true });
+	fs.copyFileSync(path.join(SRC, 'examples/jsm', f), to);
+}
 const version = JSON.parse(fs.readFileSync(path.join(SRC, 'package.json'), 'utf8')).version;
 fs.writeFileSync(path.join(DST, 'VERSION'), version + '\n');
 console.log(`Three.js ${version} → vendor/three/`);
