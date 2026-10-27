@@ -1,11 +1,11 @@
 /* Efekty po renderowaniu w trybie WebGPU – odpowiednik post.js (te same przebiegi, wzory i ustawienia) w TSL:
    scena do bufora HDR (połowa precyzji) z teksturą głębi, potem przebiegi pełnoekranowe (QuadMesh + NodeMaterial):
-   - okluzja otoczenia z głębi w połowie rozdzielczości (16 próbek w półkuli nad powierzchnią) i rozmycie 3 × 3 z progiem
-     głębi;
+   - okluzja otoczenia z głębi w połowie rozdzielczości (GTAO – kąty horyzontu w 3 przekrojach) i rozmycie 3 × 3
+     z progiem głębi; nakładana w materiałach na światło rozproszone (w następnej klatce, z reprojekcją), nie w wykończeniu;
    - bloom: jasne (ponad próg) → łańcuch 5 coraz mniejszych kopii w dół i z powrotem w górę (dodawanie);
    - promienie słońca: jasne niebo wokół słońca (gdzie nic go nie zasłania) rozmyte promieniście ku słońcu – jasność
      z obrazu nieba (chmury przy słońcu zasłaniają, prześwity i rozświetlone brzegi chmur dają smugi);
-   - wykończenie: okluzja, mgła wysokościowa (całka gęstości malejącej z wysokością wzdłuż promienia, cieplejsza ku
+   - wykończenie: mgła wysokościowa (całka gęstości malejącej z wysokością wzdłuż promienia, cieplejsza ku
      słońcu), promienie, bloom, ekspozycja, ACES (dopasowanie Hilla), nasycenie i odcień cieni / świateł, sRGB, kontrast,
      winieta, szum przeciw pasmom; na końcu FXAA, gdy w ustawieniach jest wygładzanie.
    Scena bez MSAA: WebGPU nie scala głębi wielu próbek, a z głębi biorą okluzja, mgła i promienie – wygładza FXAA.
@@ -16,7 +16,8 @@ import { RenderTarget, QuadMesh, NodeMaterial } from 'three/webgpu';
 import {
 	Fn, float, vec2, vec3, vec4, uniform, texture, uv, select, mix, smoothstep, step, max, min, clamp, pow, exp, abs, dot,
 	cross, normalize, length, fract, sin, cos, sqrt, dFdx, dFdy, screenCoordinate, getViewPosition, getScreenPosition,
-	If, sign,
+	If, sign, acos, positionWorld, positionView, screenUV, cameraPosition, distance, context, roughness, metalness,
+	normalView, positionViewDirection, reflect,
 } from 'three/tsl';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 
@@ -39,27 +40,34 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 		});
 		const prevVP = new THREE.Matrix4();
 		const half = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false };
-		let sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget, taaTarget, histTarget;
+		let aoValid = false, version = 0;
+		let sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget, taaTarget, histTarget, ssrTarget;
 		const mips = [];
 		// węzły tekstur (wartości podmieniane po zmianie rozmiaru buforów)
 		const blank = new THREE.DataTexture(new Uint8Array(4), 1, 1);
 		blank.needsUpdate = true;
-		const T = { color: texture(blank), depth: texture(blank), ao: texture(blank), aoBlur: texture(blank), raysA: texture(blank), raysB: texture(blank), bloom: texture(blank), finish: texture(blank), aa: texture(blank), taa: texture(blank), hist: texture(blank) };
+		const T = { color: texture(blank), depth: texture(blank), ao: texture(blank), aoBlur: texture(blank), raysA: texture(blank), raysB: texture(blank), bloom: texture(blank), finish: texture(blank), aa: texture(blank), taa: texture(blank), hist: texture(blank), ssr: texture(blank) };
 		const mipTex = Array.from({ length: LEVELS }, () => texture(blank));
 
 		function build() {
-			for (const t of [sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget, taaTarget, histTarget, ...mips]) t?.dispose();
+			for (const t of [sceneTarget, aoTarget, raysA, raysB, finishTarget, aaTarget, taaTarget, histTarget, ssrTarget, ...mips]) t?.dispose();
 			sceneTarget?.depthTexture?.dispose();
 			sceneTarget = new RenderTarget(width, height, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
 			sceneTarget.depthTexture = new THREE.DepthTexture(width, height);
 			sceneTarget.depthTexture.type = THREE.FloatType;
 			const hw = Math.max(1, width >> 1), hh = Math.max(1, height >> 1);
 			aoTarget = new RenderTarget(hw, hh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
-			aoBlurTarget = new RenderTarget(hw, hh, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+			/* (r – okluzja, g – odległość od kamery wzdłuż osi widoku: sprawdzenie reprojekcji w materiałach). Ten sam obiekt
+			   przez całą grę, tylko nowy rozmiar: tekstura jest w powiązaniach materiałów świata (okluzja w kontekście
+			   renderera) – nowa tekstura w miejsce zwolnionej nie docierała do nich („zniszczona tekstura użyta w wysyłce”) */
+			if (aoBlurTarget) aoBlurTarget.setSize(hw, hh);
+			else aoBlurTarget = new RenderTarget(hw, hh, half);
+			aoValid = false;
 			mips.length = 0;
 			for (let i = 0; i < LEVELS; i++) mips.push(new RenderTarget(Math.max(1, width >> (i + 1)), Math.max(1, height >> (i + 1)), half));
 			raysA = new RenderTarget(hw, hh, half);
 			raysB = new RenderTarget(hw, hh, half);
+			ssrTarget = new RenderTarget(hw, hh, half);
 			finishTarget = new RenderTarget(width, height, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
 			aaTarget = new RenderTarget(width, height, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
 			taaTarget = taa ? new RenderTarget(width, height, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false }) : null;
@@ -69,8 +77,11 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			T.depth.value = sceneTarget.depthTexture;
 			T.ao.value = aoTarget.texture;
 			T.aoBlur.value = aoBlurTarget.texture;
+			aoMap.value = aoBlurTarget.texture;
+			version++;
 			T.raysA.value = raysA.texture;
 			T.raysB.value = raysB.texture;
+			T.ssr.value = ssrTarget.texture;
 			T.bloom.value = mips[0].texture;
 			T.finish.value = finishTarget.texture;
 			T.aa.value = aaTarget.texture;
@@ -104,43 +115,76 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 		// ---------- okluzja otoczenia ----------
 		const U = {
 			projInv: uniform(new THREE.Matrix4()), proj: uniform(new THREE.Matrix4()), camWorld: uniform(new THREE.Matrix4()), camPos: uniform(new THREE.Vector3()),
-			aoRadius: uniform(26), aoStrength: uniform(1.6), aoFade: uniform(3000), aoNear: uniform(0), aoTexel: uniform(new THREE.Vector2()),
+			aoRadius: uniform(26), aoStrength: uniform(1.6), projScale: uniform(new THREE.Vector2(1, 1)), ssrSeed: uniform(0), aoFade: uniform(3000), aoNear: uniform(0), aoTexel: uniform(new THREE.Vector2()),
 			texel: uniform(new THREE.Vector2()), upWeight: uniform(0.9), threshold: uniform(1.2), knee: uniform(0.8),
 			sunDir: uniform(new THREE.Vector3(0, 1, 0)), sunColor: uniform(new THREE.Color()), raysColor: uniform(new THREE.Color()), raysRef: uniform(2.0), sunUv: uniform(new THREE.Vector2()), spread: uniform(0.9),
-			aoOn: uniform(0), bloomOn: uniform(0), bloomStrength: uniform(0.35), exposure: uniform(1), saturation: uniform(1.08), contrast: uniform(1.06),
+			aoOn: uniform(0), ssrOn: uniform(0), bloomOn: uniform(0), bloomStrength: uniform(0.35), exposure: uniform(1), saturation: uniform(1.08), contrast: uniform(1.06),
 			shadowTint: uniform(new THREE.Color(0.97, 0.99, 1.04)), lightTint: uniform(new THREE.Color(1.03, 1.0, 0.96)), vignette: uniform(0.28), aspect: uniform(1), grade: uniform(1),
 			atmoOn: uniform(0), hazeColor: uniform(new THREE.Color()), fogBase: uniform(0), fogDensity: uniform(0), fogFalloff: uniform(0.01), raysOn: uniform(0),
 		};
 		const viewPos = (p) => getViewPosition(p, T.depth.sample(p).x, U.projInv);
+		/* GTAO (okluzja horyzontu, Jimenez 2016): w 3 przekrojach przez piksel (kierunki ekranu obracane szumem) po obu
+		   stronach szukany najwyższy punkt sąsiedztwa w promieniu aoRadius – kąt horyzontu; widoczność to całka
+		   cosinusowa nieba ponad horyzontami w płaszczyźnie przekroju, z normalną rzutowaną na przekrój (pochyła ściana
+		   i stok – poprawnie, bez szarego płaskiego terenu). Dawniej 16 próbek w półkuli: zaciemnienie skokowe
+		   i „aureole” wokół krawędzi. Normalna z głębi – z tej strony piksela, gdzie głębia ciągła (bez aureol na
+		   krawędziach obiektów) */
+		const aoNormal = (st, P) => {
+			const tx = vec2(U.aoTexel.x.mul(0.5), 0), ty = vec2(0, U.aoTexel.y.mul(0.5));
+			const pr = viewPos(st.add(tx)), pl = viewPos(st.sub(tx)), pu = viewPos(st.add(ty)), pd = viewPos(st.sub(ty));
+			const dx = select(abs(pr.z.sub(P.z)).lessThan(abs(P.z.sub(pl.z))), pr.sub(P), P.sub(pl));
+			const dy = select(abs(pu.z.sub(P.z)).lessThan(abs(P.z.sub(pd.z))), pu.sub(P), P.sub(pd));
+			const n = normalize(cross(dy, dx)).toVar();
+			return select(dot(n, P).greaterThan(0), n.negate(), n);
+		};
+		const SLICES = 3, STEPS = 6;
 		const aoMat = material(Fn(() => {
 			const st = uv().toVar();
-			const d = T.depth.sample(st).x;
+			const d = T.depth.sample(st).x.toVar();
 			const P = getViewPosition(st, d, U.projInv).toVar();
-			const N0 = normalize(cross(dFdx(P), dFdy(P))).toVar();
-			/* normalna zwrócona do obserwatora (dot(N, −P) ≥ 0), nie do osi z: ściana widziana skośnie z boku kadru ma
-			   normalną ku kamerze z ujemnym z – odwrócona w głąb ściany dawała próbki za ścianą i czarną ścianę do
-			   zasięgu wygaszania (w ruchu kamery pojawiała się i znikała) */
-			const N = select(dot(N0, P).greaterThan(0), N0.negate(), N0).toVar();
-			// widziane prawie stycznie (rozległa płaska ziemia z niskiej kamery) – okluzja gaśnie
-			const facing = abs(dot(N, normalize(P.negate())));
-			const a0 = hash(screenCoordinate.xy).mul(6.2831853).toVar();
-			const up = select(abs(N.y).lessThan(0.99), vec3(0, 1, 0), vec3(1, 0, 0));
-			const tx = normalize(cross(up, N)).toVar(), ty = cross(N, tx).toVar();
-			const occ = float(0).toVar();
-			for (let i = 0; i < 16; i++) {
-				const t = (i + 0.5) / 16, z = 1 - t, rr = Math.sqrt(1 - z * z);
-				const ang = a0.add(i * 2.3999632);
-				const dir = tx.mul(cos(ang).mul(rr)).add(ty.mul(sin(ang).mul(rr))).add(N.mul(z));
-				const Q = P.add(dir.mul(U.aoRadius).mul(0.15 + (1 - 0.15) * t * t)).toVar();
-				const sz = viewPos(getScreenPosition(Q, U.proj)).z.toVar();
-				const range = smoothstep(0.0, 1.0, U.aoRadius.div(max(abs(P.z.sub(sz)), 1e-3)));
-				occ.addAssign(step(Q.z.add(U.aoRadius.mul(0.04)).sub(P.z.mul(0.003)), sz).mul(range));
+			const N = aoNormal(st, P).toVar();
+			const V = normalize(P.negate()).toVar();
+			const noise = hash(screenCoordinate.xy).toVar(), jit = hash(screenCoordinate.xy.add(17.3)).toVar();
+			// promień w ekranie (uv) – dla bliskich punktów ograniczony (koszt i pamięć podręczna tekstur)
+			const rUV = vec2(U.projScale.x, U.projScale.y).mul(U.aoRadius.mul(0.5).div(max(P.z.negate(), 0.1))).toVar();
+			const lim = min(0.12, max(rUV.x, rUV.y)).div(max(max(rUV.x, rUV.y), 1e-5));
+			rUV.mulAssign(lim);
+			const vis = float(0).toVar();
+			for (let i = 0; i < SLICES; i++) {
+				const phi = noise.add(i).mul(Math.PI / SLICES);
+				const dir = vec2(cos(phi), sin(phi)).toVar();
+				const dv = vec3(dir, 0);
+				const axis = normalize(cross(dv, V)).toVar();
+				const ortho = dv.sub(V.mul(dot(dv, V)));
+				const pN = N.sub(axis.mul(dot(N, axis))).toVar();
+				const pLen = max(length(pN), 1e-4).toVar();
+				const cosN = clamp(dot(pN, V).div(pLen), 0, 1);
+				const n = sign(dot(ortho, pN)).mul(acos(cosN)).toVar();
+				const h = [];
+				for (const side of [-1, 1]) {
+					const hc = float(-1).toVar();
+					for (let j = 0; j < STEPS; j++) {
+						const s = jit.add(j).div(STEPS);
+						// (y uv w dół – przeciwnie do osi y widoku)
+						const o = vec2(dir.x, dir.y.negate()).mul(rUV).mul(s.mul(s).mul(side));
+						const S = viewPos(st.add(o));
+						const dl = S.sub(P).toVar();
+						const len = max(length(dl), 1e-4);
+						const fall = smoothstep(U.aoRadius, U.aoRadius.mul(0.6), len);
+						hc.assign(max(hc, mix(float(-1), dot(dl, V).div(len), fall)));
+					}
+					h.push(hc);
+				}
+				const h0 = n.add(max(acos(h[0]).negate().sub(n), -Math.PI / 2));
+				const h1 = n.add(min(acos(h[1]).sub(n), Math.PI / 2));
+				const sinN = sin(n), arc = (x) => cos(x.mul(2).sub(n)).negate().add(cosN).add(x.mul(2).mul(sinN)).mul(0.25);
+				vis.addAssign(pLen.mul(arc(h0).add(arc(h1))));
 			}
+			const occ = clamp(vis.div(SLICES), 0, 1).oneMinus().toVar();
 			occ.mulAssign(smoothstep(U.aoFade.mul(0.6), U.aoFade, P.z.negate()).oneMinus());
 			// (widok z kabiny: bez okluzji na wnętrzu kabiny – aoNear, tylko świat za szybą)
 			occ.mulAssign(smoothstep(U.aoNear, U.aoNear.mul(1.6).add(0.01), P.z.negate()));
-			occ.mulAssign(smoothstep(0.06, 0.28, facing));
-			const v = pow(clamp(U.aoStrength.mul(occ).div(16).oneMinus(), 0, 1), 1.5);
+			const v = pow(clamp(occ.oneMinus(), 0, 1), U.aoStrength);
 			return select(d.greaterThanEqual(0.99999), vec4(1), vec4(vec3(v), 1));
 		})());
 		const aoBlurMat = material(Fn(() => {
@@ -153,7 +197,54 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 				sum.addAssign(T.ao.sample(st.add(o)).r.mul(k));
 				w.addAssign(k);
 			}
-			return vec4(vec3(sum.div(w)), 1);
+			return vec4(sum.div(w), getViewPosition(st, d0, U.projInv).z.negate(), 0, 1);
+		})());
+
+		// ---------- odbicia ekranowe (SSR) ----------
+		/* odbicia z obrazu: piksele z maską odbicia (kanał alfa sceny – gładkość i Fresnel z materiałów, getOutput niżej)
+		   śledzą promień odbity w przestrzeni widoku (24 kroki coraz dłuższe, potem 4 kroki połowienia) po buforze głębi;
+		   trafienie – kolor sceny w tym miejscu, pewność gaśnie przy brzegach kadru, z odległością i dla promieni ku
+		   kamerze. Normalna z głębi (jak AO) – mokra jezdnia odbija jak lustro, rozmycie daje połowa rozdzielczości i TAA */
+		const ssrMat = material(Fn(() => {
+			const st = uv().toVar();
+			const d = T.depth.sample(st).x.toVar();
+			const mask = clamp(T.color.sample(st).a, 0, 1).toVar();
+			const P = getViewPosition(st, d, U.projInv).toVar();
+			const N = aoNormal(st, P).toVar();
+			const Rd = normalize(reflect(normalize(P), N)).toVar();
+			const jit = hash(screenCoordinate.xy.add(U.ssrSeed)).toVar();
+			const maxD = clamp(P.z.negate().mul(0.9), 6, 90).toVar();
+			const found = float(0).toVar(), tLo = float(0).toVar(), tHi = maxD.toVar(), tPrev = float(0).toVar();
+			const STEPS = 24;
+			for (let i = 0; i < STEPS; i++) {
+				const f = jit.add(i).div(STEPS);
+				const t = maxD.mul(pow(f, 1.6)).toVar();
+				const Q = P.add(Rd.mul(t)).toVar();
+				const q = getScreenPosition(Q, U.proj);
+				const sz = viewPos(q).z;
+				const thick = t.mul(0.08).add(0.3);
+				const hit = Q.z.lessThan(sz).and(sz.sub(Q.z).lessThan(thick)).and(Q.z.lessThan(-0.05)).and(found.lessThan(0.5));
+				If(hit, () => {
+					found.assign(1);
+					tLo.assign(tPrev);
+					tHi.assign(t);
+				});
+				tPrev.assign(t);
+			}
+			for (let i = 0; i < 4; i++) {
+				const tm = tLo.add(tHi).mul(0.5).toVar();
+				const Q = P.add(Rd.mul(tm));
+				const sz = viewPos(getScreenPosition(Q, U.proj)).z;
+				const behind = Q.z.lessThan(sz);
+				tHi.assign(select(behind, tm, tHi));
+				tLo.assign(select(behind, tLo, tm));
+			}
+			const hUV = getScreenPosition(P.add(Rd.mul(tHi)), U.proj).toVar();
+			const edge = smoothstep(0, 0.06, hUV.x).mul(smoothstep(0, 0.06, hUV.y)).mul(smoothstep(1, 0.94, hUV.x)).mul(smoothstep(1, 0.94, hUV.y));
+			const conf = found.mul(edge).mul(smoothstep(1, 0.6, tHi.div(maxD))).mul(smoothstep(0.9, 0.3, Rd.z))
+				.mul(step(0.02, mask)).mul(step(d, 0.99999)).mul(step(T.depth.sample(hUV).x, 0.99999));
+			const col = min(finite(T.color.sample(hUV).rgb), vec3(32));
+			return vec4(col, conf);
 		})());
 
 		// ---------- bloom ----------
@@ -221,8 +312,11 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 		const srgb = (c) => mix(c.mul(12.92), pow(c, vec3(1 / 2.4)).mul(1.055).sub(0.055), step(0.0031308, c));
 		const finishMat = material(Fn(() => {
 			const st = uv().toVar();
-			const c = min(finite(T.color.sample(st).rgb), vec3(64)).toVar();
-			c.mulAssign(select(U.aoOn.greaterThan(0.5), T.aoBlur.sample(st).r, float(1)));
+			const c0 = T.color.sample(st).toVar();
+			const c = min(finite(c0.rgb), vec3(64)).toVar();
+			// odbicia ekranowe: część koloru (maska z materiału razy pewność trafienia) zastąpiona kolorem odbitym
+			const ssr = T.ssr.sample(st);
+			c.assign(mix(c, ssr.rgb, clamp(c0.a, 0, 1).mul(ssr.a).mul(U.ssrOn)));
 			// mgła wysokościowa
 			const d = T.depth.sample(st).x.toVar();
 			const world = U.camWorld.mul(vec4(getViewPosition(st, d, U.projInv), 1)).xyz;
@@ -304,8 +398,63 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			return vec4(mix(hist, cur, w), 1);
 		})());
 
+		/* okluzja otoczenia w materiałach – tylko na świetle rozproszonym (niebo, otoczenie, odbicia mapy otoczenia),
+		   nie na słońcu: dawniej mnożona przez cały obraz, więc ściany i ziemia w pełnym słońcu dostawały szary nalot.
+		   Głębia bieżącej klatki powstaje dopiero przy rysowaniu, więc materiały biorą okluzję z poprzedniej klatki:
+		   punkt świata rzutowany macierzą tamtej klatki (aoVP), zgodność odległości od kamery (g bufora) – inaczej
+		   (odsłonięte miejsce, obiekt jadący z kamerą: pociąg, wnętrze kabiny) to samo miejsce ekranu, gdy odległość się
+		   zgadza; w ostateczności bez okluzji. Odbicie wody (inna kamera) – bez okluzji */
+		const aoMap = texture(blank);
+		const aoU = { on: uniform(0), ssr: uniform(0), vp: uniform(new THREE.Matrix4()), cam: uniform(new THREE.Vector3()) };
+		const aoNode = Fn(() => {
+			const pc = aoU.vp.mul(vec4(positionWorld, 1)).toVar();
+			const pw = max(pc.w, 1e-3);
+			const pUV = vec2(pc.x.div(pw).mul(0.5).add(0.5), float(0.5).sub(pc.y.div(pw).mul(0.5))).toVar();
+			const a = aoMap.sample(pUV).toVar();
+			const b = aoMap.sample(screenUV).toVar();
+			const dz = positionView.z.negate().toVar();
+			const inside = step(0, pUV.x).mul(step(0, pUV.y)).mul(step(pUV.x, 1)).mul(step(pUV.y, 1)).mul(step(0, pc.w));
+			const okA = inside.mul(step(abs(a.g.sub(pc.w)), pc.w.mul(0.04).add(0.15)));
+			const okB = step(abs(b.g.sub(dz)), dz.mul(0.04).add(0.15));
+			const v = mix(mix(float(1), b.r, okB), a.r, okA);
+			const main = step(distance(cameraPosition, aoU.cam), 0.01);
+			return mix(float(1), v, aoU.on.mul(main));
+		})();
+		/* maska odbić ekranowych w kanale alfa obrazu sceny (bez drugiego celu rysowania – MRT nie współpracuje
+		   z paczkami): nieprzezroczyste materiały PBR – gładkość (chropowatość poniżej ok. 0,4) razy Fresnel (metal –
+		   pełny), pozostałe nieprzezroczyste – 0; przezroczyste bez zmian (mieszanie). Tylko gdy włączone i dla kamery
+		   gracza (odbicie wody, mapy – alfa 1 jak dawniej) */
+		const ssrMask = Fn(() => {
+			const nv = clamp(dot(normalView, positionViewDirection), 0, 1);
+			const f0 = mix(float(0.04), float(1), metalness);
+			const F = f0.add(f0.oneMinus().mul(pow(nv.oneMinus(), 5)));
+			return smoothstep(0.42, 0.08, roughness).mul(F);
+		});
+		renderer.contextNode = context({
+			getAO: (input, { material }) => (material.transparent === true ? input : input !== null ? input.mul(aoNode) : aoNode),
+			getOutput: (out, builder) => {
+				const m = builder.material;
+				if (!m || m.transparent === true || (m.patchHooks && m.patchHooks.tag === 'water')) return out;
+				const k = aoU.ssr.mul(step(distance(cameraPosition, aoU.cam), 0.01));
+				const mask = m.isMeshStandardNodeMaterial ? ssrMask() : float(0);
+				return vec4(out.rgb, mix(out.a, mask, k));
+			},
+		});
+
 		const v3 = new THREE.Vector3(), fw = new THREE.Vector3();
 		return {
+			/* numer przebudowy buforów: materiały (okluzja w kontekście renderera) wskazują teksturę bufora AO, a paczki
+			   rysowania trzymają powiązania z chwili nagrania – po przebudowie (zmiana rozmiaru, TAA) paczki od nowa (scene.js),
+			   inaczej „zniszczona tekstura użyta w wysyłce” */
+			get version() {
+				return version;
+			},
+			// bez efektów (scene.js) – materiały bez okluzji z bufora
+			idle() {
+				aoU.on.value = 0;
+				aoU.ssr.value = 0;
+				aoValid = false;
+			},
 			get samples() {
 				return aa;
 			},
@@ -331,6 +480,11 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 				U.proj.value.copy(camera.projectionMatrix);
 				U.camWorld.value.copy(camera.matrixWorld);
 				U.camPos.value.copy(camera.position);
+				U.projScale.value.set(camera.projectionMatrix.elements[0], camera.projectionMatrix.elements[5]);
+				aoU.on.value = s.ao && aoValid ? 1 : 0;
+				aoU.ssr.value = s.ssr ? 1 : 0;
+				U.ssrOn.value = s.ssr ? 1 : 0;
+				aoU.cam.value.copy(camera.position);
 				renderer.setRenderTarget(sceneTarget);
 				if (taa) {
 					// przesunięcie o ułamek piksela (macierze dla efektów i reprojekcji – bez przesunięcia, sprzed rysowania)
@@ -347,9 +501,17 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 					U.aoStrength.value = s.aoStrength ?? 1.6;
 					U.aoFade.value = s.aoFade ?? 3000;
 					U.aoNear.value = s.aoNear ?? 0;
-					pass(aoMat, aoTarget);
 					U.aoTexel.value.set(1 / aoTarget.width, 1 / aoTarget.height);
+					pass(aoMat, aoTarget);
 					pass(aoBlurMat, aoBlurTarget);
+					// (macierz tej klatki – okluzja dla materiałów następnej)
+					aoU.vp.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+				}
+				aoValid = !!s.ao;
+				if (s.ssr) {
+					U.aoTexel.value.set(1 / aoTarget.width, 1 / aoTarget.height);
+					U.ssrSeed.value = (U.ssrSeed.value + 7.31) % 100;
+					pass(ssrMat, ssrTarget);
 				}
 				if (s.bloom) {
 					U.texel.value.set(1 / width, 1 / height);
@@ -429,8 +591,8 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			},
 			dispose() {
 				sceneTarget?.depthTexture?.dispose();
-				for (const t of [sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget, taaTarget, histTarget, ...mips]) t?.dispose();
-				for (const m of [aoMat, aoBlurMat, brightMat, raysMaskMat, raysBlurMat, finishMat, fxaaMat, sharpAaMat, sharpFinishMat, sharpTaaMat, taaMat, ...downMats, ...upMats]) m.dispose();
+				for (const t of [sceneTarget, aoTarget, aoBlurTarget, raysA, raysB, finishTarget, aaTarget, taaTarget, histTarget, ssrTarget, ...mips]) t?.dispose();
+				for (const m of [aoMat, aoBlurMat, ssrMat, brightMat, raysMaskMat, raysBlurMat, finishMat, fxaaMat, sharpAaMat, sharpFinishMat, sharpTaaMat, taaMat, ...downMats, ...upMats]) m.dispose();
 			},
 		};
 	}

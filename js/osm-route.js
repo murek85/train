@@ -399,7 +399,7 @@
 		}
 		const sel = (f) => boxes.map((b) => `${f}(${b});`).join('');
 		const hw = 'way["highway"]["highway"!~"^(footway|path|steps|cycleway|track|bridleway|corridor|platform|proposed|construction|elevator|raceway|bus_stop|services|rest_area)$"]';
-		const q = `[out:json][timeout:240];(${sel('way["building"]')}${sel(hw)}${sel('way["landuse"]')}${sel('way["natural"]')}${sel('way["leisure"]')}${sel('way["waterway"]')}${sel('way["amenity"="grave_yard"]')}${sel(RAIL(cons))}${sel('way["railway"="disused"]')}${sel('way["disused:railway"="rail"]')}${sel('way["railway"="platform"]')}${sel('way["public_transport"="platform"]["train"="yes"]')}${sel('way["amenity"="parking"]')}${sel('way["place"="square"]')})->.w;.w out tags geom;(${sel('node["railway"="switch"]')}${sel('node["railway"="railway_crossing"]')}${sel('node["power"="catenary_mast"]')}${sel('node["highway"="crossing"]')}${sel('node["highway"="bus_stop"]')}${sel('node["public_transport"="platform"]["bus"="yes"]')}${sel('node["amenity"~"^(police|fire_station|post_office|school|kindergarten|childcare|hospital|clinic|doctors|dentist|veterinary|pharmacy|bank|townhall|courthouse|library|theatre|cinema|place_of_worship|restaurant|fast_food|cafe|pub|bar|community_centre|arts_centre|social_facility|nursing_home|bus_station|fuel|car_wash|car_repair|university|college)$"]')}${sel('node["shop"]')}${sel('node["office"]')}${sel('node["healthcare"]')}${sel('node["tourism"~"^(hotel|hostel|guest_house|museum)$"]')})->.n;.n out;(${sel('relation["landuse"]')}${sel('relation["natural"]')}${sel('relation["leisure"]')}${sel('relation["railway"="platform"]')})->.m;.m out geom;`;
+		const q = `[out:json][timeout:240];(${sel('way["building"]')}${sel(hw)}${sel('way["landuse"]')}${sel('way["natural"]')}${sel('way["leisure"]')}${sel('way["waterway"]')}${sel('way["amenity"="grave_yard"]')}${sel(RAIL(cons))}${sel('way["railway"="disused"]')}${sel('way["disused:railway"="rail"]')}${sel('way["railway"="platform"]')}${sel('way["public_transport"="platform"]["train"="yes"]')}${sel('way["amenity"="parking"]')}${sel('way["place"="square"]')}${sel('way["barrier"~"^(noise_barrier|wall|fence|retaining_wall)$"]')})->.w;.w out tags geom;(${sel('node["railway"="switch"]')}${sel('node["railway"="railway_crossing"]')}${sel('node["power"="catenary_mast"]')}${sel('node["highway"="crossing"]')}${sel('node["highway"="bus_stop"]')}${sel('node["public_transport"="platform"]["bus"="yes"]')}${sel('node["amenity"~"^(police|fire_station|post_office|school|kindergarten|childcare|hospital|clinic|doctors|dentist|veterinary|pharmacy|bank|townhall|courthouse|library|theatre|cinema|place_of_worship|restaurant|fast_food|cafe|pub|bar|community_centre|arts_centre|social_facility|nursing_home|bus_station|fuel|car_wash|car_repair|university|college)$"]')}${sel('node["shop"]')}${sel('node["office"]')}${sel('node["healthcare"]')}${sel('node["tourism"~"^(hotel|hostel|guest_house|museum)$"]')}${sel('node["natural"="tree"]')}${sel('node["highway"="street_lamp"]')}${sel('node["amenity"~"^(bench|waste_basket)$"]')}${sel('node["emergency"="fire_hydrant"]')})->.n;.n out;(${sel('relation["landuse"]')}${sel('relation["natural"]')}${sel('relation["leisure"]')}${sel('relation["railway"="platform"]')})->.m;.m out geom;`;
 		if (log) log(`Pobieram otoczenie: budynki, drogi, lasy, wody (${boxes.length} odcinków; zwykle 1–2 minuty)…`);
 		const j = await overpass(q, log, 280000);
 		return cons ? asRail(j) : j;
@@ -446,6 +446,38 @@
 		if (log) log('Pobieram przejścia dla pieszych, parkingi i place…');
 		const sel = (f) => boxes.map((b) => `${f}(${b});`).join('');
 		const j = await overpass(`[out:json][timeout:120];(${sel('way["amenity"="parking"]')}${sel('way["place"="square"]')}${sel('way["highway"="pedestrian"]["area"="yes"]')})->.w;.w out tags geom;(${sel('node["highway"="crossing"]')})->.n;.n out;`, log, 150000);
+		return j.elements || [];
+	}
+
+	// drzewa w pasie trasy: pojedyncze (natural=tree) i szpalery (natural=tree_row) – dane otoczenia zapisane przed ich
+	// dodaniem do zapytania (szpalery – z way["natural"], już w starszych danych; tu dla kompletu, powtórki pomijane po id)
+	async function fetchTrees(poly, log) {
+		const boxes = [];
+		for (let i = 0; i < poly.length - 1; i += 6) {
+			const seg = poly.slice(i, i + 7);
+			const la = seg.map((p) => p.lat), lo = seg.map((p) => p.lon);
+			const mlo = 0.0052 / Math.cos((la[0] * Math.PI) / 180);
+			boxes.push([Math.min(...la) - 0.0052, Math.min(...lo) - mlo, Math.max(...la) + 0.0052, Math.max(...lo) + mlo].map((v) => v.toFixed(4)).join(','));
+		}
+		if (log) log('Pobieram drzewa i szpalery…');
+		const sel = (f) => boxes.map((b) => `${f}(${b});`).join('');
+		const j = await overpass(`[out:json][timeout:120];(${sel('way["natural"="tree_row"]')})->.w;.w out tags geom;(${sel('node["natural"="tree"]')})->.n;.n out;`, log, 150000);
+		return j.elements || [];
+	}
+
+	/* obiekty przy trasie: bariery (ekrany akustyczne, mury, płoty) i punkty (latarnie, ławki, kosze, hydranty) – dane
+	   otoczenia zapisane przed ich dodaniem do zapytania */
+	async function fetchObjects(poly, log) {
+		const boxes = [];
+		for (let i = 0; i < poly.length - 1; i += 6) {
+			const seg = poly.slice(i, i + 7);
+			const la = seg.map((p) => p.lat), lo = seg.map((p) => p.lon);
+			const mlo = 0.0052 / Math.cos((la[0] * Math.PI) / 180);
+			boxes.push([Math.min(...la) - 0.0052, Math.min(...lo) - mlo, Math.max(...la) + 0.0052, Math.max(...lo) + mlo].map((v) => v.toFixed(4)).join(','));
+		}
+		if (log) log('Pobieram ekrany akustyczne, płoty, latarnie, ławki…');
+		const sel = (f) => boxes.map((b) => `${f}(${b});`).join('');
+		const j = await overpass(`[out:json][timeout:120];(${sel('way["barrier"~"^(noise_barrier|wall|fence|retaining_wall)$"]')})->.w;.w out tags geom;(${sel('node["highway"="street_lamp"]')}${sel('node["amenity"~"^(bench|waste_basket)$"]')}${sel('node["emergency"="fire_hydrant"]')})->.n;.n out;`, log, 150000);
 		return j.elements || [];
 	}
 
@@ -1775,7 +1807,92 @@
 			}
 		}
 		if (log) log(`Ulice: ${r.length} odcinków, z chodnikami ${ra.filter((q) => q[3] > 0).length}; przejścia dla pieszych ${rx.length}, parkingi i place ${pk.length}.`);
-		return { v: 8, b, bu, bn, sp, _bTags: bTags, cm: cm.flat(), rf, r, ra, rx, pk, bs, w, t: tr, _tz: envTz, p: pf, o: ov, ob, ro, sw, k: bufs, g: { step: ENV_STEP, s0: shift, d0: -ENV_A, cols, rows: rowsOut } };
+		/* drzewa z mapy (vt – płasko po 4: s, d, gatunek, wysokość w m – 0 nieznana): pojedyncze (natural=tree) i szpalery
+		   (natural=tree_row – punkty co ok. 8 m wzdłuż, bez szpaleru krótszego niż 2 drzewa); gatunek z genus / species /
+		   leaf_type: 0 liściaste (nieznane), 1 dąb, lipa, klon, jesion…, 2 brzoza, 3 topola, wierzba, 4 świerk, jodła,
+		   5 sosna, modrzew, 6 iglaste (nieznane). Pas do 300 m od osi, bez torowiska (6 m) */
+		const vt = [];
+		{
+			const seen = new Set(), taken = new Set();
+			const spOf = (t) => {
+				const g = String(t.genus || t['genus:pl'] || t.species || t['species:pl'] || t.taxon || '').toLowerCase();
+				if (/quercus|dąb|tilia|lipa|acer|klon|jawor|fraxinus|jesion|aesculus|kasztan|ulmus|wiąz|carpinus|grab|fagus|buk|robinia|platanus|juglans|orzech|prunus|malus|sorbus/.test(g)) return 1;
+				if (/betula|brzoz/.test(g)) return 2;
+				if (/populus|topol|osika|salix|wierzb/.test(g)) return 3;
+				if (/picea|świerk|abies|jodł|thuja|tuj/.test(g)) return 4;
+				if (/pinus|sosn|larix|modrzew/.test(g)) return 5;
+				return t.leaf_type === 'needleleaved' ? 6 : 0;
+			};
+			const add = (x, y, t, hint) => {
+				const q = project(x, y, hint);
+				if (!q || Math.abs(q.d) < 6 || Math.abs(q.d) > 300 || !sOk(q.s)) return q;
+				const key = Math.round(q.s / 2) + ',' + Math.round(q.d / 2);
+				if (taken.has(key)) return q;
+				taken.add(key);
+				const h = Math.round(Math.min(40, num(t.height) || 0));
+				vt.push(R2(q.s + shift), R2(q.d), spOf(t), h);
+				return q;
+			};
+			let nRow = 0;
+			for (const e of els) {
+				const t = e.tags;
+				if (!t || seen.has(e.type + e.id)) continue;
+				if (e.type === 'node' && t.natural === 'tree' && e.lat !== undefined) {
+					seen.add(e.type + e.id);
+					const p = P.xy(e.lat, e.lon);
+					add(p[0], p[1], t, -1);
+				} else if (e.type === 'way' && t.natural === 'tree_row' && e.geometry) {
+					seen.add(e.type + e.id);
+					const g = e.geometry.filter(Boolean).map((q) => P.xy(q.lat, q.lon));
+					let len = 0;
+					for (let k = 1; k < g.length; k++) len += Math.hypot(g[k][0] - g[k - 1][0], g[k][1] - g[k - 1][1]);
+					if (len < 8) continue;
+					nRow++;
+					let hint = -1, acc = 0;
+					for (let k = 1; k < g.length; k++) {
+						const a = g[k - 1], b2 = g[k], L = Math.hypot(b2[0] - a[0], b2[1] - a[1]);
+						for (; acc <= L; acc += 8) {
+							const q = add(a[0] + ((b2[0] - a[0]) * acc) / (L || 1), a[1] + ((b2[1] - a[1]) * acc) / (L || 1), t, hint);
+							if (q) hint = q.k;
+						}
+						acc -= L;
+					}
+				}
+			}
+			if (log) log(`Drzewa z mapy: ${vt.length / 4} (szpalery: ${nRow}).`);
+		}
+		/* bariery z mapy (ba – rząd: rodzaj, wysokość w dm, s, d, s, d…): 0 ekran akustyczny (barrier=noise_barrier,
+		   wall=noise_barrier), 1 mur (wall, retaining_wall), 2 płot (fence); wysokość z height, inaczej 0 (w grze – typowa).
+		   Pas do 300 m od osi, bez torowiska (3 m); obiekty punktowe (pt – po 3: s, d, rodzaj): 0 latarnia
+		   (highway=street_lamp), 1 ławka, 2 kosz, 3 hydrant – pas do 300 m, bez torowiska (4 m) */
+		const ba = [], pt = [];
+		{
+			let nB = 0;
+			const seen = new Set();
+			for (const e of els) {
+				const t = e.tags;
+				if (!t || seen.has(e.type + e.id)) continue;
+				if (e.type === 'way' && e.geometry && /^(noise_barrier|wall|fence|retaining_wall)$/.test(t.barrier || '')) {
+					seen.add(e.type + e.id);
+					const kind = t.barrier === 'noise_barrier' || t.wall === 'noise_barrier' ? 0 : t.barrier === 'fence' ? 2 : 1;
+					const h = Math.round(Math.min(10, num(t.height) || 0) * 10);
+					for (const run of lineRuns(e.geometry, 300, 3)) {
+						const row = [kind, h];
+						for (const [s2, d2] of simplify(run, 0.15)) row.push(R2(s2), R2(d2));
+						if (row.length >= 6) { ba.push(row); nB++; }
+					}
+				} else if (e.type === 'node' && e.lat !== undefined) {
+					const kind = t.highway === 'street_lamp' ? 0 : t.amenity === 'bench' ? 1 : t.amenity === 'waste_basket' ? 2 : t.emergency === 'fire_hydrant' ? 3 : -1;
+					if (kind < 0) continue;
+					seen.add(e.type + e.id);
+					const p = P.xy(e.lat, e.lon), q = project(p[0], p[1], -1);
+					if (!q || Math.abs(q.d) < 4 || Math.abs(q.d) > 300 || !sOk(q.s)) continue;
+					pt.push(R2(q.s + shift), R2(q.d), kind);
+				}
+			}
+			if (log) log(`Obiekty z mapy: bariery ${nB}, latarnie ${pt.filter((x, i) => i % 3 === 2 && x === 0).length}, ławki i kosze ${pt.filter((x, i) => i % 3 === 2 && (x === 1 || x === 2)).length}, hydranty ${pt.filter((x, i) => i % 3 === 2 && x === 3).length}.`);
+		}
+		return { v: 8, b, bu, bn, sp, _bTags: bTags, cm: cm.flat(), rf, r, ra, rx, pk, bs, w, t: tr, vt, ba, pt, _tz: envTz, p: pf, o: ov, ob, ro, sw, k: bufs, g: { step: ENV_STEP, s0: shift, d0: -ENV_A, cols, rows: rowsOut } };
 	}
 
 	/* Peron przy torze pociągu na stacji (pos – miejsce zatrzymania, kilometraż z przesunięciem): spośród peronów
@@ -4733,5 +4850,5 @@
 	}
 
 	const nmtCache = new Map();
-	return { generate, buildRoute, buildEnvironment, findStations, fetchCorridor, fetchEnvironment, fetchMasts, fetchStreetExtras, fetchPois, fetchBusStops, elevations, nmtHeights, nmptSampler, to1992, SOURCE, ROAD_TYPES };
+	return { generate, buildRoute, buildEnvironment, findStations, fetchCorridor, fetchEnvironment, fetchMasts, fetchStreetExtras, fetchPois, fetchBusStops, fetchTrees, fetchObjects, elevations, nmtHeights, nmptSampler, to1992, SOURCE, ROAD_TYPES };
 });

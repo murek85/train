@@ -14,6 +14,8 @@
 	const prepared = {}; // trasy przygotowane dla danego składu: klucz „trasa|pociąg|liczba wagonów”
 	const timetables = {};
 	const renderer = new window.Train3D.Renderer3D($('view'), $('mini'));
+	// modele z plików – wczytywanie od startu (w tle, gotowe zwykle przed pierwszą jazdą; beginGame czeka na koniec)
+	if (window.Train3D.models) window.Train3D.models.load();
 	// kliknięcie w pojazd – komunikat o środku orbity kamery
 	renderer.onFocusCar = () => { if (sim) hud.toast('Kamera: ' + renderer.focusLabel(sim)); };
 	const hud = new window.TrainHud();
@@ -1330,6 +1332,7 @@
 		$('scr-routes').classList.toggle('hidden', name !== 'routes');
 		updateGenUI(); // pasek generowania w tle – poza ekranem generatora
 		$('scr-news').classList.toggle('hidden', name !== 'news');
+		$('scr-credits').classList.toggle('hidden', name !== 'credits');
 		$('scr-scen').classList.toggle('hidden', name !== 'scen');
 		$('scr-hist').classList.toggle('hidden', name !== 'hist');
 		showPreview();
@@ -1802,6 +1805,11 @@
 	}
 	async function beginGame(snap) {
 		exitFree();
+		// modele z plików (js/3d/models.js) – wczytane przed budową świata trasy (zwykle już w menu)
+		if (window.Train3D.models) {
+			if (loadingScreen && loadingScreen.status && !window.Train3D.models.ready) loadingScreen.status('Wczytywanie modeli…');
+			await window.Train3D.models.load();
+		}
 		document.querySelector('.controls [data-act=wipers]')?.classList.remove('on');
 		const route = rideRoute();
 		// trasa inna niż w podglądzie menu (skład, scenariusz) – przygotowanie otoczenia w klatkach ekranu wczytywania
@@ -1898,7 +1906,10 @@
 		save('opt.shadowQ', $('set-shadowq').value);
 		save('opt.waterQ', $('set-water').value);
 		save('opt.texQ', $('set-tex').value);
-		renderer.setQuality(q, { shadow: $('set-shadowq').value, water: $('set-water').value, tex: $('set-tex').value });
+		// nowe efekty grafiki (wyłączniki – pomiar i słabsze karty): odbicia ekranowe, okluzja, drzewa z modeli, rośliny i obiekty z mapy
+		const fx = { ssr: $('set-ssr').value, ao: $('set-ao').value, trees: $('set-trees').value, plants: $('set-plants').value };
+		save('opt.fx', fx);
+		renderer.setQuality(q, Object.assign({ shadow: $('set-shadowq').value, water: $('set-water').value, tex: $('set-tex').value }, fx));
 		if (src === 'pause' || !sim) rideWeather = w;
 		renderer.setWeather(sim && rideWeather ? rideWeather : w);
 		if (sim) sim.setConditions(rideWeatherKey());
@@ -2589,6 +2600,13 @@
 	$('set-shadowq').value = load('opt.shadowQ', 'auto');
 	$('set-water').value = load('opt.waterQ', 'auto');
 	$('set-tex').value = load('opt.texQ', 'auto');
+	{
+		const fx = Object.assign({ ssr: 'auto', ao: 'auto', trees: 'auto', plants: 'auto' }, load('opt.fx', {}));
+		$('set-ssr').value = fx.ssr;
+		$('set-ao').value = fx.ao;
+		$('set-trees').value = fx.trees;
+		$('set-plants').value = fx.plants;
+	}
 	$('opt-weather').value = $('pause-weather').value = load('opt.weather', 'auto');
 	/* jakość grafiki: nowe shadery (wszystkie materiały), mapy cieni, efekty po renderowaniu i przebudowa świata (zasięg,
 	   gęstość) – okienko przeładowania jak przy zmianie składu (menu) albo warunków (pauza) */
@@ -2599,7 +2617,7 @@
 		else applyGraphics('pause');
 	});
 	// jakość cieni i wody: jak zmiana jakości (mapy cieni, przebudowa świata – zasięg cieni, cienie terenu)
-	for (const [id, nm] of [['set-shadowq', 'Cienie'], ['set-water', 'Woda'], ['set-tex', 'Tekstury']]) $(id).addEventListener('change', () => {
+	for (const [id, nm] of [['set-shadowq', 'Cienie'], ['set-water', 'Woda'], ['set-tex', 'Tekstury'], ['set-ssr', 'Odbicia ekranowe'], ['set-ao', 'Okluzja'], ['set-trees', 'Drzewa'], ['set-plants', 'Rośliny i obiekty']]) $(id).addEventListener('change', () => {
 		const title = nm + ': ' + $(id).selectedOptions[0].text;
 		if (mode === 'menu') menuBusy('Zmiana jakości', title, () => applyGraphics(), true, true);
 		else if (mode === 'pause') pauseBusy(title, () => applyGraphics('pause'), true, 'Przebudowa świata i shaderów…', 'Zmiana jakości');
@@ -2840,6 +2858,25 @@
 		}
 	}
 	$('btn-news').addEventListener('click', () => { buildNews(); menuScreen('news'); });
+	/* autorzy: biblioteki, tekstury i modele z licencjami (modele – ze spisu models/index.json, js/3d/models.js; CC BY
+	   wymaga podania autora i źródła), dane map */
+	function buildCredits() {
+		const list = $('credits-list');
+		const sec = (title, rows) => `<section class="news-ver"><h3>${esc(title)}</h3><ul>${rows.map((r) => `<li>${r}</li>`).join('')}</ul></section>`;
+		const link = (u, t) => (u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u)}</a>` : esc(t || ''));
+		const M = window.Train3D.models ? window.Train3D.models.credits() : [];
+		list.innerHTML = sec('Biblioteki', [
+			`${link('https://threejs.org', 'Three.js')} – © autorzy three.js, licencja MIT`,
+			`${link('https://github.com/dgreenheck/ez-tree', 'EZ-Tree')} – generator drzew, © Daniel Greenheck, licencja MIT`,
+			`${link('https://github.com/google/draco', 'Draco')} – © Google, Apache 2.0; ${link('https://github.com/zeux/meshoptimizer', 'meshoptimizer')} – © Arseny Kapoulkine, MIT; ${link('https://github.com/BinomialLLC/basis_universal', 'Basis Universal')} – © Binomial, Apache 2.0`,
+		]) + sec('Tekstury', [
+			`${link('https://ambientcg.com', 'ambientCG')} – nawierzchnie, ściany, dachy, liście (CC0)`,
+			`${link('https://polyhaven.com', 'Poly Haven')} – kora dębu (CC0); ${link('https://www.texturecan.com', 'TextureCan')} – kora brzozy i sosny (CC0, przez EZ-Tree)`,
+		]) + sec('Modele 3D', M.length ? M.map((m) => `${link(m.source, m.title)}${m.author ? ' – ' + esc(m.author) : ''}${m.license ? ', ' + esc(m.license) : ''}`) : ['Wszystkie obiekty budowane w kodzie gry.'])
+			+ sec('Dane map', ['© współtwórcy OpenStreetMap (licencja ODbL); NMT, NMPT, BDOT10k, ULDK – © GUGiK; Copernicus DEM (przez Open-Meteo); PKP Polskie Linie Kolejowe S.A. (Regulamin sieci); RINF – © Europejska Agencja Kolejowa (ERA, CC BY 4.0)']);
+	}
+	$('btn-credits').addEventListener('click', () => { buildCredits(); menuScreen('credits'); });
+	$('credits-back').addEventListener('click', () => menuScreen('main'));
 	$('btn-hist').addEventListener('click', () => { buildHistory(); menuScreen('hist'); });
 	$('hist-back').addEventListener('click', () => menuScreen('main'));
 	$('news-back').addEventListener('click', () => menuScreen('main'));

@@ -259,17 +259,22 @@ import {
 				const dist = select(wSum.greaterThan(1e-4), depthSum.div(max(wSum, 1e-4)), t0.add(seg.mul(0.5))).toVar();
 				const { inscatter, transmittance } = atmo.aerial(U.camPos.y.add(250), dir.mul(dist));
 				const alpha = float(1).sub(T);
-				const current = vec4(L.mul(transmittance).add(inscatter.mul(alpha)), T);
+				/* NaN / nieskończoność (zdarza się w marszu promienia) nie trafia do historii: raz zapisana zostawała na zawsze
+				   (waga 0 × NaN = NaN) – czarna plama nieba do przeładowania gry */
+				const ok4 = (v) => v.x.equal(v.x).and(v.y.equal(v.y)).and(v.z.equal(v.z)).and(v.w.equal(v.w)).and(abs(v.x).add(abs(v.y)).add(abs(v.z)).lessThan(1e20));
+				const cur0 = vec4(L.mul(transmittance).add(inscatter.mul(alpha)), T).toVar();
+				const current = select(ok4(cur0), cur0, vec4(0, 0, 0, 1)).toVar();
 				// akumulacja czasowa: gdzie ten punkt chmury był na ekranie w poprzedniej klatce
 				const clip = U.prevViewProj.mul(vec4(U.camPos.add(dir.mul(dist)), 1));
 				const ndc = clip.xy.div(clip.w);
 				const prevUv = vec2(ndc.x.mul(0.5).add(0.5), float(0.5).sub(ndc.y.mul(0.5)));
 				const inside = prevUv.x.greaterThan(0).and(prevUv.x.lessThan(1)).and(prevUv.y.greaterThan(0)).and(prevUv.y.lessThan(1)).and(clip.w.greaterThan(0));
-				const hist = self.historyNode.sample(prevUv).level(0);
-				const valid = inside.and(U.history.greaterThan(0.5)).and(hist.a.lessThan(1.5));
+				const hist = self.historyNode.sample(prevUv).level(0).toVar();
+				const valid = inside.and(U.history.greaterThan(0.5)).and(hist.a.lessThan(1.5)).and(ok4(hist));
 				// waga historii jako zmienna: select zagnieżdżony w gałęzi select psuje GLSL (zaplecze WebGL 2)
 				const keep = select(valid, float(0.9), float(0)).toVar();
-				return select(seg.greaterThan(1), mix(current, hist, keep), vec4(0, 0, 0, 1));
+				const histS = select(valid, hist, current).toVar();
+				return select(seg.greaterThan(1), mix(current, histS, keep), vec4(0, 0, 0, 1));
 			});
 			const m = new NodeMaterial();
 			m.fragmentNode = cloudFn();

@@ -1810,7 +1810,9 @@ import * as THREE from 'three';
 					const t = acc / L, s = sa + (sb - sa) * t, d = da + (db - da) * t;
 					const off = w / 2 + 1.1;
 					const ps = s + ns * side * off, pd = d + nd * side * off;
-					if (Math.abs(pd) > 9 && !this.envStationZone(ps, pd) && !this.inBuilding(ps, pd) && Math.floor(s / C) === Math.floor(segs.c0 / C)) spots.push({ s: ps, d: pd, ds: -ns * side, dd: -nd * side, kind: ti <= 4 ? 'main' : 'res' });
+					// (latarnie z mapy w pobliżu – world.js buildMapObjects osmLamps – bez dawnej latarni co 35 m)
+					const nearOsm = this.osmLamps && this.osmLamps.has(Math.round(ps / 25) + ',' + Math.round(pd / 25));
+					if (!nearOsm && Math.abs(pd) > 9 && !this.envStationZone(ps, pd) && !this.inBuilding(ps, pd) && Math.floor(s / C) === Math.floor(segs.c0 / C)) spots.push({ s: ps, d: pd, ds: -ns * side, dd: -nd * side, kind: ti <= 4 ? 'main' : 'res' });
 					acc += 35;
 					side = -side;
 				}

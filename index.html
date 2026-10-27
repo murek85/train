@@ -214,7 +214,7 @@
 
 		<footer class="mf-foot">
 			<span><b id="version"></b> · <kbd>Enter</kbd> odjazd · <kbd>Esc</kbd> wstecz</span>
-			<span><button type="button" class="mf-link" id="btn-news">Co nowego</button></span>
+			<span><button type="button" class="mf-link" id="btn-news">Co nowego</button> · <button type="button" class="mf-link" id="btn-credits">Autorzy</button></span>
 		</footer>
 
 		<div class="panel wide hidden" id="scr-scen">
@@ -232,6 +232,12 @@
 		<div class="panel hidden" id="scr-news">
 			<div class="panel-head"><button class="back" id="news-back">← Wróć</button><div class="ph-t"><p class="mf-eyebrow"><i class="lamp"></i><span>KOMUNIKATY · ZMIANY W ROZKŁADZIE</span></p><h2>Co nowego.</h2></div></div>
 			<div class="news-list" id="news-list"></div>
+		</div>
+
+		<!-- autorzy: biblioteki, tekstury, modele (licencje – CC BY wymaga podania autora), dane map -->
+		<div class="panel hidden" id="scr-credits">
+			<div class="panel-head"><button class="back" id="credits-back">← Wróć</button><div class="ph-t"><p class="mf-eyebrow"><i class="lamp"></i><span>LICENCJE · ŹRÓDŁA · PODZIĘKOWANIA</span></p><h2>Autorzy.</h2></div></div>
+			<div class="news-list" id="credits-list"></div>
 		</div>
 
 		<!-- generator tras: podmenu (nowa trasa, moje trasy) i ich ekrany -->
@@ -436,6 +442,10 @@
 				<p class="hint" id="quality-hint"></p>
 				<label class="row-opt">Cienie – jakość <select id="set-shadowq"><option value="auto">jak jakość</option><option value="low">niska</option><option value="medium">średnia</option><option value="high">wysoka</option></select></label>
 				<label class="row-opt">Woda – jakość <select id="set-water"><option value="auto">jak jakość</option><option value="low">niska</option><option value="medium">średnia</option><option value="high">wysoka</option></select></label>
+				<label class="row-opt">Odbicia ekranowe (mokre nawierzchnie, szyby) <select id="set-ssr"><option value="auto">jak jakość</option><option value="off">wyłączone</option><option value="on">włączone</option></select></label>
+				<label class="row-opt">Okluzja otoczenia (cienie w zakamarkach) <select id="set-ao"><option value="auto">jak jakość</option><option value="off">wyłączona</option><option value="on">włączona</option></select></label>
+				<label class="row-opt">Drzewa <select id="set-trees"><option value="auto">jak jakość</option><option value="models">z modeli (WebGPU)</option><option value="lite">z modeli, uproszczone</option><option value="simple">proste korony</option></select></label>
+				<label class="row-opt">Rośliny przyziemne i obiekty z mapy <select id="set-plants"><option value="auto">jak jakość</option><option value="on">włączone</option><option value="off">wyłączone</option></select></label>
 				<label class="row-opt">Tekstury – jakość <select id="set-tex"><option value="auto">jak jakość</option><option value="off">wyłączone</option><option value="low">niska</option><option value="medium">średnia</option><option value="high">wysoka</option></select></label>
 				<p class="hint">Cienie: niska – mapy 1024, cień rzucają tylko obiekty blisko pociągu; średnia – mapy 2048, miękkie krawędzie; wysoka – mapy 4096, najmiększe krawędzie i cienie terenu (wzgórza, wykopy). Woda: niska – bez odbicia lustrzanego; średnia – odbicie, zmarszczki płynące z nurtem, piana przy brzegu; wysoka – mocniejsze zmarszczki.</p>
 				<button id="set-autoq" class="small">Dobierz jakość automatycznie</button>
@@ -644,6 +654,8 @@
 	<script type="module" src="js/3d/weather.js"></script>
 	<script type="module" src="js/3d/water.js"></script>
 	<script type="module" src="js/3d/props.js"></script>
+	<script type="module" src="js/3d/trees.js"></script>
+	<script type="module" src="js/3d/models.js"></script>
 	<script type="module" src="js/3d/world.js"></script>
 	<script type="module" src="js/3d/real-env.js"></script>
 	<script type="module" src="js/3d/street-life.js"></script>

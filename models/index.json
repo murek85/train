@@ -1,0 +1,107 @@
+{
+	"version": 1,
+	"models": {
+		"street_lamp_01": {
+			"file": "street_lamp_01.glb",
+			"lod": "street_lamp_01_lo.glb",
+			"title": "Latarnia uliczna 01",
+			"author": "Josh Dean",
+			"license": "CC0 1.0",
+			"source": "https://polyhaven.com/a/street_lamp_01"
+		},
+		"street_lamp_02": {
+			"file": "street_lamp_02.glb",
+			"lod": "street_lamp_02_lo.glb",
+			"title": "Latarnia uliczna 02",
+			"author": "Josh Dean",
+			"license": "CC0 1.0",
+			"source": "https://polyhaven.com/a/street_lamp_02"
+		},
+		"metal_trash_can": {
+			"file": "metal_trash_can.glb",
+			"lod": "metal_trash_can_lo.glb",
+			"title": "Kosz na śmieci",
+			"author": "GurJas Studios",
+			"license": "CC0 1.0",
+			"source": "https://polyhaven.com/a/metal_trash_can",
+			"variants": {
+				"clean": "^metal_trash_can(?!_rust)",
+				"rust": "_rust"
+			}
+		},
+		"modular_street_seating": {
+			"file": "modular_street_seating.glb",
+			"lod": "modular_street_seating_lo.glb",
+			"title": "Ławki uliczne (moduły)",
+			"author": "Stuart Attenborrow",
+			"license": "CC0 1.0",
+			"source": "https://polyhaven.com/a/modular_street_seating"
+		},
+		"painted_wooden_bench": {
+			"file": "painted_wooden_bench.glb",
+			"lod": "painted_wooden_bench_lo.glb",
+			"title": "Ławka drewniana",
+			"author": "Kirill Sannikov",
+			"license": "CC0 1.0",
+			"source": "https://polyhaven.com/a/painted_wooden_bench"
+		},
+		"modular_chainlink_fence": {
+			"file": "modular_chainlink_fence.glb",
+			"lod": "modular_chainlink_fence_lo.glb",
+			"title": "Ogrodzenie z siatki (moduły)",
+			"author": "James Ray Cock, Amal Kumar",
+			"license": "CC0 1.0",
+			"source": "https://polyhaven.com/a/modular_chainlink_fence"
+		},
+		"concrete_road_barrier_02": {
+			"file": "concrete_road_barrier_02.glb",
+			"lod": "concrete_road_barrier_02_lo.glb",
+			"title": "Bariera betonowa",
+			"author": "Amal Kumar",
+			"license": "CC0 1.0",
+			"source": "https://polyhaven.com/a/concrete_road_barrier_02"
+		},
+		"fire_hydrant": {
+			"file": "fire_hydrant.glb",
+			"lod": "fire_hydrant_lo.glb",
+			"title": "Hydrant",
+			"author": "Gonçalo Felício",
+			"license": "CC0 1.0",
+			"source": "https://polyhaven.com/a/fire_hydrant",
+			"variants": {
+				"new": "^fire_hydrant(?!.*aged)",
+				"aged": "aged"
+			}
+		},
+		"shrub_03": {
+			"file": "shrub_03.glb",
+			"lod": "shrub_03_lo.glb",
+			"title": "Krzew",
+			"author": "Rico Cilliers",
+			"license": "CC0 1.0",
+			"source": "https://polyhaven.com/a/shrub_03",
+			"variant": "wind",
+			"variants": "each"
+		},
+		"fern_02": {
+			"file": "fern_02.glb",
+			"lod": "fern_02_lo.glb",
+			"title": "Paproć",
+			"author": "Rob Tuytel, Rico Cilliers",
+			"license": "CC0 1.0",
+			"source": "https://polyhaven.com/a/fern_02",
+			"variant": "wind",
+			"variants": "each"
+		},
+		"nettle_plant": {
+			"file": "nettle_plant.glb",
+			"lod": "nettle_plant_lo.glb",
+			"title": "Pokrzywa",
+			"author": "Rob Tuytel, Rico Cilliers",
+			"license": "CC0 1.0",
+			"source": "https://polyhaven.com/a/nettle_plant",
+			"variant": "wind",
+			"variants": "each"
+		}
+	}
+}

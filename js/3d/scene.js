@@ -61,8 +61,8 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 	const QUALITY = {
 		// range – zasięg szczegółów świata (kawałki przed pociągiem, drzewa i drobiazgi z bliska, cienie)
 		low: { name: 'niska', pr: 1, shadow: 1024, post: false, bloom: false, ao: false, atmo: false, msaa: 0, density: 0.5, particles: 0.35, range: 0.8 },
-		medium: { name: 'średnia', pr: 1.5, shadow: 2048, post: true, bloom: true, ao: true, atmo: false, msaa: 4, density: 0.8, particles: 0.7, range: 1 },
-		high: { name: 'wysoka', pr: 2, shadow: 4096, post: true, bloom: true, ao: true, atmo: true, msaa: 4, density: 1.15, particles: 1, range: 1.15 },
+		medium: { name: 'średnia', pr: 1.5, shadow: 2048, post: true, bloom: true, ao: true, ssr: false, atmo: false, msaa: 4, density: 0.8, particles: 0.7, range: 1 },
+		high: { name: 'wysoka', pr: 2, shadow: 4096, post: true, bloom: true, ao: true, ssr: true, atmo: true, msaa: 4, density: 1.15, particles: 1, range: 1.15 },
 	};
 	/* Jakość cieni (ustawienie „Cienie”, domyślnie jak jakość ogólna): rozmiar map (dwie bliższe kaskady; najdalsza do
 	   2048), promień rozmycia krawędzi (PCF) kaskad, zasięg obiektów świata rzucających cień (× 450 m) i cienie terenu
@@ -789,6 +789,12 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			return this.zoomNames[this.zoomIdx];
 		}
 
+		// efekt z ustawień: 'on' / 'off' albo jak jakość (def)
+		fxOn(k, def) {
+			const v = this.fx && this.fx[k];
+			return v === 'on' ? true : v === 'off' ? false : !!def;
+		}
+
 		resize(hudH) {
 			const w = window.innerWidth, h = Math.max(120, window.innerHeight - hudH);
 			if (w === this.size.w && h === this.size.h) return;
@@ -799,6 +805,12 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			// (TAA – tylko WebGPU z efektami; w WebGL i bez efektów jak FXAA / MSAA)
 			this.post.setSize(w * pr, h * pr, this.renderOpts.aa ? this.quality.msaa : 0, !!(NS.gpu && this.renderOpts.aa && this.renderOpts.taa));
 			if (this.skyGpu) this.skyGpu.setSize(w * pr, h * pr);
+			// bufory efektów nowego rozmiaru – paczki rysowania od nowa już w tej klatce (tekstura bufora AO w materiałach)
+			if (NS.gpu) {
+				this.scene.traverse((o) => { if (o.isBundleGroup) o.needsUpdate = true; });
+				this.postVer = this.post.version;
+				this.rebundle(3);
+			}
 			this.camera.aspect = w / h;
 			this.camera.updateProjectionMatrix();
 			const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -825,6 +837,33 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			this.rebundleFrames = Math.max(this.rebundleFrames || 0, 2);
 		}
 
+		/* światło odbite od ziemi (dolna półkula mapy otoczenia i HemisphereLight): średni kolor terenu wokół kamery
+		   (25 punktów do 160 m w bok, ±120 m wzdłuż trasy – world.terrainColor: łąki, pola, las, zabudowa z danych) razy
+		   natężenie padające na ziemię – słońce (księżyc) wg wysokości, 80% (cienie) i niebo. Dawniej stała część koloru
+		   terenu, kilka razy za ciemna względem słońca: spody wiat, wagonów, gzymsów i liści w cieniu – czarne */
+		envGround(sim, hemiBase) {
+			const A = this.envAlbedo || (this.envAlbedo = new T.Color());
+			const s0 = this.free && this.free.s !== undefined ? this.free.s : sim.st.pos;
+			let r = 0, g = 0, b = 0, n = 0;
+			try {
+				for (const ds of [-120, -60, 0, 60, 120]) for (const d of [-160, -70, 0, 70, 160]) {
+					const c = this.world.terrainColor(s0 + ds, d, 0);
+					r += c.r; g += c.g; b += c.b; n++;
+				}
+			} catch (err) {
+				n = 0;
+			}
+			if (n) A.setRGB(r / n, g / n, b / n);
+			else A.set('#3a4a2a');
+				const sI = this.sun.intensity * Math.max(0, this.lightDir.y) * 0.8, S = this.sun.color, H = this.hemi.color;
+			const G = this.env.ground;
+			G.setRGB(S.r * sI + H.r * hemiBase, S.g * sI + H.g * hemiBase, S.b * sI + H.b * hemiBase).multiply(A);
+			// (półkula: kolor razy natężenie światła = natężenie odbite; mapa otoczenia – ta sama jasność co niebo w niej)
+			this.hemi.groundColor.copy(G).multiplyScalar(1 / Math.max(0.05, hemiBase));
+			G.copy(this.hemi.groundColor);
+			return G;
+		}
+
 		// over – { shadow, water, tex }: 'auto' (jak jakość) albo low / medium / high (tex – także off)
 		setQuality(key, over = {}) {
 			const q = QUALITY[key] || QUALITY.medium;
@@ -849,9 +888,23 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 					});
 			}
 			if (NS.waterUniforms) NS.waterUniforms.uWQ.value = this.waterQ.wq;
+			/* nowe efekty (ustawienia): odbicia ekranowe i okluzja – 'auto' (jak jakość) / 'on' / 'off', w locie; drzewa
+			   z modeli i rośliny przyziemne z obiektami z mapy – przebudowa świata (fxKey) */
+			this.fx = { ssr: over.ssr || 'auto', ao: over.ao || 'auto' };
+			/* domyślnie (auto) wg jakości – pomiar (Mosina, kamera nieruchoma): drzewa z modeli ok. −17% FPS, rośliny i obiekty
+			   z mapy −7…10%; wysoka – pełne modele i rośliny, średnia – modele uproszczone (wersja z daleka także blisko) bez
+			   roślin, niska – proste korony bez roślin */
+			const trees = over.trees && over.trees !== 'auto' ? over.trees : { high: 'models', medium: 'lite', low: 'simple' }[qk];
+			const plants = over.plants && over.plants !== 'auto' ? over.plants === 'on' : qk === 'high';
+			NS.World.opt.ezTrees = trees !== 'simple';
+			this.world.treeLite = trees === 'lite';
+			this.world.plants = plants;
+			const fxKey = trees + '|' + plants;
+			const fxChanged = this.fxKey !== undefined && this.fxKey !== fxKey;
+			this.fxKey = fxKey;
 			/* włączenie / wyłączenie odbicia wody też z pełnym odświeżeniem (WebGPU: po przebudowie świata bez odbicia
 			   w shaderze woda zostawała bez odbicia do następnej przebudowy przy włączonym) */
-			if (this.quality === q && this.shadowKey === sk && this.waterReflKey === this.waterQ.refl) return;
+			if (this.quality === q && this.shadowKey === sk && this.waterReflKey === this.waterQ.refl && !fxChanged) return;
 			this.waterReflKey = this.waterQ.refl;
 			this.shadowKey = sk;
 			this.shadowQ = SHADOWQ[sk];
@@ -1082,9 +1135,10 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			}
 			this.syncCascades();
 			this.hemi.color.copy(zen).lerp(hor, 0.5).lerp(gray, W.haze * 0.6);
-			this.hemi.groundColor.setRGB(0.16, 0.19, 0.11).multiplyScalar(0.3 + dayK);
+			if (!this.envAlbedo) this.hemi.groundColor.setRGB(0.16, 0.19, 0.11).multiplyScalar(0.3 + dayK); // (dalej – envGround)
 			// światło otoczenia dzielone między półkulę i odbicia nieba (razem dawały płaski, wyblakły obraz)
-			this.hemi.intensity = (0.3 + 0.78 * smoothstep(-0.2, 0.3, e)) * (0.8 + 0.2 * W.sun) + fl * 2.6;
+			const hemiBase = (0.3 + 0.78 * smoothstep(-0.2, 0.3, e)) * (0.8 + 0.2 * W.sun);
+			this.hemi.intensity = hemiBase + fl * 2.6;
 			this.scene.environmentIntensity = 0.3 + 0.45 * dayK + fl * 0.5;
 			// korekta barw: chłodne cienie, ciepłe światła (złota godzina – cieplej), nocą chłodniej i mniej nasycenia
 			const golden = dayK * (1 - smoothstep(0.12, 0.35, e)) * W.sun, night = 1 - dayK;
@@ -1110,12 +1164,24 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			U.uSnow.value = W.snowGround;
 			U.uRain.value = W.rain;
 
-			// odbicia nieba (lakier, szyby, szyny, woda, mokra ziemia) – odświeżane co 2 s
+			/* odbicia nieba i światło otoczenia z mapy (lakier, szyby, szyny, woda, mokra ziemia, oświetlenie rozproszone):
+			   co 2 s, o świcie i zmierzchu co 0,5 s (płynne przejście zamiast skoków). Niebo szarzeje z zachmurzeniem
+			   (dawniej tylko z zamgleniem – pod pełnym zachmurzeniem odbicia i cienie były niebieskie jak przy czystym niebie);
+			   dolna półkula – oświetlony teren wokół kamery (envGround), nie stała zieleń */
 			this.envT -= dt;
 			if (this.envT <= 0 || !this.scene.environment) {
-				this.envT = 2;
+				this.envT = Math.abs(e) < 0.25 ? 0.5 : 2;
 				this.env.sunDir.copy(this.sunDir);
-				const env = { zenith: zen.clone().lerp(gray, W.haze), horizon: hor.clone().lerp(gray, W.haze), ground: this.env.ground, sunDir: this.sunDir, sunColor: sunCol.clone().multiplyScalar(dayK * W.sun) };
+				const ovK = smoothstep(0.3, 1.0, W.cover) * 0.85;
+				const cloudC = tmpC.copy(hor).lerp(gray, 0.5).multiplyScalar(1.1 * dimK);
+				const ground = this.envGround(sim, hemiBase);
+				const env = {
+					zenith: zen.clone().lerp(gray, W.haze).lerp(cloudC, ovK),
+					horizon: hor.clone().lerp(gray, W.haze).lerp(cloudC, ovK * 0.8),
+					ground,
+					sunDir: this.sunDir,
+					sunColor: sunCol.clone().multiplyScalar(dayK * W.sun),
+				};
 				const tex = this.envGpu ? this.envGpu(env) : this.post.environment(env);
 				if (tex) this.scene.environment = tex;
 			}
@@ -1788,6 +1854,8 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			// WebGPU: rysowanie po init(); wspólne uniformy materiałów węzłowych raz na klatkę; macierze świata raz na klatkę
 			// (WebGPURenderer liczy je przy każdym render() – też dla każdej mapy cieni i przebiegów efektów)
 			const gpuReady = !NS.gpu || this.gl.hasInitialized(), gpuOk = gpuReady && !this.hold;
+			// drzewa z modeli: impostory dalekich lasów wypalane raz, w tle, od pierwszej klatki z gotową kartą (trees.js)
+			if (NS.gpu && gpuReady && NS.trees && NS.World.opt.ezTrees !== false) NS.trees.bake(this.gl);
 			// chmury wolumetryczne z kamerą tej klatki – także przy wstrzymanym rysowaniu (hold): ich bufory (cień chmur
 			// w materiałach) muszą powstać jako bufory docelowe przed compileAsync, inaczej Three tworzy je jako zwykłe
 			// tekstury, a pierwsze rysowanie do nich niszczy je pod związanymi już materiałami
@@ -1817,11 +1885,13 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 					// w tunelu (trasa z mapy) bez AO: w zamkniętej obudowie zaciemniało strop i ściany do czerni
 					/* okluzja otoczenia: podstawy budynków, pod drzewami i wiaduktami, skarpy, między wagonami; w kabinie bez jej
 					   wnętrza (aoNear – pierwsze 3,5 m od kamery), dawniej w widoku z kabiny wyłączona; w tunelu – bez */
-					ao: q.ao && !this.camInTunnel(sim),
+					ao: this.fxOn('ao', q.ao) && !this.camInTunnel(sim),
 					aoNear: this.viewMode === 'cab' ? 3.5 : 0,
 					aoRadius: 2.8,
 					aoStrength: 1.6,
 					aoFade: 140,
+					// odbicia ekranowe (jakość wysoka, WebGPU) – mokre nawierzchnie, szyby, gładki metal
+					ssr: this.fxOn('ssr', !!q.ssr),
 					exposure,
 					saturation: this.grade.saturation,
 					contrast: 1.07,
@@ -1835,12 +1905,18 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 						: null,
 				});
 			} else {
+				if (NS.gpu) this.post.idle();
 				this.gl.toneMappingExposure = exposure;
 				this.gl.setRenderTarget(null);
 				this.gl.render(this.scene, this.camera);
 			}
 			if (NS.gpu) this.scene.matrixWorldAutoUpdate = true;
 			if (NS.gpu && gpuOk) this.endAsyncPipelines();
+			// bufory efektów przebudowane (post-gpu.js version) – paczki rysowania od nowa (powiązania z teksturą bufora AO)
+			if (NS.gpu && this.post && this.post.version !== undefined && this.post.version !== this.postVer) {
+				this.postVer = this.post.version;
+				this.rebundle(3);
+			}
 			if (NS.gpu && gpuOk && this.rebundleFrames > 0) {
 				this.rebundleFrames--;
 				this.scene.traverse((o) => { if (o.isBundleGroup) o.needsUpdate = true; });

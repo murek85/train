@@ -16,7 +16,9 @@
    --fixes plik.json | routes/plik.js – poprawki (sekcja fixes) nakładane w grze; z pliku trasy – jego sekcja fixes
    (ponowne generowanie zachowuje poprawki). RINF (ERA, js/gen/rinf-pl.js): pochylenia w tunelach i na mostach,
    brakujące tunele; --no-rinf – bez nich. --no-horizon – bez horyzontu. --construction – tory w przebudowie (railway=construction, np. linia
-   w remoncie) jak zwykłe. Na końcu wypisywane są uwagi generatora (miejsca do sprawdzenia). */
+   w remoncie) jak zwykłe. Na końcu wypisywane są uwagi generatora (miejsca do sprawdzenia).
+   --trees-only routes/plik.js – do istniejącego pliku trasy tylko drzewa z mapy (env.vt: natural=tree, tree_row) z tego
+   generowania, reszta pliku bez zmian (stacje muszą mieć te same odstępy; stałe przesunięcie kilometrażu – przeliczane). */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -77,6 +79,20 @@ function args(argv) {
 			d._bus = 1;
 			fs.writeFileSync(a['env-data'], JSON.stringify(d));
 		}
+		// ekrany akustyczne, płoty, latarnie, ławki, kosze, hydranty – dopobranie do starszych danych
+		if (!d._obj) {
+			const have = new Set(d.elements.map((e) => e.type + e.id));
+			d.elements.push(...(await OSM.fetchObjects(poly, l)).filter((e) => !have.has(e.type + e.id)));
+			d._obj = 1;
+			fs.writeFileSync(a['env-data'], JSON.stringify(d));
+		}
+		// drzewa i szpalery – dopobranie do starszych danych (szpalery mogą już być – powtórki po id pomijane)
+		if (!d._trees) {
+			const have = new Set(d.elements.map((e) => e.type + e.id));
+			d.elements.push(...(await OSM.fetchTrees(poly, l)).filter((e) => !have.has(e.type + e.id)));
+			d._trees = 1;
+			fs.writeFileSync(a['env-data'], JSON.stringify(d));
+		}
 		// punkty usług (rodzaj budynków) – dopobranie do starszych danych
 		if (!d._pois) {
 			d.elements.push(...(await OSM.fetchPois(poly, l)));
@@ -88,7 +104,7 @@ function args(argv) {
 	else opts.environment = async (poly, l) => {
 		const d = await OSM.fetchEnvironment(poly, l);
 		// zapytanie otoczenia obejmuje już maszty, przejścia, parkingi i punkty usług – zapisane dane bez dopobierania
-		if (a['save-env']) fs.writeFileSync(a['save-env'], JSON.stringify(Object.assign({ _masts: 1, _streets: 1, _pois: 1, _bus: 1 }, d)));
+		if (a['save-env']) fs.writeFileSync(a['save-env'], JSON.stringify(Object.assign({ _masts: 1, _streets: 1, _pois: 1, _bus: 1, _trees: 1, _obj: 1 }, d)));
 		return d;
 	};
 	// ukształtowanie terenu wokół trasy: zapisane dane (--dem-data) albo pobranie (z zapisem --save-dem)
@@ -145,6 +161,71 @@ function args(argv) {
 	} else {
 		if (a.save) opts.onData = (data) => fs.writeFileSync(a.save, JSON.stringify(data));
 		def = await OSM.generate(Object.assign({}, opts, { environment: opts.environment === false ? false : undefined, envFetch: opts.environment }));
+	}
+	/* --trees-only routes/plik.js: do istniejącego pliku trasy tylko drzewa z mapy (env.vt) z tego generowania – reszta
+	   pliku (ręczne poprawki, niweleta) bez zmian; stacje muszą się zgadzać (te same odstępy, do 2 m – stałe przesunięcie
+	   kilometrażu dozwolone), inaczej przerwanie */
+	if (a['objects-only']) a['trees-only'] = a['objects-only'];
+	if (a['trees-only']) {
+		const fp = path.resolve(a['trees-only']);
+		const old = require(fp);
+		// (stałe przesunięcie kilometrażu – np. inny początek trasy po zmianach generatora – odejmowane od s drzew)
+		// (stacje skrajne pomijane – generator dosuwa je do końców trasy, ich położenie bywa inne o kilka metrów)
+		const inner = (A) => (A.length > 3 ? A.slice(1, -1) : A);
+		const dd = old.stations.length === def.stations.length ? inner(def.stations.map((s, i) => s.pos - old.stations[i].pos)).sort((x, y) => x - y) : [];
+		const shiftS = dd.length ? dd[dd.length >> 1] : 0;
+		/* zgodność: co najmniej 80% stacji (bez skrajnych) w ±3 m od mediany – pojedyncze stacje przesunięte w danych (inne
+		   położenie peronu, zmiana w OSM) nie przekreślają trasy; wypisane do sprawdzenia */
+		const odd = dd.filter((x) => Math.abs(x - shiftS) > 3);
+		let bad = !dd.length || odd.length > dd.length * 0.2;
+		/* bez stałego przesunięcia (inna liczba stacji, przebieg wygładzony inaczej): stacje dopasowane po nazwie (co
+		   najmniej 3 i 70% stacji pliku), kilometraż przeliczany odcinkami między nimi (liniowo; poza skrajnymi – przesunięcie
+		   skrajnej) */
+		let mapS = (x) => x - shiftS;
+		if (bad) {
+			const byName = new Map(def.stations.map((s) => [s.name, s.pos]));
+			const K = old.stations.filter((s) => byName.has(s.name)).map((s) => [byName.get(s.name), s.pos]).sort((x, y) => x[0] - y[0]);
+			const mono = K.every((k, i) => !i || (k[0] > K[i - 1][0] && k[1] > K[i - 1][1]));
+			if (K.length >= 3 && K.length >= old.stations.length * 0.7 && mono) {
+				bad = false;
+				mapS = (x) => {
+					let i = 1;
+					while (i < K.length - 1 && x > K[i][0]) i++;
+					const [a0, b0] = K[i - 1], [a1, b1] = K[i];
+					if (x <= a0 && i === 1) return x - a0 + b0;
+					if (x >= a1) return x - a1 + b1;
+					return b0 + ((x - a0) / (a1 - a0)) * (b1 - b0);
+				};
+				console.log(`Stacje dopasowane po nazwie (${K.length} z ${old.stations.length}) – kilometraż przeliczany odcinkami: ` + K.map(([a, b]) => `${Math.round(a - b)}`).join(' / ') + ' m.');
+			}
+		}
+		if (!bad && odd.length && dd.length) console.log(`Stacje odstające od przesunięcia ${shiftS} m (${odd.length}): ` + def.stations.filter((s, i) => Math.abs(s.pos - old.stations[i].pos - shiftS) > 3).map((s) => s.name).join(', '));
+		if (bad) {
+			console.error('Stacje nie zgadzają się z istniejącym plikiem – drzewa nie dopisane:');
+			console.error('  plik:  ', old.stations.map((s) => s.name + ' ' + s.pos).join(' | '));
+			console.error('  teraz: ', def.stations.map((s) => s.name + ' ' + s.pos).join(' | '));
+			process.exit(2);
+		}
+		const vt = ((def.env && def.env.vt) || []).slice();
+		for (let i = 0; i < vt.length; i += 4) vt[i] = Math.round(mapS(vt[i]) * 2) / 2;
+		if (shiftS) console.log(`Kilometraż przesunięty o ${shiftS} m względem pliku – drzewa przeliczone.`);
+		const src = fs.readFileSync(fp, 'utf8');
+		const tail = src.lastIndexOf('})(');
+		const json = src.slice(tail + 3, src.lastIndexOf(');'));
+		const o = JSON.parse(json);
+		if (!o.env) { console.error('Plik trasy bez otoczenia (env).'); process.exit(2); }
+		o.env.vt = vt;
+		// --objects-only: także bariery (ba) i obiekty punktowe (pt), s przesunięte jak drzewa
+		if (a['objects-only']) {
+			const sh = (x) => Math.round(mapS(x) * 2) / 2;
+			o.env.ba = ((def.env && def.env.ba) || []).map((row) => row.map((v, i) => (i >= 2 && i % 2 === 0 ? sh(v) : v)));
+			o.env.pt = ((def.env && def.env.pt) || []).map((v, i) => (i % 3 === 0 ? sh(v) : v));
+			console.log(`Obiekty z mapy: bariery ${o.env.ba.length}, punkty ${o.env.pt.length / 3}.`);
+		}
+		const out2 = JSON.stringify(o).replace(/,"(?=[a-z]+":)/g, ',\n"');
+		fs.writeFileSync(fp, src.slice(0, tail + 3) + out2 + ');\n', 'utf8');
+		console.log(`Dopisano drzewa z mapy do ${a['trees-only']}: ${vt.length / 4}.`);
+		return;
 	}
 	const out = a.out || `routes/${def.id}.js`;
 	const json = JSON.stringify(def).replace(/,"(?=[a-z]+":)/g, ',\n"');

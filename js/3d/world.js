@@ -431,6 +431,7 @@ import { BundleGroup } from 'three/webgpu';
 
 		clear() {
 			this.abortJob();
+			this.dropTreePool();
 			if (this.streetLifeReset) this.streetLifeReset();
 			for (const ch of this.chunks.values()) this.dropChunk(ch);
 			this.chunks.clear();
@@ -441,6 +442,7 @@ import { BundleGroup } from 'three/webgpu';
 			this.scene.remove(ch.group);
 			ch.group.traverse((o) => { if (o.isInstancedMesh) o.dispose(); });
 			disposeTree(ch.group);
+			if (ch.group.userData.ezTrees) this.treePoolDirty = true;
 			for (const d of ch.dyn) {
 				if (d.ownMat) d.ownMat.dispose();
 				if (d.tex) d.tex.dispose();
@@ -1333,6 +1335,8 @@ import { BundleGroup } from 'three/webgpu';
 			yield* this.buildTrees(group, c, s0, s1);
 			yield;
 			yield* this.buildGrass(group, c, s0, s1);
+			yield* this.buildPlants(group, c, s0, s1);
+			if (this.env) yield* this.buildMapObjects(group, c, s0, s1, dyn);
 			this.buildPosts(group, s0, s1);
 			yield;
 			if (this.env) yield* this.buildEnvChunk(group, c, dyn);
@@ -1438,7 +1442,7 @@ import { BundleGroup } from 'three/webgpu';
 				/* instancje z niewielu egzemplarzy (latarnie, słupki, znaki, wsporniki…) – wtopione w bryłę kawałka; bez koron
 				   (poziom szczegółów), drobnych detali (z daleka znikają) i materiałów z kołysaniem (faza z położenia egzemplarza);
 				   kolor egzemplarza tylko przy kolorach wierzchołków */
-				if (o.count > 64 || !o.count || o.userData.lo || o.userData.fine || /wind|grass/.test(m.customProgramCacheKey ? m.customProgramCacheKey() : '')) return;
+				if (o.count > 64 || !o.count || o.userData.lo || o.userData.fine || o.userData.near || /wind|grass/.test(m.customProgramCacheKey ? m.customProgramCacheKey() : '')) return;
 				if (o.instanceColor && !(g.attributes.color && m.vertexColors)) return;
 				let ok = true;
 				for (let i = 0; i < o.count && ok; i++) {
@@ -1533,14 +1537,16 @@ import { BundleGroup } from 'three/webgpu';
 			for (const o of empty) o.parent.remove(o);
 			group.updateMatrixWorld(true);
 			group.traverse((o) => { if (o !== group && !prot.has(o) && !LAMP.some((k) => o.userData[k] !== undefined)) o.matrixAutoUpdate = false; });
-			/* poziomy szczegółów kawałka (World.update): trees – korony z bryłą dokładną i uproszczoną; fine – drobne instancje
-			   (userData.fine: podkłady, przytwierdzenia, trawa, kwiaty, trzciny), z daleka niewidoczne */
-			const lod = { trees: [], fine: [], casters: [], fold: [] };
+			/* poziomy szczegółów kawałka (World.update): trees – korony z bryłą dokładną i uproszczoną (drzewa z modeli – pule
+			   świata, treePool); fine – drobne instancje (userData.fine: podkłady, przytwierdzenia, trawa, kwiaty, trzciny),
+			   z daleka niewidoczne; near – rośliny przyziemne z modeli (userData.near), tylko w kawałkach bliskich */
+			const lod = { trees: [], fine: [], near: [], casters: [], fold: [] };
 			group.traverse((o) => {
 				if (o.userData.fold !== undefined) lod.fold.push(o);
 				if (o.isMesh && o.castShadow && !prot.has(o)) lod.casters.push(o);
 				if (!o.isInstancedMesh || prot.has(o)) return;
 				if (o.userData.lo) lod.trees.push(o);
+				else if (o.userData.near) { lod.near.push(o); o.castShadow = false; }
 				else if (o.userData.fine) { lod.fine.push(o); o.castShadow = false; } // drobiazgi bez cienia
 			});
 			lod.casters = lod.casters.filter((o) => o.castShadow);
@@ -1602,7 +1608,7 @@ import { BundleGroup } from 'three/webgpu';
 		bundleStatic(group, prot, LAMP) {
 			const list = [];
 			group.traverse((o) => {
-				if (!o.isMesh || prot.has(o) || o.matrixAutoUpdate !== false || !o.visible && !o.userData.fine && o.userData.fold === undefined) return;
+				if (!o.isMesh || prot.has(o) || o.matrixAutoUpdate !== false || !o.visible && !o.userData.fine && !o.userData.near && o.userData.fold === undefined) return;
 				if (LAMP.some((k) => o.userData[k] !== undefined) || (o.material && !Array.isArray(o.material) && o.material.userData && o.material.userData.water)) return;
 				for (let p = o.parent; p && p !== group; p = p.parent) if (prot.has(p) || p.isLOD) return;
 				list.push(o);
@@ -1623,6 +1629,90 @@ import { BundleGroup } from 'three/webgpu';
 			return b;
 		}
 
+		/* Pule drzew z modeli (WebGPU): egzemplarze wszystkich kawałków (group.userData.ezTrees / ezImp – klucz, macierz,
+		   kolor) w siatkach na gatunek | wariant | część (kora, liście) | poziom: hi – kawałek bliski (wersja dokładna; przy
+		   treeLite – z daleka), lo – dalszy (wersja z daleka), far – poza zasięgiem cieni (bez cienia); impostory: gatunek
+		   | z cieniem / bez. Przebudowa przy zmianie kawałków i ich poziomów (treePoolDirty – update), w jednej paczce
+		   rysowania (BundleGroup) nagrywanej od nowa tylko wtedy. Pojemność siatki – z zapasem (nowa siatka przy przepełnieniu). */
+		updateTreePool() {
+			this.treePoolDirty = false;
+			if (!NS.trees) return;
+			let P = this.treePool;
+			if (!P) {
+				P = this.treePool = { root: new BundleGroup(), meshes: new Map() };
+				P.root.name = 'treePool';
+				P.root.matrixAutoUpdate = false;
+				P.root.matrixWorldAutoUpdate = false;
+				this.scene.add(P.root);
+			}
+			const EG = NS.trees.geometries(), EM = NS.trees.materials(patch);
+			const leafM = this.season === 'winter' ? EM.leafWinter : EM.leaf;
+			// zliczenie egzemplarzy na siatkę puli
+			const need = new Map(), parts = [];
+			const add = (key, n) => need.set(key, (need.get(key) || 0) + n);
+			for (const ch of this.chunks.values()) {
+				const u = ch.group.userData, L = u.lod;
+				if (!u.ezTrees && !u.ezImp) continue;
+				const tier = !L || L.hi === undefined || L.hi ? 'hi' : L.cast === false ? 'far' : 'lo';
+				parts.push([u, tier]);
+				if (u.ezTrees) for (const k of u.ezTrees.keys) { add(k + '|bark|' + tier, 1); add(k + '|leaf|' + tier, 1); }
+				if (u.ezImp) for (const k of u.ezImp.keys) add('imp|' + k + '|' + (tier === 'far' ? 'far' : 'cast'), 1);
+			}
+			const mesh = (key, n) => {
+				let m = P.meshes.get(key);
+				if (m && m.instanceMatrix.count >= n) return m;
+				if (m) { P.root.remove(m); m.dispose(); }
+				const [a, b, c, tier] = key.split('|');
+				let geo, mat;
+				if (a === 'imp') {
+					geo = NS.trees.impostors.geo[b];
+					mat = NS.trees.impostorMaterial(patch);
+				} else {
+					const g = EG[a][+b], lo = tier !== 'hi' || this.treeLite;
+					geo = lo ? g.lo[c] : g[c];
+					mat = c === 'leaf' ? leafM : EM.bark[NS.trees.barkOf(a)];
+				}
+				m = new T.InstancedMesh(geo, mat, Math.ceil(n * 1.4) + 16);
+				m.count = 0;
+				m.castShadow = this.shadows && (a === 'imp' ? c !== 'far' : tier !== 'far');
+				m.receiveShadow = true;
+				m.frustumCulled = false;
+				m.matrixAutoUpdate = false;
+				if (a === 'imp' || c === 'leaf') m.instanceColor = new T.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3), 3);
+				P.meshes.set(key, m);
+				P.root.add(m);
+				return m;
+			};
+			for (const m of P.meshes.values()) m.count = 0;
+			const fill = (key, R, i) => {
+				const m = mesh(key, need.get(key)), k = m.count++;
+				m.instanceMatrix.array.set(R.mats.subarray(i * 16, i * 16 + 16), k * 16);
+				if (m.instanceColor) m.instanceColor.array.set(R.cols.subarray(i * 3, i * 3 + 3), k * 3);
+			};
+			for (const [u, tier] of parts) {
+				const E = u.ezTrees, I = u.ezImp;
+				if (E) for (let i = 0; i < E.keys.length; i++) {
+					fill(E.keys[i] + '|bark|' + tier, E, i);
+					fill(E.keys[i] + '|leaf|' + tier, E, i);
+				}
+				if (I) for (let i = 0; i < I.keys.length; i++) fill('imp|' + I.keys[i] + '|' + (tier === 'far' ? 'far' : 'cast'), I, i);
+			}
+			for (const m of P.meshes.values()) {
+				m.visible = m.count > 0;
+				m.instanceMatrix.needsUpdate = true;
+				if (m.instanceColor) m.instanceColor.needsUpdate = true;
+			}
+			P.root.needsUpdate = true;
+		}
+
+		dropTreePool() {
+			const P = this.treePool;
+			if (!P) return;
+			for (const m of P.meshes.values()) m.dispose();
+			this.scene.remove(P.root);
+			this.treePool = null;
+		}
+
 		/* Poziom szczegółów kawałków wg odległości kamery od kawałka wzdłuż toru (s – kilometraż kamery): korony bliżej niż
 		   TREE_NEAR – bryła dokładna, dalej uproszczona; drobne instancje dalej niż FINE_FAR – niewidoczne (ułamek piksela). */
 		updateLod(s) {
@@ -1638,6 +1728,8 @@ import { BundleGroup } from 'three/webgpu';
 				if (L.hi !== hi) {
 					L.hi = hi;
 					for (const m of L.trees) m.geometry = hi ? m.userData.hi : m.userData.lo;
+					for (const m of L.near) m.visible = hi;
+					if (ch.group.userData.ezTrees) this.treePoolDirty = true;
 					if (L.bundle) L.bundle.needsUpdate = true;
 				}
 				const show = d < far;
@@ -1658,6 +1750,7 @@ import { BundleGroup } from 'three/webgpu';
 				const cast = d < shadowFar;
 				if (L.cast !== cast) {
 					L.cast = cast;
+					if (ch.group.userData.ezTrees) this.treePoolDirty = true;
 					for (const m of L.casters) m.castShadow = cast;
 					if (L.bundle) L.bundle.needsUpdate = true;
 				}
@@ -1751,23 +1844,41 @@ import { BundleGroup } from 'three/webgpu';
 		// generatory drzew i trawy (krok co kilkadziesiąt / tysiąc sztuk) – zob. chunkSteps
 		*buildTrees(group, c, s0, s1) {
 			const M = World.materials(), G = World.G.trees;
+			/* WebGPU: drzewa z modeli (trees.js – EZ-Tree: pień z gałęziami i karty gałązek z liśćmi, 2 warianty na gatunek);
+			   rozmieszczenie, wielkość i kolory jak dawnych koron – egzemplarze zbierane w ez i wstawiane po pętli (dokładna
+			   liczba na wariant) */
+			const ez = NS.gpu && NS.trees && World.opt.ezTrees !== false ? [] : null;
 			// zimą liściaste z faktury nagich gałązek (to samo rozmieszczenie pól atlasu; iglaste bez zmian)
 			const fa = NS.props.foliageAtlas(this.season === 'winter');
 			M.leaf.map = M.bush.map = fa;
 			const dens = this.density;
 			const N = Math.round(230 * dens * (this.env ? 2.4 : 1));
+			/* drzewa z mapy (trasa rzeczywista – env.vt z generatora: pojedyncze drzewa i szpalery z OSM, po 4: s, d, gatunek,
+			   wysokość) w tym kawałku – indeks kawałków budowany raz na trasę */
+			const vt = this.env && this.route.env && this.route.env.vt;
+			if (vt && (!this.vtIdx || this.vtIdx.vt !== vt)) {
+				const idx = new Map();
+				for (let i = 0; i < vt.length; i += 4) {
+					const cc = Math.floor(vt[i] / C);
+					if (!idx.has(cc)) idx.set(cc, []);
+					idx.get(cc).push(i);
+				}
+				this.vtIdx = { vt, idx };
+			}
+			const osmT = vt ? this.vtIdx.idx.get(c) || [] : [];
 			const inst = (geo, material, n) => {
 				const m = new T.InstancedMesh(geo, material, Math.max(1, n));
 				m.count = 0;
 				return m;
 			};
-			const trunks = inst(G.trunk, M.trunkMat, N + 120);
-			const birchTrunks = inst(G.trunk, M.birchMat, N);
-			const spruces = inst(G.spruce, M.spruce, N);
-			const oaks = inst(G.oak, M.leaf, N);
-			const birches = inst(G.birch, M.leaf, N);
-			const poplars = inst(G.poplar, M.leaf, N);
-			const pines = inst(G.pine, M.leaf, N);
+			const NO = N + osmT.length;
+			const trunks = inst(G.trunk, M.trunkMat, NO + 120);
+			const birchTrunks = inst(G.trunk, M.birchMat, NO);
+			const spruces = inst(G.spruce, M.spruce, NO);
+			const oaks = inst(G.oak, M.leaf, NO);
+			const birches = inst(G.birch, M.leaf, NO);
+			const poplars = inst(G.poplar, M.leaf, NO);
+			const pines = inst(G.pine, M.leaf, NO);
 			const bushes = inst(G.bush, M.bush, Math.round(110 * dens));
 			// zwarte masy lasu (150–520 m od toru) – zawsze z bryły z daleka
 			const blobs = inst(World.opt.lod === false ? G.oak : G.lo.oak, M.leaf, Math.round((this.env ? 160 : 70) * dens));
@@ -1784,12 +1895,71 @@ import { BundleGroup } from 'three/webgpu';
 				if (color) m.setColorAt(m.count, tmpColor.setRGB(color[0], color[1], color[2], T.SRGBColorSpace));
 				m.count++;
 			};
+			/* jedno drzewo w (tp, y): sp – gatunek (świerk > 0,6 > sosna > 0,5 > dąb, lipa > 0,33 > brzoza > 0,22 > topola),
+			   k – wielkość (1 – typowe drzewo ok. 11 m), q – obrót */
+			const plant = (sp, k, y, seed, sh) => {
+				if (ez) {
+					// pudełko drzewa: podstawa 0,2 m w ziemi, wysokość i szerokość jak dawny pień z koroną
+					const kind = sp > 0.6 ? 'spruce' : sp > 0.5 ? 'pine' : sp > 0.33 ? 'oak' : sp > 0.22 ? 'birch' : 'poplar';
+					const kc = this.seasonCrown(kind);
+					const [Hk, Wk, base] = { spruce: [11.7, 6.2, [0.17, 0.34, 0.2]], pine: [12.6, 6, [0.2, 0.36, 0.18]], oak: [10.1, 8.5, [0.29, 0.5, 0.2]], birch: [10.65, 4.4, [0.45, 0.62, 0.27]], poplar: [16.5, 3.6, [0.3, 0.48, 0.21]] }[kind];
+					const H = Hk * k * (kind === 'spruce' || kind === 'pine' ? 1 : 0.85 + 0.15 * kc), W = Wk * k * kc;
+					ez.push([kind, hash(seed + 0.37) < 0.5 ? 0 : 1, tp.x, y - 0.2 + H / 2, tp.z, W, H, q.clone(), this.seasonTree(kind, base.map((x) => x * sh), seed)]);
+				} else if (sp > 0.6) { // świerk
+					put(trunks, tp.x, y + 1 * k, tp.z, 0.45 * k, 2 * k, 0.45 * k);
+					put(spruces, tp.x, y + 6.2 * k, tp.z, 6.2 * k, 11 * k, 6.2 * k, this.seasonTree('spruce', [0.17 * sh, 0.34 * sh, 0.2 * sh], seed));
+				} else if (sp > 0.5) { // sosna: wysoki pień, płaska korona
+					put(trunks, tp.x, y + 4.5 * k, tp.z, 0.45 * k, 9 * k, 0.45 * k);
+					put(pines, tp.x, y + 9.6 * k, tp.z, 6 * k, 6 * k, 6 * k, this.seasonTree('pine', [0.2 * sh, 0.36 * sh, 0.18 * sh], seed));
+				} else if (sp > 0.33) { // dąb, lipa: szeroka korona
+					put(trunks, tp.x, y + 2.2 * k, tp.z, 0.75 * k, 4.4 * k, 0.75 * k);
+					const kc = this.seasonCrown('oak');
+					put(oaks, tp.x, y + 6.6 * k, tp.z, 8.5 * k * kc, 7 * k * kc, 8.5 * k * kc, this.seasonTree('oak', [0.29 * sh, 0.5 * sh, 0.2 * sh], seed));
+				} else if (sp > 0.22) { // brzoza: biały pień, jasna wąska korona
+					put(birchTrunks, tp.x, y + 3 * k, tp.z, 0.3 * k, 6 * k, 0.3 * k);
+					const kc = this.seasonCrown('birch');
+					put(birches, tp.x, y + 7.4 * k, tp.z, 4.4 * k * kc, 6.5 * k * kc, 4.4 * k * kc, this.seasonTree('birch', [0.45 * sh, 0.62 * sh, 0.27 * sh], seed));
+				} else { // topola: wysoka i smukła
+					put(trunks, tp.x, y + 1.5 * k, tp.z, 0.5 * k, 3 * k, 0.5 * k);
+					const kc = this.seasonCrown('poplar');
+					put(poplars, tp.x, y + 9 * k, tp.z, 3.6 * k * kc, 15 * k * kc, 3.6 * k * kc, this.seasonTree('poplar', [0.3 * sh, 0.48 * sh, 0.21 * sh], seed));
+				}
+			};
+			// drzewa z mapy: w swoim miejscu, gatunek i wysokość z danych (bez – z pomiaru koron albo typowa); losowe drzewa
+			// nie bliżej niż 5 m od nich (te same drzewa z pomiaru koron)
+			const near = new Set();
+			const SPK = [0.4, 0.4, 0.3, 0.1, 0.7, 0.55, 0.7];
+			for (let j = 0; j < osmT.length; j++) {
+				const o = osmT[j], s = vt[o], d = vt[o + 1], spc = vt[o + 2], h = vt[o + 3], seed = c * 1000 + 700 + j;
+				if (s < s0 || s >= s1 || this.excluded(s, d) || this.inBuilding(s, d)) continue;
+				near.add(Math.round(s / 5) + ',' + Math.round(d / 5));
+				const ch = this.canopyAt ? this.canopyAt(s, d) : -1;
+				let sp = SPK[spc] ?? 0.4;
+				if (spc === 0) sp = hash(seed + 0.66) < 0.7 ? 0.4 : hash(seed + 0.67) < 0.6 ? 0.3 : 0.1; // liściaste: dąb, lipa / brzoza / topola
+				if (spc === 6) sp = hash(seed + 0.66) < 0.5 ? 0.7 : 0.55;
+				const Hk = sp > 0.6 ? 11.7 : sp > 0.5 ? 12.6 : sp > 0.33 ? 10.1 : sp > 0.22 ? 10.65 : 16.5;
+				let k = (h > 0 ? h : ch >= 3 ? ch : 8 + hash(seed + 0.13) * 6) / Hk;
+				k = Math.max(0.35, Math.min(2.4, k));
+				const rc = sp > 0.6 ? 3.1 : sp > 0.5 ? 3 : sp > 0.33 ? 4.25 : sp > 0.22 ? 2.2 : 1.8;
+				k = Math.min(k, this.crownRoom(s, d) / rc);
+				if (k < 0.3) continue;
+				R.sidePoint(this.route, s, d, tp);
+				q.setFromAxisAngle(up, hash(seed + 0.9) * 6.28);
+				plant(sp, k, this.terrainY(s, d), seed, 0.8 + hash(seed + 0.4) * 0.35);
+			}
+			const nearOsm = (s, d) => {
+				if (!near.size) return false;
+				const a0 = Math.round(s / 5), b0 = Math.round(d / 5);
+				for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) if (near.has(a0 + x + ',' + (b0 + y))) return true;
+				return false;
+			};
 			for (let i = 0; i < N; i++) {
 				if ((i & 63) === 63) yield;
 				const seed = c * 1000 + i;
 				const s = s0 + hash(seed) * C;
 				const side = hash(seed + 0.31) < 0.5 ? -1 : 1;
 				const d = side * (11 + Math.pow(hash(seed + 0.57), 0.8) * 160);
+				if (nearOsm(s, d)) continue;
 				let ch = -1;
 				if (this.env) {
 					// trasa rzeczywista: z pomiaru koron (NMPT) – drzewa tam, gdzie rosną (korony od 3 m), wysokość z pomiaru;
@@ -1827,25 +1997,7 @@ import { BundleGroup } from 'three/webgpu';
 				// korona przed skrajem torowiska (crownRoom) – drzewo mniejsze albo żadne
 				k = Math.min(k, this.crownRoom(s, d) / rc);
 				if (k < 0.35) continue;
-				if (sp > 0.6) { // świerk
-					put(trunks, tp.x, y + 1 * k, tp.z, 0.45 * k, 2 * k, 0.45 * k);
-					put(spruces, tp.x, y + 6.2 * k, tp.z, 6.2 * k, 11 * k, 6.2 * k, this.seasonTree('spruce', [0.17 * sh, 0.34 * sh, 0.2 * sh], seed));
-				} else if (sp > 0.5) { // sosna: wysoki pień, płaska korona
-					put(trunks, tp.x, y + 4.5 * k, tp.z, 0.45 * k, 9 * k, 0.45 * k);
-					put(pines, tp.x, y + 9.6 * k, tp.z, 6 * k, 6 * k, 6 * k, this.seasonTree('pine', [0.2 * sh, 0.36 * sh, 0.18 * sh], seed));
-				} else if (sp > 0.33) { // dąb, lipa: szeroka korona
-					put(trunks, tp.x, y + 2.2 * k, tp.z, 0.75 * k, 4.4 * k, 0.75 * k);
-					const kc = this.seasonCrown('oak');
-					put(oaks, tp.x, y + 6.6 * k, tp.z, 8.5 * k * kc, 7 * k * kc, 8.5 * k * kc, this.seasonTree('oak', [0.29 * sh, 0.5 * sh, 0.2 * sh], seed));
-				} else if (sp > 0.22) { // brzoza: biały pień, jasna wąska korona
-					put(birchTrunks, tp.x, y + 3 * k, tp.z, 0.3 * k, 6 * k, 0.3 * k);
-					const kc = this.seasonCrown('birch');
-					put(birches, tp.x, y + 7.4 * k, tp.z, 4.4 * k * kc, 6.5 * k * kc, 4.4 * k * kc, this.seasonTree('birch', [0.45 * sh, 0.62 * sh, 0.27 * sh], seed));
-				} else { // topola: wysoka i smukła
-					put(trunks, tp.x, y + 1.5 * k, tp.z, 0.5 * k, 3 * k, 0.5 * k);
-					const kc = this.seasonCrown('poplar');
-					put(poplars, tp.x, y + 9 * k, tp.z, 3.6 * k * kc, 15 * k * kc, 3.6 * k * kc, this.seasonTree('poplar', [0.3 * sh, 0.48 * sh, 0.21 * sh], seed));
-				}
+				plant(sp, k, y, seed, sh);
 			}
 			// krzewy: przy torze, na skraju pól i lasów
 			const nb = bushes.instanceMatrix.count;
@@ -1871,10 +2023,12 @@ import { BundleGroup } from 'three/webgpu';
 				q.setFromAxisAngle(up, hash(seed + 0.1) * 6.28);
 				const sh = 0.8 + hash(seed + 0.3) * 0.3;
 				const kb = this.seasonCrown('bush');
-				put(bushes, tp.x, y + 0.8 * k, tp.z, 3 * k * kb, 2.2 * k * kb, 3 * k * kb, this.seasonTree('bush', [0.27 * sh, 0.45 * sh, 0.2 * sh], seed));
+				if (ez) ez.push(['bush', hash(seed + 0.37) < 0.5 ? 0 : 1, tp.x, y - 0.15 + 1.2 * k * kb, tp.z, 3.2 * k * kb, 2.4 * k * kb, q.clone(), this.seasonTree('bush', [0.27 * sh, 0.45 * sh, 0.2 * sh], seed)]);
+				else put(bushes, tp.x, y + 0.8 * k, tp.z, 3 * k * kb, 2.2 * k * kb, 3 * k * kb, this.seasonTree('bush', [0.27 * sh, 0.45 * sh, 0.2 * sh], seed));
 			}
-			// daleko od toru: zwarte masy lasu (duże bryły)
+			// daleko od toru: zwarte masy lasu (duże bryły; drzewa z modeli – kępy impostorów)
 			const nf = blobs.instanceMatrix.count;
+			const impList = ez && NS.trees.impostors ? [] : null;
 			for (let i = 0; i < nf; i++) {
 				const seed = c * 555 + i * 2.1;
 				const s = s0 + hash(seed) * C;
@@ -1897,9 +2051,48 @@ import { BundleGroup } from 'three/webgpu';
 				if (k < 0.4) continue;
 				q.setFromAxisAngle(up, hash(seed + 0.1) * 6.28);
 				const sh = 0.7 + hash(seed + 0.3) * 0.3;
-				put(blobs, tp.x, y + 7 * k, tp.z, 20 * k, 15 * k, 20 * k, [0.17 * sh, 0.33 * sh, 0.17 * sh]);
+				if (impList) {
+					/* drzewa z modeli: zamiast bryły kępa 5 drzew-impostorów (trees.js) – las iglasty: świerki i sosny,
+					   liściasty: dęby i brzozy, inny – mieszany */
+					for (let j = 0; j < 5; j++) {
+						const hj = hash(seed * 3.7 + j * 1.31);
+						const sj = s + (hash(seed + j * 0.71) - 0.5) * 18 * k, dj = d + (hash(seed + j * 0.53) - 0.5) * 18 * k;
+						const conifer = arF === 12 || (arF !== 11 && hj < 0.45);
+						const kind = conifer ? (hj * 7.3 % 1 < 0.5 ? 'spruce' : 'pine') : (hj * 5.1 % 1 < 0.7 ? 'oak' : 'birch');
+						R.sidePoint(this.route, sj, dj, tp);
+						const H = 15 * k * (0.75 + 0.45 * hash(seed + j * 0.97)), W = H * (conifer ? 0.5 : 0.75);
+						q.setFromAxisAngle(up, hash(seed + j * 0.37) * 6.28);
+						const base = { spruce: [0.17, 0.34, 0.2], pine: [0.2, 0.36, 0.18], oak: [0.29, 0.5, 0.2], birch: [0.45, 0.62, 0.27] }[kind];
+						impList.push([kind, tp.x, this.terrainY(sj, dj) - 0.3 + H * 0.5, tp.z, W, H, q.clone(), this.seasonTree(kind, base.map((x) => x * sh * 1.1), seed + j)]);
+					}
+				} else put(blobs, tp.x, y + 7 * k, tp.z, 20 * k, 15 * k, 20 * k, [0.17 * sh, 0.33 * sh, 0.17 * sh]);
 			}
-			for (const m of [trunks, birchTrunks, spruces, oaks, birches, poplars, pines, bushes, blobs]) {
+			const out = [trunks, birchTrunks, spruces, oaks, birches, poplars, pines, bushes, blobs];
+			if (ez) {
+				/* drzewa z modeli: bez siatek w kawałku – egzemplarze (macierz, kolor) zapisane w grupie kawałka i rysowane
+				   ze wspólnych pul świata (treePool – siatka na gatunek, wariant, część i poziom szczegółów dla wszystkich
+				   kawałków). WebGPURenderer ma narzut ok. 10 µs na obiekt w każdym przebiegu (obraz i 3 kaskady cieni), także
+				   w paczkach rysowania; dawniej para siatek na gatunek i wariant w każdym kawałku (ok. 200 obiektów) – ok.
+				   7 FPS na wysokiej. (Siatka zbiorcza – BatchedMesh – w Three na WebGPU to osobne wywołanie na egzemplarz.) */
+				const rows = (list, keyOf, at) => {
+					const mats = new Float32Array(list.length * 16), cols = new Float32Array(list.length * 3), keys = [];
+					list.forEach((e, i) => {
+						const [x, y, z, w, h, rot, col] = at(e);
+						m4.compose(p3.set(x, y, z), rot, sc.set(w, h, w)).toArray(mats, i * 16);
+						tmpColor.setRGB(col[0], col[1], col[2], T.SRGBColorSpace).toArray(cols, i * 3);
+						keys.push(keyOf(e));
+					});
+					return { keys, mats, cols };
+				};
+				group.userData.ezTrees = rows(ez, (e) => e[0] + '|' + e[1], (e) => [e[2], e[3], e[4], e[5], e[6], e[7], e[8]]);
+				if (impList && impList.length) {
+					// (skala jak drzewa z modeli – drzewo w pudełku −0,5…0,5, płaszczyzny ±0,62 z marginesem wypalania)
+					const IMP = NS.trees.impostors;
+					group.userData.ezImp = rows(impList.filter((e) => IMP.geo[e[0]]), (e) => e[0], (e) => [e[1], e[2], e[3], e[4], e[5], e[6], e[7]]);
+				}
+				this.treePoolDirty = true;
+			}
+			for (const m of out) {
 				if (!m.count) {
 					m.dispose();
 					continue;
@@ -1911,11 +2104,300 @@ import { BundleGroup } from 'three/webgpu';
 			}
 		}
 
+		/* Obiekty z mapy (trasa rzeczywista – generator: env.ba, env.pt):
+		   - bariery (ba – rząd: rodzaj, wysokość w dm – 0 typowa, s, d, s, d…): 0 ekran akustyczny (płyty 4 m między
+		     słupami H, 3,5 m), 1 mur (2 m, 0,3 m grubości), 2 płot z siatki (1,6 m, słupki co 3 m, siatka – faktura
+		     z przezroczystością); scalone w kawałku po jednej bryle na rodzaj;
+		   - punkty (pt – po 3: s, d, rodzaj): 0 latarnia – latarnia uliczna z kodu (real-env.js envLampMeshes: słup,
+		     wysięgnik ku najbliższej jezdni, klosz, plama światła, światło nocą; dawne latarnie co 35 m nie bliżej niż
+		     25 m od niej – osmLamps), 1 ławka, 2 kosz, 3 hydrant – modele (models.js); bez modeli – pominięte.
+		   Odcinki i punkty przypisane do kawałka wg s (indeks raz na trasę) */
+		*buildMapObjects(group, c, s0, s1, dyn) {
+			const E = this.route.env, ba = E.ba, pt = E.pt;
+			this.osmLamps = null;
+			if (!(ba && ba.length) && !(pt && pt.length)) return;
+			if (!this.objIdx || this.objIdx.ba !== ba || this.objIdx.pt !== pt) {
+				const segs = new Map(), pts = new Map();
+				(ba || []).forEach((row, ri) => {
+					for (let i = 2; i + 3 < row.length; i += 2) {
+						const cc = Math.floor((row[i] + row[i + 2]) / 2 / C);
+						if (!segs.has(cc)) segs.set(cc, []);
+						segs.get(cc).push([ri, i]);
+					}
+				});
+				for (let i = 0; i < (pt || []).length; i += 3) {
+					const cc = Math.floor(pt[i] / C);
+					if (!pts.has(cc)) pts.set(cc, []);
+					pts.get(cc).push(i);
+				}
+				this.objIdx = { ba, pt, segs, pts };
+			}
+			const S = this.objIdx.segs.get(c) || [], Pt = this.objIdx.pts.get(c) || [];
+			// ---- bariery (z roślinami i obiektami – ustawienia) ----
+			if (S.length && this.plants !== false) {
+				const B = [0, 1, 2].map(() => ({ P: [], N: [], U: [] }));
+				const a = {}, b = {};
+				const quad = (G, p0, p1, p2, p3, n, u0, u1, v0, v1) => {
+					for (const [p, u, v] of [[p0, u0, v0], [p1, u1, v0], [p2, u1, v1], [p0, u0, v0], [p2, u1, v1], [p3, u0, v1]]) {
+						G.P.push(p[0], p[1], p[2]);
+						G.N.push(n[0], n[1], n[2]);
+						G.U.push(u, v);
+					}
+				};
+				// prostopadłościan wzdłuż odcinka (x0, z0) → (x1, z1), grubość w, od y0 do y1 (każdy koniec osobno)
+				const slab = (G, x0, z0, y0a, y0b, x1, z1, y1a, y1b, w, uLen) => {
+					const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz) || 1, nx = -dz / L * w / 2, nz = dx / L * w / 2;
+					const A = [x0 + nx, z0 + nz], Bq = [x1 + nx, z1 + nz], Cq = [x1 - nx, z1 - nz], D = [x0 - nx, z0 - nz];
+					const n1 = [-dz / L, 0, dx / L];
+					quad(G, [A[0], y0a, A[1]], [Bq[0], y1a, Bq[1]], [Bq[0], y1b, Bq[1]], [A[0], y0b, A[1]], n1, 0, uLen, 0, y0b - y0a);
+					quad(G, [Cq[0], y1a, Cq[1]], [D[0], y0a, D[1]], [D[0], y0b, D[1]], [Cq[0], y1b, Cq[1]], [-n1[0], 0, -n1[2]], 0, uLen, 0, y0b - y0a);
+					quad(G, [A[0], y0b, A[1]], [Bq[0], y1b, Bq[1]], [Cq[0], y1b, Cq[1]], [D[0], y0b, D[1]], [0, 1, 0], 0, uLen, 0, w);
+				};
+				const post = (G, x, z, y0, y1, w) => {
+					slab(G, x - w / 2, z, y0, y1, x + w / 2, z, y0, y1, w, w);
+					slab(G, x, z - w / 2, y0, y1, x, z + w / 2, y0, y1, w, w);
+				};
+				for (const [ri, i] of S) {
+					const row = ba[ri], kind = row[0];
+					const H = row[1] > 0 ? row[1] / 10 : [3.5, 2, 1.6][kind];
+					const sA = row[i], dA = row[i + 1], sB = row[i + 2], dB = row[i + 3];
+					const len = Math.hypot(sB - sA, dB - dA);
+					if (len < 0.3 || this.excluded((sA + sB) / 2, (dA + dB) / 2)) continue;
+					const n = Math.max(1, Math.ceil(len / (kind === 2 ? 3 : 4)));
+					for (let k = 0; k < n; k++) {
+						const t0 = k / n, t1 = (k + 1) / n;
+						const sa = sA + (sB - sA) * t0, da = dA + (dB - dA) * t0, sb = sA + (sB - sA) * t1, db = dA + (dB - dA) * t1;
+						R.sidePoint(this.route, sa, da, a);
+						R.sidePoint(this.route, sb, db, b);
+						// podstawa: teren; przy torze (do 12 m) na estakadzie, moście albo nasypie – poziom toru (ekrany na pomoście)
+						const base = (s2, d2) => { const y = this.terrainY(s2, d2) - 0.2; if (Math.abs(d2) > 12) return y; const th = R.heightAt(this.route, s2) - 0.7; return th > y + 0.5 ? th : y; };
+						const ya = base(sa, da), yb = base(sb, db);
+						const G = B[kind], segL = len / n;
+						if (kind === 0) {
+							slab(G, a.x, a.z, ya, ya + H, b.x, b.z, yb, yb + H, 0.14, segL);
+							post(G, a.x, a.z, ya, ya + H + 0.1, 0.18);
+						} else if (kind === 1) {
+							slab(G, a.x, a.z, ya, ya + H, b.x, b.z, yb, yb + H, 0.3, segL);
+						} else {
+							// siatka (płaszczyzna dwustronna – faktura w metrach) i słupek z rurką u góry
+							const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz) || 1, nn = [-dz / L, 0, dx / L];
+							quad(G, [a.x, ya + 0.25, a.z], [b.x, yb + 0.25, b.z], [b.x, yb + H, b.z], [a.x, ya + H, a.z], nn, 0, segL, 0, H - 0.25);
+							post(B[1], a.x, a.z, ya, ya + H + 0.05, 0.06);
+						}
+						if (k === n - 1 && kind === 0) post(B[0], b.x, b.z, yb, yb + H + 0.1, 0.18);
+					}
+					if ((ri & 31) === 31) yield;
+				}
+				const M = World.materials();
+				if (!M.mapBarrier) {
+					// ekrany: szarozielone płyty betonowe (wzór betonu z łatki), mury: beton; płot: siatka z faktury
+					M.mapBarrier = [matS('#7e8b82', { roughness: 0.85, surf: 'concrete', side: T.DoubleSide }), matS('#9d978d', { roughness: 0.9, surf: 'concrete', side: T.DoubleSide }), World.fenceMaterial()];
+				}
+				B.forEach((G, kind) => {
+					if (!G.P.length) return;
+					const geo = new T.BufferGeometry();
+					geo.setAttribute('position', new T.Float32BufferAttribute(G.P, 3));
+					geo.setAttribute('normal', new T.Float32BufferAttribute(G.N, 3));
+					geo.setAttribute('uv', new T.Float32BufferAttribute(G.U, 2));
+					geo.computeBoundingSphere();
+					const m = new T.Mesh(geo, M.mapBarrier[kind]);
+					m.userData.ownGeometry = true;
+					m.castShadow = this.shadows && kind !== 2;
+					m.receiveShadow = true;
+					group.add(m);
+				});
+			}
+			// ---- latarnie z mapy (zawsze – także bez roślin i modeli: oświetlenie ulic nocą) ----
+			if (Pt.length && this.envLampMeshes) {
+				const spots = [], near = new Set();
+				for (const i of Pt) {
+					const s = pt[i], d = pt[i + 1];
+					if (pt[i + 2] !== 0 || this.excluded(s, d) || this.inBuilding(s, d) || this.onRoad(s, d)) continue;
+					// wysięgnik ku najbliższej jezdni (8 kierunków, 2–7 m); bez jezdni obok – ku torowi
+					let ds = 0, dd = d > 0 ? -1 : 1, best = 1e9;
+					for (let a = 0; a < 8; a++) {
+						const ca = Math.cos(a * Math.PI / 4), sa = Math.sin(a * Math.PI / 4);
+						for (let r = 2; r <= 7; r += 1.25) if (r < best && this.onRoad(s + ca * r, d + sa * r)) { best = r; ds = ca; dd = sa; break; }
+					}
+					spots.push({ s, d, ds, dd, kind: 'res', pool: best < 1e9 ? Math.min(7, best + 2) : 5, poolAt: best < 1e9 ? best : 1.2 });
+					for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) near.add((Math.round(s / 25) + x) + ',' + (Math.round(d / 25) + y));
+				}
+				this.osmLamps = near;
+				if (spots.length) {
+					const L = this.envLampMeshes(group, spots);
+					if (dyn) dyn.push({ type: 'lamps', lamps: L });
+				}
+			}
+			// ---- obiekty punktowe (modele) ----
+			const MD = NS.models;
+			if (Pt.length && MD && MD.ready && this.plants !== false) {
+				const pick = [[], ['painted_wooden_bench'], MD.variants('metal_trash_can'), MD.variants('fire_hydrant')];
+				const scale = [1.6, 1, 0.95, 1];
+				const byId = new Map();
+				for (const i of Pt) {
+					const s = pt[i], d = pt[i + 1], kind = pt[i + 2];
+					const pool = (pick[kind] || []).filter((id) => MD.get(id));
+					if (!pool.length || this.excluded(s, d) || this.inBuilding(s, d)) continue;
+					const id = pool[Math.floor(hash(s * 0.37 + d) * pool.length)];
+					if (!byId.has(id)) byId.set(id, []);
+					byId.get(id).push([s, d, scale[kind]]);
+				}
+				const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
+				for (const [id, L] of byId) {
+					const I = MD.instanced(id, L.length);
+					if (!I) continue;
+					for (const [s, d, k] of L) {
+						R.sidePoint(this.route, s, d, tp);
+						q.setFromAxisAngle(up, hash(s * 1.3 + d * 0.7) * 6.28);
+						m4.compose(p3.set(tp.x, this.terrainY(s, d) - 0.02, tp.z), q, sc.set(k, k, k));
+						I.put(m4);
+					}
+					for (const m of I.meshes) {
+						if (!m.count) { m.dispose(); continue; }
+						m.castShadow = this.shadows && id.startsWith('street_lamp');
+						m.receiveShadow = true;
+						if (!id.startsWith('street_lamp')) m.userData.fine = true;
+						group.add(m);
+					}
+				}
+			}
+		}
+
+		// siatka ogrodzenia: oczka w romb (ok. 6 cm) z drutu ocynkowanego, przezroczyste tło – faktura na 1 m × 1 m
+		static fenceMaterial() {
+			const tex = canvasTexture('fence-mesh', 256, 256, (g, w) => {
+				g.clearRect(0, 0, w, w);
+				g.strokeStyle = '#d6dadc';
+				g.lineWidth = 2.2;
+				const n = 16, st = w / n;
+				for (let k = -n; k <= 2 * n; k++) {
+					g.beginPath();
+					g.moveTo(k * st, 0);
+					g.lineTo(k * st + w, w);
+					g.stroke();
+					g.beginPath();
+					g.moveTo(k * st, w);
+					g.lineTo(k * st + w, 0);
+					g.stroke();
+				}
+			});
+			tex.wrapS = tex.wrapT = T.RepeatWrapping;
+			tex.anisotropy = 8;
+			return patch(new T.MeshStandardMaterial({ map: tex, alphaTest: 0.35, side: T.DoubleSide, color: '#b9bec2', roughness: 0.45, metalness: 0.6 }), 'lit');
+		}
+
+		/* Rośliny przyziemne z modeli (models.js – Poly Haven CC0): w lesie i pod drzewami paprocie i krzewinki, przy torze
+		   i na skrajach łąk pokrzywy i krzewinki – kępami (szum), kilka odmian każdej. Jesienią przybrązowiałe, zimą tylko
+		   nieliczne. Bez modeli (brak plików) – nic (trawa jak dotąd); dalej niż drobne instancje (fine) – niewidoczne. */
+		*buildPlants(group, c, s0, s1) {
+			const MD = NS.models;
+			if (!MD || !MD.ready || this.plants === false) return;
+			const ferns = MD.variants('fern_02'), nettles = MD.variants('nettle_plant'), shrubs = MD.variants('shrub_03');
+			if (!ferns.length && !nettles.length && !shrubs.length) return;
+			const se = this.season || 'summer';
+			const N = Math.round(900 * this.density * (se === 'winter' ? 0.2 : 1));
+			const list = [];
+			for (let i = 0; i < N; i++) {
+				if (i % 400 === 399) yield;
+				const seed = c * 7919 + i * 0.617;
+				const s = s0 + hash(seed) * C;
+				const near = hash(seed + 0.2) < 0.55;
+				const d = (hash(seed + 0.3) < 0.5 ? -1 : 1) * (near ? 5 + hash(seed + 0.4) * 10 : 8 + Math.pow(hash(seed + 0.4), 1.5) * 90);
+				if (this.eff(d) < 4.6 || this.excluded(s, d) || this.field(s, d)) continue;
+				if (this.dip(s, d) > 1.2 || this.sandK(s, d) > 0.3) continue;
+				if (this.env && (this.inBuilding(s, d) || this.onRoad(s, d) || this.areaAt(s, d) === 9 || this.envNoPlant(s, d))) continue;
+				if (this.route.stations.some((x) => s > x.platformStart - 30 && s < x.platformEnd + 30 && Math.abs(d) < 18)) continue;
+				// las: z danych (zagospodarowanie, korony) albo szum jak drzewa; skraj – kępy wg szumu
+				const forest = this.env ? (this.areaAt(s, d) === 1 || this.areaAt(s, d) === 11 || this.areaAt(s, d) === 12 || (this.canopyAt && this.canopyAt(s, d) >= 3)) : vnoise(s * 0.006 + 2, d * 0.012) > 0.45;
+				if (!forest && vnoise(s * 0.05 + 11, d * 0.05) < (near ? 0.45 : 0.62)) continue;
+				const h = hash(seed + 0.7);
+				const pool = forest ? (h < 0.7 ? ferns : shrubs) : (h < 0.6 ? nettles : shrubs);
+				if (!pool.length) continue;
+				const id = pool[Math.floor(hash(seed + 0.9) * pool.length)];
+				// wielkość: paproć 0,8–1,4 ×, pokrzywa (model ok. 0,2 m) do ok. 0,8–1,1 m, krzewinka (0,3–0,4 m) do ok. 0,8 m
+				const k = id.startsWith('fern') ? 0.8 + hash(seed + 0.5) * 0.6 : id.startsWith('nettle') ? 4 + hash(seed + 0.5) * 2 : 1.8 + hash(seed + 0.5) * 1.2;
+				list.push([id, s, d, k, hash(seed + 0.1) * 6.28]);
+			}
+			if (!list.length) return;
+			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
+			const tint = se === 'autumn' ? new T.Color(0.95, 0.72, 0.42) : se === 'winter' ? new T.Color(0.62, 0.55, 0.45) : null;
+			const byId = new Map();
+			for (const e of list) {
+				if (!byId.has(e[0])) byId.set(e[0], []);
+				byId.get(e[0]).push(e);
+			}
+			for (const [id, L] of byId) {
+				const I = MD.instanced(id, L.length);
+				if (!I) continue;
+				for (const [, s, d, k, rot] of L) {
+					R.sidePoint(this.route, s, d, tp);
+					q.setFromAxisAngle(up, rot);
+					m4.compose(p3.set(tp.x, this.terrainY(s, d) - 0.03, tp.z), q, sc.set(k, k, k));
+					I.put(m4, tint);
+				}
+				for (const m of I.meshes) {
+					if (!m.count) { m.dispose(); continue; }
+					m.receiveShadow = true;
+					// (tylko w kawałkach bliskich – updateLod; narzut na obiekt, z dalszych kawałków ułamek piksela)
+					m.userData.near = true;
+					if (m.instanceColor) m.instanceColor.needsUpdate = true;
+					group.add(m);
+				}
+			}
+		}
+
+		/* kępy trawy z kart (WebGPU): 3 pionowe karty skrzyżowane co 60° z polami atlasu textures/foliage/grass_color
+		   (tools/grass.py – źdźbła ambientCG CC0: niska, wysoka, z kłosami, rzadka), dwie odmiany (inne pola); bryła
+		   −0,5…0,5 (kołysanie wariantu 'grass' od podstawy), u podstawy ciemniej, normalne ku górze (miękkie światło) */
+		static grassCards() {
+			if (World.GC) return World.GC;
+			const tex = new T.TextureLoader().load('textures/foliage/grass_color.webp');
+			tex.colorSpace = T.SRGBColorSpace;
+			tex.anisotropy = 8;
+			const geo = (cells) => {
+				const P = [], N = [], U = [], Cc = [], I = [];
+				cells.forEach((cell, f) => {
+					const a = (f / cells.length) * Math.PI, ux = Math.cos(a) * 0.5, uz = Math.sin(a) * 0.5;
+					const u0 = cell / 4 + 0.002, u1 = (cell + 1) / 4 - 0.002, b = P.length / 3;
+					for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+						P.push(ux * sx, sy * 0.5, uz * sx);
+						const nx = -uz * 0.5, nz = ux * 0.5, l = Math.hypot(nx, 1, nz);
+						N.push(nx / l, 1 / l, nz / l);
+						U.push(sx < 0 ? u0 : u1, sy < 0 ? 0 : 1);
+						const v = sy < 0 ? 0.7 : 1;
+						Cc.push(v, v, v);
+					}
+					I.push(b, b + 1, b + 2, b, b + 2, b + 3);
+				});
+				const g = new T.BufferGeometry();
+				g.setAttribute('position', new T.Float32BufferAttribute(P, 3));
+				g.setAttribute('normal', new T.Float32BufferAttribute(N, 3));
+				g.setAttribute('uv', new T.Float32BufferAttribute(U, 2));
+				g.setAttribute('color', new T.Float32BufferAttribute(Cc, 3));
+				g.setIndex(I);
+				g.computeBoundingSphere();
+				g.userData.shared = true;
+				return g;
+			};
+			const material = patch(new T.MeshStandardMaterial({ map: tex, alphaTest: 0.4, side: T.DoubleSide, vertexColors: true, roughness: 0.95, color: '#ffffff' }), 'grass');
+			// (atlas w szarościach – liniowo ok. 0,17: kolor egzemplarza × 5,5 daje jasność dawnych kęp)
+			material.color.multiplyScalar(5.5);
+			World.GC = { geos: [geo([0, 1, 3]), geo([2, 0, 1])], material };
+			return World.GC;
+		}
+
 		// Kępy trawy i kwiaty na łąkach przy torze (gęsto blisko, rzadziej dalej); nie na polach, piasku i drogach.
 		*buildGrass(group, c, s0, s1) {
 			const M = World.materials(), G = World.G.grass;
 			const N = Math.round(11000 * this.density);
-			const tufts = new T.InstancedMesh(G.geo, M.grass, N);
+			// WebGPU: kępy z kart z fakturą (World.grassCards – atlas ze zdjęć źdźbeł), dwie odmiany na przemian
+			const GC = NS.gpu && World.opt.grassCards !== false ? World.grassCards() : null;
+			const tufts = new T.InstancedMesh(GC ? GC.geos[0] : G.geo, GC ? GC.material : M.grass, N);
+			const tufts2 = GC ? new T.InstancedMesh(GC.geos[1], GC.material, N) : null;
+			if (tufts2) {
+				tufts2.count = 0;
+				tufts2.userData.fine = true;
+			}
 			const flowers = new T.InstancedMesh(G.flower, M.flower, Math.round(N * 0.08));
 			tufts.count = flowers.count = 0;
 			tufts.userData.fine = flowers.userData.fine = true;
@@ -1951,12 +2433,15 @@ import { BundleGroup } from 'three/webgpu';
 				const y = this.terrainY(s, d);
 				const k = 0.55 + hash(seed + 0.9) * 0.6;
 				q.setFromAxisAngle(up, hash(seed + 0.1) * 6.28);
-				m4.compose(p3.set(tp.x, y + 0.5 * k * 0.8, tp.z), q, sc.set(k * 1.6, k * 0.8, k * 1.6));
-				tufts.setMatrixAt(tufts.count, m4);
 				const dry = vnoise(s * 0.02 + 7, d * 0.02);
 				const sh = 0.85 + hash(seed + 0.5) * 0.3;
 				const gc = this.seasonGreen((0.3 + dry * 0.22) * sh, (0.5 + dry * 0.06) * sh, 0.18 * sh);
-				tufts.setColorAt(tufts.count++, tmpColor.setRGB(gc[0], gc[1], gc[2], T.SRGBColorSpace));
+				// (karty: kępa ok. 0,55–1 m szeroka, 0,4–0,7 m wysoka; druga odmiana – co druga kępa)
+				const tm = tufts2 && hash(seed + 0.44) < 0.5 ? tufts2 : tufts;
+				if (GC) m4.compose(p3.set(tp.x, y + 0.5 * k * 0.75 - 0.03, tp.z), q, sc.set(k * 1.05, k * 0.75, k * 1.05));
+				else m4.compose(p3.set(tp.x, y + 0.5 * k * 0.8, tp.z), q, sc.set(k * 1.6, k * 0.8, k * 1.6));
+				tm.setMatrixAt(tm.count, m4);
+				tm.setColorAt(tm.count++, tmpColor.setRGB(gc[0], gc[1], gc[2], T.SRGBColorSpace));
 				// kwiaty – wiosną i latem
 				if ((this.season === 'summer' || this.season === 'spring' || !this.season) && hash(seed + 0.71) < 0.08 && flowers.count < flowers.instanceMatrix.count) {
 					m4.compose(p3.set(tp.x + 0.05, y + 0.85 * k, tp.z), q, sc.set(1, 0.7, 1));
@@ -1965,7 +2450,8 @@ import { BundleGroup } from 'three/webgpu';
 					flowers.setColorAt(flowers.count++, tmpColor.setRGB(fc[0], fc[1], fc[2], T.SRGBColorSpace));
 				}
 			}
-			for (const m of [tufts, flowers]) {
+			for (const m of [tufts, tufts2, flowers]) {
+				if (!m) continue;
 				if (!m.count) { m.dispose(); continue; }
 				m.receiveShadow = true;
 				if (m.instanceColor) m.instanceColor.needsUpdate = true;
@@ -4694,6 +5180,7 @@ import { BundleGroup } from 'three/webgpu';
 			}
 
 			this.updateLod(free ? this.streamS : this.toTrack(this.viewPos.x, this.viewPos.z, front).s);
+			if (this.treePoolDirty) this.updateTreePool();
 			if (sim.tempLimits && sim.tempLimits.length) this.syncTempBoards(sim);
 			const blink = Math.floor(this.time / 0.45) % 2;
 			for (const ch of this.chunks.values()) {

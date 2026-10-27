@@ -534,9 +534,12 @@ import {
 		const vc = vertexColor().rgb;
 		const wc = mix(vc.mul(pW.ratio), pW.c.mul(dot(vc, LUMA).div(0.6).clamp(0.6, 1.3)), own);
 		// (alfa z tekstury fasady wprost – w diffuseColor nieprzezroczysty materiał ma alfę 1)
-		const wm = (map ? smoothstep(0.8, 0.95, texture(map, uvA).a) : float(1)).mul(L.on).toVar();
+		const fa = map ? texture(map, uvA).a.toVar() : float(1);
+		const wm = smoothstep(0.8, 0.95, fa).mul(L.on).toVar();
+		// szyby okien (alfa fasady 0,75) – gładkie: odbicia nieba i odbicia ekranowe
+		const win = smoothstep(0.8, 0.7, fa).toVar();
 		diffuseColor.rgb.assign(mix(diffuseColor.rgb, wc.mul(m1.mul(0.2).add(0.88)).mul(streak.mul(0.14).oneMinus()).mul(mix(1, pW.orm.x, 0.6)), wm));
-		S.gRough.assign(pW.orm.y.sub(materialRoughness).mul(wm));
+		S.gRough.assign(mix(pW.orm.y.sub(materialRoughness).mul(wm), float(0.06).sub(materialRoughness), win));
 		S.gMetal.assign(pW.orm.z.mul(wm));
 		S.gH.mulAssign(wm.oneMinus());
 		S.nPert.assign(select(PL.flat, vec3(pW.nT.x, 0, pW.nT.y.negate()), PL.T.mul(pW.nT.x).add(PL.B.mul(pW.nT.y))).mul(wm).mul(0.8));
@@ -846,7 +849,8 @@ import {
 						S.rough.assign(clamp(mix(r0, 0.88, S.wearG), 0.04, 1.0));
 						S.metal.assign(mix(m0, m0.mul(0.35), S.wearG));
 					} else {
-						S.rough.assign(mix(clamp(materialRoughness.add(S.gRough), 0.3, 1.0), 0.97, S.gSand));
+						// (dolna granica 0,3 – poza szybami okien elewacji: gRough mocno ujemne, dirtPattern)
+						S.rough.assign(mix(clamp(materialRoughness.add(S.gRough), select(S.gRough.lessThan(-0.3), float(0.04), float(0.3)), 1.0), 0.97, S.gSand));
 						S.metal.assign(clamp(materialMetalness.add(S.gMetal), 0, 1)); // gMetal – z tekstur (blacha)
 					}
 				}

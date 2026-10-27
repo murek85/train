@@ -19,6 +19,7 @@
 	"devDependencies": {
 		"electron": "^44.7.0",
 		"electron-builder": "^26.15.3",
+		"gltfpack": "^1.3.0",
 		"three": "0.186.1"
 	},
 	"build": {
@@ -44,6 +45,10 @@
 			"vendor/three/addons/utils/WorkerPool.js",
 			"vendor/three/addons/libs/**",
 			"vendor/three/addons/math/ColorSpaces.js",
+			"vendor/three/addons/loaders/GLTFLoader.js",
+			"vendor/three/addons/loaders/DRACOLoader.js",
+			"vendor/three/addons/utils/BufferGeometryUtils.js",
+			"vendor/three/addons/utils/SkeletonUtils.js",
 			"!**/*.py",
 			"!**/*.cmd",
 			"!.claude/**"

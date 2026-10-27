@@ -14,7 +14,10 @@ const FILES = ['build/three.core.js', 'build/three.module.js', 'build/three.webg
 const DIRS = ['examples/jsm/tsl'];
 /* tekstury KTX2 (js/3d/textures.js): loader z zależnościami i transkoder Basis (wasm – kopiowany osobno, copyDir
    bierze tylko .js) */
-const ADDONS = ['loaders/KTX2Loader.js', 'utils/WorkerPool.js', 'libs/ktx-parse.module.js', 'libs/zstddec.module.js', 'math/ColorSpaces.js', 'libs/basis/basis_transcoder.js', 'libs/basis/basis_transcoder.wasm'];
+const ADDONS = ['loaders/KTX2Loader.js', 'utils/WorkerPool.js', 'libs/ktx-parse.module.js', 'libs/zstddec.module.js', 'math/ColorSpaces.js', 'libs/basis/basis_transcoder.js', 'libs/basis/basis_transcoder.wasm',
+	// modele glTF (js/3d/models.js): loader z zależnościami, dekodery siatek – meshopt (EXT_meshopt_compression) i Draco (wasm)
+	'loaders/GLTFLoader.js', 'utils/BufferGeometryUtils.js', 'utils/SkeletonUtils.js', 'loaders/DRACOLoader.js', 'libs/meshopt_decoder.module.js',
+	'libs/draco/gltf/draco_decoder.wasm', 'libs/draco/gltf/draco_wasm_wrapper.js'];
 
 function copyDir(from, to) {
 	fs.mkdirSync(to, { recursive: true });
