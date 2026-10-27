@@ -1556,6 +1556,14 @@ import { BundleGroup } from 'three/webgpu';
 			if (NS.gpu && World.opt.shadowMerge !== false) this.shadowMerge(group, lod);
 			yield;
 			if (NS.gpu && World.opt.bundle !== false) lod.bundle = this.bundleStatic(group, prot, LAMP);
+			if (this.reflLayer) {
+				const inBundle = (o) => { for (let p = o.parent; p && p !== group; p = p.parent) if (p.isBundleGroup) return true; return false; };
+				group.traverse((o) => {
+					if (!(o.isMesh || o.isSprite || o.isLine || o.isPoints) || o.layers.mask !== 1 || inBundle(o)) return;
+					if (o.material && !Array.isArray(o.material) && o.material.userData && o.material.userData.water) return;
+					o.layers.set(World.NOREFL_LAYER);
+				});
+			}
 		}
 
 		/* WebGPU: cień nieruchomych brył kawałka jedną scaloną bryłą (jak cień składu – train.js shadowMerge). W mapach cieni
@@ -1702,6 +1710,7 @@ import { BundleGroup } from 'three/webgpu';
 				m.visible = m.count > 0;
 				m.instanceMatrix.needsUpdate = true;
 				if (m.instanceColor) m.instanceColor.needsUpdate = true;
+				if (NS.nodes && NS.nodes.touchInstances) NS.nodes.touchInstances(m); // (pozycje do kołysania – nodes.js)
 			}
 			P.root.needsUpdate = true;
 		}
@@ -3023,7 +3032,7 @@ import { BundleGroup } from 'three/webgpu';
 			kb.add(box(0.3, 1.1, 2.4, mat('#4a3a2a'), 0, 0.5, 1.2));
 			group.add(kb);
 			// wagony na bocznicy
-			const wagons = new NS.TrainModel(this.scene, NS.TrainModel.OTHER.wagons, { player: false, shadows: this.shadows, seed: st.pos });
+			const wagons = new NS.TrainModel(this.scene, NS.TrainModel.OTHER.wagons, { player: false, shadows: this.shadows, seed: st.pos, reflect: !this.reflLayer });
 			wagons.place(this.route, sEnd - 6, 1, -15);
 			wagons.compact();
 			dyn.push({ type: 'model', model: wagons });
@@ -5739,6 +5748,10 @@ import { BundleGroup } from 'three/webgpu';
 	NS.World = World;
 	World.TERRAIN_D = TERRAIN_D;
 	World.SHADOW_LAYER = 3; // bryły zastępcze cieni (shadowMerge) – tylko kamery map cieni
+	/* obiekty bez odbicia w wodzie (WebGPU – odbicie to cała scena z drugiej kamery, ok. 8 ms co drugą klatkę): poza paczkami
+	   kawałków (lampy, semafory, auta, pasażerowie) i pociągi tła; kamera gracza i map cieni widzą tę warstwę, kamera odbicia
+	   nie (water.js). reflLayer – świat gry (scene.js; świat audytu bez tego) */
+	World.NOREFL_LAYER = 4;
 	World.RAIL_U = { uRailPxK: { value: 0 } }; // szyny min. 1 piksel (railPxMat)
 	World.PEOPLE = PEOPLE; // kolory ubrań i skóry ludzi (tłum na peronach z mapy – real-env.js)
 	World.SKIN = SKIN; // kolumny siatki terenu (odsunięcia od osi), wiersze co 4 m

@@ -28,7 +28,10 @@ Budżet: do −15% FPS na jakości wysokiej; nowe efekty wyłączalne, średnia 
    z zamgleniem – pod pełnym zachmurzeniem odbicia i światło rozproszone były niebieskie), dolna półkula i grunt
    HemisphereLight w kolorze terenu wokół kamery (`envGround`: 25 punktów world.terrainColor, oświetlone słońcem
    i niebem), odświeżanie co 0,5 s o świcie i zmierzchu (co 2 s w dzień i w nocy). Koszt: pomijalny.
-   Kopuła z chmurami w PMREM – odłożone (chmury w odbiciach mało widoczne, koszt renderu do sześcianu).
+   ✅ (dodane po etapie 3) Chmury w mapie otoczenia (nodes.js createEnvironment): kierunek rzutowany na warstwę
+   chmur (clouds-gpu.js density – bez detalu, dwie wysokości) nad kamerą, barwa – horyzont rozjaśniony słońcem,
+   spody gęstych ciemniejsze, wygaszone przy horyzoncie; odświeżanie mapy także po przesunięciu chmur o ok. 400 m
+   (wiatr, jazda). Koszt: ok. 2 ms co kilkanaście sekund.
 2. **AO tylko na świetle rozproszonym + lepsza okluzja (GTAO).** ✅ (post-gpu.js, scene.js) AO w materiałach
    (renderer.contextNode – builtinAOContext) jako okluzja światła rozproszonego zamiast mnożenia całego obrazu –
    słońce na ścianach i ziemi bez szarego nalotu. Bez przebiegu wstępnego głębi: okluzja z poprzedniej klatki

@@ -8,18 +8,60 @@
    Cienie chmur i wybór kaskady cieni – w węzłach świateł (setupCascades), więc obejmują wszystkie materiały.
    Używane tylko w trybie WebGPU (NS.gpu – ?webgpu w adresie); w trybie WebGL działają łatki GLSL. */
 import * as THREE from 'three';
-import { MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, MeshLambertNodeMaterial, MeshBasicNodeMaterial, PMREMGenerator } from 'three/webgpu';
+import { MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, MeshLambertNodeMaterial, MeshBasicNodeMaterial, PMREMGenerator, NodeMaterial } from 'three/webgpu';
 import {
 	Fn, If, Loop, Discard, float, vec2, vec3, vec4, uniform, reference, uniformArray, property, attribute, instancedBufferAttribute,
 	texture, varying, vertexColor, modelWorldMatrix, atan, asin, exp, int, instanceIndex, materialColor, normalLocal, reflector, select, mix, smoothstep, step, fract, floor, dFdx, dFdy, fwidth, length, normalize, dot, cross, reflect, pow, abs, max, min,
 	clamp, sin, cos, sign, positionWorld, positionLocal, positionGeometry, positionView, normalGeometry, normalViewGeometry,
 	faceDirection, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, diffuseColor, materialRoughness, materialMetalness, materialEmissive,
-	materialClearcoat, shadow, OnObjectUpdate, renderGroup, lights,
+	materialClearcoat, shadow, renderGroup, lights,
 } from 'three/tsl';
 
 (function () {
 	'use strict';
 	const NS = (window.Train3D = window.Train3D || {});
+
+	/* Obserwator materiału (NodeMaterialObserver): przy kontekście z getAO (okluzja w materiałach – post-gpu.js
+	   renderer.contextNode) albo z węzłem we właściwości (lightsNode – kabina, cab.js limitLights) Three uznaje każdy
+	   obiekt za zmienny – pełne odświeżenie powiązań w każdej klatce i każdym przebiegu, także w paczkach rysowania
+	   (ok. 1500 obiektów: ok. 20 ms procesora na klatkę na stacji). Nasza okluzja bierze dane z tekstury ekranu
+	   i uniformów klatki, światła – z węzłów świateł (odświeżane osobno): obserwator tworzony bez nich – obiekty
+	   odświeżane tylko przy zmianie (porównanie stanu), w paczkach – wcale. Wyjątek: materiały z naszymi referencjami
+	   reference('value', …, U) w grupie obiektu (szyby, woda, szyny, horyzont, opady) – jak dotąd w każdej klatce (listy
+	   węzłów do odświeżania wypełniane po zbudowaniu shadera – sprawdzane przy pierwszym użyciu). Referencje Three
+	   (parametry cieni świateł – grupa wspólna) i węzły obiektu (macierz świata) obserwator porównuje sam. */
+	const setupObserver0 = NodeMaterial.prototype.setupObserver;
+	NodeMaterial.prototype.setupObserver = function (builder) {
+		const c = builder.context, ao = c.getAO, ln = this.lightsNode;
+		// (materiał map cieni Three – stały kolor vec4(0, 0, 0, 1): każdy obiekt rzucający cień, w każdej kaskadzie)
+		const sc = this.isShadowPassMaterial ? this.colorNode : null;
+		c.getAO = undefined;
+		this.lightsNode = null;
+		if (sc) this.colorNode = null;
+		let obs;
+		try {
+			obs = setupObserver0.call(this, builder);
+		} finally {
+			c.getAO = ao;
+			this.lightsNode = ln;
+			if (sc) this.colorNode = sc;
+		}
+		if (obs.hasNode || !(ao || ln || sc)) return obs;
+		const lists = [builder.updateNodes, builder.updateBeforeNodes, builder.updateAfterNodes];
+		const perObject = (n) => (n.constructor.type === 'ReferenceNode' || n.constructor.type === 'ReferenceBaseNode') && n.property === 'value' && n.updateType === 'object' && !(n.group && n.group.shared);
+		let v;
+		Object.defineProperty(obs, 'hasNode', {
+			configurable: true,
+			get: () => forceFull > 0 || (v === undefined ? (v = lists.some((L) => L && L.some(perObject))) : v),
+			set: (x) => { v = x; },
+		});
+		return obs;
+	};
+	/* po przebudowie buforów efektów (tekstura AO w materiałach przez getAO – nowa tekstura po zmianie rozmiaru) obiekty
+	   bez pełnego odświeżania trzymały powiązanie ze zniszczoną teksturą („Destroyed texture used in a submit” – obraz
+	   stawał): przez kilka klatek pełne odświeżenie wszystkich (scene.js rebundle; odliczane w sync) */
+	let forceFull = 0;
+	const refreshBindings = (n = 3) => { forceFull = Math.max(forceFull, n); };
 
 	/* ---- wspólne uniformy: wartości z tych samych obiektów { value } co w GLSL (common.js U, sky.js chmury), przepisywane
 	   raz na klatkę (sync – scene.js przed rysowaniem) do uniformów grupy renderGroup – jeden bufor dla wszystkich obiektów.
@@ -59,6 +101,7 @@ import {
 	const cloudAmount = shared(SC.cloudAmount, 0), cloudOffset = shared(SC.cloudOffset, new THREE.Vector2()), cloudThr = shared(SC.cloudThr, 0.55);
 	// przed każdą klatką (scene.js draw, preview.js)
 	function sync() {
+		if (forceFull > 0) forceFull--;
 		for (const f of syncs) f();
 	}
 
@@ -784,8 +827,14 @@ import {
 		};
 	}
 
-	// pozycja instancji (kolumna przesunięcia macierzy) – do kołysania roślin; osobny bufor na tablicy instanceMatrix
+	/* pozycja instancji (kolumna przesunięcia macierzy) – do kołysania roślin; osobny bufor na tablicy instanceMatrix.
+	   Bez odświeżania przy obiekcie (pełne odświeżenie powiązań w każdej klatce – obserwator materiału): po zmianie
+	   macierzy egzemplarzy (world.js updateTreePool) – touchInstances(siatka) */
 	const originBuffers = new WeakMap();
+	function touchInstances(o) {
+		const ib = o && o.instanceMatrix && originBuffers.get(o.instanceMatrix);
+		if (ib) ib.needsUpdate = true;
+	}
 	const instanceOrigin = Fn((builder) => {
 		const o = builder.object;
 		if (!o.isInstancedMesh) return vec3(0);
@@ -796,9 +845,6 @@ import {
 			ib.srcVersion = m.version;
 			originBuffers.set(m, ib);
 		}
-		OnObjectUpdate(() => {
-			if (ib.srcVersion !== m.version) { ib.srcVersion = m.version; ib.needsUpdate = true; }
-		});
 		return instancedBufferAttribute(ib, 'vec3', 16, 12);
 	});
 
@@ -1050,13 +1096,29 @@ import {
 		const u = { zenith: uniform(new THREE.Color()), horizon: uniform(new THREE.Color()), ground: uniform(new THREE.Color()), sunDir: uniform(new THREE.Vector3(0, 1, 0)), sunColor: uniform(new THREE.Color()) };
 		// (bez tone mappingu – wartości liniowe jak w WebGL; inaczej ACES z nocną ekspozycją rozjaśniał ciemne niebo kilkanaście razy)
 		const mat = new MeshBasicNodeMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, toneMapped: false });
-		const sky = NS.skyGpu;
+		const sky = NS.skyGpu, cl = sky && sky.clouds;
 		mat.colorNode = Fn(() => {
 			const d = normalize(positionLocal).toVar();
 			// niebo z atmosfery (sky-gpu.js), pod horyzontem – ciemniejszy grunt; bez niej – gradient zenit / horyzont
 			const skyC = sky ? sky.skyColor(vec3(d.x, max(d.y, 0.02), d.z), false) : mix(u.horizon, u.zenith, pow(max(d.y, 0), 0.6));
 			const groundC = mix(sky ? sky.skyColor(vec3(d.x, 0.02, d.z), false) : u.horizon, u.ground, smoothstep(0.0, 0.25, d.y.negate()));
 			const c = select(d.y.greaterThan(0), skyC, groundC).toVar();
+			/* chmury w odbiciach (szyby, woda, mokre nawierzchnie, lakier): kierunek rzutowany na warstwę chmur (clouds-gpu.js
+			   – gęstość bez detalu, dwie wysokości) nad kamerą; barwa – horyzont rozjaśniony słońcem, spody gęstych ciemniejsze;
+			   przy horyzoncie wygaszone (daleko – ułamek piksela mapy, mgła) */
+			if (cl) {
+				const U = cl.u;
+				const dy = max(d.y, 0.04).toVar();
+				const lay = (hk) => {
+					const h = U.base.add(U.thickness.mul(hk)).toVar();
+					const t = h.sub(U.camPos.y).div(dy);
+					return cl.density(vec3(U.camPos.x.add(d.x.mul(t)), h, U.camPos.z.add(d.z.mul(t))), h, true);
+				};
+				const cov = clamp(lay(0.15).add(lay(0.35)).mul(0.6), 0, 1).toVar();
+				const lit = u.horizon.mul(1.2).add(u.sunColor.mul(0.06)).toVar();
+				const cloudC = mix(lit, lit.mul(0.55), smoothstep(0.4, 1.0, cov));
+				c.assign(mix(c, cloudC, cov.mul(smoothstep(0.02, 0.14, d.y)).mul(0.92)));
+			}
 			const s = max(0.0, dot(d, normalize(u.sunDir))).toVar();
 			c.addAssign(u.sunColor.mul(pow(s, 400.0).mul(18.0).add(pow(s, 12.0).mul(0.6))).mul(step(-0.02, d.y)));
 			return c;
@@ -1067,7 +1129,11 @@ import {
 		let target = null, key = '';
 		const update = (sky) => {
 			if (!renderer.hasInitialized()) return null;
-			const k = [sky.zenith, sky.horizon, sky.ground, sky.sunColor].map((c) => c.getHexString()).join('') + sky.sunDir.toArray().map((v) => v.toFixed(1)).join();
+			/* (chmury: odświeżenie, gdy przesuną się o ok. 400 m względem kamery – wiatr albo jazda – lub zmieni się
+			   zachmurzenie; ok. co 10–20 s w jeździe) */
+			const C = cl && cl.u, q = (v) => Math.round(v / 400);
+			const ck = C ? [q(C.wind.value.x + C.camPos.value.x), q(C.wind.value.y + C.camPos.value.z), C.coverage.value.toFixed(2), C.base.value].join() : '';
+			const k = [sky.zenith, sky.horizon, sky.ground, sky.sunColor].map((c) => c.getHexString()).join('') + sky.sunDir.toArray().map((v) => v.toFixed(1)).join() + ck;
 			if (k === key && target) return target.texture;
 			key = k;
 			u.zenith.value.copy(sky.zenith);
@@ -1401,5 +1467,5 @@ import {
 		return m;
 	}
 
-	NS.nodes = { sync, bindTextures, _pbr: FAM, patch, extend, cabMaterial, lights, wetGlass, personHooks, driftHooks, railHooks, interior, waterMaterial, waterReflector, setupCascades, createEnvironment, horizonMaterial, cloudShadow, gHash, gNoise, gPerlin, gFbm, gStones, uniforms: { uTime, uWind, uWet, uSnow, uRain, uWear, uNightK, uNightBox } };
+	NS.nodes = { sync, bindTextures, _pbr: FAM, patch, extend, cabMaterial, lights, touchInstances, refreshBindings, wetGlass, personHooks, driftHooks, railHooks, interior, waterMaterial, waterReflector, setupCascades, createEnvironment, horizonMaterial, cloudShadow, gHash, gNoise, gPerlin, gFbm, gStones, uniforms: { uTime, uWind, uWet, uSnow, uRain, uWear, uNightK, uNightBox } };
 })();

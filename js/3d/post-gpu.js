@@ -17,7 +17,7 @@ import {
 	Fn, float, vec2, vec3, vec4, uniform, texture, uv, select, mix, smoothstep, step, max, min, clamp, pow, exp, abs, dot,
 	cross, normalize, length, fract, sin, cos, sqrt, dFdx, dFdy, screenCoordinate, getViewPosition, getScreenPosition,
 	If, sign, acos, positionWorld, positionView, screenUV, cameraPosition, distance, context, roughness, metalness,
-	normalView, positionViewDirection, reflect,
+	normalView, positionViewDirection, reflect, renderGroup,
 } from 'three/tsl';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 
@@ -405,7 +405,10 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 		   (odsłonięte miejsce, obiekt jadący z kamerą: pociąg, wnętrze kabiny) to samo miejsce ekranu, gdy odległość się
 		   zgadza; w ostateczności bez okluzji. Odbicie wody (inna kamera) – bez okluzji */
 		const aoMap = texture(blank);
-		const aoU = { on: uniform(0), ssr: uniform(0), vp: uniform(new THREE.Matrix4()), cam: uniform(new THREE.Vector3()) };
+		/* (grupa renderGroup – uniformy w materiałach sceny: obiekty bez pełnego odświeżania co klatkę – nodes.js setupObserver;
+		   w grupie obiektu zostawały wartości sprzed ruchu kamery – okluzja i maska odbić z innego miejsca, białe plamy) */
+		const G = (v) => uniform(v).setGroup(renderGroup);
+		const aoU = { on: G(0), ssr: G(0), vp: G(new THREE.Matrix4()), cam: G(new THREE.Vector3()) };
 		const aoNode = Fn(() => {
 			const pc = aoU.vp.mul(vec4(positionWorld, 1)).toVar();
 			const pw = max(pc.w, 1e-3);

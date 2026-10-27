@@ -165,7 +165,7 @@ import * as THREE from 'three';
 						if (!L.model || L.passes % 3 === 0) {
 							if (L.model) L.model.dispose();
 							const train = NS.TrainModel.freightTrain(L.k * 13.1 + Math.random() * 1000);
-							L.model = new NS.TrainModel(this.scene, train, { player: false, shadows: this.shadows, seed: L.k * 31.7 + Math.random() * 100, destination: '' });
+							L.model = new NS.TrainModel(this.scene, train, { player: false, reflect: !NS.gpu, shadows: this.shadows, seed: L.k * 31.7 + Math.random() * 100, destination: '' });
 							L.model.compact();
 							L.len = train.cars.reduce((a, b) => a + b, 0) + train.gap * (train.cars.length - 1);
 						}
@@ -180,7 +180,7 @@ import * as THREE from 'three';
 					if (!L.model || L.cfgKey !== JSON.stringify(cfg)) {
 						if (L.model) L.model.dispose();
 						const train = R.makeConsist(cfg), st = this.route.stations;
-						L.model = new NS.TrainModel(this.scene, train, { player: false, shadows: this.shadows, seed: L.k * 31.7 + Math.random() * 100, destination: (L.dir > 0 ? st[st.length - 1] : st[0]).name });
+						L.model = new NS.TrainModel(this.scene, train, { player: false, reflect: !NS.gpu, shadows: this.shadows, seed: L.k * 31.7 + Math.random() * 100, destination: (L.dir > 0 ? st[st.length - 1] : st[0]).name });
 						if (this.details) addPeople(L.model, L.k + 7, true);
 						L.model.compact();
 						L.cfgKey = JSON.stringify(cfg);
@@ -287,7 +287,7 @@ import * as THREE from 'three';
 			if (i >= 0) return this.pool.splice(i, 1)[0];
 			const st = this.route.stations;
 			const train = R.makeConsist(t.cfg);
-			const model = new NS.TrainModel(this.scene, train, { player: false, shadows: this.shadows, seed: t.id * 97.3, destination: (t.dir > 0 ? st[st.length - 1] : st[0]).name });
+			const model = new NS.TrainModel(this.scene, train, { player: false, reflect: !NS.gpu, shadows: this.shadows, seed: t.id * 97.3, destination: (t.dir > 0 ? st[st.length - 1] : st[0]).name });
 			if (this.details) addPeople(model, t.id, t.kind !== 'freight');
 			model.compact();
 			model.poolKey = key;
@@ -325,7 +325,7 @@ import * as THREE from 'three';
 				// tor z mapy musi być tam, gdzie pociąg z przeciwka mija pociąg gracza (dalej – pociąg ukryty)
 				for (let x = sim.st.pos + 600; x > sim.st.pos - sim.L - 150; x -= 10) if (Number.isNaN(lane(x))) { this.cooldown = 8; return false; }
 			}
-			const model = new NS.TrainModel(this.scene, train, { player: false, shadows: this.shadows, seed: Math.random() * 1000, destination: this.route.stations[0].name });
+			const model = new NS.TrainModel(this.scene, train, { player: false, reflect: !NS.gpu, shadows: this.shadows, seed: Math.random() * 1000, destination: this.route.stations[0].name });
 			const v = (kind === 'freight' ? 17 : kind === 'ic' ? 33 : kind === 'dd' ? 22 : 24) * (0.85 + Math.random() * 0.3);
 			this.other = { id: Math.random(), train, model, s, v, len: train.cars.reduce((a, b) => a + b, 0) + train.gap * (train.cars.length - 1) };
 		}

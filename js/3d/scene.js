@@ -405,6 +405,9 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			}
 			// kamery map cieni widzą też warstwę brył zastępczych (world.js shadowMerge) – kamera gracza i odbicia nie
 			for (const l of this.cascades) l.shadow.camera.layers.enable(NS.World.SHADOW_LAYER);
+			// obiekty bez odbicia w wodzie (world.js NOREFL_LAYER) – widzi je kamera gracza i map cieni, kamera odbicia nie
+			this.camera.layers.enable(NS.World.NOREFL_LAYER);
+			for (const l of this.cascades) l.shadow.camera.layers.enable(NS.World.NOREFL_LAYER);
 			this.csmFrame = 0;
 			/* hold – klatki bez rysowania (świat i kamera liczone dalej): na ekranie startowym i ekranie wczytywania
 			   w WebGPU, zanim compileAsync (precompile) skompiluje potoki równolegle – rysowanie tworzy brakujące potoki
@@ -445,6 +448,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			this.dark = 0;
 
 			this.world = new NS.World(this.scene);
+			this.world.reflLayer = !!NS.gpu;
 			this.life = new NS.Life(this.scene);
 			this.camMode = 'follow';
 			this.trainModel = null;
@@ -1850,6 +1854,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 				const wv = (this.W && this.W.wind) || 0.4;
 				this.waterWind.set(0.8 * wv, 0.35 * wv);
 				const wt = this.weather;
+				this.waterRefl.player = this.trainModel; // (pociąg gracza w odbiciu tylko przy wodzie – water.js)
 				this.waterRefl.update(this.scene, this.camera, this.scene, this.time, this.waterWind, [wt.rain, wt.rainNear, wt.snow, wt.splash, wt.leaves, this.cab && this.cab.group].concat(this.sunFx.objects || []), q.post ? (q.atmo ? 0.6 : 0.5) : 0.35, !(this.waterQ || WATERQ.medium).refl);
 			}
 			// WebGPU: rysowanie po init(); wspólne uniformy materiałów węzłowych raz na klatkę; macierze świata raz na klatkę
@@ -1921,6 +1926,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			if (NS.gpu && gpuOk && this.rebundleFrames > 0) {
 				this.rebundleFrames--;
 				this.scene.traverse((o) => { if (o.isBundleGroup) o.needsUpdate = true; });
+				if (NS.nodes && NS.nodes.refreshBindings) NS.nodes.refreshBindings(3); // (powiązania z nowymi teksturami buforów – nodes.js)
 			}
 			// paczki z obiektami nagranymi bez gotowego potoku: od nowa, gdy potoki gotowe (najdalej po ok. 10 s – obiekt mógł zniknąć)
 			if (NS.gpu && gpuOk && this.bundleWait && this.bundleWait.size) {

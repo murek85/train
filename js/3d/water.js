@@ -152,15 +152,33 @@ import * as THREE from 'three';
 			camera.updateMatrixWorld();
 			this.frustum.setFromProjectionMatrix(this.pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse), camera.coordinateSystem);
 			if (!force && !this.list.some((w) => w.o.visible && w.o.parent && this.frustum.intersectsObject(w.o))) return;
-			const sz = gl.getDrawingBufferSize(this.sz), key = sz.x + 'x' + sz.y + '@' + RB.resolutionScale, every = this.off ? 8 : this.every;
+			/* co ile klatek: wg odległości kamery od wody (update – nearD): blisko co drugą, dalej co trzecią, daleko co szóstą
+			   (odbicie dalekiej wody – wąski pas obrazu, zmienia się powoli; całe odbicie to ok. 7 ms procesora) */
+			const nd = this.nearD ?? 0;
+			const sz = gl.getDrawingBufferSize(this.sz), key = sz.x + 'x' + sz.y + '@' + RB.resolutionScale, every = this.off ? 8 : nd < 150 ? this.every : nd < 500 ? 3 : 6;
 			if (!force && every > 1 && RB.hasOutput && key === this.sizeKey && ++this.frame % every) return;
 			this.sizeKey = key;
 			const mats = new Set(this.list.map((w) => w.o.material));
 			for (const m of mats) m.visible = false;
 			// opady, kabina, flara słońca – jak w WebGL (WaterReflection.update)
 			const hid = (this.hide || []).filter((o) => o && o.visible);
+			/* oszczędności (procesor – narzut na obiekt): paczki kawałków dalej niż 700 m od kamery i pociąg gracza, gdy woda
+			   dalej niż 80 m (odbija się na moście) – same siatki, bez świateł (zmiana zestawu świateł – nowe shadery) */
+			const cp = camera.position;
+			for (const b of this.bundles || []) {
+				if (!b.visible) continue;
+				const c = b.userData.reflC || (b.userData.reflC = new T.Box3().setFromObject(b).getBoundingSphere(new T.Sphere()));
+				if (Math.hypot(c.center.x - cp.x, c.center.z - cp.z) - c.radius > 700) hid.push(b);
+			}
+			const P = this.player;
+			if (P && nd > 80) {
+				if (!P.reflMeshes) { P.reflMeshes = []; for (const c of P.cars) c.group.traverse((o) => { if (o.isMesh || o.isSprite) P.reflMeshes.push(o); }); }
+				for (const o of P.reflMeshes) if (o.visible) hid.push(o);
+			}
 			for (const o of hid) o.visible = false;
 			const rt = gl.getRenderTarget(), mrt = gl.getMRT(), ac = gl.autoClear, name = scene.name;
+			// kamera odbicia (kopia kamery gracza) bez warstwy obiektów nieodbijanych (world.js NOREFL_LAYER)
+			if (RB.getVirtualCamera && NS.World) RB.getVirtualCamera(camera).layers.disable(NS.World.NOREFL_LAYER);
 			try {
 				this.draw({ scene, camera, renderer: gl, material: this.dummy });
 			} catch (e) {
@@ -174,23 +192,49 @@ import * as THREE from 'three';
 				for (const o of hid) o.visible = true;
 			}
 		}
+		/* odległość kamery od wody w poziomie: do próbki wierzchołków powierzchni (do ok. 300 punktów na siatkę; kula
+		   otaczająca długiego pasa rzeki obejmowała całą okolicę – odległość 0) */
+		dist(w, cp) {
+			if (!w.pts) {
+				const pa = w.o.geometry.attributes.position, n = pa.count, step = Math.max(1, Math.floor(n / 300)), e = w.o.matrixWorld.elements;
+				w.pts = [];
+				for (let i = 0; i < n; i += step) {
+					const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
+					w.pts.push(e[0] * x + e[4] * y + e[8] * z + e[12], e[2] * x + e[6] * y + e[10] * z + e[14]);
+				}
+			}
+			let d = Infinity;
+			for (let i = 0; i < w.pts.length; i += 2) d = Math.min(d, (w.pts[i] - cp.x) ** 2 + (w.pts[i + 1] - cp.z) ** 2);
+			return Math.sqrt(d);
+		}
 		update(scene, camera, root, time, wind, hide, scale = 0.5, off = false) {
 			WU.uWTime.value = time;
 			if (wind) WU.uWWind.value.copy(wind);
 			this.hide = hide;
 			// jakość wody niska – bez odbicia w shaderze (samo niebo z mapy otoczenia); rysowane rzadko (render)
 			this.off = off;
-			if (this.n++ % 30 === 0) WaterReflection.prototype.scan.call(this, root);
+			if (this.n++ % 30 === 0) {
+				WaterReflection.prototype.scan.call(this, root);
+				// paczki rysowania kawałków (world.js bundleStatic – „static”; pula drzew zostaje)
+				this.bundles = [];
+				root.traverse((o) => { if (o.isBundleGroup && o.name === 'static') this.bundles.push(o); });
+			}
 			const cp = camera.position;
 			camera.getWorldDirection(this.t);
 			const fl = Math.hypot(this.t.x, this.t.z) || 1, fx = cp.x + (this.t.x / fl) * 200, fz = cp.z + (this.t.z / fl) * 200;
 			let best = null;
+			this.nearD = Infinity;
 			for (const w of this.list) {
 				if (!w.o.visible) continue;
+				this.nearD = Math.min(this.nearD, this.dist(w, cp));
 				const d = Math.max(0, Math.hypot(w.c.x - fx, w.c.z - fz) - w.r);
 				if (d < 1500 && cp.y > w.y + 0.3 && (!best || d < best.d)) best = { d, w };
 			}
-			WU.uReflOn.value = best && !this.off ? 1 : 0;
+			/* odbicie lustrzane tylko przy bliskiej wodzie (most, brzeg): pełne do 60 m, wygaszane do 120 m; dalej woda odbija
+			   samo niebo z chmurami (mapa otoczenia) – odbicie to cała scena z drugiej kamery (ok. 6 ms procesora na klatkę
+			   z nim), a z daleka wąski pas wody prawie tego nie pokazuje */
+			const near = Math.max(0, Math.min(1, (120 - this.nearD) / 60));
+			WU.uReflOn.value = best && !this.off ? near : 0;
 			if (!best) return;
 			WU.uReflY.value = best.w.y;
 			this.refl.reflector.resolutionScale = scale;

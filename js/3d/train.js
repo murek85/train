@@ -1364,6 +1364,8 @@ import * as THREE from 'three';
 			}
 			for (const c of this.cars) scene.add(c.group);
 			if (this.player) { this.compactPlayer(); this.shadowProxies(); }
+			// pociągi tła w grze (WebGPU) – bez odbicia w wodzie (world.js NOREFL_LAYER; pociąg gracza – z odbiciem)
+			if (opts.reflect === false && NS.World && NS.World.NOREFL_LAYER !== undefined) for (const c of this.cars) c.group.traverse((o) => { if ((o.isMesh || o.isSprite) && o.layers.mask === 1) o.layers.set(NS.World.NOREFL_LAYER); });
 			this.pA = {};
 			this.pB = {};
 			this.sparkT = 0;
