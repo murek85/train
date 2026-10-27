@@ -54,8 +54,9 @@ w widoku z kabiny i z zewnątrz; średnia i niska bez zmian.
      kabiny; nodes.js cabMaterial – świecenie własne i światło rozproszone × okluzja, siła 0,65); nocą ekrany
      przyciemnione, zegary w ciepłym podświetleniu, światło wypełniające nad pulpitem w ciepłej barwie i słabsze,
      lampa sufitowa w jeździe zgaszona.
-   - Znane: latarnie peronowe (światła punktowe bez cieni) oświetlają wnętrze kabiny przez dach – jasne ściany
-     nocą na oświetlonej stacji (stan sprzed etapu 3).
+   - Poprawione: latarnie peronowe (światła punktowe bez cieni, world.js lightPool) oświetlały wnętrze kabiny przez
+     dach – jasne ściany nocą na stacji. Materiały wnętrza kabiny (WebGPU) z własnym zestawem świateł bez latarń
+     (cab.js limitLights, lightsNode).
 7. **Pomiar i strojenie.** ✅ Porównanie z commitem etapu 2 (osobna kopia gry obok – ten sam komputer, te same
    ustawienia: jakość wysoka, Toruń Główny – Chełmża, SM42 + 3× Bdhpumn, 12:00, pogodnie, kamera nieruchoma), FPS:
    z kabiny 31 / 30,4 → 29,4 / 28,8 (ok. −5%); z zewnątrz (widok domyślny) 29 / 31,2 → 29 / 30,2 (ok. −2%).

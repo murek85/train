@@ -1031,6 +1031,7 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			this.trainModel = new NS.TrainModel(this.scene, sim.train, { shadows: true, player: true, destination: sim.route.stations[sim.route.stations.length - 1].name });
 			if (this.cab) this.cab.dispose();
 			this.cab = new NS.CabInterior(this.trainModel);
+			this.cab.limitLights(this.scene);
 			this.life.reset(sim.route, { shadows: (this.shadowQ || SHADOWQ.medium).size >= 2048 });
 			this.life.prewarm(sim); // modele pociągów tła na ekranie wczytywania (pula)
 			/* trasa rzeczywista: pociągi z przeciwka po prawdziwym torze z mapy (nie po torze z gry); linia jednotorowa

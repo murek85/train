@@ -582,6 +582,17 @@ import * as THREE from 'three';
 			this.maxDial = Math.ceil(Math.round(model.train.vmax * 3.6) / 20) * 20 + 20;
 		}
 
+		/* WebGPU: wnętrze kabiny bez świateł latarń (world.js lightPool – punktowe bez cieni, nocą na oświetlonej stacji
+		   świeciły przez dach na ściany i sufit); słońce, księżyc, niebo, światło wypełniające i reflektory jak dotąd.
+		   Wywoływane po zbudowaniu pociągu (scene.js) – światła sceny z tej chwili */
+		limitLights(scene) {
+			if (!NS.gpu || !NS.nodes || !NS.nodes.lights) return;
+			const list = [];
+			scene.traverse((o) => { if (o.isLight && !o.userData.streetLamp) list.push(o); });
+			const node = NS.nodes.lights(list);
+			for (const m of this.own) if (m && m.isNodeMaterial && m.lights) { m.lightsNode = node; m.needsUpdate = true; }
+		}
+
 		setVisible(v) {
 			this.group.visible = v;
 			if (!v) this.fill.intensity = 0;

@@ -48,6 +48,7 @@ import { BundleGroup } from 'three/webgpu';
 			// (stała liczba świateł – bez przekompilowywania shaderów)
 			this.lightPool = Array.from({ length: 8 }, () => {
 				const l = new T.PointLight(0xffc27a, 0, 22, 1.6);
+				l.userData.streetLamp = true; // (bez wpływu na wnętrze kabiny – cab.js limitLights)
 				scene.add(l);
 				return l;
 			});

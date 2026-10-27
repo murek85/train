@@ -14,7 +14,7 @@ import {
 	texture, varying, vertexColor, modelWorldMatrix, atan, asin, exp, int, instanceIndex, materialColor, normalLocal, reflector, select, mix, smoothstep, step, fract, floor, dFdx, dFdy, fwidth, length, normalize, dot, cross, reflect, pow, abs, max, min,
 	clamp, sin, cos, sign, positionWorld, positionLocal, positionGeometry, positionView, normalGeometry, normalViewGeometry,
 	faceDirection, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, diffuseColor, materialRoughness, materialMetalness, materialEmissive,
-	materialClearcoat, shadow, OnObjectUpdate, renderGroup,
+	materialClearcoat, shadow, OnObjectUpdate, renderGroup, lights,
 } from 'three/tsl';
 
 (function () {
@@ -1401,5 +1401,5 @@ import {
 		return m;
 	}
 
-	NS.nodes = { sync, bindTextures, _pbr: FAM, patch, extend, cabMaterial, wetGlass, personHooks, driftHooks, railHooks, interior, waterMaterial, waterReflector, setupCascades, createEnvironment, horizonMaterial, cloudShadow, gHash, gNoise, gPerlin, gFbm, gStones, uniforms: { uTime, uWind, uWet, uSnow, uRain, uWear, uNightK, uNightBox } };
+	NS.nodes = { sync, bindTextures, _pbr: FAM, patch, extend, cabMaterial, lights, wetGlass, personHooks, driftHooks, railHooks, interior, waterMaterial, waterReflector, setupCascades, createEnvironment, horizonMaterial, cloudShadow, gHash, gNoise, gPerlin, gFbm, gStones, uniforms: { uTime, uWind, uWet, uSnow, uRain, uWear, uNightK, uNightBox } };
 })();
