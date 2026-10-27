@@ -191,10 +191,14 @@ import * as THREE from 'three';
 			/* materiały wnętrza: glow – świecenie własne (światło rozproszone), skalowane o zmroku w update; map – faktura
 			   (świeci razem z nią – emissiveMap) */
 			this.glow = [];
+			/* tex – zestaw tekstur PBR (WebGPU: nodes.js cabMaterial – zamiast faktury z kanwy map), texK – udział barwy
+			   tekstury, nAmp – siła wypukłości */
 			const cm = (color, o = {}) => {
 				// odbicia nieba słabsze niż na zewnątrz (wnętrze widzi niebo tylko przez szyby)
-				const m = own(new T.MeshStandardMaterial({ color, roughness: o.rough ?? 0.7, metalness: o.metal ?? 0, emissive: color, emissiveIntensity: o.glow ?? 0.22, side: o.side ?? T.FrontSide, envMapIntensity: o.env ?? 0.5 }));
-				if (o.map) { m.map = o.map; m.emissiveMap = o.map; m.roughnessMap = o.rmap || null; }
+				let m = new T.MeshStandardMaterial({ color, roughness: o.rough ?? 0.7, metalness: o.metal ?? 0, emissive: color, emissiveIntensity: o.glow ?? 0.22, side: o.side ?? T.FrontSide, envMapIntensity: o.env ?? 0.5 });
+				if (o.tex && NS.gpu && NS.nodes && NS.nodes.cabMaterial) m = NS.nodes.cabMaterial(m, o.tex, o.texK ?? 0, o.nAmp ?? 1);
+				else if (o.map) { m.map = o.map; m.emissiveMap = o.map; m.roughnessMap = o.rmap || null; }
+				own(m);
 				this.glow.push([m, m.emissiveIntensity]);
 				return m;
 			};
@@ -213,18 +217,18 @@ import * as THREE from 'three';
 
 			// materiały: pulpit (lakier strukturalny), blat i półka (czarne, matowe), metal, guma, podłoga, ściana, tapicerka
 			const grain = grainTex();
-			const panel = cm('#6e7882', { map: grain, rough: 0.75, glow: 0.2 });
-			const deskTop = cm('#4a5057', { map: grain, rough: 0.85, glow: 0.18 });
-			const black = cm('#1d2023', { map: grain, rough: 0.6, glow: 0.12 });
-			const rubber = cm('#141516', { rough: 0.95, glow: 0.08 });
+			const panel = cm('#6e7882', { map: grain, rough: 0.75, glow: 0.2, tex: 'train/paint', nAmp: 0.7 });
+			const deskTop = cm('#4a5057', { map: grain, rough: 0.85, glow: 0.18, tex: 'cab/plastic', texK: 0.2 });
+			const black = cm('#1d2023', { map: grain, rough: 0.6, glow: 0.12, tex: 'cab/plastic', texK: 0.2 });
+			const rubber = cm('#141516', { rough: 0.95, glow: 0.08, tex: 'cab/rubber', texK: 0.3 });
 			// stal szczotkowana (obręcze zegarów, oprawki, poręcze, dźwignie) – matowa: lustrzany chrom tuż pod światłem
 			// wypełniającym dawał jaskrawe refleksy i poświatę
-			const chrome = cm('#a3a8ae', { metal: 0.7, rough: 0.45, glow: 0.05, env: 0.35 });
-			const steel = cm('#8d9399', { metal: 0.6, rough: 0.5, glow: 0.12, env: 0.35 });
-			const floorM = cm('#6a6e72', { map: treadTex(), metal: 0.55, rough: 0.5, glow: 0.18 });
+			const chrome = cm('#a3a8ae', { metal: 0.7, rough: 0.45, glow: 0.05, env: 0.35, tex: 'train/steel', nAmp: 0.5 });
+			const steel = cm('#8d9399', { metal: 0.6, rough: 0.5, glow: 0.12, env: 0.35, tex: 'train/steel', nAmp: 0.5 });
+			const floorM = cm('#6a6e72', { map: treadTex(), metal: 0.55, rough: 0.5, glow: 0.18, tex: 'cab/floor', texK: 0.6 });
 			const backM = cm('#b9bec3', { map: panelTex(), rough: 0.8, glow: 0.25 });
 			const doorM = cm('#8e959c', { map: panelTex(), rough: 0.7, glow: 0.22 });
-			const fabric = cm('#2c3e57', { map: fabricTex(), rough: 0.95, glow: 0.2 });
+			const fabric = cm('#2c3e57', { map: fabricTex(), rough: 0.95, glow: 0.2, tex: 'cab/fabric', texK: 0.15 });
 			const add = (o) => { g.add(o); return o; };
 			const rb = (w, h, d, m, x, y, z, r = 0.012) => { const o = new T.Mesh(roundGeo(w, h, d, r), m); o.position.set(x, y, z); return add(o); };
 			const cyl = (rad, h, m, x, y, z) => { const o = new T.Mesh(CYL, m); o.scale.set(rad * 2, h, rad * 2); o.position.set(x, y, z); return add(o); };
@@ -544,11 +548,13 @@ import * as THREE from 'three';
 			this.fill = NS.playerLight ? NS.playerLight('cab', () => new T.PointLight(0xfff2e2, 0, 5, 1.4)) : new T.PointLight(0xfff2e2, 0, 5, 1.4); // (wspólne dla kolejnych modeli – train.js playerLight)
 			this.fill.position.set(0, H - 0.68, deskBack + 0.85).add(g.position);
 			car.group.add(this.fill);
-			// wnętrze przyjmuje cienie – pudło (dach, ściany) zasłania słońce, więc nie oświetla ono kabiny „przez blachę”
+			/* wnętrze przyjmuje cienie – pudło (dach, ściany, słupki; szyby bez cienia – train.js shadowMerge) zasłania słońce,
+			   które wpada tylko przez okna; wyposażenie (pulpit, fotel, dźwignie) rzuca cień na wnętrze (kabina widoczna tylko
+			   w widoku z kabiny – poza nim bez kosztu w mapach cieni); bez powłoki pudła od środka (cień – bryła pojazdu) */
 			g.traverse((o) => {
 				if (o.isMesh) {
 					o.receiveShadow = true;
-					o.castShadow = false;
+					o.castShadow = o !== shell && !(o.material && o.material.transparent) && !o.isSprite;
 				}
 			});
 			/* scalenie nieruchomych części wnętrza o wspólnym materiale (ok. 150 siatek – ok. 150 wywołań rysowania na klatkę

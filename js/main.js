@@ -2870,7 +2870,7 @@
 			`${link('https://github.com/dgreenheck/ez-tree', 'EZ-Tree')} – generator drzew, © Daniel Greenheck, licencja MIT`,
 			`${link('https://github.com/google/draco', 'Draco')} – © Google, Apache 2.0; ${link('https://github.com/zeux/meshoptimizer', 'meshoptimizer')} – © Arseny Kapoulkine, MIT; ${link('https://github.com/BinomialLLC/basis_universal', 'Basis Universal')} – © Binomial, Apache 2.0`,
 		]) + sec('Tekstury', [
-			`${link('https://ambientcg.com', 'ambientCG')} – nawierzchnie, ściany, dachy, liście (CC0)`,
+			`${link('https://ambientcg.com', 'ambientCG')} – nawierzchnie, ściany, dachy, liście, lakier i metal taboru, kabina (CC0)`,
 			`${link('https://polyhaven.com', 'Poly Haven')} – kora dębu (CC0); ${link('https://www.texturecan.com', 'TextureCan')} – kora brzozy i sosny (CC0, przez EZ-Tree)`,
 		]) + sec('Modele 3D', M.length ? M.map((m) => `${link(m.source, m.title)}${m.author ? ' – ' + esc(m.author) : ''}${m.license ? ', ' + esc(m.license) : ''}`) : ['Wszystkie obiekty budowane w kodzie gry.'])
 			+ sec('Dane map', ['© współtwórcy OpenStreetMap (licencja ODbL); NMT, NMPT, BDOT10k, ULDK – © GUGiK; Copernicus DEM (przez Open-Meteo); PKP Polskie Linie Kolejowe S.A. (Regulamin sieci); RINF – © Europejska Agencja Kolejowa (ERA, CC BY 4.0)']);

@@ -1,6 +1,86 @@
 {
 	"version": 1,
 	"sets": {
+		"cab/fabric": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				512,
+				1024
+			],
+			"ext": "webp",
+			"scale": 0.3,
+			"mean": [
+				0.4621,
+				0.4744,
+				0.4832
+			],
+			"source": "Fabric082A_1K-PNG.zip",
+			"license": "CC0"
+		},
+		"cab/floor": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				512,
+				1024
+			],
+			"ext": "webp",
+			"scale": 0.6,
+			"mean": [
+				0.1591,
+				0.1259,
+				0.0931
+			],
+			"source": "DiamondPlate009_1K-PNG.zip",
+			"license": "CC0"
+		},
+		"cab/plastic": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				512,
+				1024
+			],
+			"ext": "webp",
+			"scale": 0.4,
+			"mean": [
+				0.0249,
+				0.0224,
+				0.0217
+			],
+			"source": "Plastic012B_1K-PNG.zip",
+			"license": "CC0"
+		},
+		"cab/rubber": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				512,
+				1024
+			],
+			"ext": "webp",
+			"scale": 0.5,
+			"mean": [
+				0.0228,
+				0.0247,
+				0.0314
+			],
+			"source": "Rubber004_1K-PNG.zip",
+			"license": "CC0"
+		},
 		"ground/dirt": {
 			"maps": {
 				"color": "srgb",
@@ -299,6 +379,86 @@
 				0.0621
 			],
 			"source": "RoofingTiles012A_2K-JPG.zip",
+			"license": "CC0"
+		},
+		"train/grime": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				512,
+				1024
+			],
+			"ext": "webp",
+			"scale": 3.0,
+			"mean": [
+				0.1071,
+				0.1204,
+				0.1354
+			],
+			"source": "Metal021_1K-PNG.zip",
+			"license": "CC0"
+		},
+		"train/paint": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				512,
+				1024
+			],
+			"ext": "webp",
+			"scale": 1.5,
+			"mean": [
+				0.012,
+				0.0155,
+				0.0146
+			],
+			"source": "Metal028_1K-PNG.zip",
+			"license": "CC0"
+		},
+		"train/rust": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				512,
+				1024
+			],
+			"ext": "webp",
+			"scale": 1.0,
+			"mean": [
+				0.4941,
+				0.4724,
+				0.4512
+			],
+			"source": "Metal053B_1K-PNG.zip",
+			"license": "CC0"
+		},
+		"train/steel": {
+			"maps": {
+				"color": "srgb",
+				"normal": "linear",
+				"orm": "linear"
+			},
+			"sizes": [
+				512,
+				1024
+			],
+			"ext": "webp",
+			"scale": 0.5,
+			"mean": [
+				0.2883,
+				0.299,
+				0.3101
+			],
+			"source": "Metal009_1K-PNG.zip",
 			"license": "CC0"
 		},
 		"wall/brick-light": {

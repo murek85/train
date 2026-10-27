@@ -1313,11 +1313,11 @@ import * as THREE from 'three';
 				m.customProgramCacheKey = () => 'interior-person';
 			}
 			// szyby boczne przyciemniane (jak w wagonach i EZT na zdjęciach – z zewnątrz wnętrze w półmroku, odbicia nieba)
-			this.sideGlass = own(patch(new T.MeshStandardMaterial({ color: '#22303a', transparent: true, opacity: 0.42, roughness: 0.04, metalness: 0.1, envMapIntensity: 1.25, depthWrite: false, side: T.DoubleSide }), 'clean'));
+			this.sideGlass = own(patch(new T.MeshStandardMaterial({ color: '#22303a', transparent: true, opacity: 0.42, roughness: 0.04, metalness: 0.1, envMapIntensity: 1.25, depthWrite: false, side: T.DoubleSide }), 'clean', { glass: true }));
 			this.sideGlass.userData.shared = false;
 			this.hiddenMat = own(new T.MeshBasicMaterial({ visible: false }));
 			// szyby kabin: przyciemnione, przezroczyste – z zewnątrz widać wnętrze kabiny i maszynistę
-			this.cabGlass = own(patch(new T.MeshStandardMaterial({ color: '#1e2b34', transparent: true, opacity: 0.38, roughness: 0.04, metalness: 0.2, envMapIntensity: 1.2, depthWrite: false }), 'clean'));
+			this.cabGlass = own(patch(new T.MeshStandardMaterial({ color: '#1e2b34', transparent: true, opacity: 0.38, roughness: 0.04, metalness: 0.2, envMapIntensity: 1.2, depthWrite: false }), 'clean', { glass: true }));
 			this.cabGlass.userData.shared = false;
 			// wycieraczki (zestawy z cabEnd / addWiper) i mokra szyba pociągu gracza
 			this.wiperSets = [];
@@ -1400,11 +1400,18 @@ import * as THREE from 'three';
 			});
 			root.traverse((o) => {
 				if (!o.isMesh || !o.castShadow || o.userData.shadowProxy || lodLow.has(o) || (skip && skip.has(o)) || !o.geometry.attributes.position) return;
+				// szyby (przezroczyste) – bez cienia: słońce wpada przez nie do wnętrza
+				if (!Array.isArray(o.material) && o.material && (o.material.transparent || o.material.visible === false)) { o.castShadow = false; return; }
 				const p = o.geometry.attributes.position, idx = o.geometry.index, cnt = idx ? idx.count : p.count;
+				/* grupy ścian z szybami (przezroczyste) i ukryte – bez cienia: słońce wpada przez okna do wnętrza i kabiny
+				   (cień rzucają ramy, słupki i dach) */
+				const G = Array.isArray(o.material) && o.geometry.groups.length
+					? o.geometry.groups.filter((gr) => { const mm = o.material[gr.materialIndex]; return mm && mm.visible !== false && !mm.transparent; })
+					: [{ start: 0, count: cnt }];
 				for (let k = 0, n = o.isInstancedMesh ? o.count : 1; k < n; k++) {
 					m.multiplyMatrices(inv, o.matrixWorld);
 					if (o.isInstancedMesh) { o.getMatrixAt(k, im); m.multiply(im); }
-					for (let q = 0; q < cnt; q++) { v.fromBufferAttribute(p, idx ? idx.getX(q) : q).applyMatrix4(m); pos.push(v.x, v.y, v.z); }
+					for (const gr of G) for (let q = gr.start, e = Math.min(cnt, gr.start + gr.count); q < e; q++) { v.fromBufferAttribute(p, idx ? idx.getX(q) : q).applyMatrix4(m); pos.push(v.x, v.y, v.z); }
 				}
 				o.castShadow = false;
 				if (track && this.shadowParts) this.shadowParts.push(o);

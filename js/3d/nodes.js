@@ -204,6 +204,8 @@ import {
 		paving: ['paving/concrete-slabs', 'paving/pavers'],
 		wall: ['wall/plaster', 'wall/plaster-rough', 'wall/brick-red', 'wall/brick-old', 'wall/brick-light', 'wall/concrete', 'wall/metal', 'wall/wood'],
 		roof: ['roof/tiles-red', 'roof/tiles-graphite', 'roof/metal', 'road/asphalt-cracked'], // (papa – ten sam zestaw co spękany asfalt)
+		train: ['train/paint', 'train/grime', 'train/rust', 'train/steel'],
+		cab: ['cab/floor', 'cab/rubber', 'cab/plastic', 'cab/fabric'],
 	};
 	// wybór z listy węzłów wg indeksu (int) – warstwa zmienna w pikselu (atrybut, kolor)
 	const pick = (idx, arr) => arr.slice(1).reduce((acc, v, k) => select(idx.equal(k + 1), v, acc), arr[0]);
@@ -608,7 +610,7 @@ import {
 	}
 
 	// tabor: patyna, spoiny, falowanie blach, nity, żebra dachu (TRAIN_GLSL) – w układzie wagonu (position, normal)
-	function trainPattern(S, grime, panels) {
+	function trainPattern(S, grime, panels, metal0) {
 		const vWear = attr('aWear', 'vec2').toVar();
 		S.wearAO.assign(clamp(vWear.x, 0, 1).oneMinus());
 		const lp = vec3(positionGeometry).toVar(), ln = normalize(normalGeometry).toVar();
@@ -622,8 +624,43 @@ import {
 			const roof = smoothstep(3.4, 3.85, lp.y).mul(smoothstep(0.15, 0.7, ln.y));
 			g.assign(max(g, low.mul(n1.mul(0.55).add(0.45)).add(streak.mul(0.2)).add(roof.mul(n1.mul(0.5).add(0.25)))));
 		});
+		const dirtC = vec3(0.2, 0.17, 0.135).mul(n1.mul(0.6).add(0.7)).toVar();
+		/* tekstury taboru: rzut na płaszczyznę osi dominującej normalnej w układzie wagonu (burta – z, y: zacieki pionowo;
+		   dach – z, x; czoło – x, y); zaburzenie normalnej w układzie wagonu (S.nPert – setupDiffuseColor) */
+		const ax = abs(ln).toVar();
+		const sideF = ax.x.greaterThan(max(ax.y, ax.z)).toVar(), topF = ax.y.greaterThan(ax.z).toVar();
+		const uv = select(sideF, vec2(lp.z, lp.y), select(topF, vec2(lp.z, lp.x), vec2(lp.x, lp.y))).toVar();
+		const Tl = select(sideF, vec3(0, 0, 1), select(topF, vec3(0, 0, 1), vec3(1, 0, 0))).toVar();
+		const Bl = select(sideF, vec3(0, 1, 0), select(topF, vec3(1, 0, 0), vec3(0, 1, 0))).toVar();
+		if (!panels) {
+			/* części (wózki, koła, podwozie, osprzęt): metaliczne (≥ 0,5) – stal szczotkowana z rysami (train/steel: rysy
+			   w normalnej, chropowatość), pozostałe – żelazo z rdzą (train/rust) tam, gdzie brudne (zabrudzenie bazowe
+			   i wysokość nad szyną): plamy rdzy w barwie części, chropowatość, wżery w normalnej */
+			const Rr = pbrSet('train/rust'), St = pbrSet('train/steel');
+			const pR = pbrPlanar(Rr, vec2(uv.x, uv.y.negate()), true), pS = pbrPlanar(St, vec2(uv.x, uv.y.negate()), true);
+			const met = smoothstep(0.4, 0.6, metal0).toVar();
+			const rw = clamp(g.mul(uWear).mul(1.8), 0, 1).mul(met.oneMinus()).mul(Rr.on).toVar();
+			// (faktura w jasności wszędzie, gdzie brudne; barwa rdzy – tylko w plamach)
+			const spot = smoothstep(0.55, 0.78, gNoise(uv.mul(1.7).add(11))).toVar();
+			diffuseColor.rgb.mulAssign(mix(1, dot(pR.ratio, LUMA).clamp(0.5, 1.6), rw.mul(0.7)));
+			diffuseColor.rgb.assign(mix(diffuseColor.rgb, diffuseColor.rgb.mul(pR.ratio.div(max(dot(pR.ratio, LUMA), 0.05))).mul(vec3(1.25, 0.95, 0.7)), rw.mul(spot).mul(0.7)));
+			S.gRough.assign(pS.orm.y.sub(0.35).mul(0.5).mul(met).mul(St.on).add(pR.orm.y.sub(0.7).mul(0.4).mul(rw)));
+			S.nPert.assign(Tl.mul(pS.nT.x).add(Bl.mul(pS.nT.y)).mul(met.mul(St.on).mul(0.35)).add(Tl.mul(pR.nT.x).add(Bl.mul(pR.nT.y)).mul(rw.mul(0.6))));
+		}
+		if (panels) {
+			/* pudło z tekstur (train/paint – lakier proszkowy: drobna nierówność i chropowatość powłoki; train/grime – zacieki
+			   i rdzawy brud: plamy brudu i jego barwa) */
+			const P = pbrSet('train/paint'), G = pbrSet('train/grime');
+			const pP = pbrPlanar(P, vec2(uv.x, uv.y.negate()), true), pG = pbrPlanar(G, vec2(uv.x, uv.y.negate()), true);
+			// brud: ciemniejsze od średniej miejsca tekstury (zacieki, plamy) – więcej brudu, jaśniejsze – mniej
+			const dk = clamp(pG.lumM.sub(dot(pG.c, LUMA)).div(pG.lumM), -1, 1).toVar();
+			g.mulAssign(mix(1, dk.mul(0.9).add(1).clamp(0.3, 1.9), G.on));
+			dirtC.assign(mix(dirtC, vec3(0.2, 0.16, 0.12).mul(pG.ratio), G.on.mul(0.7))); // (barwa i plamy zacieków wokół koloru brudu)
+			S.gRough.assign(pP.orm.y.sub(0.5).mul(0.35).mul(P.on));
+			S.nPert.assign(Tl.mul(pP.nT.x).add(Bl.mul(pP.nT.y)).mul(P.on.mul(0.25))
+				.add(Tl.mul(pG.nT.x).add(Bl.mul(pG.nT.y)).mul(G.on.mul(0.5).mul(clamp(g.mul(uWear), 0, 1)))));
+		}
 		S.wearG.assign(clamp(g.mul(uWear), 0, 1));
-		const dirtC = vec3(0.2, 0.17, 0.135).mul(n1.mul(0.6).add(0.7));
 		diffuseColor.rgb.assign(mix(diffuseColor.rgb, dirtC, S.wearG.mul(0.6)));
 		if (!panels) return;
 		// tylko na powierzchni burty (|x| < 1,462) – drzwi i części doczepione gładkie (jak w common.js)
@@ -803,6 +840,13 @@ import {
 				super.setupDiffuseColor(builder);
 				const v = this.patchVariant, S = this.patchVars, H = this.patchHooks;
 				if (H && H.diffuse) H.diffuse(builder);
+				/* szyby taboru (opt.glass): odbicie wg Fresnela (Schlick, F0 0,04) – pod ostrym kątem szyba prawie lustrzana
+				   (krycie rośnie – widać odbicie nieba i otoczenia), na wprost przejrzysta jak dotąd */
+				if (this.patchOpt && this.patchOpt.glass) {
+					const gn = this.side === THREE.DoubleSide ? normalViewGeometry.mul(faceDirection) : normalViewGeometry;
+					const fr = pow(abs(dot(normalize(gn), normalize(positionView))).oneMinus(), 5).mul(0.96).add(0.04);
+					diffuseColor.a.assign(mix(diffuseColor.a, 0.95, fr));
+				}
 				if (!S) return;
 				const opt = this.patchOpt || {};
 				const standard = !!this.isMeshStandardMaterial;
@@ -824,7 +868,7 @@ import {
 				if (ground) groundPattern(S);
 				else if (v === 'gravel') gravelPattern(S);
 				else if (v === 'wind') leafPattern(S, !!this.map);
-				else if (train) trainPattern(S, rm ? rm.z : opt.grime ?? 0.12, !!opt.panels);
+				else if (train) trainPattern(S, rm ? rm.z : opt.grime ?? 0.12, !!opt.panels, rm ? rm.y : materialMetalness);
 				else if (v === 'road') roadPattern(S);
 				else if (v === 'concrete') concretePattern(S);
 				else if (v === 'platform') platformPattern(S, 'PL_TACT' in defs ? 'tact' : 'PL_EDGE' in defs ? 'edge' : 'top');
@@ -836,6 +880,8 @@ import {
 				else if (this.side === THREE.BackSide) n = n.negate();
 				const amp = train ? (opt.panels ? 1.0 : 0) : BUMP_K[v] || 0;
 				S.normal.assign(amp ? bump(n, S.gH, amp) : n);
+				// tabor z tekstur: zaburzenie normalnej w układzie wagonu (trainPattern)
+				if (train) S.normal.assign(normalize(S.normal.add(cameraViewMatrix.mul(modelWorldMatrix.mul(vec4(S.nPert, 0))).xyz)));
 				// normalne z tekstur (teren): zaburzenie w świecie (xz) przeniesione do układu widoku
 				if (ground || v === 'road' || v === 'roof' || (v === 'dirt' && opt.wall)) S.normal.assign(normalize(S.normal.add(cameraViewMatrix.mul(vec4(S.nPert, 0)).xyz)));
 				const wN = normalize(vec4(S.normal, 0).mul(cameraViewMatrix).xyz).toVar();
@@ -846,7 +892,7 @@ import {
 				if (standard) {
 					if (train) {
 						const r0 = rm ? rm.x : materialRoughness, m0 = rm ? rm.y : materialMetalness;
-						S.rough.assign(clamp(mix(r0, 0.88, S.wearG), 0.04, 1.0));
+						S.rough.assign(clamp(mix(r0.add(S.gRough), 0.88, S.wearG), 0.04, 1.0));
 						S.metal.assign(mix(m0, m0.mul(0.35), S.wearG));
 					} else {
 						// (dolna granica 0,3 – poza szybami okien elewacji: gRough mocno ujemne, dirtPattern)
@@ -901,8 +947,8 @@ import {
 			customProgramCacheKey() {
 				const o = this.patchOpt || {}, d = this.defines ? Object.keys(this.defines).sort().join('+') : '';
 				const h = (this.patchHooks ? Object.keys(this.patchHooks).sort().join('+') + (this.patchHooks.tag || '') : '') + (this.patchNodes ? '|' + Object.keys(this.patchNodes).sort().join('+') : '');
-				const tx = ['ground', 'platform', 'road', 'roof'].includes(this.patchVariant) || o.wall ? '|tx' + texGen : '';
-				return super.customProgramCacheKey() + '|' + this.patchVariant + '|' + [o.grime, o.panels ? 1 : 0, o.rm ? 1 : 0, o.noSnow ? 1 : 0, o.wall ? 1 : 0].join(',') + '|' + d + '|' + h + tx;
+				const tx = ['ground', 'platform', 'road', 'roof'].includes(this.patchVariant) || o.wall || o.tex || this.patchVariant === 'train' ? '|tx' + texGen : '';
+				return super.customProgramCacheKey() + '|' + this.patchVariant + '|' + [o.grime, o.panels ? 1 : 0, o.rm ? 1 : 0, o.noSnow ? 1 : 0, o.wall ? 1 : 0, o.glass ? 1 : 0, o.tex || ''].join(',') + '|' + d + '|' + h + tx;
 			}
 			copy(source) {
 				super.copy(source);
@@ -960,6 +1006,33 @@ import {
 		m.userData = Object.assign({}, material.userData);
 		m.version++;
 		return initVariant(m, variant, opt);
+	}
+
+	/* Kabina maszynisty (cab.js): materiał wnętrza z tekstury zestawu (rodziny 'cab' i 'train' – tworzywo, guma, blacha
+	   ryflowana, tkanina, lakier strukturalny, stal) w rzucie na płaszczyznę osi dominującej normalnej w układzie bryły
+	   (wnętrze scalone w układzie kabiny – metry). Kolor materiału × detal tekstury (k – udział barwy tekstury),
+	   chropowatość i normalna z tekstury (nAmp – siła), świecenie własne (udawane światło rozproszone) z tym samym
+	   detalem. Bez wczytanych tekstur – jak zwykły materiał. */
+	function cabMaterial(material, set, k = 0, nAmp = 1) {
+		const m = patch(material, 'indoor', { tex: set });
+		const s = pbrSet(set);
+		const lp = positionGeometry, ln = normalGeometry;
+		const ax = abs(ln).toVar();
+		const sideF = ax.x.greaterThan(max(ax.y, ax.z)).toVar(), topF = ax.y.greaterThan(ax.z).toVar();
+		const uv = select(sideF, vec2(lp.z, lp.y), select(topF, vec2(lp.x, lp.z), vec2(lp.x, lp.y))).toVar();
+		const Tl = select(sideF, vec3(0, 0, 1), vec3(1, 0, 0)).toVar();
+		const Bl = select(sideF, vec3(0, 1, 0), select(topF, vec3(0, 0, 1), vec3(0, 1, 0))).toVar();
+		const p = pbrPlanar(s, vec2(uv.x, uv.y.negate()), true);
+		const det = mix(vec3(1), mix(vec3(dot(p.ratio, LUMA)), p.ratio, k).clamp(0.2, 2.5), s.on).toVar();
+		const n0 = m.side === THREE.BackSide ? normalViewGeometry.negate() : m.side === THREE.DoubleSide ? normalViewGeometry.mul(faceDirection) : normalViewGeometry;
+		const nP = Tl.mul(p.nT.x).add(Bl.mul(p.nT.y)).mul(s.on.mul(nAmp));
+		nodeProps(m, {
+			colorNode: materialColor.mul(det),
+			emissiveNode: materialEmissive.mul(det),
+			roughnessNode: mix(materialRoughness, p.orm.y, s.on.mul(0.8)),
+			normalNode: normalize(n0.add(cameraViewMatrix.mul(modelWorldMatrix.mul(vec4(nP, 0))).xyz)),
+		});
+		return m;
 	}
 
 	/* Odbicia nieba (post.js environment w WebGL): kula z gradientem zenit – horyzont – ziemia i plamą słońca, zamieniona
@@ -1319,5 +1392,5 @@ import {
 		return m;
 	}
 
-	NS.nodes = { sync, bindTextures, _pbr: FAM, patch, extend, wetGlass, personHooks, driftHooks, railHooks, interior, waterMaterial, waterReflector, setupCascades, createEnvironment, horizonMaterial, cloudShadow, gHash, gNoise, gPerlin, gFbm, gStones, uniforms: { uTime, uWind, uWet, uSnow, uRain, uWear, uNightK, uNightBox } };
+	NS.nodes = { sync, bindTextures, _pbr: FAM, patch, extend, cabMaterial, wetGlass, personHooks, driftHooks, railHooks, interior, waterMaterial, waterReflector, setupCascades, createEnvironment, horizonMaterial, cloudShadow, gHash, gNoise, gPerlin, gFbm, gStones, uniforms: { uTime, uWind, uWet, uSnow, uRain, uWear, uNightK, uNightBox } };
 })();
