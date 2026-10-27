@@ -49,8 +49,13 @@ w widoku z kabiny i z zewnątrz; średnia i niska bez zmian.
    obejmowała szyby – słońce nigdy nie wpadało do wnętrza (jasność udawana świeceniem własnym). Teraz szyby
    (grupy i siatki przezroczyste) i części ukryte bez cienia: słońce wpada przez okna do kabiny i wagonów, ramy,
    słupki i dach rzucają cień (widoczny na ścianie tylnej kabiny); wyposażenie kabiny rzuca cień na wnętrze
-   (koszt w granicach szumu). AO wypalone we wnętrzu i nocne podświetlenie przyrządów – odłożone (świecenie
-   własne zostaje jako światło rozproszone).
+   (koszt w granicach szumu).
+   - Dodatek (kabina nocą): okluzja wypalona we wnętrzu (train.js bakeWear – wspólne z taborem, przesłaniają bryły
+     kabiny; nodes.js cabMaterial – świecenie własne i światło rozproszone × okluzja, siła 0,65); nocą ekrany
+     przyciemnione, zegary w ciepłym podświetleniu, światło wypełniające nad pulpitem w ciepłej barwie i słabsze,
+     lampa sufitowa w jeździe zgaszona.
+   - Znane: latarnie peronowe (światła punktowe bez cieni) oświetlają wnętrze kabiny przez dach – jasne ściany
+     nocą na oświetlonej stacji (stan sprzed etapu 3).
 7. **Pomiar i strojenie.** ✅ Porównanie z commitem etapu 2 (osobna kopia gry obok – ten sam komputer, te same
    ustawienia: jakość wysoka, Toruń Główny – Chełmża, SM42 + 3× Bdhpumn, 12:00, pogodnie, kamera nieruchoma), FPS:
    z kabiny 31 / 30,4 → 29,4 / 28,8 (ok. −5%); z zewnątrz (widok domyślny) 29 / 31,2 → 29 / 30,2 (ok. −2%).

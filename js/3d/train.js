@@ -590,6 +590,7 @@ import * as THREE from 'three';
 		return l;
 	}
 	NS.playerLight = playerLight;
+	NS.bakeWear = bakeWear;
 	const vcTrainMats = new Map();
 	function vcConvert(root, keep) {
 		const skip = new Set();
@@ -1064,13 +1065,14 @@ import * as THREE from 'three';
 	})();
 	// wyniki wypiekania wg skrótu geometrii wagonu (ten sam wagon w kolejnym podglądzie / składzie – bez liczenia)
 	const aoCache = new Map();
-	function bakeWear(group, ao) {
+	// solid – przesłaniające (domyślnie nieprzezroczyste z zewnątrz pojazdu; kabina – cab.js: jej wnętrze)
+	function bakeWear(group, ao, solidFn) {
 		group.updateMatrixWorld(true);
 		const inv = new T.Matrix4().copy(group.matrixWorld).invert(), M = new T.Matrix4();
 		const recv = [];
 		let tris = new Float32Array(1 << 16), nt = 0;
 		// przesłaniają bryły nieprzezroczyste z zewnątrz pojazdu (wnętrza – za ścianami pudła – pominięte)
-		const solid = (m) => m && m.visible !== false && !m.transparent && m.isMeshStandardMaterial && !/indoor/.test(m.customProgramCacheKey ? m.customProgramCacheKey() : '');
+		const solid = solidFn || ((m) => m && m.visible !== false && !m.transparent && m.isMeshStandardMaterial && !/indoor/.test(m.customProgramCacheKey ? m.customProgramCacheKey() : ''));
 		group.traverse((o) => {
 			if (!o.isMesh || o.isInstancedMesh || !o.geometry.attributes.position) return;
 			const e = M.multiplyMatrices(inv, o.matrixWorld).elements;

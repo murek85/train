@@ -1012,9 +1012,17 @@ import {
 	   ryflowana, tkanina, lakier strukturalny, stal) w rzucie na płaszczyznę osi dominującej normalnej w układzie bryły
 	   (wnętrze scalone w układzie kabiny – metry). Kolor materiału × detal tekstury (k – udział barwy tekstury),
 	   chropowatość i normalna z tekstury (nAmp – siła), świecenie własne (udawane światło rozproszone) z tym samym
-	   detalem. Bez wczytanych tekstur – jak zwykły materiał. */
+	   detalem. Bez wczytanych tekstur – jak zwykły materiał. Okluzja wypalona we wnętrzu (aWear.x – train.js bakeWear
+	   wywołane w cab.js): zakamarki ciemniejsze w świeceniu własnym i świetle rozproszonym (aoNode); set null – sama
+	   okluzja (materiał z własną fakturą map). */
 	function cabMaterial(material, set, k = 0, nAmp = 1) {
-		const m = patch(material, 'indoor', { tex: set });
+		const m = patch(material, 'indoor', { tex: set || 'ao' });
+		const ao = clamp(attr('aWear', 'vec2').x, 0, 1).mul(0.65).oneMinus().toVar(); // (wnętrze zamknięte – ściany blisko z każdej strony: słabiej niż na zewnątrz)
+		if (!set) {
+			const em = material.emissiveMap ? materialEmissive.mul(texture(material.emissiveMap).rgb) : materialEmissive;
+			nodeProps(m, { emissiveNode: em.mul(ao), aoNode: ao });
+			return m;
+		}
 		const s = pbrSet(set);
 		const lp = positionGeometry, ln = normalGeometry;
 		const ax = abs(ln).toVar();
@@ -1028,7 +1036,8 @@ import {
 		const nP = Tl.mul(p.nT.x).add(Bl.mul(p.nT.y)).mul(s.on.mul(nAmp));
 		nodeProps(m, {
 			colorNode: materialColor.mul(det),
-			emissiveNode: materialEmissive.mul(det),
+			emissiveNode: materialEmissive.mul(det).mul(ao),
+			aoNode: ao,
 			roughnessNode: mix(materialRoughness, p.orm.y, s.on.mul(0.8)),
 			normalNode: normalize(n0.add(cameraViewMatrix.mul(modelWorldMatrix.mul(vec4(nP, 0))).xyz)),
 		});

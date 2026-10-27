@@ -196,8 +196,10 @@ import * as THREE from 'three';
 			const cm = (color, o = {}) => {
 				// odbicia nieba słabsze niż na zewnątrz (wnętrze widzi niebo tylko przez szyby)
 				let m = new T.MeshStandardMaterial({ color, roughness: o.rough ?? 0.7, metalness: o.metal ?? 0, emissive: color, emissiveIntensity: o.glow ?? 0.22, side: o.side ?? T.FrontSide, envMapIntensity: o.env ?? 0.5 });
-				if (o.tex && NS.gpu && NS.nodes && NS.nodes.cabMaterial) m = NS.nodes.cabMaterial(m, o.tex, o.texK ?? 0, o.nAmp ?? 1);
-				else if (o.map) { m.map = o.map; m.emissiveMap = o.map; m.roughnessMap = o.rmap || null; }
+				const node = NS.gpu && NS.nodes && NS.nodes.cabMaterial;
+				if (o.map && !(o.tex && node)) { m.map = o.map; m.emissiveMap = o.map; m.roughnessMap = o.rmap || null; }
+				// (WebGPU: wszystkie z okluzją wypaloną – bez tekstury PBR sama okluzja)
+				if (node) m = NS.nodes.cabMaterial(m, o.tex || null, o.texK ?? 0, o.nAmp ?? 1);
 				own(m);
 				this.glow.push([m, m.emissiveIntensity]);
 				return m;
@@ -418,9 +420,12 @@ import * as THREE from 'three';
 			for (const dz of [-0.4, 0.4]) cyl(0.012, 0.15, chrome, -0.9, H - 0.18, back - 0.9 + dz);
 
 			// wyświetlacze i wskaźniki (płaszczyzny z teksturą rysowaną na żywo)
+			// (screens – materiały ekranów i zegarów: nocą przyciemnione, zegary w ciepłym podświetleniu – update)
+			this.screens = [];
 			const screen = (w, h, cw, ch, x, y, z, tilt) => {
 				const t = canvasTex(cw, ch);
 				const m = own(new T.MeshBasicMaterial({ map: t.tex, toneMapped: false }));
+				this.screens.push([m, cw === ch]);
 				const p = new T.Mesh(new T.PlaneGeometry(w, h), m);
 				p.position.set(x, y, z);
 				p.rotation.x = tilt;
@@ -548,6 +553,10 @@ import * as THREE from 'three';
 			this.fill = NS.playerLight ? NS.playerLight('cab', () => new T.PointLight(0xfff2e2, 0, 5, 1.4)) : new T.PointLight(0xfff2e2, 0, 5, 1.4); // (wspólne dla kolejnych modeli – train.js playerLight)
 			this.fill.position.set(0, H - 0.68, deskBack + 0.85).add(g.position);
 			car.group.add(this.fill);
+			/* nocą światło wypełniające przechodzi nad pulpit (podświetlenie przyrządów – lampa sufitowa w jeździe zgaszona,
+			   olśniewałaby), w ciepłej barwie */
+			this.fillDay = this.fill.position.clone();
+			this.fillNight = new T.Vector3(0, 2.7, shelfZ + 0.45).add(g.position);
 			/* wnętrze przyjmuje cienie – pudło (dach, ściany, słupki; szyby bez cienia – train.js shadowMerge) zasłania słońce,
 			   które wpada tylko przez okna; wyposażenie (pulpit, fotel, dźwignie) rzuca cień na wnętrze (kabina widoczna tylko
 			   w widoku z kabiny – poza nim bez kosztu w mapach cieni); bez powłoki pudła od środka (cień – bryła pojazdu) */
@@ -566,6 +575,9 @@ import * as THREE from 'three';
 				for (const o of moving) NS.util.mergeMeshes(o);
 			}
 			g.traverse((o) => { if (o.isMesh && o.userData.ownGeometry) this.own.push(o.geometry); });
+			/* okluzja wypalona we wnętrzu (WebGPU – nodes.js cabMaterial): siatka wokseli z brył kabiny (nieprzezroczyste
+			   materiały wnętrza i ściany), z wierzchołków scalonych części; bez ekranów i lampek (materiały proste) */
+			if (NS.gpu && NS.bakeWear) NS.bakeWear(g, true, (m) => m && m.visible !== false && !m.transparent && (m.isMeshStandardMaterial || m.isMeshStandardNodeMaterial));
 			this.t = 0;
 			this.maxDial = Math.ceil(Math.round(model.train.vmax * 3.6) / 20) * 20 + 20;
 		}
@@ -590,8 +602,19 @@ import * as THREE from 'three';
 			// rozproszone światło we wnętrzu słabnie o zmroku (pulpit i ekrany świecą dalej)
 			const day = 1 - Math.min(0.85, (dark || 0) * 0.9);
 			for (const [m, base] of this.glow) m.emissiveIntensity = base * day;
-			// nocą wnętrze oświetla tylko lampa sufitowa i ekrany – światło wypełniające słabnie
-			this.fill.intensity = 0.8 + 2.7 * day * day;
+			// nocą wnętrze oświetla podświetlenie przyrządów i ekrany – światło wypełniające słabnie i przechodzi nad pulpit
+			const night = Math.min(1, Math.max(0, ((dark || 0) - 0.3) / 0.5));
+			this.fill.intensity = (0.8 + 2.7 * day * day) * (1 - 0.55 * night);
+			// lampa sufitowa w jeździe nocą zgaszona (klosz szary)
+			this.ceilingLamp.color.setRGB(0.81 - 0.6 * night, 0.81 - 0.6 * night, 0.784 - 0.58 * night, T.SRGBColorSpace);
+			this.fill.position.lerpVectors(this.fillDay, this.fillNight, night);
+			this.fill.color.setRGB(1, 0.95 - 0.17 * night, 0.886 - 0.36 * night);
+			// ekrany nocą ciemniejsze (tryb nocny), zegary w ciepłym podświetleniu
+			for (const [m, dial] of this.screens) {
+				const k = 1 - 0.45 * night;
+				if (dial) m.color.setRGB(k, k * (1 - 0.12 * night), k * (1 - 0.35 * night));
+				else m.color.setScalar(k);
+			}
 			const st = sim.st;
 			/* rączka nastawnika przesuwa się w szczelinie – podstawa przy znaku bieżącej pozycji (podziałka co ok. 32 mm:
 			   0,38 m × 432/512 na 10 odstępów), z lekkim pochyleniem w stronę ruchu; napęd wg serii – pozycja jako ułamek
