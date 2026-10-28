@@ -451,9 +451,8 @@
 				<button id="set-autoq" class="small">Dobierz jakość automatycznie</button>
 				<label class="row-opt"><input type="checkbox" id="set-autodetail" checked> Automatyczne dopasowanie szczegółów – gdy w czasie jazdy długo spada płynność, zmniejsza się zasięg świata</label>
 				<h3>Renderer</h3>
-				<label class="row-opt">Grafika <select id="set-renderer"><option value="auto">automatycznie (WebGPU, gdy dostępne)</option><option value="webgpu">WebGPU</option><option value="webgl">WebGL (zgodność ze starszymi kartami)</option></select></label>
 				<p class="hint" id="renderer-hint"></p>
-				<button id="set-restart" class="small hidden">Uruchom ponownie</button>
+				<button id="set-gpu-retry" class="small hidden">Spróbuj ponownie WebGPU</button>
 				<label class="row-opt">Rozdzielczość renderowania <select id="set-scale"><option value="0.5">50%</option><option value="0.67">67%</option><option value="0.85">85%</option><option value="1">100%</option><option value="1.25">125% – ostrzej, wolniej</option><option value="1.5">150% – najostrzej, dużo wolniej</option></select></label>
 				<label class="row-opt">Wygładzanie krawędzi <select id="set-aa"><option value="off">wyłączone</option><option value="fxaa">FXAA</option><option value="taa">TAA – czasowe</option></select></label>
 				<label class="row-opt vol-opt">Wyostrzanie obrazu – cienkie linie (szyny, sieć) po wygładzaniu; z efektami (jakość średnia, wysoka) <input type="range" id="set-sharpen" min="0" max="100" step="5"> <span id="set-sharpen-val">35%</span></label>

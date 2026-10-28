@@ -4,6 +4,21 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.75 – 28 października 2026
+
+Renderer tylko WebGPU – bez wyboru w ustawieniach.
+
+### Ustawienia grafiki (`index.html`, `main.js`, `js/3d/common.js`)
+- Usunięty wybór rendera (automatycznie / WebGPU / WebGL) i przycisk ponownego uruchomienia; w sekcji „Renderer” tylko
+  opis bieżącego trybu (`rendererHint`).
+- Dawny zapis `maszynista.renderer` pomijany (`common.js`) i usuwany przy starcie – kto wybrał wcześniej WebGL, wraca na
+  WebGPU.
+- WebGL zostaje awaryjnie: przeglądarka bez WebGPU albo nieudany start WebGPU (`gpuFail`, `scene.js gpuFallback`). Wtedy
+  w ustawieniach opis i przycisk „Spróbuj ponownie WebGPU” (czyści `gpuFail` i przeładowuje grę) – wcześniej powrót
+  dawał tylko wybór WebGPU z listy.
+- Przełączniki w adresie dla skryptów sprawdzających bez zmian: `?webgpu`, `?webgpu=gl`, `?webgpu=0`
+  (`MASZYNISTA_RENDERER` w samosprawdzeniu).
+
 ## 0.58.74 – 25 października 2026
 
 Przęsła wiaduktów nad jezdniami otoczenia; Kłodzko – Międzylesie i Jelenia Góra – Szklarska Poręba wygenerowane ponownie.

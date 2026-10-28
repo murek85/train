@@ -8,20 +8,16 @@ import * as THREE from 'three';
 	// filtrowanie anizotropowe wszystkich tekstur (ostrzejsze pod ostrym kątem – tablice, fasady, liście); Three ogranicza do możliwości karty
 	T.Texture.DEFAULT_ANISOTROPY = 16;
 
-	/* Renderer: WebGPU (domyślny – materiały węzłowe TSL z js/3d/nodes.js) albo WebGL (zgodność – łatki GLSL).
-	   Ustawienia (localStorage maszynista.renderer): 'auto' (domyślnie: WebGPU, gdy przeglądarka je ma), 'webgpu', 'webgl';
-	   'webgpu-gl' – WebGPURenderer z zapleczem WebGL 2 (do porównań). W adresie: ?webgpu, ?webgpu=gl, ?webgpu=0 (WebGL).
-	   Gdy WebGPU w trybie auto nie wystartuje (scene.js gpuFallback), maszynista.gpuFail = 1 i następny start – WebGL. */
+	/* Renderer: WebGPU (materiały węzłowe TSL z js/3d/nodes.js). WebGL (łatki GLSL) – tylko awaryjnie: przeglądarka bez
+	   WebGPU albo WebGPU nie wystartowało (scene.js gpuFallback – maszynista.gpuFail, następny start na WebGL; ustawienia
+	   – „Spróbuj ponownie WebGPU”). Wyboru rendera w ustawieniach już nie ma – dawny zapis maszynista.renderer pomijany.
+	   W adresie (skrypty sprawdzające): ?webgpu, ?webgpu=gl (WebGPURenderer z zapleczem WebGL 2), ?webgpu=0 (WebGL). */
 	const lsGet = (k) => {
 		try { const v = localStorage.getItem('maszynista.' + k); return v === null ? null : v[0] === '"' ? JSON.parse(v) : v; } catch { return null; }
 	};
 	const gpuMode = (() => {
 		const q = new URLSearchParams(location.search).get('webgpu');
 		if (q !== null) return q === 'gl' ? 'gl' : q === '0' ? '' : 'gpu';
-		const v = lsGet('renderer');
-		if (v === 'webgpu') return 'gpu';
-		if (v === 'webgpu-gl') return 'gl';
-		if (v === 'webgl') return '';
 		NS.gpuAuto = true;
 		return typeof navigator !== 'undefined' && navigator.gpu && lsGet('gpuFail') === null ? 'gpu' : '';
 	})();

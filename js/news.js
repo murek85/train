@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.75',
+			date: '28 października 2026',
+			groups: [
+				['Ustawienia', [
+					'Grafika tylko w WebGPU – w ustawieniach nie ma już wyboru rendera. Gdy przeglądarka nie obsługuje WebGPU albo nie wystartowało, gra działa awaryjnie na WebGL, a w ustawieniach jest przycisk „Spróbuj ponownie WebGPU”.',
+				]],
+			],
+		},
+		{
 			version: '0.58.74',
 			date: '25 października 2026',
 			groups: [
