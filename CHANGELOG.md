@@ -4,6 +4,19 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.58.76 – 30 października 2026
+
+Trasy ze stadionem znów się wczytują.
+
+### Poprawka – stadion (`js/3d/real-env.js`)
+- Zgłoszenie: przy wczytywaniu trasy przez Bielsko-Białą błąd „Cannot read properties of undefined (reading 'push')”
+  w `tri` (`envStadium` → `face3`). Od tekstur ścian (`907cbf1`, grafika PBR krok 4) `tri` dopisuje warstwę ściany do tablicy `s`
+  (atrybut `aSurf`), a dach i naświetlacze stadionu mają własne bufory bez niej – budowa kawałka świata się przerywała
+  (trasa Bielsko-Biała – Żywiec: 8 z 11 kawałków, bez stadionu).
+- Bufory dachu i naświetlaczy z tablicą `s`; `tri` pomija warstwę w buforach bez niej.
+- Po poprawce: Bielsko-Biała – Żywiec wczytuje się w całości (11 kawałków, dach stadionu). Stadion jest też w danych
+  trasy Warszawa Wschodnia – Zachodnia.
+
 ## 0.58.75 – 28 października 2026
 
 Renderer tylko WebGPU – bez wyboru w ustawieniach.

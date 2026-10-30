@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.58.76',
+			date: '30 października 2026',
+			groups: [
+				['Poprawki', [
+					'Trasy ze stadionem (np. Bielsko-Biała – Żywiec) znów się wczytują – budowa otoczenia przerywała się błędem przy dachu stadionu.',
+				]],
+			],
+		},
+		{
 			version: '0.58.75',
 			date: '28 października 2026',
 			groups: [

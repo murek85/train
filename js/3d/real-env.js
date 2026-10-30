@@ -5860,7 +5860,7 @@ import * as THREE from 'three';
 			dst.p.push(a[0], a[1], a[2], b[0], b[1], b[2], c2[0], c2[1], c2[2]);
 			dst.uv.push(ua[0], ua[1], ub[0], ub[1], uc[0], uc[1]);
 			for (let k = 0; k < 3; k++) dst.c.push(rgb.r, rgb.g, rgb.b);
-			dst.s.push(SURF, SURF, SURF);
+			if (dst.s) dst.s.push(SURF, SURF, SURF); // (bufory bez warstwy ściany – dach i naświetlacze stadionu)
 		};
 		const Z = [0, 0];
 		/* prostopadłościan do siatki dst: środek (x, z), od y0 do y1, w – wzdłuż kierunku (ax, az), dp – w poprzek;
@@ -6337,7 +6337,7 @@ import * as THREE from 'three';
 		const roofC = C3('#e2e4e6'), roofIn = C3('#c4c7ca'), white = C3('#f4f4f2');
 		const fR = fIn + (1 - fIn) * 0.32, qR = ringAt(fR), yR = top - 1.2;
 		/* dach – osobna siatka bez mapy nocnej (plamy świateł nad trybunami, liczone w rzucie, rozjaśniałyby go z góry) */
-		const rb = { p: [], uv: [], c: [] };
+		const rb = { p: [], uv: [], c: [], s: [] };
 		for (let k = 0; k < n; k++) {
 			const k2 = (k + 1) % n;
 			face3([outer[k][0], top, outer[k][1]], [outer[k2][0], top, outer[k2][1]], [qR[k2][0], yR, qR[k2][1]], roofC, 0, 1, 0, rb);
@@ -6361,7 +6361,7 @@ import * as THREE from 'three';
 		// ---- oświetlenie: pas naświetlaczy na obrzeżu otworu dachu (od spodu i od środka; nocą świeci), światła nad boiskiem
 		// (plama na murawie i trybunach z mapy nocnej, światła punktowe z puli) ----
 		if (group) {
-			const lens = { p: [], uv: [], c: [] }, lc = C3('#ffffff');
+			const lens = { p: [], uv: [], c: [], s: [] }, lc = C3('#ffffff');
 			for (let k = 0; k < n; k++) {
 				const k2 = (k + 1) % n, a = qR[k], c = qR[k2];
 				const t = toC((a[0] + c[0]) / 2, (a[1] + c[1]) / 2), tl = Math.hypot(t[0], t[2]) || 1, ox = (t[0] / tl) * 0.06, oz = (t[2] / tl) * 0.06;
