@@ -4,6 +4,54 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.59.0 – 5 listopada 2026
+
+Grafika PBR (tylko WebGPU): tekstury z plików, okluzja GTAO, odbicia ekranowe, TAA, drzewa i obiekty z modeli, tabor
+i kabina z tekstur; wydajność dużych stacji. Prace z gałęzi `grafika-pbr` (26–27 października, commity `6b6a811`–`978bbc7`),
+plan i stan – ROADMAP, „Etap 12 – grafika PBR”. Tryb WebGL (awaryjny) bez zmian.
+
+### Tekstury (`js/3d/textures.js`, `textures/`, `tools/textures.py`)
+- Spis `textures/index.json`, mapy kolor / normalne / ORM w WebP 1k i 2k (skany CC0 – ambientCG, Poly Haven); ustawienie
+  „Tekstury – jakość”; bez plików albo przy błędzie – wzory proceduralne. Loader KTX2 i transkoder w `vendor/` (bez plików KTX2).
+- Tablice tekstur na rodzinę (grunty, drogi, płyty, ściany, dachy, tabor, kabina) – limit 16 samplerów na etap shadera.
+- Teren: trawa, ściółka, ziemia orna, żwir, piasek (atrybut `aLand` – udział lasu, pola, terenu kolejowego), dwie próbki
+  przeciw powtarzaniu, z daleka kolor z danych. Drogi: asfalt (z plamami spękanego), kostka, polbruk, gruntowa. Perony – płyty.
+- Budynki: warstwa ściany per budynek (`real-env.js` `envWallLayer`, atrybut `aSurf`) – tynki, cegły, beton, blacha
+  falista, deski; dachy – dachówki, blacha trapezowa, papa; okna z dawnej fasady jako maska.
+
+### Obraz (`js/3d/post-gpu.js`, `js/3d/nodes.js`, `scene.js`)
+- TAA: drganie kamery (Halton 2, 3), reprojekcja z głębi i macierzy poprzedniej klatki, historia przycięta do sąsiadów;
+  ustawienie „Wygładzanie krawędzi: wyłączone / FXAA / TAA”.
+- GTAO w połowie rozdzielczości jako okluzja światła rozproszonego (`renderer.contextNode` – `getAO`), z poprzedniej klatki
+  z reprojekcją; światło odbite od ziemi w kolorze terenu (`envGround`).
+- Odbicia ekranowe (jakość wysoka): maska gładkość × Fresnel w alfie obrazu sceny, marsz promienia po głębi.
+- Mapa otoczenia szarzeje z zachmurzeniem i ma chmury (`createEnvironment` – gęstość z `clouds-gpu.js`).
+
+### Roślinność i obiekty (`js/3d/trees.js`, `js/3d/models.js`, `world.js`, generator)
+- Drzewa z EZ-Tree (`vendor/ez-tree`, MIT): 6 gatunków × 2 warianty, wersja bliska i z daleka, impostory dalekich lasów,
+  pule drzew świata (`updateTreePool` – ok. 80 siatek zamiast ok. 230); kora i liście z tekstur CC0 (`tools/foliage.py`).
+  Trawa z kart (`tools/grass.py`), paprocie, pokrzywy i krzewinki w kawałkach bliskich.
+- Modele glTF (`models/index.json`, Draco / meshopt, `tools/models.js`): ławki, kosze, hydranty, płot, bariera, rośliny
+  (Poly Haven, CC0). Ekran „Autorzy” w menu.
+- Generator: drzewa i szpalery z OSM (`env.vt`), bariery (`env.ba`), punkty (`env.pt`); tryby `--trees-only`
+  i `--objects-only` (dopisanie do istniejących tras, kilometraż przeliczany odcinkami). Latarnie z OSM jako latarnie
+  uliczne z kodu (światło nocą).
+- Przełączniki w Ustawieniach → Grafika → Jakość: odbicia ekranowe, okluzja, drzewa, rośliny i obiekty z mapy.
+
+### Tabor i kabina (`nodes.js` `trainPattern`, `cabMaterial`, `train.js`, `cab.js`)
+- Pudła: lakier i brud z tekstur (rzut na płaszczyznę w układzie wagonu), wózki i podwozie – stal i rdza.
+- Szyby z kryciem wg Fresnela; bryła cienia bez szyb – słońce wpada przez okna, ramy i słupki rzucają cień.
+- Kabina: materiały z tekstur (pulpit, tworzywa, guma, podłoga, fotel, chrom), wyposażenie rzuca cień; nocą wypalona
+  okluzja (`bakeWear`), przyciemnione ekrany, podświetlone zegary; latarnie peronowe nie świecą przez dach (`limitLights`).
+
+### Wydajność
+- Obserwator materiału (`nodes.js` `setupObserver`) pomija `getAO`, `lightsNode` i kolor materiału cieni – obiekty
+  w paczkach rysowania nie są już w pełni odświeżane w każdej klatce; `refreshBindings()` po przebudowie buforów efektów;
+  uniformy okluzji i maski odbić w `renderGroup`.
+- Odbicie wody: lustrzane tylko przy wodzie bliżej ok. 120 m, rzadziej dla dalekiej, bez kawałków dalej niż 700 m,
+  pociągów tła i drobiazgów (`World.NOREFL_LAYER`).
+- Toruń Główny, jakość wysoka: 30 → ok. 60 FPS z zewnątrz, ok. 53 z kabiny.
+
 ## 0.58.76 – 30 października 2026
 
 Trasy ze stadionem znów się wczytują.

@@ -4,6 +4,26 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.59.0',
+			date: '5 listopada 2026',
+			groups: [
+				['Grafika (WebGPU)', [
+					'Tekstury ze zdjęć materiałów: trawa, ściółka, pola, żwir, asfalt, kostka, perony, ściany i dachy budynków.',
+					'Okluzja otoczenia tylko w cieniu (słoneczne ściany bez szarego nalotu), odbicia ekranowe na mokrych nawierzchniach i szybach (jakość wysoka), wygładzanie TAA.',
+					'Drzewa z modeli – 6 gatunków z gałęziami i liśćmi, dalekie lasy jako impostory; trawa z kęp źdźbeł, paprocie i pokrzywy.',
+					'Obiekty z mapy: drzewa i szpalery, ekrany akustyczne, mury, płoty, latarnie, ławki, kosze i hydranty.',
+					'Tabor: lakier, brud i rdza z tekstur, szyby odbijające pod ostrym kątem, słońce wpada przez okna. Kabina z nowymi materiałami, nocą z podświetlonymi przyrządami.',
+					'Chmury w odbiciach nieba (woda, szyby, karoserie).',
+				]],
+				['Wydajność', [
+					'Na dużych stacjach do dwóch razy więcej klatek na sekundę (np. Toruń Główny: z 30 do ok. 60).',
+				]],
+				['Ustawienia', [
+					'Grafika → Jakość: tekstury, odbicia ekranowe, okluzja, drzewa (modele / uproszczone / proste korony), rośliny i obiekty z mapy; Renderer: wygładzanie TAA. Lista autorów tekstur i modeli – menu → Autorzy.',
+				]],
+			],
+		},
+		{
 			version: '0.58.76',
 			date: '30 października 2026',
 			groups: [

@@ -3,8 +3,8 @@
 | Plik | Biblioteka | Wersja | Źródło | Licencja |
 |---|---|---|---|---|
 | `three/three.core.js`, `three/three.module.js` | Three.js (WebGLRenderer) | 0.186.1 | `node_modules/three/build` (npm `three`, devDependency) | MIT – `three/LICENSE` |
-| `three/three.webgpu.js`, `three/three.tsl.js`, `three/addons/tsl/` | Three.js (WebGPURenderer, TSL) | 0.186.1 | jw. – pod przejście na WebGPU, jeszcze nieużywane | MIT |
-
+| `three/three.webgpu.js`, `three/three.tsl.js`, `three/addons/tsl/` | Three.js (WebGPURenderer, TSL) | 0.186.1 | jw. – renderer gry (WebGL tylko awaryjnie) | MIT |
+| `three/addons/loaders/`, `three/addons/libs/` | Three.js – GLTFLoader, DRACOLoader, KTX2Loader; dekodery Draco (wasm), meshopt, Basis (wasm), zstd | 0.186.1 | jw. | MIT; Draco i Basis – Apache 2.0, meshopt – MIT |
 | `ez-tree/` | EZ-Tree – generator drzew (Daniel Greenheck) | 1.1.0 | npm `@dgreenheck/ez-tree`, `src/lib` (kopia ręczna) | MIT – `ez-tree/LICENSE` |
 
 `ez-tree/` – tylko geometria: `tree.js` zmieniony (importy `.js`, bez faktur, materiałów, presetów i kratki, poziom gałęzi

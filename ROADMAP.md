@@ -6,12 +6,13 @@ Każdy etap przed rozpoczęciem wymaga potwierdzenia i odpowiedzi na pytania. St
 ## Spis treści
 
 1. [Kolejność prac](#kolejność-prac)
-2. [D – Wydajność i jakość świata](#d--wydajność-i-jakość-świata)
-3. [A – Głębia jazdy](#a--głębia-jazdy)
-4. [B – Scenariusze i kariera](#b--scenariusze-i-kariera)
-5. [C – Żywa kolej](#c--żywa-kolej)
-6. [Pominięte](#pominięte)
-7. [Otwarte pytania](#otwarte-pytania)
+2. [Etap 12 – grafika PBR](#etap-12--grafika-pbr-wersja-0590)
+3. [D – Wydajność i jakość świata](#d--wydajność-i-jakość-świata)
+4. [A – Głębia jazdy](#a--głębia-jazdy)
+5. [B – Scenariusze i kariera](#b--scenariusze-i-kariera)
+6. [C – Żywa kolej](#c--żywa-kolej)
+7. [Pominięte](#pominięte)
+8. [Otwarte pytania](#otwarte-pytania)
 
 ---
 
@@ -30,6 +31,7 @@ Każdy etap przed rozpoczęciem wymaga potwierdzenia i odpowiedzi na pytania. St
 | 9 | **D2 + D4 + D5** – cienie, automatyczna jakość, kontrola tras | Drugi przebieg wydajności po dodaniu ruchu i scenariuszy | **0.10.0** ✓ |
 | 10 | **B4, B5, C5, C3, A6** – prawdziwy rozkład, zadanie dnia, pasażerowie i zapowiedzi, krzyżowania, ocena jazdy | Rozbudowa na gotowych fundamentach; kolejność wewnątrz do ustalenia | **0.11.0–0.14.0** ✓ (10d pominięty) |
 | 11 | **G1–G5, D1** – grafika i dźwięk (szczegóły niżej) | Gra działa – czas na wygląd i brzmienie | 0.16.0+ (w toku) |
+| 12 | **Grafika PBR** – tekstury, okluzja, odbicia, TAA, drzewa i obiekty z modeli, tabor i kabina (tylko WebGPU) | Skok jakości obrazu bez zmiany budowy świata z danych | **0.59.0** ✓ |
 | – | **B6, C6** – edytor scenariuszy, manewry | Najdroższe; decyzja na końcu, czy w ogóle | ? |
 
 Zasady:
@@ -74,6 +76,47 @@ wymagania dla wszystkich jakości); kolejność G1 → G2 → G3 → G4 → G5 �
 | **N – 0.29.0 ✓** | Noc: światło latarni na ziemi (mapa światła nocnego – plamy na śniegu, asfalcie, peronach), odbicia lamp w mokrej nawierzchni (smugi), łuna miasta na niebie i chmurach, gwiazdy przyćmione w mieście. |
 | **Z1 – 0.30.0 ✓** | Zima w ruchu: śnieg wzbijany przez pociąg (wózki, pług), szron na szybach kabiny (nawiew odmraża pole wycieraczek), zaspy (wały przy torze, pod ścianami budynków), szadź na sieci; wiosną resztki śniegu topnieją, roztopy. |
 | **Z2 – 0.31.0 ✓** | Zima w symulacji: zamarznięta zwrotnica (zdarzenie losowe zimą – semafor wjazdowy „stój”, dyżurny, wjazd po rozmrożeniu), oblodzona sieć (łuki, chwilowe przerwy w zasilaniu). |
+
+---
+
+## Etap 12 – grafika PBR (wersja 0.59.0)
+
+Cel: obraz bliżej Trainz/SimRail bez zmiany budowy świata z danych (OSM, BDOT, NMT). Prace na gałęzi `grafika-pbr`
+(26–27 października 2026), scalone do `webgpu`; szczegóły zmian – CHANGELOG 0.59.0. Dawne plany
+(`PLAN-GRAFIKA-PBR.md`, `-ETAP2`, `-ETAP3`) usunięte – są w historii gita.
+
+Decyzje:
+- **tylko WebGPU** – WebGL nie jest rozwijany (od 0.58.75 tylko awaryjnie: wzory proceduralne, bez tekstur z plików i TAA);
+- tekstury CC0 (ambientCG, Poly Haven) jako WebP 1k/2k z `tools/textures.py`, w tablicach tekstur na rodzinę (limit
+  16 samplerów na etap shadera); modele CC0 (Poly Haven) i drzewa z EZ-Tree (MIT); lista autorów w menu → „Autorzy”;
+- modele taboru i kabiny dalej budowane w kodzie, tekstury rzutowane na płaszczyznę osi (bez UV);
+- budżet FPS na jakości wysokiej: −15% (etap 2), −5% (etap 3); nowe efekty wyłączalne w ustawieniach.
+
+| Część | Zakres |
+|---|---|
+| **Tekstury ✓** | `js/3d/textures.js` (spis `textures/index.json`, jakość „Tekstury”, zapas proceduralny); teren (trawa, ściółka, ziemia orna, żwir, piasek), drogi (asfalt, kostka, polbruk, gruntowa), perony, budynki (tynki, cegły, beton, blacha, deski; dachówki, blacha trapezowa, papa) |
+| **Obraz ✓** | TAA z reprojekcją (bez bufora ruchu), GTAO tylko na świetle rozproszonym, odbicia ekranowe (wysoka), chmury w mapie otoczenia, grunt w świetle odbitym |
+| **Roślinność ✓** | drzewa z modeli EZ-Tree (6 gatunków × 2 warianty, impostory dalekich lasów, pule drzew świata), trawa z kart, paprocie i pokrzywy; drzewa i szpalery z OSM |
+| **Obiekty ✓** | `js/3d/models.js` (glTF, Draco, meshopt), ławki, kosze, hydranty, płoty, bariery; ekrany akustyczne, mury i płoty z OSM; latarnie z OSM (generator `--objects-only`, `--trees-only`) |
+| **Tabor i kabina ✓** | lakier, brud, rdza i stal z tekstur, szyby z Fresnelem, słońce przez okna (cienie ram), materiały kabiny, kabina nocą (okluzja wypalona, podświetlenie przyrządów) |
+| **Wydajność ✓** | Toruń Główny: 30 → ok. 60 FPS z zewnątrz, ok. 53 z kabiny (obserwator materiału bez pełnego odświeżania co klatkę, oszczędniejsze odbicie wody) |
+
+Zostało:
+- obiekty z mapy dla Szklarska Poręba – Jakuszyce, Warszawa Wschodnia – Zachodnia, Zabrze – Gliwice (`--objects-only`;
+  27.10 serwery Overpass były niedostępne); Gliwice – Zabrze nie da się dopasować (2 stacje, inna odległość);
+- wiaty z OSM (pominięte), nastawnie jako modele, modele latarni Poly Haven (nieużywane);
+- perony – wybór płyt (gładkie albo z fugami); pliki KTX2 (mniej pamięci karty – dziś ok. +100 MB na wysokiej);
+- stałe 60 FPS z kabiny: mniej osobnych obiektów kabiny (ok. 108), większe scalanie siatek w kawałkach; pomiar
+  w pełnej rozdzielczości (1920×1080 i więcej – możliwe ograniczenie przez kartę);
+- pantografy – osobne materiały (miedź, grafit); zabrudzenie szyb przy uszczelkach.
+
+Lekcje (WebGPURenderer r186):
+- koszt procesora to ok. 5–10 µs na obiekt w każdym przebiegu (obraz, 3 kaskady, odbicie), także w paczkach
+  rysowania – liczy się liczba siatek, nie trójkątów; BatchedMesh odpada (każdy egzemplarz osobnym wywołaniem);
+- `getAO` w kontekście albo węzeł we właściwości materiału (`colorNode`, `lightsNode`) = pełne odświeżenie obiektu
+  co klatkę – obejście w `nodes.js` (`setupObserver`); po przebudowie buforów efektów `refreshBindings()`;
+- uniformy używane w materiałach sceny – w grupie `renderGroup` (zwykły `uniform()` bez pełnego odświeżania zostaje
+  nieaktualny – białe plamy okluzji i odbić po ruchu kamery).
 
 ---
 
