@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* npm run web: wersja przeglądarkowa do wgrania na serwer – folder web/maszynista/ z plikami gry i archiwum
-   web/maszynista-<wersja>.zip (te same pliki). Tylko to, czego potrzebuje strona: index.html, style.css, favicon.ico, js/, vendor/three/ (three.core.js i three.module.js – WebGLRenderer),
-   routes/ (trasy wbudowane i horyzonty), icons/, sounds/ (bez opisów .md). Bez serwera Node (server.js) Generator tras
+   web/maszynista-<wersja>.zip (te same pliki). Tylko to, czego potrzebuje strona: index.html, style.css, favicon.ico, js/, vendor/three/ (WebGPURenderer, TSL; WebGLRenderer
+   awaryjnie; dodatki: FXAA, loadery glTF / Draco / KTX2 z dekoderami), vendor/ez-tree/ (drzewa), routes/ (trasy wbudowane
+   i horyzonty), icons/, sounds/ (bez opisów .md), textures/ i models/ (grafika PBR) – jak pakowanie aplikacji (package.json build.files). Bez serwera Node (server.js) Generator tras
    nie pobierze trzech źródeł bez nagłówków CORS (NMPT GUGiK, BDOT10k, Regulamin sieci PKP PLK) – reszta gry działa.
    ZIP składany w Node (zlib, bez dodatkowych pakietów). */
 'use strict';
@@ -14,8 +15,9 @@ const WEB = path.join(ROOT, 'web'), OUT = path.join(WEB, 'maszynista');
 const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 
 // pliki i foldery gry (ścieżki względem katalogu projektu)
-const FILES = ['index.html', 'style.css', 'favicon.ico', 'vendor/three/three.core.js', 'vendor/three/three.module.js', 'vendor/three/three.webgpu.js', 'vendor/three/three.tsl.js', 'vendor/three/addons/tsl/display/FXAANode.js', 'vendor/three/addons/loaders/KTX2Loader.js', 'vendor/three/addons/utils/WorkerPool.js', 'vendor/three/addons/libs/ktx-parse.module.js', 'vendor/three/addons/libs/zstddec.module.js', 'vendor/three/addons/libs/basis/basis_transcoder.js', 'vendor/three/addons/libs/basis/basis_transcoder.wasm', 'vendor/three/addons/math/ColorSpaces.js', 'vendor/three/LICENSE'];
-const DIRS = ['js', 'routes', 'icons', 'sounds', 'textures']; // textures/ – materiały PBR (js/3d/textures.js)
+const FILES = ['index.html', 'style.css', 'favicon.ico', 'vendor/three/three.core.js', 'vendor/three/three.module.js', 'vendor/three/three.webgpu.js', 'vendor/three/three.tsl.js', 'vendor/three/addons/tsl/display/FXAANode.js', 'vendor/three/LICENSE'];
+// textures/ – materiały PBR (js/3d/textures.js), models/ – modele glTF (js/3d/models.js), dodatki Three – loadery i ich zależności
+const DIRS = ['js', 'routes', 'icons', 'sounds', 'textures', 'models', 'vendor/ez-tree', 'vendor/three/addons/loaders', 'vendor/three/addons/utils', 'vendor/three/addons/libs', 'vendor/three/addons/math'];
 const skip = (rel) => /\.md$/i.test(rel) || /(^|\/)\./.test(rel); // opisy i pliki ukryte
 
 const list = [...FILES];

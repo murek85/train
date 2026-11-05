@@ -19,6 +19,18 @@
 				"PORT": "4181"
 			},
 			"port": 4181
+		},
+		{
+			"name": "train-web",
+			"runtimeExecutable": "python",
+			"runtimeArgs": [
+				"-m",
+				"http.server",
+				"4182",
+				"--directory",
+				"web/maszynista"
+			],
+			"port": 4182
 		}
 	]
 }
