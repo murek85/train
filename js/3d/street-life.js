@@ -772,7 +772,38 @@ import * as THREE from 'three';
 	   przy torze tylko na przejeździe w poziomie – poziom torowiska (roadY); pod mostem kolejowym i nad tunelem –
 	   nawierzchnia (dawniej roadY: przy torze auta wjeżdżały na poziom szyn – na most albo w głąb tunelu); skrzyżowanie dwupoziomowe dróg
 	   (roadBridged) – wysokość własnej drogi ciągu ch (dolna jezdnia pod wiaduktem, górna na nim). */
+	/* (pamięć wysokości w siatce co 25 cm – auto liczyło ją kilka razy na klatkę: przód, tył, plamy świateł; ok. 2 ms
+	   procesora na klatkę na stacji w mieście. Błąd do ok. 1 cm na pochyleniu 5%. Jezdnie nie zmieniają się w trakcie jazdy –
+	   pamięć od nowa przy innym otoczeniu (env)) */
+	const yCache = (W, ch) => {
+		if (W._yEnv !== W.env) { W._yEnv = W.env; W._yMap = new Map(); W._yCh = new WeakMap(); }
+		if (!ch) return W._yMap;
+		let m = W._yCh.get(ch);
+		if (!m) W._yCh.set(ch, (m = new Map()));
+		return m;
+	};
+	const yKey = (s, d) => Math.round(s * 4) * 65536 + Math.round(d * 4) + 32768;
 	World.prototype.streetY = function (s, d, ch) {
+		const m = yCache(this, ch), k = yKey(s, d);
+		let y = m.get(k);
+		if (y === undefined) {
+			if (m.size > 200000) m.clear();
+			m.set(k, (y = this.streetY0(s, d, ch)));
+		}
+		return y;
+	};
+	// chodnik pod pieszym (bez krawężnika) – jak streetY
+	World.prototype.walkY = function (s, d) {
+		const m = yCache(this, WALK), k = yKey(s, d);
+		let y = m.get(k);
+		if (y === undefined) {
+			if (m.size > 200000) m.clear();
+			m.set(k, (y = this.surfY(s, d)));
+		}
+		return y;
+	};
+	const WALK = {};
+	World.prototype.streetY0 = function (s, d, ch) {
 		if (!this.env || !this.surfY || (Math.abs(d) < 7.5 && this.nearLevelCrossing(s))) return this.roadY(s, d);
 		if (ch && this.roadBridged(s, d)) {
 			const k = nearSeg(ch, s, d), inf = ch.seg && ch.seg[k] && ch.seg[k].inf;
@@ -1089,7 +1120,7 @@ import * as THREE from 'three';
 			q.setFromAxisAngle(up, yaw);
 			// chodnik – nad krawężnikiem; na jezdni (przejście, przejazd) – na nawierzchni
 			const onRoad = !!(p.z || (p.path && p.path.X)) || (p.state === 'stand' && !p.onSw) || (p.ch && p.ch.dirt);
-			const y = onRoad ? this.streetY(p.p[0], p.p[1], p.ch) : this.surfY(p.p[0], p.p[1]) + 0.25;
+			const y = onRoad ? this.streetY(p.p[0], p.p[1], p.ch) : this.walkY(p.p[0], p.p[1]) + 0.25;
 			const s0 = 0.95 + (p.seed % 1) * 0.12;
 			m4.compose(p3.set(x0, y, z0), q, sc.set(s0, s0, s0));
 			pm.bodies.setMatrixAt(k, m4);

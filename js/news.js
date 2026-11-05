@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.59.1',
+			date: '5 listopada 2026',
+			groups: [
+				['Wydajność', [
+					'Widok z kabiny na dużych stacjach płynniejszy – np. Toruń Główny z ok. 27 do ok. 52 klatek na sekundę, bez przycięć co kilka klatek.',
+				]],
+			],
+		},
+		{
 			version: '0.59.0',
 			date: '5 listopada 2026',
 			groups: [

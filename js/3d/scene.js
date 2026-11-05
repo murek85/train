@@ -1144,7 +1144,9 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 			// światło otoczenia dzielone między półkulę i odbicia nieba (razem dawały płaski, wyblakły obraz)
 			const hemiBase = (0.3 + 0.78 * smoothstep(-0.2, 0.3, e)) * (0.8 + 0.2 * W.sun);
 			this.hemi.intensity = hemiBase + fl * 2.6;
-			this.scene.environmentIntensity = 0.3 + 0.45 * dayK + fl * 0.5;
+			/* zaokrąglone do 1/200: każda zmiana (pora dnia – co klatkę o ułamki) to w WebGPU pełne odświeżenie wszystkich
+			   obiektów spoza paczek (NodeMaterialObserver.equals – environmentIntensity); skok 0,005 niewidoczny */
+			this.scene.environmentIntensity = Math.round((0.3 + 0.45 * dayK + fl * 0.5) * 200) / 200;
 			// korekta barw: chłodne cienie, ciepłe światła (złota godzina – cieplej), nocą chłodniej i mniej nasycenia
 			const golden = dayK * (1 - smoothstep(0.12, 0.35, e)) * W.sun, night = 1 - dayK;
 			this.grade.lightTint.setRGB(1.035, 1.0, 0.95).lerp(tmpC.setRGB(1.09, 0.99, 0.86), golden * 0.6).lerp(tmpC.setRGB(0.97, 1.0, 1.06), night);
@@ -1204,9 +1206,25 @@ import { WebGPURenderer, InstancedInterleavedBuffer, InterleavedBufferAttribute,
 					try {
 						const occ = this.sunOccluder(this.cab.car);
 						if (occ) {
-							const mw = this.cab.car.group.matrixWorld;
-							for (const c of occ.children) c.matrixWorld.copy(mw);
-							hit = this.sunRay.intersectObjects(occ.children, false).length > 0;
+							/* wynik zapamiętany wg kierunku słońca i położenia oka w układzie wagonu (ok. 2°, 10 cm): promień przez
+							   ok. 80 tys. trójkątów wnętrza to ok. 5 ms – dawniej co 4. klatkę (przycięcia), teraz tylko przy zmianie
+							   (łuk, rozglądanie się) */
+							const mw = this.cab.car.group.matrixWorld, O = this.sunOcc;
+							const inv = this.sunOccInv || (this.sunOccInv = new T.Matrix4());
+							inv.copy(mw).invert();
+							const ld = this.sunRayD || (this.sunRayD = new T.Vector3());
+							ld.copy(this.sunDir).transformDirection(inv);
+							const le = this.sunRayE || (this.sunRayE = new T.Vector3());
+							le.copy(this.sunRay.ray.origin).applyMatrix4(inv);
+							const key = [ld.x * 30, ld.y * 30, ld.z * 30, le.x * 10, le.y * 10, le.z * 10].map(Math.round).join(',');
+							if (O.memo !== occ) { O.memo = occ; O.hits = new Map(); }
+							hit = O.hits.get(key);
+							if (hit === undefined) {
+								for (const c of occ.children) c.matrixWorld.copy(mw);
+								hit = this.sunRay.intersectObjects(occ.children, false).length > 0;
+								if (O.hits.size > 5000) O.hits.clear();
+								O.hits.set(key, hit);
+							}
 						}
 					} catch (err) { hit = false; }
 					this.sunBlockedV = hit;

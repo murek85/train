@@ -4,6 +4,19 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.59.1 – 5 listopada 2026
+
+Wydajność WebGPU w widoku z kabiny (Toruń Główny, jakość wysoka, TAA: 26,6 → 52,3 FPS; procesor 34 → 17 ms na klatkę).
+
+### Poprawki (`js/3d/scene.js`, `js/3d/street-life.js`)
+- `scene.environmentIntensity` zaokrąglane do 1/200: zmieniało się co klatkę o ułamki (pora dnia), a każda zmiana to
+  w WebGPURenderer pełne odświeżenie wszystkich obiektów spoza paczek rysowania (`NodeMaterialObserver.equals`) – pociąg,
+  kabina, ruch uliczny; ok. 900 pełnych odświeżeń na klatkę, teraz ok. 160.
+- Zasłona słońca w kabinie (flara przez dach): wynik promienia zapamiętany wg kierunku słońca i położenia oka w układzie
+  wagonu (ok. 2°, 10 cm) – dawniej co 4. klatkę promień przez ok. 86 tys. trójkątów wnętrza (ok. 5 ms, przycięcia).
+- Ruch uliczny: wysokość jezdni i chodnika pod autami i pieszymi (`streetY`, `walkY`) zapamiętana w siatce co 25 cm –
+  dawniej liczona kilka razy na auto w każdej klatce (ok. 2 ms na stacji w mieście).
+
 ## 0.59.0 – 5 listopada 2026
 
 Grafika PBR (tylko WebGPU): tekstury z plików, okluzja GTAO, odbicia ekranowe, TAA, drzewa i obiekty z modeli, tabor
