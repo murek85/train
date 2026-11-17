@@ -4,6 +4,18 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.59.2',
+			date: '17 listopada 2026',
+			groups: [
+				['Poprawki grafiki', [
+					'Bez ciemnych plamek na płaskich ścianach (np. burta wagonu) – okluzja otoczenia wygładzona.',
+					'Zaśnieżony tłuczeń i żwir przy torze bez czarnej, migoczącej siatki.',
+					'Zaśnieżone jezdnie bez czarnych kresek na łukach i skrzyżowaniach.',
+					'Zimą bez zielonych krzewów, paproci i pokrzyw – na śniegu wychodziły czarne kępy.',
+				]],
+			],
+		},
+		{
 			version: '0.59.1',
 			date: '5 listopada 2026',
 			groups: [

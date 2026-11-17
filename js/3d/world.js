@@ -2297,15 +2297,17 @@ import { BundleGroup } from 'three/webgpu';
 		}
 
 		/* Rośliny przyziemne z modeli (models.js – Poly Haven CC0): w lesie i pod drzewami paprocie i krzewinki, przy torze
-		   i na skrajach łąk pokrzywy i krzewinki – kępami (szum), kilka odmian każdej. Jesienią przybrązowiałe, zimą tylko
-		   nieliczne. Bez modeli (brak plików) – nic (trawa jak dotąd); dalej niż drobne instancje (fine) – niewidoczne. */
+		   i na skrajach łąk pokrzywy i krzewinki – kępami (szum), kilka odmian każdej. Jesienią przybrązowiałe, zimą
+		   żadnych. Bez modeli (brak plików) – nic (trawa jak dotąd); dalej niż drobne instancje (fine) – niewidoczne. */
 		*buildPlants(group, c, s0, s1) {
 			const MD = NS.models;
 			if (!MD || !MD.ready || this.plants === false) return;
 			const ferns = MD.variants('fern_02'), nettles = MD.variants('nettle_plant'), shrubs = MD.variants('shrub_03');
 			if (!ferns.length && !nettles.length && !shrubs.length) return;
 			const se = this.season || 'summer';
-			const N = Math.round(900 * this.density * (se === 'winter' ? 0.2 : 1));
+			// zimą bez roślin: paprocie i pokrzywy zamierają, modele krzewów mają liście – na śniegu wychodziły czarne kępy
+			if (se === 'winter') return;
+			const N = Math.round(900 * this.density);
 			const list = [];
 			for (let i = 0; i < N; i++) {
 				if (i % 400 === 399) yield;
@@ -2330,7 +2332,7 @@ import { BundleGroup } from 'three/webgpu';
 			}
 			if (!list.length) return;
 			const m4 = new T.Matrix4(), q = new T.Quaternion(), sc = new T.Vector3(), p3 = new T.Vector3(), up = new T.Vector3(0, 1, 0);
-			const tint = se === 'autumn' ? new T.Color(0.95, 0.72, 0.42) : se === 'winter' ? new T.Color(0.62, 0.55, 0.45) : null;
+			const tint = se === 'autumn' ? new T.Color(0.95, 0.72, 0.42) : null;
 			const byId = new Map();
 			for (const e of list) {
 				if (!byId.has(e[0])) byId.set(e[0], []);

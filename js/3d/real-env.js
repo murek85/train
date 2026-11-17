@@ -7303,7 +7303,12 @@ import * as THREE from 'three';
 		const deck = dst, deckC = col.set('#9a968d').clone(); // boki pomostu – w siatce jezdni (kolor wierzchołków)
 		// trójkąt zwrócony w górę
 		const tri = (d0, a, b, c, rgb, L) => {
-			const up = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]) > 0;
+			const cy = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+			/* pionowa drzazga (wierzchołki prawie w linii w rzucie, różne wysokością – styk pociętych trójkątów na łuku):
+			   bez śniegu i bez światła z góry – czarna kreska na zaśnieżonej jezdni; nawierzchnia nie jest bardziej stroma niż 60° */
+			const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+			if (Math.abs(cy) < 0.5 * Math.hypot(uy * vz - uz * vy, ux * vy - uy * vx, cy)) return;
+			const up = cy > 0;
 			if (up) d0.p.push(...a, ...b, ...c);
 			else d0.p.push(...a, ...c, ...b);
 			for (let q = 0; q < 3; q++) d0.c.push(rgb.r, rgb.g, rgb.b);

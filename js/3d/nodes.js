@@ -736,7 +736,9 @@ import {
 	}
 
 	// pogoda na powierzchni (WEATHER_GLSL); P – współrzędne wzoru (świata albo pojazdu), wN – normalna w świecie
-	function weather(S, wN, wetK, snowK, P, standard) {
+	/* upG – nachylenie samej geometrii (śnieg): z normalnej z mikrorzeźbą (kamienie tłucznia, mapy normalnych) śnieg
+	   znikał na krawędziach każdego kamienia – czarna, migocząca siatka szczelin na zaśnieżonym tłuczniu i żwirze */
+	function weather(S, wN, wetK, snowK, P, standard, upG) {
 		const wP = vec3(P).toVar();
 		const up = wN.y.toVar();
 		const wpx = length(fwidth(wP)).toVar();
@@ -768,7 +770,7 @@ import {
 			const sn = sn0.sub(0.5).mul(1.8).add(0.5).toVar();
 			const th = float(1.05).sub(uSnow.mul(1.15)).toVar();
 			const snw = min(0.12, wpx.mul(1.5)).add(0.13).toVar();
-			const snowMask = smoothstep(0.3, 0.75, up).mul(smoothstep(th.sub(snw), th.add(snw), sn)).mul(min(1.0, uSnow.mul(3))).mul(snowK).toVar();
+			const snowMask = smoothstep(0.3, 0.75, upG || up).mul(smoothstep(th.sub(snw), th.add(snw), sn)).mul(min(1.0, uSnow.mul(3))).mul(snowK).toVar();
 			const snowC = mix(vec3(0.74, 0.8, 0.9), vec3(0.97, 0.98, 1.0), gNoise(wP.xz.mul(3)).mul(0.45).add(0.55)).toVar();
 			snowC.addAssign(vec3(0.25).mul(step(0.992, gHash(floor(wP.xz.mul(45))))).mul(nsm(0.01, 0.025, wpx)));
 			snowC.assign(mix(diffuseColor.rgb.mul(0.6).add(vec3(0.3, 0.32, 0.36)), snowC, smoothstep(0.0, 0.6, snowMask)));
@@ -947,7 +949,7 @@ import {
 					}
 				}
 				const snowK = opt.noSnow ? 0 : v === 'grass' ? 0 : v === 'wind' ? 0.75 : 1;
-				weather(S, wN, WET_K[v] ?? 0.75, snowK, train ? positionGeometry : positionWorld, standard);
+				weather(S, wN, WET_K[v] ?? 0.75, snowK, train ? positionGeometry : positionWorld, standard, normalize(vec4(n, 0).mul(cameraViewMatrix).xyz).y);
 				// perony i beton: płytkie kałuże w zagłębieniach płyt (mniejsze i rzadsze niż na jezdni), od mokrej nawierzchni
 				if (v === 'platform' || v === 'concrete') {
 					const wq = positionWorld.xz;

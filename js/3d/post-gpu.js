@@ -17,7 +17,7 @@ import {
 	Fn, float, vec2, vec3, vec4, uniform, texture, uv, select, mix, smoothstep, step, max, min, clamp, pow, exp, abs, dot,
 	cross, normalize, length, fract, sin, cos, sqrt, dFdx, dFdy, screenCoordinate, getViewPosition, getScreenPosition,
 	If, sign, acos, positionWorld, positionView, screenUV, cameraPosition, distance, context, roughness, metalness,
-	normalView, positionViewDirection, reflect, renderGroup,
+	normalView, positionViewDirection, reflect, renderGroup, floor, mod,
 } from 'three/tsl';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 
@@ -144,7 +144,13 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			const P = getViewPosition(st, d, U.projInv).toVar();
 			const N = aoNormal(st, P).toVar();
 			const V = normalize(P.negate()).toVar();
-			const noise = hash(screenCoordinate.xy).toVar(), jit = hash(screenCoordinate.xy.add(17.3)).toVar();
+			/* obrót przekrojów i przesunięcie kroków z wzoru Bayera 4×4 (16 wartości w każdym oknie 4×4), rozmycie niżej
+			   dokładnie 4×4 – szum znosi się w całości. Dawniej losowy szum na piksel i rozmycie 3×3: ciemne plamki na płaskich
+			   ścianach (burta wagonu), zmienne z kątem kamery, bez TAA nie uśredniane */
+			const bq = mod(floor(screenCoordinate.xy), 4).toVar();
+			const b2 = (a, b) => mod(a.mul(2).add(b.mul(3)), 4);
+			const bay = b2(mod(bq.x, 2), mod(bq.y, 2)).mul(4).add(b2(floor(bq.x.div(2)), floor(bq.y.div(2)))).toVar();
+			const noise = bay.add(0.5).div(16).toVar(), jit = mod(bay.mul(5).add(3), 16).add(0.5).div(16).toVar();
 			// promień w ekranie (uv) – dla bliskich punktów ograniczony (koszt i pamięć podręczna tekstur)
 			const rUV = vec2(U.projScale.x, U.projScale.y).mul(U.aoRadius.mul(0.5).div(max(P.z.negate(), 0.1))).toVar();
 			const lim = min(0.12, max(rUV.x, rUV.y)).div(max(max(rUV.x, rUV.y), 1e-5));
@@ -191,8 +197,9 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			const st = uv().toVar();
 			const d0 = T.depth.sample(st).x.toVar();
 			const sum = float(0).toVar(), w = float(0).toVar();
-			for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) {
-				const o = vec2(x, y).mul(U.aoTexel).mul(1.5);
+			// (okno 4×4 – pełny okres wzoru Bayera w aoMat)
+			for (let x = -2; x <= 1; x++) for (let y = -2; y <= 1; y++) {
+				const o = vec2(x, y).mul(U.aoTexel);
 				const k = float(1).div(abs(T.depth.sample(st.add(o)).x.sub(d0)).mul(4000).add(1));
 				sum.addAssign(T.ao.sample(st.add(o)).r.mul(k));
 				w.addAssign(k);

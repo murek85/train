@@ -4,6 +4,21 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.59.2 – 17 listopada 2026
+
+Czarne artefakty na obrazie (WebGPU): plamki okluzji, siatka na zaśnieżonym tłuczniu, kreski na jezdni, krzewy zimą.
+
+### Poprawki
+- Okluzja otoczenia (`js/3d/post-gpu.js`): obrót przekrojów GTAO z wzoru Bayera 4×4 i rozmycie dokładnie 4×4 – szum
+  znosi się w całości. Dawniej losowy szum na piksel i rozmycie 3×3: ciemne plamki na płaskich ścianach (burta EN57),
+  zmienne z kątem kamery, bez TAA nieuśredniane (rozrzut jasności 2,82 → 0,78).
+- Śnieg (`js/3d/nodes.js` `weather`): maska z nachylenia samej geometrii, nie z normalnej z mikrorzeźbą – na krawędziach
+  kamieni tłucznia i żwiru śnieg znikał (czarna, migocząca siatka szczelin).
+- Jezdnie z mapy (`js/3d/real-env.js` `tri`): pomijane pionowe drzazgi (wierzchołki prawie w linii w rzucie, różne
+  wysokością – styk pociętych trójkątów) – bez śniegu, czarne kreski na zaśnieżonej jezdni.
+- Rośliny przyziemne z modeli (`js/3d/world.js` `buildPlants`): zimą żadnych – modele krzewów mają liście, paprocie
+  i pokrzywy zamierają; na śniegu wychodziły czarne kępy.
+
 ## 0.59.1 – 5 listopada 2026
 
 Wydajność WebGPU w widoku z kabiny (Toruń Główny, jakość wysoka, TAA: 26,6 → 52,3 FPS; procesor 34 → 17 ms na klatkę).
