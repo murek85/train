@@ -4,6 +4,15 @@ Historia zmian odtworzona z rozmów o projekcie (10–13 października 2026). We
 jest w `package.json` i na ekranie menu. Zmiany sprzed pierwszego commita (12.10) są pogrupowane według dni.
 W grze skrót tej listy jest w menu głównym → **Co nowego** (`js/news.js`).
 
+## 0.59.3 – 17 listopada 2026
+
+Okna i drzwi jadącego pociągu bez smug okluzji.
+
+### Poprawka – okluzja na taborze (`js/3d/post-gpu.js` `getAO`)
+- Materiały biorą okluzję z ekranu z poprzedniej klatki (punkt świata rzutowany kamerą tamtej klatki); pociąg w tym czasie
+  przejeżdża, więc okluzja okien i drzwi ciągnęła się przesunięta po burcie (zgodność odległości na płaskiej burcie jej nie
+  odrzucała). Tabor (wariant `train`, także pociągi tła) bez okluzji z ekranu – ma własną, wypaloną (`train.js bakeWear`).
+
 ## 0.59.2 – 17 listopada 2026
 
 Czarne artefakty na obrazie (WebGPU): plamki okluzji, siatka na zaśnieżonym tłuczniu, kreski na jezdni, krzewy zimą.

@@ -441,7 +441,10 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 			return smoothstep(0.42, 0.08, roughness).mul(F);
 		});
 		renderer.contextNode = context({
-			getAO: (input, { material }) => (material.transparent === true ? input : input !== null ? input.mul(aoNode) : aoNode),
+			/* tabor (wariant 'train') bez okluzji z ekranu: brana z poprzedniej klatki w miejscu świata, a pociąg w tym czasie
+			   przejechał – okluzja okien i drzwi ciągnęła się przesunięta po burcie (zgodność odległości na płaskiej burcie nie
+			   odrzuca); tabor ma własną, wypaloną okluzję (train.js bakeWear) */
+			getAO: (input, { material }) => (material.transparent === true || material.patchVariant === 'train' ? input : input !== null ? input.mul(aoNode) : aoNode),
 			getOutput: (out, builder) => {
 				const m = builder.material;
 				if (!m || m.transparent === true || (m.patchHooks && m.patchHooks.tag === 'water')) return out;

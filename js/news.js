@@ -4,6 +4,15 @@
 	'use strict';
 	window.TrainNews = [
 		{
+			version: '0.59.3',
+			date: '17 listopada 2026',
+			groups: [
+				['Poprawki grafiki', [
+					'Okna i drzwi jadącego pociągu nie rozmazują się – ciemne cienie wokół nich nie przesuwają się już po burcie.',
+				]],
+			],
+		},
+		{
 			version: '0.59.2',
 			date: '17 listopada 2026',
 			groups: [
